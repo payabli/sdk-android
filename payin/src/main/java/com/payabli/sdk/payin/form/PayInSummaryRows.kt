@@ -14,14 +14,27 @@ import java.util.Locale
  * the payment's amounts, since nothing on it is charged.
  */
 public object PayInSummaryRows {
-    /** The caller's label for [field] in [labels], or the resource. */
+    /**
+     * The caller's label for [field] in [labels], or the resource.
+     *
+     * @param field the row's field.
+     * @param labels the caller's labels.
+     * @param context the context the resource comes from.
+     * @return the caller's label for [field], or the resource.
+     */
     public fun labelText(
         field: PayInField,
         labels: PayInFormLabels,
         context: Context,
     ): String = labels.labelFor(field) ?: context.getString(field.labelResource)
 
-    /** The caller's Total label in [labels], or the resource. */
+    /**
+     * The caller's Total label in [labels], or the resource.
+     *
+     * @param labels the caller's labels.
+     * @param context the context the resource comes from.
+     * @return the caller's Total label, or the resource.
+     */
     public fun totalLabelText(
         labels: PayInFormLabels,
         context: Context,
@@ -30,6 +43,10 @@ public object PayInSummaryRows {
     /**
      * The figure on [field]'s row. Amount is the total less the service fee, read only beside a fee or a
      * surcharge, whatever [PayInFormConfiguration.showsBaseAmount] is set to.
+     *
+     * @param field the row's field.
+     * @param details what is being charged, or null.
+     * @return the figure on [field]'s row, or null when the row is not drawn.
      */
     public fun rowAmount(
         field: PayInField,
@@ -51,7 +68,12 @@ public object PayInSummaryRows {
         }
     }
 
-    /** The figure on the Total row: the total amount plus any surcharge, which is what is charged. */
+    /**
+     * The figure on the Total row: the total amount plus any surcharge, which is what is charged.
+     *
+     * @param details what is being charged, or null.
+     * @return the figure on the Total row, or null when the row is not drawn.
+     */
     public fun totalRowAmount(details: PayInPaymentDetails?): BigDecimal? {
         if (details == null || details.amountRefusal() != null) return null
         val charge = details.shownAmount(PayInField.Amount) ?: return null
@@ -59,7 +81,13 @@ public object PayInSummaryRows {
         return charge.add(surcharge).takeIf { it.signum() != 0 }
     }
 
-    /** [amount] as the form writes it: the default locale's separators, [currency]'s symbol, two places. */
+    /**
+     * [amount] as the form writes it: the default locale's separators, [currency]'s symbol, two places.
+     *
+     * @param amount the figure on the row.
+     * @param currency the currency's symbol, or null for none.
+     * @return [amount] as the form writes it.
+     */
     public fun formattedAmount(
         amount: BigDecimal,
         currency: String?,
@@ -71,6 +99,9 @@ public object PayInSummaryRows {
  *
  * Read at the scale the amount is sent at, so a row appears exactly when a figure other than zero is sent. An
  * amount too large or too precise to send draws none, since submitting it is refused.
+ *
+ * @param field the row's field.
+ * @return the figure a summary row shows for [field], or null when the row is not drawn.
  */
 internal fun PayInPaymentDetails.shownAmount(field: PayInField): BigDecimal? {
     val amount =

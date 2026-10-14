@@ -12,31 +12,29 @@ import androidx.annotation.RestrictTo
  * **Every field is blank where there is no device to ask**, which is the SDK's own tests on a JVM. A blank
  * is omitted from the wire rather than sent empty, so a reader is never told a handset reported nothing for
  * its own model.
+ *
+ * @property idHash which device this is, as a digest — the same value device registration sends, so one
+ *   device is one identity in both, and the difference between one device retrying and a fleet failing once.
+ * @property type what the SDK's host is, in the service's own vocabulary for a device record.
+ * @property os which platform, in the service's own vocabulary. The only field that splits a mixed stream.
+ * @property osVersion the platform release, as the platform states it: `14`, `15`, `16.1.2`.
+ * @property modelName the handset, as the platform states it: `Pixel 7a`.
+ * @property packageName which app this is. One entry point serves several, so this is what tells them apart.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class TelemetryDeviceContext(
-    /**
-     * Which device this is, as a digest.
-     *
-     * The same value device registration sends, so one device is one identity in both. The session id says
-     * which run an event came from; this says which device the run happened on, which is the difference
-     * between one device retrying and a fleet failing once.
-     */
     public val idHash: String,
-    /** What the SDK's host is, in the service's own vocabulary for a device record. */
     public val type: String,
-    /** Which platform, in the service's own vocabulary. The only field that splits a mixed stream. */
     public val os: String,
-    /** The platform release, as the platform states it: `14`, `15`, `16.1.2`. */
     public val osVersion: String,
-    /** The handset, as the platform states it: `Pixel 7a`. */
     public val modelName: String,
-    /** Which app this is. One entry point serves several, so this is what tells them apart. */
     public val packageName: String = "",
 ) {
     /**
      * Withholds [idHash] and [packageName], as `TelemetrySessionContext.toString` withholds the entry point:
      * this string reaches exception messages and crash reports, and those two name a device and an app.
+     *
+     * @return the type, platform, release and handset, withholding the digest and the app.
      */
     override fun toString(): String =
         "TelemetryDeviceContext(type=$type, os=$os, osVersion=$osVersion, modelName=$modelName)"

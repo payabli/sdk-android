@@ -7,7 +7,7 @@ import androidx.annotation.RestrictTo
  * status to a typed error, and the caller decides when to apply it.
  *
  * [headers] and [body] are copied at construction, so the producer cannot mutate a response after
- * handing it over. The parameters are deliberately not `val`: exposing them alongside the copies would
+ * handing it over. The parameters are not `val`: exposing them alongside the copies would
  * publish the uncopied originals and defeat the copy. A consumer can still mutate the array it reads
  * from [body], which copying on every access would cost more than it is worth.
  */
@@ -26,14 +26,25 @@ public class PayabliResponse(
     /**
      * Case-insensitive header lookup. RFC 9110 defines header names as case-insensitive, and
      * `HttpURLConnection` does not normalize the case it reports.
+     *
+     * @param name the header name as the caller spells it, in any case.
+     * @return the header's value, or null when the response carries none under that name.
      */
     public fun header(name: String): String? =
         headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
 
-    /** The body decoded as UTF-8. */
+    /**
+     * The body decoded as UTF-8.
+     *
+     * @return the body's bytes as text.
+     */
     public fun bodyAsText(): String = body.toString(Charsets.UTF_8)
 
-    /** Never includes headers or body: a response body may carry cardholder data. */
+    /**
+     * Never includes headers or body: a response body may carry cardholder data.
+     *
+     * @return the status and the body's length alone.
+     */
     override fun toString(): String = "PayabliResponse(status=$statusCode, bodyBytes=${body.size})"
 
     private companion object {

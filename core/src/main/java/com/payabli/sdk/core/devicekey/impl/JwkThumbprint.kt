@@ -28,8 +28,11 @@ internal object JwkThumbprint {
     private val base64Url = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
 
     /**
+     * Derives the key's thumbprint from its public point, per the object's own layout.
+     *
      * @param uncompressedPoint the public point in X9.62 uncompressed form, as [EcPointEncoding] emits it.
      * @throws IllegalArgumentException if the point is not that shape.
+     * @return the base64url digest that names the key on the wire.
      */
     fun of(uncompressedPoint: ByteArray): String {
         require(uncompressedPoint.size == EcPointEncoding.POINT_BYTES) {

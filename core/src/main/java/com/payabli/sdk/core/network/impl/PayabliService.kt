@@ -40,30 +40,14 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * [PayabliTransport] over `HttpURLConnection`, the platform HTTP client.
+ * [PayabliTransport] over `HttpURLConnection`. Interprets nothing: `execute` returns a non-2xx as a
+ * [PayabliResponse], leaving the status to [PayabliHttpErrors]; only the decoding overload maps it. An
+ * `IOException` becomes NETWORK_ERROR and a malformed URL INVALID_CONFIGURATION, each keeping its cause.
  *
- * Interprets nothing: `execute` returns a non-2xx response as a [PayabliResponse] rather than an
- * exception, leaving the status to [PayabliHttpErrors]; only the decoding overload maps it, because it
- * has to before committing to a decode. A 401 is a status like any other here, and
- * `AuthenticatedTransport` is what turns one into a refresh and a retry.
- *
- * It holds no auth state of its own. The bearer is stamped by `BearerDecoration` inside the chain, so
- * every request that leaves this class is authenticated and there is no undecorated path to forget.
- *
- * Transport and configuration failures do surface as a [PayabliException]: an `IOException` becomes
- * [PayabliErrorType.NETWORK_ERROR], a malformed URL [PayabliErrorType.INVALID_CONFIGURATION], and a
- * body that will not decode [PayabliErrorType.DECODING_ERROR], each preserving the original as its
- * cause.
- *
- * `internal`: nothing outside `:core` names this type. Capability modules depend
- * on the [PayabliTransport] interface and receive an instance from the session.
- *
- * **The decoration chain is applied here, not by a wrapping layer.** Decorating in a wrapper would leave a
- * working undecorated transport for a `:core` caller to pick up. So the constructor is private, [create] is
- * the only production path, and it takes no chain.
- *
- * `AuthenticatedTransport` and `Retry` do wrap this, and are control flow rather than decorations: forgetting
- * either loses a retry, never a credential.
+ * @property decorations the chain applied to every request here rather than by a wrapper, so no undecorated path exists.
+ * @property callTimeout the budget for one whole exchange, never a sequence: a refresh is its own call with its own budget.
+ * @property dispatcher where the blocking work runs, injected so a test can substitute one; per instance, never on the interface.
+ * @property maxResponseBytes the ceiling on a response body, so a hostile or misconfigured server cannot exhaust the app's heap.
  */
 internal class PayabliService private constructor(
     baseUrl: String,
@@ -71,21 +55,8 @@ internal class PayabliService private constructor(
     private val logger: SdkLogger,
     private val connectTimeoutMillis: Int,
     private val readTimeoutMillis: Int,
-    /**
-     * Budget for one whole call. [readTimeoutMillis] bounds only the wait for the next byte, so a server
-     * dribbling bytes never trips it.
-     *
-     * It bounds **one** exchange, never a sequence, which is what keeps it clear of a credential refresh: a
-     * refresh is its own call here with its own budget.
-     */
     private val callTimeout: Duration,
-    /**
-     * Injected rather than hardcoded so a test can substitute one. Held per instance because it
-     * describes how this implementation works and never varies per call; putting it on the interface
-     * would push the choice onto every caller, which is what main-safety exists to avoid.
-     */
     private val dispatcher: CoroutineDispatcher,
-    /** Ceiling on a response body, so a hostile or misconfigured server cannot exhaust the app's heap. */
     private val maxResponseBytes: Long,
 ) : PayabliTransport {
     /**
@@ -134,16 +105,11 @@ internal class PayabliService private constructor(
 
     /**
      * One request and one response, under whatever deadline the caller installed.
+     * `suspendCancellableCoroutine`, not `Job.invokeOnCompletion`: a completion handler runs only once this
+     * body finishes, and a body parked in a blocking read never finishes. The blocking work stays inline.
      *
-     * `suspendCancellableCoroutine` rather than `Job.invokeOnCompletion`, and that choice is the whole point:
-     * a completion handler runs only once this body finishes, and a body parked in a blocking read never
-     * finishes, so the disconnect it was meant to perform could not happen at the deadline. Measured before
-     * the change: a 200ms deadline against an 800ms read fired the handler **never** and returned after
-     * 849ms. `invokeOnCancellation` fires at cancellation request time, on the canceller's thread.
-     *
-     * The blocking work stays inline rather than moving to a worker. `suspendCancellableCoroutine` calls
-     * `initCancellability()` before the block for exactly this case, so no handoff is needed, and adding one
-     * would introduce a worker to leak and a second resume to guard against.
+     * @param decorated the request with its chain applied.
+     * @return the response the request answered with.
      */
     private suspend fun exchange(decorated: PayabliRequest): PayabliResponse {
         val connection = openConnection(decorated)
@@ -170,10 +136,13 @@ internal class PayabliService private constructor(
     }
 
     /**
-     * Blocking by design, and never suspends.
+     * Blocking by design, and never suspends. Activity is read off [continuation] rather than the coroutine
+     * context, because this runs inside the cancellable block where no suspension point exists.
      *
-     * Activity is therefore read off [continuation] rather than the coroutine context: this runs inside the
-     * `suspendCancellableCoroutine` block, where there is no suspension point to observe cancellation at.
+     * @param decorated the request with its chain applied.
+     * @param connection the connection this exchange owns.
+     * @param continuation the continuation whose activity is read between each blocking step.
+     * @return the response the request answered with.
      */
     private fun exchangeBlocking(
         decorated: PayabliRequest,
@@ -216,7 +185,11 @@ internal class PayabliService private constructor(
         }
     }
 
-    /** Named apart from `kotlinx.coroutines.ensureActive`, imported here, which reads a context instead. */
+    /**
+     * Named apart from `kotlinx.coroutines.ensureActive`, imported here, which reads a context instead.
+     *
+     * @param continuation the continuation whose activity is read.
+     */
     private fun throwIfCancelled(continuation: CancellableContinuation<*>) {
         if (!continuation.isActive) throw CancellationException(REASON_EXCHANGE_CANCELLED)
     }
@@ -228,8 +201,10 @@ internal class PayabliService private constructor(
 
     /**
      * Wraps its own failures rather than letting the caller do it: this runs before `execute`'s `try`,
-     * so anything escaping here would miss both the exception mapping and the `disconnect()` in
-     * `finally`.
+     * so anything escaping here would miss both the exception mapping and the `disconnect()`.
+     *
+     * @param request the request to open the connection for.
+     * @return the connection, with method, timeouts and headers set.
      */
     private fun openConnection(request: PayabliRequest): HttpURLConnection {
         val url = resolveOrThrow(request)
@@ -262,12 +237,12 @@ internal class PayabliService private constructor(
     }
 
     /**
-     * A bad base URL or path is configuration, not a network failure, so it maps differently.
+     * A bad base URL or path is configuration, not a network failure. Every cause here is redacted,
+     * because all three shapes can carry the rejected path: a `URISyntaxException` echoes its input and
+     * the `IllegalArgumentException` carries the whole resolved URL, so no type is trusted.
      *
-     * Every cause here is redacted, because all three shapes can carry the rejected path. A
-     * `URISyntaxException` echoes its input verbatim, and the `IllegalArgumentException` from
-     * `URI.create` at the query step carries the whole resolved URL, query values included. Type is
-     * therefore not a way to tell a safe cause from an unsafe one, so none is trusted.
+     * @param request the request whose path is resolved.
+     * @return the resolved URL.
      */
     private fun resolveOrThrow(request: PayabliRequest): URL =
         try {
@@ -289,12 +264,12 @@ internal class PayabliService private constructor(
         )
 
     /**
-     * Resolves [PayabliRequest.path] against the configured base, pinned to the base's origin.
+     * Resolves [PayabliRequest.path] against the configured base, pinned to the base's origin:
+     * `URI.resolve` returns an absolute reference unchanged and takes the reference's authority, so an
+     * unchecked path could redirect a request — headers and all — to another host.
      *
-     * `URI.resolve` returns the reference unchanged when it is already absolute, and takes the
-     * reference's authority when it has one, so an unchecked path could redirect a request — headers and
-     * all — to another host. Both a syntactic reject and an origin comparison, because the second stays
-     * correct if the first is ever loosened.
+     * @param request the request whose path and query are resolved.
+     * @return the resolved URL, origin-checked and within the base path.
      */
     private fun resolve(request: PayabliRequest): URL {
         val reference = request.path
@@ -353,12 +328,12 @@ internal class PayabliService private constructor(
     }
 
     /**
-     * Reads at most [maxResponseBytes], failing rather than growing without limit: an unbounded read lets a
-     * misconfigured or hostile server exhaust the host app's heap before any status mapping runs.
+     * Reads at most [maxResponseBytes], failing rather than growing without limit. Hand-rolled because
+     * `InputStream.readNBytes` is API 33 and absent from R8's desugar configuration, so desugaring cannot
+     * backfill it. Do not "simplify" this to `readBytes()`.
      *
-     * Hand-rolled because there is no usable alternative at this module's floor. `InputStream.readNBytes`
-     * is the right primitive but it is API 33, and it is absent from R8's desugar configuration, so
-     * desugaring cannot backfill it. Do not "simplify" this to `readBytes()`.
+     * @param stream the body's stream, whichever of input or error it came from.
+     * @return the body's bytes, bounded.
      */
     private fun readBounded(stream: InputStream): ByteArray {
         val sink = ByteArrayOutputStream()
@@ -380,7 +355,12 @@ internal class PayabliService private constructor(
         return sink.toByteArray()
     }
 
-    /** Drops the null-keyed entry, which carries the status line rather than a header. */
+    /**
+     * Drops the null-keyed entry, which carries the status line rather than a header.
+     *
+     * @param connection the answered connection.
+     * @return the headers, each name's values joined, the status-line entry dropped.
+     */
     private fun readHeaders(connection: HttpURLConnection): Map<String, String> {
         // Bound to a read-only type first: the platform hands back a Map whose mutability Kotlin cannot
         // prove, and nothing here mutates it.
@@ -396,13 +376,23 @@ internal class PayabliService private constructor(
 
     private fun methodField(request: PayabliRequest): LogField = LogField.safe("method", request.method.wireName)
 
-    /** Only an explicit template is loggable; a resolved path may embed an identifier. */
+    /**
+     * Only an explicit template is loggable; a resolved path may embed an identifier.
+     *
+     * @param request the request whose route template is logged.
+     * @return a safe field carrying the template, or a redacted one when the request carried no template.
+     */
     private fun routeField(request: PayabliRequest): LogField =
         request.route?.let { LogField.safe("route", it) } ?: LogField.redacted("route", request.path)
 
     private fun elapsedMillis(startedAt: Long): Long = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
 
-    /** The two-argument overload: the `Charset` one is API 33 and this module's floor is 23. */
+    /**
+     * The two-argument overload: the `Charset` one is API 33 and this module's floor is 23.
+     *
+     * @param value the query name or value to encode.
+     * @return the value, form-encoded.
+     */
     private fun urlEncode(value: String): String = URLEncoder.encode(value, "UTF-8")
 
     internal companion object {
@@ -433,19 +423,18 @@ internal class PayabliService private constructor(
         internal val DEFAULT_CALL_TIMEOUT: Duration = (3 * DEFAULT_READ_TIMEOUT_MILLIS).milliseconds
 
         /**
-         * The only production way to obtain a transport.
+         * The only production way to obtain a transport. It takes no decoration list — no caller anywhere
+         * chooses the chain, so no caller can choose an empty one — and returns the interface. The
+         * socket-level timeouts are not parameters: the whole-call bound is the one worth varying.
          *
-         * It takes no decoration list: no caller anywhere chooses the chain, so no
-         * caller can choose an empty one. Returns the interface, so nothing
-         * accumulates a dependency on the concrete class.
-         *
-         * The socket-level connect and read timeouts are not parameters. No caller has ever overridden them,
-         * production or test, so they were flexibility nobody used and one more way to get a call wrong; the
-         * whole-call bound is the one worth varying. Add them back only with a caller that needs them.
-         *
-         * [auth] is what the chain needs, not what this transport interprets: it reaches
-         * `BearerDecoration` and nothing else here reads it. Passing the holder rather than a token is what
-         * lets the bearer be read per request, so a rotation needs no cache to be invalidated.
+         * @param baseUrl the origin every request goes to.
+         * @param auth the holder `BearerDecoration` reads per request, so a rotation needs no cache.
+         * @param dispatcher where the blocking exchange runs.
+         * @param logger where each request and response is logged.
+         * @param callTimeout the budget for one whole call.
+         * @param maxResponseBytes the ceiling on a response body.
+         * @param client what every request reports about this device.
+         * @return the transport, as the interface, with the chain applied.
          */
         internal fun create(
             baseUrl: String,
@@ -469,10 +458,16 @@ internal class PayabliService private constructor(
 
         /**
          * Builds a transport with a caller-supplied chain, so a test can prove [execute] applies whatever
-         * chain it holds without a decoration having to exist in production.
+         * chain it holds without a decoration having to exist in production. A named, narrow hole: it
+         * widens what a `:core` test can construct, not what production can. Do not call it from `src/main`.
          *
-         * A named, narrow hole in the guarantee above, and the reason it is acceptable: it widens what a
-         * `:core` **test** can construct, not what production can. Do not call it from `src/main`.
+         * @param baseUrl the origin every request goes to.
+         * @param decorations the chain to apply, supplied by the test.
+         * @param dispatcher where the blocking exchange runs.
+         * @param logger where each request and response is logged.
+         * @param callTimeout the budget for one whole call.
+         * @param maxResponseBytes the ceiling on a response body.
+         * @return the transport, as the interface, holding the supplied chain.
          */
         @VisibleForTesting
         internal fun createWithDecorations(

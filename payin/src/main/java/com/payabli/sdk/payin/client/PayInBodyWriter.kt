@@ -40,6 +40,10 @@ internal object PayInBodyWriter {
      *
      * [encodedBody] holds no sensitive value, so it arrives as a `String`. [methodFragment] does, so it
      * arrives as bytes and is overwritten here once copied.
+     *
+     * @param encodedBody the encoded outer body, holding no sensitive value.
+     * @param methodFragment the `paymentMethod` member, overwritten here once copied.
+     * @return the body with `paymentMethod` spliced in.
      */
     fun withPaymentMethod(
         encodedBody: String,
@@ -69,14 +73,24 @@ internal object PayInBodyWriter {
         }
     }
 
-    /** The `paymentMethod` object for a stored method being created. */
+    /**
+     * The `paymentMethod` object for a stored method being created.
+     *
+     * @param instrument the instrument being stored.
+     * @return the `paymentMethod` object for a stored method being created.
+     */
     fun instrumentFragment(instrument: PayInInstrument): ByteArray =
         when (instrument) {
             is PayInInstrument.Card -> cardFragment(instrument.data)
             is PayInInstrument.BankAccount -> achFragment(instrument.data)
         }
 
-    /** The `paymentMethod` object for a transaction, which has four more shapes than a stored method. */
+    /**
+     * The `paymentMethod` object for a transaction, which has four more shapes than a stored method.
+     *
+     * @param method how the transaction is being paid for.
+     * @return the `paymentMethod` object for a transaction.
+     */
     fun methodFragment(method: PayInPaymentMethod): ByteArray =
         when (method) {
             is PayInPaymentMethod.Card -> cardFragment(method.data)
@@ -139,6 +153,9 @@ internal object PayInBodyWriter {
      *
      * A build can fail after it has written a sensitive field: a valid card number followed by a security
      * code that is not digits leaves the number in the buffer, and an abandoned writer never wipes it.
+     *
+     * @param build the member writes to make.
+     * @return the assembled fragment.
      */
     private fun fragment(build: FragmentWriter.() -> Unit): ByteArray {
         val writer = FragmentWriter()
@@ -150,7 +167,12 @@ internal object PayInBodyWriter {
         }
     }
 
-    /** One JSON string, escaped by the codec rather than by this file. */
+    /**
+     * One JSON string, escaped by the codec rather than by this file.
+     *
+     * @param value the string to quote.
+     * @return one JSON string, escaped by the codec.
+     */
     private fun quoted(value: String): ByteArray =
         PayabliJson.format
             .encodeToString(String.serializer(), value)
@@ -178,6 +200,9 @@ internal object PayInBodyWriter {
          *
          * The digits are read into a local array, copied out as bytes, and that array is overwritten before
          * this returns.
+         *
+         * @param name the field's name.
+         * @param value the buffered digits.
          */
         fun digits(
             name: String,
@@ -238,7 +263,11 @@ internal object PayInBodyWriter {
             size += count
         }
 
-        /** The exact-size result, after which the working array holds zeros. */
+        /**
+         * The exact-size result, after which the working array holds zeros.
+         *
+         * @return what was written, the working array zeroed.
+         */
         fun finishAndWipe(): ByteArray {
             val result = bytes.copyOf(size)
             wipe()

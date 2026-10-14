@@ -32,10 +32,14 @@ internal object DeviceIdentifier {
     internal const val IDENTIFIER_BYTES: Int = 16
 
     /**
-     * The identifier, or a blank when the platform offered nothing.
+     * The identifier, or a blank when the platform offered nothing. **A blank is returned rather than a
+     * substitute.** An identifier invented per call registers a new device every time; callers refuse a
+     * blank instead.
      *
-     * **A blank is returned rather than a substitute.** An identifier invented per call is not an identifier:
-     * it registers a new device every time it is used and correlates nothing. Callers refuse a blank instead.
+     * @param installationId the platform's installation identifier, or blank when it offered nothing.
+     * @param hostPackageName the host's package name, which makes the identifier per application.
+     * @param sdkIdentifier the SDK's own stable identifier.
+     * @return the identifier, 32 hex characters, or a blank when the platform offered nothing.
      */
     fun derive(
         installationId: String,

@@ -27,28 +27,62 @@ public class PayInFormLabels(
     public val fieldPlaceholders: Map<PayInField, String> =
         Collections.unmodifiableMap(fieldPlaceholders.toMap())
 
-    /** The caller's label for a field, or null to use the resource. */
+    /**
+     * The caller's label for a field, or null to use the resource.
+     *
+     * @param field the field asked about.
+     * @return the caller's label, or null to use the resource.
+     */
     public fun labelFor(field: PayInField): String? = fieldLabels[field]?.takeIf { it.isNotBlank() }
 
-    /** The caller's placeholder for a field, or null for none. */
+    /**
+     * The caller's placeholder for a field, or null for none.
+     *
+     * @param field the field asked about.
+     * @return the caller's placeholder, or null for none.
+     */
     public fun placeholderFor(field: PayInField): String? = fieldPlaceholders[field]?.takeIf { it.isNotBlank() }
 
-    /** The heading above the form, or null for none. */
+    /**
+     * The heading above the form, or null for none.
+     *
+     * @return the heading, or null for none.
+     */
     public fun titleOrNull(): String? = title?.takeIf { it.isNotBlank() }
 
-    /** The line under the heading, or null for none. */
+    /**
+     * The line under the heading, or null for none.
+     *
+     * @return the line, or null for none.
+     */
     public fun subtitleOrNull(): String? = subtitle?.takeIf { it.isNotBlank() }
 
     /**
      * The wording on the submit button, or null for the operation's own: Pay, Authorize or Save. While a
      * submission runs the button reads the operation's busy wording whatever this holds.
+     *
+     * @return the wording, or null for the operation's own.
      */
     public fun submitButtonOrNull(): String? = submitButton?.takeIf { it.isNotBlank() }
 
-    /** The label on the summary's Total row, or null to use the resource. */
+    /**
+     * The label on the summary's Total row, or null to use the resource.
+     *
+     * @return the label, or null to use the resource.
+     */
     public fun totalOrNull(): String? = total?.takeIf { it.isNotBlank() }
 
-    /** As a `data class` would, over the copies rather than over what was handed in. */
+    /**
+     * As a `data class` would, over the copies rather than over what was handed in.
+     *
+     * @param title the heading, or null for none.
+     * @param subtitle the line under the heading, or null for none.
+     * @param submitButton the wording on the submit button, or null for the operation's own.
+     * @param fieldLabels the caller's labels, or empty for the resources.
+     * @param fieldPlaceholders the caller's placeholders, or empty for none.
+     * @param total the label on the Total row, or null for the resource.
+     * @return the labels rebuilt from the named parts.
+     */
     public fun copy(
         title: String? = this.title,
         subtitle: String? = this.subtitle,

@@ -29,7 +29,13 @@ import com.payabli.sdk.payin.model.SensitiveDigits
  * a reference keeps one whose digits read as empty.
  */
 internal object PayInFormInstrument {
-    /** The card or bank account the values name, for storing a method. */
+    /**
+     * The card or bank account the values name, for storing a method.
+     *
+     * @param values what the payer entered, and the instrument they entered it for.
+     * @param block what runs with the instrument, which is closed before the call returns.
+     * @return what [block] returned.
+     */
     suspend fun <T> useInstrument(
         values: PayInFormValues,
         block: suspend (PayInInstrument) -> T,
@@ -47,7 +53,13 @@ internal object PayInFormInstrument {
         }
     }
 
-    /** The same instrument, as a transaction's payment method. */
+    /**
+     * The same instrument, as a transaction's payment method.
+     *
+     * @param values what the payer entered, and the instrument they entered it for.
+     * @param block what runs with the method, which is closed before the call returns.
+     * @return what [block] returned.
+     */
     suspend fun <T> usePaymentMethod(
         values: PayInFormValues,
         block: suspend (PayInPaymentMethod) -> T,
@@ -103,6 +115,9 @@ internal object PayInFormInstrument {
     /**
      * Checking where the form does not ask, which is the kind a payer entering a routing and account number
      * has. The field is required on every bank request, so there is no absent value to send.
+     *
+     * @param value the account type as the form offered it.
+     * @return the account type, Checking where the form does not ask.
      */
     private fun accountType(value: String): PayInAccountType =
         chosen(
@@ -113,7 +128,12 @@ internal object PayInFormInstrument {
             subject = "An account type",
         ) ?: PayInAccountType.Checking
 
-    /** Absent where the form does not ask, which leaves the member out of the body for the paypoint to decide. */
+    /**
+     * Absent where the form does not ask, which leaves the member out of the body for the paypoint to decide.
+     *
+     * @param value the holder type as the form offered it.
+     * @return the holder type, or null where the form does not ask.
+     */
     private fun holderType(value: String): PayInAccountHolderType? =
         chosen(
             value = value,
@@ -123,7 +143,12 @@ internal object PayInFormInstrument {
             subject = "A holder type",
         )
 
-    /** Absent leaves the body writer to send `WEB`, which is the default for a form-entered debit. */
+    /**
+     * Absent leaves the body writer to send `WEB`, which is the default for a form-entered debit.
+     *
+     * @param value the authorization code as the form offered it.
+     * @return the authorization code, or null where the form does not ask.
+     */
     private fun secCode(value: String): PayInSecCode? =
         chosen(
             value = value,
@@ -134,13 +159,16 @@ internal object PayInFormInstrument {
         )
 
     /**
-     * The option a payer chose, matched to its enum by wire name.
+     * The option a payer chose, matched to its enum by wire name, case-insensitive because the form's
+     * own option values and the enums differ in it. A value matching nothing is refused, so a
+     * configuration offering an option this SDK does not know reaches the caller as that field being wrong.
      *
-     * Case-insensitive, because the form's own option values and the enums differ in it: the form offers `web`
-     * where [PayInSecCode.Web] is `WEB`.
-     *
-     * A value matching nothing is refused, so a configuration offering an option this SDK does not know reaches
-     * the caller as that field being wrong.
+     * @param value the option as the form offered it.
+     * @param options the enum's entries.
+     * @param wireName how an entry is spelled on the wire.
+     * @param field the field's name, for the refusal.
+     * @param subject the refusal's subject line.
+     * @return the option chosen, or null where the form does not ask.
      */
     private fun <T : Enum<T>> chosen(
         value: String,

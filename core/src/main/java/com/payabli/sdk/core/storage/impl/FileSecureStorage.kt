@@ -19,35 +19,18 @@ import java.io.FileOutputStream
 import java.io.IOException
 
 /**
- * [PayabliSecureStorage] over a single file, with each value encrypted by a [ValueCipher].
+ * [PayabliSecureStorage] over a single file, with each value encrypted by a [ValueCipher]. A plain
+ * [File] rather than DataStore, which is what lets the persistence layer be unit-tested on the JVM
+ * against a fake cipher. `SecureStorageFactory.create` is how production builds one.
  *
- * A file rather than DataStore, which would add a dependency, a `Context`, and a single-instance rule. A
- * plain [File] keeps this constructible without any of those, which is what lets the persistence layer be
- * unit-tested on the JVM against a fake cipher.
- *
- * `SecureStorageFactory.create` is how production builds one, and it decides the directory.
+ * @property dispatcher where the blocking file and cipher work runs. No default: every call site states it.
+ * @property identity the store's resolved identity, injected so one composition resolves it; the alias, the lock and the temp prefix all read it.
  */
 internal class FileSecureStorage(
     private val file: File,
     private val cipher: ValueCipher,
     private val logger: SdkLogger,
-    /**
-     * Where the blocking file and cipher work runs. **No default: every call site states it.**
-     *
-     * A default here fails silently. A composition that omits one gets the real `Dispatchers.IO` while the
-     * layer above believes it supplied the dispatcher, so a test that substituted one measures a thread the
-     * code never used, and a caller that narrowed parallelism does not get the narrowing. Without a default
-     * the compiler names each site that has not been given one.
-     */
     private val dispatcher: CoroutineDispatcher,
-    /**
-     * The store's resolved identity, injected so one composition resolves it once.
-     *
-     * The default keeps direct construction working and self-consistent. What it cannot do is make the *factory*
-     * consistent: `create` needs the same value for the cipher's alias and for this store, and computing it in both
-     * places let a path whose canonical target changed between the calls give the alias one identity and persistence
-     * another. That is the split the single-identity work exists to prevent, surviving at the composition point.
-     */
     private val identity: String = StoreIdentity.of(file),
 ) : PayabliSecureStorage {
     /**
@@ -101,7 +84,7 @@ internal class FileSecureStorage(
                     // asking and encrypting.
                     cipher.ensureKey(mayCreate = current.isEmpty())
                     // The caller's array goes straight to the cipher, which must not retain it. Nothing is
-                    // copied or converted, so there is nothing of ours holding the plaintext afterwards.
+                    // copied or converted, so nothing here holds the plaintext afterwards.
                     write(current + (key to cipher.encrypt(key, value)))
                 } catch (e: SecureStorageException.KeyInvalidated) {
                     // As on the read path: the remaining blobs are unreadable, and leaving them lets a retry
@@ -129,10 +112,10 @@ internal class FileSecureStorage(
 
     /**
      * A missing file is an empty store. Unparseable content is reset, because refusing to load would make
-     * one bad write permanent, and everything here is ciphertext the caller can re-obtain.
+     * one bad write permanent, and everything here is ciphertext the caller can re-obtain. Only a
+     * *deserialization* failure resets; anything else propagates.
      *
-     * Only a *deserialization* failure resets. Anything else, including a programming error surfacing as an
-     * `IllegalArgumentException` from inside a serializer, propagates rather than costing the caller their data.
+     * @return the store's map, keys in plaintext and blobs as ciphertext.
      */
     private fun read(): Map<String, String> {
         if (!file.exists()) return emptyMap()
@@ -166,16 +149,11 @@ internal class FileSecureStorage(
     }
 
     /**
-     * Write to a sibling temporary file, flush it to disk, then rename over the target.
+     * Write to a sibling temporary file, flush it to disk, then rename over the target — the rename is
+     * the atomic step, and nothing may precede it. The parent directory entry is not synced: no portable
+     * API for it at this module's floor, so a crash there can lose the newest write.
      *
-     * The rename is the atomic step, and nothing may precede it. Deleting the destination first, as an
-     * earlier version did, means a crash in that window loses the store outright and the `finally` below
-     * then removes the temp copy too. `renameTo` replaces on Android because it maps to `rename(2)`, and
-     * the temp file is a sibling so the rename stays within one filesystem.
-     *
-     * `sync()` covers the file's contents. The parent directory entry is not synced: there is no portable
-     * API for that at this module's floor, so a crash between rename and the OS flushing the directory can
-     * still lose the newest write. Stated rather than papered over.
+     * @param values the entries to persist, keys in plaintext and blobs as ciphertext.
      */
     private fun write(values: Map<String, String>) {
         val parent = file.parentFile ?: throw SecureStorageException.StorageUnavailable()
@@ -211,26 +189,9 @@ internal class FileSecureStorage(
     }
 
     /**
-     * Removes temporary files left by writes that never finished.
-     *
-     * Nothing else looks for them. Process death between creating the temp and renaming it orphans one
-     * permanently, and it holds ciphertext for every entry present at that moment: under the same key alias
-     * those blobs still open, so an entry a later [remove] deleted would survive inside it. An orphan is
-     * therefore reclaimed on the next write **or on any [remove]**, rather than at the moment it is created.
-     * [remove] sweeps even when the key is absent, since otherwise the one call that promises deletion would be
-     * the one call that never looks.
-     *
-     * **The match is a shape, not a prefix**, because the lock only covers this store's own file. `fileName` is
-     * a parameter, so a sibling store on `store.json2` is legitimate, and a prefix match would delete its temp
-     * mid-write and fail its rename. It would also reach an unrelated host-app file in a directory the host app
-     * owns too. Requiring the delimiter and an all-digit middle means only this store's own temp names match:
-     * `store.json2...` fails the prefix, and `store.json.backup.7.tmp` fails the shape.
-     *
-     * Deleting a match is then safe, because the caller holds this file's lock, the store is single-process, and
-     * the sweep runs before this write's own temp exists.
-     *
-     * **A sweep that cannot do its job fails.** Both of its silent outcomes, a directory that cannot be listed and
-     * an orphan that cannot be deleted, used to leave the caller believing the entry was gone.
+     * Removes temporary files left by writes that never finished, reclaimed on the next write or
+     * on any [remove], which sweeps even when the key is absent. The match is a shape, not a
+     * prefix, and deleting a match is safe: the lock is held and the sweep precedes this temp.
      */
     private fun sweepOrphans() {
         // A missing parent is nothing to sweep. A parent that exists but cannot be listed is a failure, and the
@@ -255,22 +216,20 @@ internal class FileSecureStorage(
     }
 
     /**
-     * `pbl<identity>.`, a fixed length whatever the store is called.
+     * `pbl<identity>.`, a fixed length whatever the store is called: never shorter than `createTempFile`
+     * demands, and no prefix can be a prefix of another.
      *
-     * Two properties the previous `<fileName>.` form did not have. It is never shorter than the three characters
-     * `File.createTempFile` demands, which a one-character file name violated with a raw `IllegalArgumentException`
-     * escaping this class entirely. And because every prefix is the same length, no prefix can be a prefix of
-     * another, so the `store` versus `store2` overlap the delimiter was patching cannot arise at all.
+     * @return the temporary-file prefix for this store.
      */
     private fun tempPrefix(): String = TEMP_NAME_PREFIX + identity + TEMP_DELIMITER
 
     /**
-     * The exact shape [tempPrefix] plus `createTempFile` produces: prefix, digits, suffix.
+     * The exact shape [tempPrefix] plus `createTempFile` produces: prefix, digits, suffix — ASCII digits,
+     * because `createTempFile` only ever emits `0` to `9`.
      *
-     * ASCII digits specifically. `Char.isDigit` follows `Character.isDigit`, which is true for Arabic-Indic and
-     * Devanagari numerals among others, while `createTempFile` fills the middle from `Long.toUnsignedString` and
-     * so only ever emits `0` to `9`. Accepting the wider set would match `store.json.١.tmp`, a name this store
-     * cannot produce, and delete it.
+     * @param name the candidate file's name.
+     * @param prefix this store's temp prefix.
+     * @return true when the name is this store's own temp shape; false otherwise.
      */
     private fun isOwnTemp(
         name: String,

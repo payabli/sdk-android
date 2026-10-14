@@ -50,19 +50,18 @@ public object Retry {
      * `CancellationException` is never caught, so cancellation is never converted into a completion.
      *
      * @param route the route template for logs. Never a resolved path, which may embed an identifier.
+     * @param policy the bounds, the backoff and the optional total budget the retries run under.
+     * @param logger where each retry decision is logged: debug per attempt, warn per stop.
+     * @param timeSource the clock the total budget is measured on. Injected, exactly as [RetryPolicy.jitter]
+     *   is, because a test's virtual scheduler advances `delay` while [TimeSource.Monotonic] reads real
+     *   time; production never passes this.
+     * @param operation one attempt. It must raise the non-2xx itself by throwing, since the transport does not.
+     * @return the value the first successful attempt returns.
      */
     public suspend fun <T> run(
         route: String? = null,
         policy: RetryPolicy = RetryPolicy(),
         logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
-        /**
-         * Injected so a test can drive it, exactly as [RetryPolicy.jitter] is. Production never passes this.
-         *
-         * It has to be injectable because `runTest` advances `delay` and coroutine timeouts on a virtual
-         * scheduler while [TimeSource.Monotonic] keeps reading real time. Left fixed, a virtual backoff
-         * consumed none of the budget under test, so the "every attempt and every backoff wait" guarantee
-         * could not be verified however many tests were pointed at it.
-         */
         timeSource: TimeSource = TimeSource.Monotonic,
         operation: suspend (attempt: Int) -> T,
     ): T {
@@ -101,7 +100,15 @@ public object Retry {
         }
     }
 
-    /** The whole operation ran out of time. Terminal: every throw site sits outside the retry decision. */
+    /**
+     * The whole operation ran out of time. Terminal: every throw site sits outside the retry decision.
+     *
+     * @param logger where the exhaustion is logged.
+     * @param route the route template for the log line, or null for none.
+     * @param policy the policy whose total budget ran out.
+     * @param phase which site ran out: before an attempt, or during one.
+     * @return a NETWORK_ERROR whose reason names the total timeout.
+     */
     private fun budgetExhausted(
         logger: SdkLogger,
         route: String?,
@@ -123,6 +130,14 @@ public object Retry {
      *
      * Every reason to stop funnels through here so each one throws the underlying error rather than
      * something synthesised.
+     *
+     * @param failure the error the attempt that just failed raised.
+     * @param attempt the one-based number of the attempt that just failed.
+     * @param policy the retry bounds, the backoff and the retry-after ceiling the decision reads.
+     * @param logger where each decision is logged.
+     * @param route the route template for the log line, or null for none.
+     * @param startedAt the mark the total budget is measured from.
+     * @return the next attempt's number, waited for first.
      */
     private suspend fun nextAttemptOrThrow(
         failure: PayabliException,
@@ -170,13 +185,24 @@ public object Retry {
         return attempt + 1
     }
 
-    /** Null when no total budget is set. Monotonic, so a wall-clock change cannot distort it. */
+    /**
+     * Monotonic, so a wall-clock change cannot distort it.
+     *
+     * @param policy the policy whose total budget is measured.
+     * @param startedAt the mark the budget is measured from.
+     * @return the budget left, or null when no total budget is set.
+     */
     private fun remainingBudget(
         policy: RetryPolicy,
         startedAt: TimeMark,
     ): Duration? = policy.totalTimeoutMillis?.milliseconds?.minus(startedAt.elapsedNow())
 
-    /** Only a template is loggable; a resolved path may embed an identifier. */
+    /**
+     * Only a template is loggable; a resolved path may embed an identifier.
+     *
+     * @param route the template the call site declared, or null for none.
+     * @return a safe field carrying the template, or a redacted one when there is none.
+     */
     private fun routeField(route: String?): LogField =
         route?.let { LogField.safe("route", it) } ?: LogField.redacted("route", null)
 

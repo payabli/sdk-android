@@ -16,7 +16,12 @@ public class PayInFormValues(
 ) {
     public val values: Map<PayInField, String> = Collections.unmodifiableMap(values.toMap())
 
-    /** The value for a field, or empty when it was never typed into. */
+    /**
+     * The value for a field, or empty when it was never typed into.
+     *
+     * @param field the field asked about.
+     * @return the value for the field, or empty when it was never typed into.
+     */
     public operator fun get(field: PayInField): String = values[field].orEmpty()
 
     override fun equals(other: Any?): Boolean =

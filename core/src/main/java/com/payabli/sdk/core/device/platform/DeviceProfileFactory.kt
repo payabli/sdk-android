@@ -34,7 +34,12 @@ public object DeviceProfileFactory {
 
     private val profile = UsableValueCache<TelemetryDeviceContext> { it.idHash.isNotBlank() }
 
-    /** The device facts, held once the identifier in them has been read. */
+    /**
+     * The device facts, held once the identifier in them has been read.
+     *
+     * @param context the host context, read once for its application package.
+     * @return the device facts, every field blank where there is no device to ask.
+     */
     public fun of(context: Context): TelemetryDeviceContext =
         profile.get {
             TelemetryDeviceContext(

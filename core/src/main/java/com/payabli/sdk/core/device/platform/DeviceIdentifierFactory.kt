@@ -36,6 +36,9 @@ public object DeviceIdentifierFactory {
      *
      * Held once one is read, so a `Settings.Secure` read and a digest run once per process. A blank is read
      * again on the next call.
+     *
+     * @param context the host context, read once for its application package.
+     * @return the identifier, or a blank when the platform offered nothing.
      */
     @SuppressLint("HardwareIds")
     public fun of(context: Context): String = identifier.get { derive(context) }

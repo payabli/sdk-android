@@ -19,7 +19,11 @@ public class PayInStoredMethod(
     public val resultCode: Int?,
     public val resultText: String?,
 ) {
-    /** The identifier charges a card, so it is a credential rather than a label, and it is not in a message. */
+    /**
+     * The identifier charges a card, so it is a credential rather than a label, and it is not in a message.
+     *
+     * @return the type name alone.
+     */
     override fun toString(): String = "PayInStoredMethod"
 }
 
@@ -30,26 +34,31 @@ public class PayInStoredMethod(
  * carries holds none of the three: they exist only in the older response shape this SDK does not use.
  * Declaring them would give a caller three fields that are null on every approval and imply the SDK went
  * looking.
+ *
+ * @property transStatus the transaction's status number, as it is reported on the wire.
+ * @property paypointId the paypoint that took it, by its own key rather than by the entry point a caller configured.
+ * @property netAmount what is left after fees, where the paypoint splits them out.
+ * @property connectorName which processor took it.
  */
 public class PayInTransaction(
     public val paymentTransId: String?,
     public val gatewayTransId: String?,
     public val orderId: String?,
     public val method: String?,
-    /** The transaction's status number, as it is reported on the wire. */
     public val transStatus: Int?,
-    /** The paypoint that took it, by its own key rather than by the entry point a caller configured. */
     public val paypointId: Long?,
     public val totalAmount: BigDecimal?,
-    /** What is left after fees, where the paypoint splits them out. */
     public val netAmount: BigDecimal?,
     public val feeAmount: BigDecimal?,
     public val surchargeFee: BigDecimal?,
-    /** Which processor took it. */
     public val connectorName: String?,
     public val customerId: Long?,
 ) {
-    /** Never the amount or the customer: an identifier is enough to correlate, and the rest is data. */
+    /**
+     * Never the amount or the customer: an identifier is enough to correlate, and the rest is data.
+     *
+     * @return whether a transaction identifier is present.
+     */
     override fun toString(): String = "PayInTransaction(hasTransId=${paymentTransId != null})"
 }
 
@@ -62,16 +71,22 @@ public class PayInTransaction(
  * [reason], [explanation] and [action] are the words beside it. An approval is not always the same act: a
  * void answers `A0003` and calls itself canceled, where a capture answers `A0000`. A caller showing the
  * outcome needs what the service called it, and reducing every approval to its code throws that away.
+ *
+ * @property reason displayable, and never loggable: the same rule [PayInFailure.reason] carries, for the
+ *   same reason.
  */
 public class PayInResult(
     public val code: String,
-    /** Displayable, and never loggable: the same rule [PayInFailure.reason] carries, for the same reason. */
     public val reason: String?,
     public val explanation: String?,
     public val action: String?,
     public val transaction: PayInTransaction?,
 ) {
-    /** The code alone. The three fields above are service text and do not belong in a message or a log. */
+    /**
+     * The code alone. The three fields above are service text and do not belong in a message or a log.
+     *
+     * @return the code alone.
+     */
     override fun toString(): String = "PayInResult(code=$code)"
 }
 
@@ -81,22 +96,19 @@ public class PayInResult(
  * The same type covers a declined transaction, a service error and a refused stored method, because a caller
  * does the same three things with any of them: show [reason], act on [action], and record [code]. Which of
  * the three it was is the exception carrying it.
+ *
+ * @property code the unified response code, `D`-prefixed for a decline and `E`-prefixed for an error.
+ * @property reason displayable, and never loggable: some of these can quote what was submitted.
+ * @property paymentTransId the transaction this failure belongs to, or null where the service named none.
+ *   Carried for every non-approved answer, so a service error names its transaction as a decline does: a
+ *   caller that means to reconcile one reads this whichever kind of failure it holds.
  */
 public class PayInFailure(
-    /** The unified response code, `D`-prefixed for a decline and `E`-prefixed for an error. */
     public val code: String?,
-    /** Displayable, and never loggable: some of these can quote what was submitted. */
     public val reason: String?,
     public val explanation: String?,
     public val action: String?,
     public val httpStatus: Int?,
-    /**
-     * The transaction this failure belongs to, or null where the service named none.
-     *
-     * Carried for every non-approved answer, so a service error names its transaction as a decline does.
-     * A caller that means to reconcile one reads this whichever kind of failure it holds, because either
-     * can leave a transaction behind and this is the only handle on it.
-     */
     public val paymentTransId: String? = null,
 ) {
     override fun toString(): String = "PayInFailure(code=$code, httpStatus=$httpStatus)"
@@ -259,24 +271,20 @@ public sealed class PayInException(
 }
 
 /**
- * The redaction [PayabliException.cause] already is, or a new one standing in for the failure itself.
+ * The redaction [PayabliException.cause] already is, or a new one standing in for the failure itself:
+ * redacting an existing one a second time would name this SDK's own wrapper and carry the frames of the
+ * site that built it. `:core` attaches a raw cause on some paths, redacted here for the first time.
  *
- * Where a failure arrived carrying a redaction, that stand-in is what names the type that actually failed,
- * and redacting it a second time would name this SDK's own wrapper and carry the frames of the site that
- * built it. Not every failure does: `:core` attaches a raw cause on some paths, and one of those is redacted
- * here for the first time, naming the [PayabliException] rather than what it wrapped.
+ * @return the existing redaction, or a new one standing in for the failure itself.
  */
 private fun PayabliException.redactedOnce(): Throwable = cause?.takeIf { it is RedactedFailure } ?: RedactedCause(this)
 
 /**
- * The transaction this failure named, where it named one.
+ * The transaction this failure named, where it named one. The identifier only, and none of the rest of
+ * [PayInFailure]: `reason`, `explanation` and `action` are displayable and never loggable, and a type
+ * whose work is to withhold a message does not republish them in another slot.
  *
- * The identifier only, and none of the rest of [PayInFailure]: `reason`, `explanation` and `action` are
- * displayable and never loggable because they can quote what was submitted, and a type whose work is to
- * withhold a message does not republish them in another slot.
- *
- * [PayInException.Refused] carries one too and is absent here, because a decline is an answer: it never
- * reaches a carrier that reports the outcome as open.
+ * @return the transaction a service error named, or null where none was named.
  */
 private fun PayabliException.namedTransaction(): String? =
     (this as? PayInException.ServiceError)?.failure?.paymentTransId

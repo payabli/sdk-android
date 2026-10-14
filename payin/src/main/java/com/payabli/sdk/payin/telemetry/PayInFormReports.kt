@@ -19,14 +19,22 @@ import com.payabli.sdk.payin.form.telemetryName
 internal class PayInFormReports(
     private val session: TelemetrySessionContext?,
 ) {
-    /** The form appeared. [step] is the operation it was drawn for. */
+    /**
+     * The form appeared. [step] is the operation it was drawn for.
+     *
+     * @param step the step the form was drawn for.
+     */
     fun presented(step: String) {
         record(TelemetryEvents.FORM_PRESENTED) {
             mapOf(TelemetryProperty.STEP.key to step)
         }
     }
 
-    /** The payer submitted it, before anything is sent. */
+    /**
+     * The payer submitted it, before anything is sent.
+     *
+     * @param step the step the form was submitted for.
+     */
     fun submitted(step: String) {
         record(TelemetryEvents.FORM_SUBMITTED) {
             mapOf(TelemetryProperty.STEP.key to step)
@@ -34,10 +42,10 @@ internal class PayInFormReports(
     }
 
     /**
-     * One report per field the service refused.
+     * One report per field the service refused. Not from the field boxes: a rule there answers on
+     * every keystroke and calls a half-typed number too short.
      *
-     * Not from the field boxes: a rule there answers on every keystroke and calls a half-typed number too
-     * short.
+     * @param refused the fields the service refused, with what it said.
      */
     fun refusedFields(refused: Map<PayInField, PayInFieldError>) {
         refused.forEach { (field, rejection) ->

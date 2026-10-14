@@ -19,16 +19,13 @@ import java.util.Collections
  *
  * [baseUrl] is a `String` rather than a `java.net.URL` because `URL.equals` and `URL.hashCode` resolve
  * host names, which their own documentation calls a blocking operation.
+ *
+ * @property name the identifier, lowercase. One spelling for the runner argument, the Gradle property
+ *   and the reported value, so none of the three needs a table mapping it to the others.
+ * @property baseUrl the origin for this environment, with no trailing path.
  */
 public class PayabliEnvironment private constructor(
-    /**
-     * The identifier, lowercase.
-     *
-     * One spelling for the runner argument, the Gradle property and the reported value, so none of the
-     * three needs a table mapping it to the others.
-     */
     public val name: String,
-    /** Origin for this environment, with no trailing path. */
     public val baseUrl: String,
 ) {
     override fun toString(): String = name
@@ -57,11 +54,11 @@ public class PayabliEnvironment private constructor(
         public val entries: List<PayabliEnvironment> = listedWith(EXTRA_ENVIRONMENTS)
 
         /**
-         * [entries] for a given list of added environments.
+         * [entries] for a given list of added environments, separate from it because the added list is
+         * fixed at build time, so a test on a build that added none cannot reach the appending at all.
          *
-         * Separate from [entries] because the added list is fixed at build time, so a test on a build that
-         * added none cannot reach the appending at all: every assertion about ordering would pass on the
-         * empty case and say nothing about the one that matters. Its production caller is [entries].
+         * @param extra the build-added environments, each an identifier and an origin.
+         * @return the two committed environments first, then the added ones, unmodifiable.
          */
         @JvmSynthetic
         internal fun listedWith(extra: List<Pair<String, String>>): List<PayabliEnvironment> =
@@ -69,7 +66,12 @@ public class PayabliEnvironment private constructor(
                 listOf(SANDBOX, PRODUCTION) + extra.map { (name, baseUrl) -> PayabliEnvironment(name, baseUrl) },
             )
 
-        /** The environment [name] names, trimmed and case-insensitive, or null when nothing does. */
+        /**
+         * The environment [name] names, trimmed and case-insensitive, or null when nothing does.
+         *
+         * @param name the identifier as the caller spells it, trimmed and read case-insensitively.
+         * @return the environment [name] names, or null when nothing does.
+         */
         @JvmStatic
         public fun named(name: String): PayabliEnvironment? {
             val wanted = name.trim()

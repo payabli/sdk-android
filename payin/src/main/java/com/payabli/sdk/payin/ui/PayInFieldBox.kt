@@ -45,13 +45,15 @@ import com.payabli.sdk.payin.form.schemeName
 import com.payabli.sdk.payin.model.ExpiryValue
 
 /**
- * One field, whichever kind it is.
+ * One field, whichever kind it is. The caller holds the text; this reports what was typed.
+ * Two error sources, one path: a rule reads the value in the box and a rejection is about the
+ * value that was sent, and the rule wins where both speak.
  *
- * The caller holds the text; this reports what was typed. It keeps only whether a secret is revealed
- * and whether the picker is open.
- *
- * Two error sources, one path. A rule reads the value in the box and a rejection is about the value that was
- * sent, and the rule wins where both speak: a payer editing a marked field is answering the rule.
+ * @param field the field this box draws.
+ * @param value what the box holds.
+ * @param context the form's drawing context.
+ * @param onValueChange where an edit goes.
+ * @param modifier the layout modifier.
  */
 @Composable
 internal fun PayInFieldBox(
@@ -258,12 +260,13 @@ private fun ChoiceField(
 }
 
 /**
- * The scheme a card number names, drawn in the field.
+ * The scheme a card number names, drawn in the field: the scheme's mark where there is one, and
+ * its name where there is not. Null for every other field, and for a number that names no scheme yet.
  *
- * The scheme's mark where there is one, and its name where there is not: UnionPay has no artwork in this SDK,
- * and the web surfaces show a generic card glyph for it.
- *
- * Null for every other field, and for a number that names no scheme yet.
+ * @param field the field this badge draws in.
+ * @param value what the field holds.
+ * @param context the form's drawing context.
+ * @return the badge, or null where none is drawn.
  */
 private fun brandBadge(
     field: PayInField,
@@ -289,7 +292,11 @@ private fun brandBadge(
     }
 }
 
-/** The scheme's own artwork, or null where this SDK carries none. */
+/**
+ * The scheme's own artwork, or null where this SDK carries none.
+ *
+ * @return the artwork's resource, or null where there is none.
+ */
 @DrawableRes
 private fun CardBrand.markResource(): Int? =
     when (this) {
@@ -303,9 +310,11 @@ private fun CardBrand.markResource(): Int? =
     }
 
 /**
- * Material's floating label, or none.
+ * Material's floating label, or none. A hidden label is drawn in neither place.
  *
- * A hidden label is drawn in neither place.
+ * @param field the field the label names.
+ * @param label the field's label.
+ * @return the floating label, or null for none.
  */
 private fun PayInFormContext.floatingLabel(
     field: PayInField,
@@ -313,12 +322,14 @@ private fun PayInFormContext.floatingLabel(
 ): (@Composable () -> Unit)? = if (configuration.showsFloatingLabelFor(field)) ({ Text(label) }) else null
 
 /**
- * Names the control for a screen reader, where Material does not.
+ * Names the control for a screen reader, where Material does not: this form draws a field's label
+ * as a sibling `Text` under the default layout, or not at all when hidden, and a sibling is its
+ * own semantics node, so a reader lands on the box and announces no field name.
  *
- * Material takes a field's accessible name from its `label`, and this form draws that label as a
- * sibling `Text` under the default layout, or not at all when it is hidden. A sibling is its own
- * semantics node, so a screen reader lands on the box and announces no field name. Where Material
- * does supply the label, adding this would have it announced twice.
+ * @param context the form's drawing context.
+ * @param field the field the control draws.
+ * @param label the field's label.
+ * @return the modifier, carrying the field's name where Material does not.
  */
 private fun Modifier.fieldName(
     context: PayInFormContext,
@@ -326,10 +337,19 @@ private fun Modifier.fieldName(
     label: String,
 ): Modifier = if (context.configuration.showsFloatingLabelFor(field)) this else semantics { contentDescription = label }
 
-/** Carries the message a sighted payer reads under the field into the control's own semantics. */
+/**
+ * Carries the message a sighted payer reads under the field into the control's own semantics.
+ *
+ * @param message the field's error message, or null when the field is clean.
+ * @return the modifier, carrying the message when there is one.
+ */
 private fun Modifier.invalid(message: String?): Modifier = if (message == null) this else semantics { error(message) }
 
-/** Material's own colors unless the caller supplied a set. */
+/**
+ * Material's own colors unless the caller supplied a set.
+ *
+ * @return the caller's colors, or Material's own.
+ */
 @Composable
 private fun PayInFormContext.fieldColors() = style.fieldColors ?: OutlinedTextFieldDefaults.colors()
 

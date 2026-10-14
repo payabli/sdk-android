@@ -35,8 +35,13 @@ import java.util.Locale
 
 /**
  * Picks a month and a year. Two lists, because Material has a date picker and no month picker.
- *
  * [ExpiryChoices] decides what they may contain.
+ *
+ * @param today the current month and year.
+ * @param initial the expiry the field held, or null for the current month.
+ * @param style the form's style.
+ * @param onPicked where the picked expiry goes.
+ * @param onDismiss called when the picker is dismissed without picking.
  */
 @Composable
 internal fun ExpiryPickerDialog(

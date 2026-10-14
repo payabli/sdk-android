@@ -20,32 +20,30 @@ private const val MAX_ROUNDABLE_SCALE = 1_000L
 private const val MAX_INTEGER_DIGITS = 1_000L
 
 /**
- * Whether `setScale` can round this value without raising, which it does at both extremes of the exponent.
+ * Whether `setScale` can round this value without raising, which it does at both extremes of the
+ * exponent. Reads `precision` and `scale` rather than the expanded value, so an absurd one costs
+ * nothing to refuse. Zero rescales at any scale.
  *
- * Reads `precision` and `scale` rather than the expanded value, so an absurd one costs nothing to refuse.
- * Zero rescales at any scale, because it short-circuits.
+ * @return true when rounding cannot raise; false otherwise.
  */
 internal fun BigDecimal.isRoundable(): Boolean =
     signum() == 0 ||
         (scale().toLong() <= MAX_ROUNDABLE_SCALE && precision().toLong() - scale().toLong() <= MAX_INTEGER_DIGITS)
 
 /**
- * The value as it will be written, so a check and the wire agree on what the amount is.
+ * The value as it will be written, so a check and the wire agree on what the amount is. Validation
+ * reads this rather than the value as supplied: `0.001` is more than zero and is sent as `0.00`.
  *
- * Validation reads this rather than the value as supplied: `0.001` is more than zero and is sent as `0.00`.
+ * @return the value at the wire's two decimal places.
  */
 internal fun BigDecimal.atWireScale(): BigDecimal = setScale(AMOUNT_SCALE, RoundingMode.HALF_UP)
 
 /**
- * The value as it will be sent, or null when the wire type could not hold it.
+ * The value as it will be sent, or null when the wire type could not hold it — a `decimal`
+ * mantissa of 96 bits, so at two decimal places the largest it holds is
+ * `792281625142643375935439503.35`. The bound is on the **rounded** value, the one sent.
  *
- * The bound is on the **rounded** value, because that is what goes on the wire: `10.` followed by
- * twenty-nine zeros is sendable as `10.00`, and twenty-nine digits with cents is not, however either one
- * was written. These fields travel as a `decimal`, whose mantissa is 96 bits, so at two decimal places
- * the largest it holds is `792281625142643375935439503.35`. Nothing narrows that further beyond refusing
- * zero, so the type is the only bound there is.
- *
- * A value [isRoundable] refuses is not sendable. Zero is sendable at any scale.
+ * @return the value at the wire's scale, or null when the wire type could not hold it.
  */
 internal fun BigDecimal.sendableOrNull(): BigDecimal? {
     if (!isRoundable()) return null

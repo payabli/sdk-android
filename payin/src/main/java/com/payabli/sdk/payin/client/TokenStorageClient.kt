@@ -38,6 +38,12 @@ internal class TokenStorageClient(
      *
      * The bytes carrying the card or account number are overwritten once the request has been written, in a
      * `finally` **after** the call: credential recovery may replay it inside the transport and needs them.
+     *
+     * @param entryPoint the partner integration point the method is stored against.
+     * @param instrument the method to store.
+     * @param options everything about storing a method other than the instrument.
+     * @param entered what the payer typed, for the customer data.
+     * @return the stored method, identified for later use.
      */
     suspend fun storeMethod(
         entryPoint: String,
@@ -164,7 +170,11 @@ internal class TokenStorageClient(
     }
 }
 
-/** Only the flags that were set. An absent flag lets the paypoint's own default decide. */
+/**
+ * Only the flags that were set. An absent flag lets the paypoint's own default decide.
+ *
+ * @return the query pairs the store route takes.
+ */
 private fun PayInStoreOptions.query(): List<Pair<String, String>> =
     buildList {
         achValidation?.let { add(PayInRoutes.QUERY_ACH_VALIDATION to it.wire()) }

@@ -69,6 +69,8 @@ public class EventMulticaster<T : Any> {
      * Not `suspend`, and cannot fail: [BufferOverflow.DROP_OLDEST] makes the emit always succeed by
      * discarding the oldest buffered value instead of waiting for room. Callers therefore need no failure
      * branch, which is what keeps an event emission out of a payment path's error handling.
+     *
+     * @param event the value to deliver.
      */
     public fun emit(event: T) {
         sink.tryEmit(event)

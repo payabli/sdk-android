@@ -121,17 +121,13 @@ internal class PayabliAuth(
         get() = finished
 
     /**
-     * Marks this instance finished when [token] is still the credential it would send **and** no refresh is
-     * in flight, and reports whether it did.
+     * Marks this instance finished when [token] is still the credential it would send **and** no
+     * refresh is in flight, and reports whether it did — currency alone is not enough, the token
+     * being replaced staying current until the refresh commits. Deciding and recording are one.
      *
-     * Two conditions rather than one, because "still current" does not mean "nothing is about to replace
-     * it". A claim is taken before the provider is called and [currentToken] is only written when the
-     * refresh commits, so throughout a refresh the token being replaced is still the current one. A caller
-     * that checked currency alone would finish on evidence about a credential already on its way out.
-     *
-     * Deciding and recording happen in one lock acquisition, so a refresh cannot begin between them. That
-     * is what makes the guarantee in [invalidateAndRefresh] hold: nothing is set while a refresh runs, and
-     * nothing runs after it is set.
+     * @param token the credential the rejection arrived on.
+     * @param failure the failure that finished the instance.
+     * @return true when the instance was marked finished; false otherwise.
      */
     internal suspend fun finishIfSettledOn(
         token: String,
@@ -143,22 +139,21 @@ internal class PayabliAuth(
             true
         }
 
-    /** Marks this instance finished outright, for a failure no rotation could have fixed. */
+    /**
+     * Marks this instance finished outright, for a failure no rotation could have fixed.
+     *
+     * @param failure the failure that finished the instance.
+     */
     internal suspend fun finish(failure: PayabliException) {
         mutex.withLock { finished = failure }
     }
 
     /**
-     * The token to send now, minting one if this instance holds none yet.
+     * The token to send now, minting one if this instance holds none yet. Mints rather than refreshes: a
+     * first read has nothing to replace, so a rejection still goes through [invalidateAndRefresh]. A held
+     * token is returned before a terminal failure is consulted.
      *
-     * Mints rather than refreshes: a first read has nothing to replace, so a rejection still goes through
-     * [invalidateAndRefresh]. It takes the same claim a refresh does, which is what makes concurrent first
-     * readers share one provider call instead of one each.
-     *
-     * **A held token is returned before a terminal failure is consulted**, which is the opposite order from
-     * [invalidateAndRefresh] and is deliberate. Reading is not what reaches the provider, so an instance
-     * that has given up still answers with the credential it holds, and refusal is for the case where there
-     * is nothing to answer with.
+     * @return the token to send now, held or minted.
      */
     @JvmSynthetic
     internal suspend fun accessToken(): String {
@@ -184,19 +179,12 @@ internal class PayabliAuth(
     }
 
     /**
-     * Reports [rejectedToken] as refused and returns the token to use instead.
+     * Reports [rejectedToken] as refused and returns the token to use instead: finished refuses,
+     * already rotated answers, a refresh in flight is joined, otherwise this caller runs the
+     * provider. The claim is created here alone, so once [finished] is set no caller reaches it.
      *
-     * Passing the token that was actually rejected is what makes a staggered rejection cheap: two
-     * requests sent with the same token can have their 401s arrive far apart, and the later one must not
-     * refresh again on a token that has already rotated. That would discard the rotation the first one
-     * obtained.
-     *
-     * So: finished refuses outright, already rotated returns the current token untouched, a refresh in
-     * flight joins it and shares its outcome, and otherwise this caller runs the provider.
-     *
-     * **This block is the only place a claim is created, which is what makes the refusal complete.** Once
-     * [finished] is set no caller can reach the provider, whatever stage it had already got to elsewhere,
-     * so the host's broker is never called again after this instance is done.
+     * @param rejectedToken the token the service refused, the one actually sent.
+     * @return the token to use instead, minted or held.
      */
     @JvmSynthetic
     internal suspend fun invalidateAndRefresh(rejectedToken: String): String {
@@ -237,7 +225,13 @@ internal class PayabliAuth(
         }
     }
 
-    /** [rejectedToken] is null for a first mint, which has nothing to have been refused. */
+    /**
+     * [rejectedToken] is null for a first mint, which has nothing to have been refused.
+     *
+     * @param refresh the claim and provider call this run owns.
+     * @param rejectedToken the token this run replaces, or null for a first mint.
+     * @return the fresh token, committed before it returns.
+     */
     private suspend fun runRefresh(
         refresh: Refresh,
         rejectedToken: String?,
@@ -329,7 +323,12 @@ internal class PayabliAuth(
         return fresh
     }
 
-    /** Anything the provider raised, redacted: it is host code, whatever type it chose to throw. */
+    /**
+     * Anything the provider raised, redacted: it is host code, whatever type it chose to throw.
+     *
+     * @param failure what the provider raised.
+     * @return the redacted failure.
+     */
     private fun providerFailure(failure: Throwable): PayabliGenericException =
         PayabliGenericException(
             PayabliErrorType.TOKEN_PROVIDER_FAILED,
@@ -337,7 +336,12 @@ internal class PayabliAuth(
             cause = RedactedCause(failure),
         )
 
-    /** Releases the claim and hands [outcome] to the waiters, then throws it. */
+    /**
+     * Releases the claim and hands [outcome] to the waiters, then throws it.
+     *
+     * @param shared the claim to release.
+     * @param outcome the failure the waiters are handed.
+     */
     private suspend fun fail(
         shared: CompletableDeferred<String>,
         outcome: PayabliGenericException,
@@ -349,11 +353,12 @@ internal class PayabliAuth(
 
     /**
      * Cleanup runs under [NonCancellable] because liveness depends on it: a claim left set with nobody to
-     * complete it wedges every later reader and refresh.
+     * complete it wedges every later reader and refresh. Whether `withLock` observes an already-cancelled
+     * job depends on whether it has to suspend, and correctness must not rest on which path it takes.
      *
-     * Whether `withLock` observes an already-cancelled job depends on whether it has to suspend, since a
-     * cancellable function only checks at a suspension point and the uncontended path does not suspend.
-     * Correctness must not rest on which path it happens to take.
+     * @param shared the claim to release.
+     * @param outcome what the waiters are handed.
+     * @return true when the completers were told, for the caller that held the lock.
      */
     private suspend fun finish(
         shared: CompletableDeferred<String>,
@@ -364,12 +369,11 @@ internal class PayabliAuth(
     }
 
     /**
-     * Non-null only when this coroutine is inside this instance's provider call for the refresh it still
-     * has in flight.
-     *
-     * The refresh is named as well as the holder: a mark reaches a coroutine that outlived the refresh
-     * that set it only through a scope built from the calling context, and answering on such a mark would
+     * Non-null only when this coroutine is inside this instance's provider call for the refresh
+     * it still has in flight: answering on a mark that outlived the refresh that set it would
      * hand a caller the very token it had just reported rejected.
+     *
+     * @return the token this instance already holds, or null outside one of its own refreshes.
      */
     private suspend fun reentrantToken(): String? {
         val marks = currentCoroutineContext()[RefreshInProgress]?.marks ?: return null

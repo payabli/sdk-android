@@ -41,6 +41,7 @@ public interface DeviceKey {
      *
      * **Within one process**, as everywhere else in this SDK. See [sign].
      *
+     * @return the public point and the identifier naming it, from one observation.
      * @throws DeviceKeyException if the key is gone or the key store cannot be reached.
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
@@ -67,6 +68,8 @@ public interface DeviceKey {
      * The signature is DER rather than the raw `R || S` pair, because that is what the verifier expects; the
      * two are the same numbers in different envelopes and are not interchangeable.
      *
+     * @param payload the bytes to sign.
+     * @return the DER signature with the identity of the key that made it.
      * @throws DeviceKeyException if the key is gone, the key store cannot be reached, or signing fails.
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
@@ -106,17 +109,22 @@ public interface DeviceKey {
  *
  * Registration sends both. Read separately they can describe two different keys, leaving a point that no
  * assertion under that identifier can ever verify against.
+ *
+ * @property point the public point in X9.62 uncompressed form, `0x04 || X || Y`, 65 bytes.
+ * @property identity the identifier this key is known by on the wire: the JWK thumbprint of [point].
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class DevicePublicKey(
-    /** The public point in X9.62 uncompressed form, `0x04 || X || Y`, 65 bytes. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val point: ByteArray,
-    /** The identifier this key is known by on the wire: the JWK thumbprint of [point]. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val identity: String,
 ) {
-    /** Never the point or the identity: both are device identity. */
+    /**
+     * Never the point or the identity: both are device identity.
+     *
+     * @return the type name alone.
+     */
     override fun toString(): String = "DevicePublicKey()"
 }
 
@@ -125,16 +133,21 @@ public class DevicePublicKey(
  *
  * Separate values would let a caller pair a signature with an identity taken before or after a replacement.
  * This type exists so that pairing is done once, where the key is read, rather than at every call site.
+ *
+ * @property signature the DER ECDSA signature over the payload.
+ * @property identity the signing key's identity: the JWK thumbprint of its public half, as [DevicePublicKey.identity].
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class DeviceSignature(
-    /** The DER ECDSA signature over the payload. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val signature: ByteArray,
-    /** The signing key's identity: the JWK thumbprint of its public half, as [DevicePublicKey.identity]. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val identity: String,
 ) {
-    /** Never the signature or the identity: both are device identity. */
+    /**
+     * Never the signature or the identity: both are device identity.
+     *
+     * @return the type name alone.
+     */
     override fun toString(): String = "DeviceSignature()"
 }

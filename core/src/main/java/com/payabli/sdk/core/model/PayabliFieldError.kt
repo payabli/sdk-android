@@ -17,6 +17,10 @@ public class PayabliFieldError(
     public val message: String,
     public val suggestion: String? = null,
 ) {
-    /** Server text; may echo the submitted value. Never logged. */
+    /**
+     * Server text; may echo the submitted value. Never logged.
+     *
+     * @return whether a suggestion was carried, never the server text.
+     */
     override fun toString(): String = "PayabliFieldError(hasSuggestion=${suggestion != null})"
 }

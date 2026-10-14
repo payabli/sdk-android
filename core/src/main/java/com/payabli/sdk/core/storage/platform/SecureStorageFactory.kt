@@ -26,26 +26,15 @@ internal object SecureStorageFactory {
     const val DEFAULT_FILE_NAME: String = "payabli-secure-store.json"
 
     /**
-     * One alias per backing file, from the **whole** file's identity, with no way for a caller to choose otherwise.
+     * One alias per backing file, from the **whole** file's identity, with no way for a caller to choose
+     * otherwise: across stores, keys must not be shared, and [StoreIdentity] is the single answer. A store
+     * that moves is a new store, and a path that cannot be resolved raises StorageUnavailable.
      *
-     * Within a store every value does share one key, each write still getting its own IV with each blob bound to
-     * its entry name. **Across** stores they must not. A `keyAlias` parameter used to allow the collision
-     * outright; deriving from `fileName` alone still allowed it, because `directory` is equally part of what
-     * identifies a file, so `create(dirA)` and `create(dirB)` on the default name shared one alias while holding
-     * separate locks, keyed by path. Either way one store could replace the key the other's ciphertext was sealed
-     * under, and the survivor's presence check would pass against a different key. [StoreIdentity] closes it by
-     * being the single answer to which store this is, shared with the lock and the temporary-file prefix.
-     *
-     * **A store that moves is a new store.** The alias follows the canonical path, so relocating the file orphans
-     * its key: the old blobs read as `KeyInvalidated`, the store clears, and the next write provisions again.
-     * Correct for ciphertext the caller can re-obtain, and the same outcome as an uninstall, but decide the
-     * directory with it in mind.
-     *
-     * Pass `Context.noBackupFilesDir` for [directory]: it keeps ciphertext out of backup and device transfer
-     * without the host app adding manifest rules.
-     *
-     * **This can fail.** The store's identity is resolved here, once, and a path that cannot be resolved raises
-     * `SecureStorageException.StorageUnavailable` rather than being answered with a second identity.
+     * @param directory the directory the store file lives in; `Context.noBackupFilesDir` keeps ciphertext out of backup.
+     * @param dispatcher where the store's blocking work runs.
+     * @param fileName the store file's name.
+     * @param logger where the store's lifecycle is logged.
+     * @return the store, its identity resolved once here.
      */
     fun create(
         directory: File,
@@ -55,12 +44,14 @@ internal object SecureStorageFactory {
     ): PayabliSecureStorage = open(directory, dispatcher, fileName, logger).storage
 
     /**
-     * The store together with the identity it was built from, for a caller that needs the identity as well.
+     * The store together with the identity it was built from, for a caller that needs the identity as well:
+     * [create] discards it, and resolving it a second time is the split [StoreIdentity] exists to prevent.
      *
-     * [create] discards it, which is right for a caller that only wants the store, and wrong for one that has
-     * to serialise against the same store: resolving it a second time is the split [StoreIdentity] exists to
-     * prevent, reappearing at a new composition point. A path whose canonical target changes between the two
-     * calls would hand one consumer one identity and the other a different one.
+     * @param directory the directory the store file lives in.
+     * @param dispatcher where the store's blocking work runs.
+     * @param fileName the store file's name.
+     * @param logger where the store's lifecycle is logged.
+     * @return the store and the identity it was built from, resolved once.
      */
     fun open(
         directory: File,
@@ -92,9 +83,19 @@ internal object SecureStorageFactory {
         val identity: String,
     )
 
-    /** The alias for an already-resolved identity, which is what [create] uses so nothing resolves twice. */
+    /**
+     * The alias for an already-resolved identity, which is what [create] uses so nothing resolves twice.
+     *
+     * @param identity the store's resolved identity.
+     * @return the per-store alias, under the [KEY_ALIAS_PREFIX].
+     */
     fun aliasFor(identity: String): String = "$KEY_ALIAS_PREFIX.$identity"
 
-    /** The alias [create] will use for [file]. Exposed so a test can assert two stores do not share one. */
+    /**
+     * The alias [create] will use for [file]. Exposed so a test can assert two stores do not share one.
+     *
+     * @param file the store's backing file.
+     * @return the per-store alias for the file's identity.
+     */
     fun aliasFor(file: File): String = aliasFor(StoreIdentity.of(file))
 }

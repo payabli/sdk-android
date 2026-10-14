@@ -11,10 +11,11 @@ import androidx.annotation.RestrictTo
  * Every [tag] must be at most [MAX_TAG_LENGTH] characters: `Log.isLoggable` documents
  * `IllegalArgumentException` for a longer tag on API 25 and below, and this module's floor is 23.
  * `LogCategoryTagTest` enforces it.
+ *
+ * @property tag the logcat tag for this category. Never longer than [MAX_TAG_LENGTH].
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public enum class LogCategory(
-    /** The logcat tag for this category. Never longer than [MAX_TAG_LENGTH]. */
     public val tag: String,
 ) {
     CORE("PayabliCore"),
