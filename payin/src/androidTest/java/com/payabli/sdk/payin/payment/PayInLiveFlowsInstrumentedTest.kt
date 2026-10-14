@@ -6,6 +6,7 @@ import com.payabli.sdk.core.HostBindings
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliServerException
 import com.payabli.sdk.payin.ManualDeviceTest
@@ -27,6 +28,7 @@ import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.model.PayInTransactionStatus
 import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +37,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -218,6 +221,45 @@ class PayInLiveFlowsInstrumentedTest {
             val voided = flow.voidTransaction(transId!!).orFail("voiding an authorization")
 
             assertApproved(voided.code)
+        }
+
+    /** A read reports each state the transaction passes through: held, then reversed. */
+    @Test
+    fun readingAnAuthorizationBackBeforeAndAfterVoidingIt() =
+        runBlocking {
+            val authorized = flow.authorize(transaction(), card()).orFail("authorizing a card")
+            val transId = authorized.transaction?.paymentTransId
+            assertNotNull("an approval with no transaction to read: $authorized", transId)
+            assertTrue(flow.consume())
+
+            val held = flow.readTransaction(transId!!).orFail("reading an authorization back")
+            assertEquals(PayInTransactionStatus.Authorized, held.status)
+            assertEquals(transId, held.paymentTransId)
+
+            flow.voidTransaction(transId).orFail("voiding an authorization")
+            val reversed = flow.readTransaction(transId).orFail("reading a void back")
+            assertEquals(PayInTransactionStatus.Voided, reversed.status)
+        }
+
+    @Test
+    fun readingACaptureBack() =
+        runBlocking {
+            val captured = flow.capture(transaction(), card()).orFail("capturing a card")
+            val transId = captured.transaction?.paymentTransId
+            assertNotNull("an approval with no transaction to read: $captured", transId)
+            assertTrue(flow.consume())
+
+            val read = flow.readTransaction(transId!!).orFail("reading a capture back")
+
+            assertEquals(PayInTransactionStatus.Captured, read.status)
+        }
+
+    @Test
+    fun readingAnIdentifierWithNothingVisibleUnderIt() =
+        runBlocking {
+            val failure = flow.readTransaction("0-not-a-transaction").exceptionOrNull() as? PayabliException
+
+            assertEquals(PayabliErrorType.TRANSACTION_NOT_FOUND, failure?.type)
         }
 
     /**
