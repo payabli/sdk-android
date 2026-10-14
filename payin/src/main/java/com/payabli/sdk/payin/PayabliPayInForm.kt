@@ -63,7 +63,7 @@ import com.payabli.sdk.payin.ui.PayInSubmitText
  * @param labels wording decided at runtime; anything left out or blank comes from string resources.
  * @param style null takes `LocalPayInFormStyle`, then the host's theme.
  * @param onCompleted the service accepted it.
- * @param onFailed it did not go through, with the typed cause and the fields the service rejected.
+ * @param onFailed it did not complete, with the typed cause and the fields the service rejected; where the outcome is unknown the cause is `Unsettled` and the payment may have been taken.
  * @param onMethodChanged the displayed method moved, by a payer switch or a configuration change; the values do not cross into the callback.
  */
 @Composable
