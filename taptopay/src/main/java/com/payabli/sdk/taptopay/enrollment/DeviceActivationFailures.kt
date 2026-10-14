@@ -39,6 +39,8 @@ internal class DeviceActivationFailures(
                 DeviceActivationException.AttestationRevoked(resultCode, reason)
             resultCode == HttpURLConnection.HTTP_NOT_FOUND && reason == DEVICE_NOT_FOUND ->
                 DeviceActivationException.DeviceUnknown(resultCode, reason)
+            resultCode == HttpURLConnection.HTTP_CONFLICT && reason == CREDENTIAL_MISMATCH ->
+                DeviceActivationException.CredentialMismatch(resultCode, reason)
             resultCode == HttpURLConnection.HTTP_FORBIDDEN && reason == NOT_PENDING ->
                 DeviceActivationException.DeviceNotPending(resultCode, reason)
 
@@ -79,6 +81,9 @@ internal class DeviceActivationFailures(
         /** Sent without a final period. */
         const val ATTESTATION_REVOKED = "Device not attested or attestation revoked"
         const val DEVICE_NOT_FOUND = "Device not found."
+
+        /** Sent without a final period. */
+        const val CREDENTIAL_MISMATCH = "Attestation credential mismatch"
 
         /** The fixed body and header complaints. Every one is an SDK defect, not a merchant action. */
         val MALFORMED_REQUEST =

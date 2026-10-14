@@ -70,6 +70,7 @@ class TapToPayErrorCodesTest {
             DeviceActivationException.DeviceUnknown(404, "refused") to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             DeviceActivationException.NotEnrolled() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             DeviceActivationException.RegistrationReplaced() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
+            DeviceActivationException.CredentialMismatch(409, "refused") to PayabliErrorType.CONFLICT,
             DeviceActivationException.Unclassified(400, "refused") to PayabliErrorType.UNKNOWN,
             SecureStorageException.CryptoUnavailable() to PayabliErrorType.DEVICE_KEY_UNAVAILABLE,
             SecureStorageException.StorageUnavailable() to PayabliErrorType.DEVICE_KEY_UNAVAILABLE,

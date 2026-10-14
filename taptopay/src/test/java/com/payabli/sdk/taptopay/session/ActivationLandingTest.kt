@@ -87,7 +87,8 @@ class ActivationLandingTest {
                 "Assertion verification failed: timestamp outside the accepted window",
                 PayabliErrorType.DEVICE_SETUP_REQUIRED,
             ),
-            Refusal(409, "Attestation credential mismatch", PayabliErrorType.UNKNOWN),
+            Refusal(409, "Attestation credential mismatch", PayabliErrorType.CONFLICT),
+            Refusal(409, "Attestation credential mismatch.", PayabliErrorType.UNKNOWN),
             Refusal(400, "a refusal nobody has written down", PayabliErrorType.UNKNOWN),
         )
 

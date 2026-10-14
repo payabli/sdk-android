@@ -146,11 +146,8 @@ internal sealed class DeviceActivationException(
         )
 
     /**
-     * There is no live attestation for this device and key.
-     *
-     * **The one outcome that discards the stored identity.** Also fires when the credential changed between
-     * attesting and activating, since an attestation is valid only for the credential that obtained it; the
-     * remedy is the same either way.
+     * There is no live attestation for this device and key, so the stored identity is discarded. A live one
+     * held under another credential is [CredentialMismatch] instead.
      */
     class AttestationRevoked(
         resultCode: Int?,
@@ -168,6 +165,16 @@ internal sealed class DeviceActivationException(
     ) : DeviceActivationException(
             "the configured entry point cannot be used with this access token; check the entry point in " +
                 "PayabliConfig and the token your tokenProvider returns",
+            resultCode,
+            reason,
+        )
+
+    /** A live attestation for this device is held under another credential. Discards nothing. */
+    class CredentialMismatch(
+        resultCode: Int?,
+        reason: String,
+    ) : DeviceActivationException(
+            "this device is attested under another credential",
             resultCode,
             reason,
         )
