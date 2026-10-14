@@ -428,10 +428,9 @@ class CaptureViewModel(
      * again: what tells two rows from one device apart is the order identifier, which carries the second.
      */
     fun startOver() {
-        // Synchronously, before anything is replaced. A void in flight is about the transaction this screen is
-        // showing, and clearing it here would leave that coroutine writing its outcome over the next attempt:
-        // a reversal reported against a payment that had not been taken yet. A read is the same, reporting a
-        // status against the next payment.
+        // Synchronously, before anything is replaced. A void or a read in flight is about the transaction this
+        // screen is showing, and clearing it here would leave that coroutine writing its outcome over the next
+        // attempt, against a payment that had not been taken yet.
         if (_uiState.value.isVoiding || _uiState.value.isReading) return
         _uiState.update {
             val attempt = attempt(SampleAmount.random())

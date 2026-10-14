@@ -19,10 +19,9 @@ import kotlinx.serialization.KSerializer
 import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 
 /**
- * Runs [AuthRecoveryPolicy]: one 401, one refresh, one replay, second 401 terminal. Mechanism only, so
- * what counts as a rejection is the policy's and what may be replayed is this class's, because the policy
- * is `open`. The bearer is `BearerDecoration`'s inside [base]'s chain; a pinned request and a refused caller are read
- * here.
+ * Runs [AuthRecoveryPolicy]: one 401, one refresh, one replay, second 401 terminal. What counts as a
+ * rejection is the policy's; what may be replayed, a pinned request and a refused caller are this class's,
+ * because the policy is `open`. The bearer is `BearerDecoration`'s, inside [base]'s chain.
  *
  * @property logger where the replay and pin decisions are logged, [LogCategory.NETWORK] because they are this layer's.
  * @property onAuthFailure told only when auth is finished for good. See [AuthFailureListener] for why it is told rather than inferred.
