@@ -17,7 +17,7 @@ class PayInTransactionStatusTest {
                 2 to PayInTransactionStatus.Declined,
                 3 to PayInTransactionStatus.Declined,
                 5 to PayInTransactionStatus.Voided,
-                -2 to PayInTransactionStatus.Returned,
+                -2 to PayInTransactionStatus.Blocked,
                 -1 to PayInTransactionStatus.Failed,
                 0 to PayInTransactionStatus.Failed,
             )

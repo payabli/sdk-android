@@ -3,33 +3,33 @@ package com.payabli.sdk.payin.model
 /**
  * What became of a transaction.
  *
- * A settled status will not change. [Initiated], [Authorized], [Failed] and [Other] are not settled and may change,
- * so read the transaction again before acting on one of them.
+ * Each status says whether its outcome is known. Where it is not, the status may still change, so read the
+ * transaction again before acting on it.
  */
 public sealed class PayInTransactionStatus {
-    /** Opened and not yet charged. Not settled. */
+    /** Opened and not yet charged. Outcome not known. Wire status 10. */
     public data object Initiated : PayInTransactionStatus()
 
-    /** Held, and waiting to be captured or released. Not settled. */
+    /** Held, and waiting to be captured or released. Outcome not known. Wire status 11. */
     public data object Authorized : PayInTransactionStatus()
 
-    /** Charged. Settled. */
+    /** Paid. Outcome known, and it can still be voided until its batch closes. Wire status 1. */
     public data object Captured : PayInTransactionStatus()
 
-    /** Refused by the processor. Settled. */
+    /** Not paid: the card or account was declined. Outcome known. Wire statuses 2 and 3. */
     public data object Declined : PayInTransactionStatus()
 
-    /** Reversed before it settled. Settled. */
+    /** Not paid: reversed by a void. Outcome known. Wire status 5. */
     public data object Voided : PayInTransactionStatus()
 
-    /** Charged, then returned. Settled. */
-    public data object Returned : PayInTransactionStatus()
+    /** Not paid: refused before it was charged, so no money moved. Outcome known. Wire status -2. */
+    public data object Blocked : PayInTransactionStatus()
 
-    /** Failed, or not yet answered. Not settled. */
+    /** Failed, or not yet answered. Outcome not known. Wire statuses -1 and 0. */
     public data object Failed : PayInTransactionStatus()
 
     /**
-     * A status this SDK does not name. Not settled.
+     * A status this SDK does not name: any other wire status. Outcome not known.
      *
      * @property raw the status number the service sent.
      */
@@ -58,7 +58,7 @@ public sealed class PayInTransactionStatus {
                 1 -> Captured
                 2, 3 -> Declined
                 5 -> Voided
-                -2 -> Returned
+                -2 -> Blocked
                 -1, 0 -> Failed
                 else -> Other(raw)
             }
