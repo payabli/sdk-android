@@ -37,7 +37,7 @@ public object DeviceProfileFactory {
     /**
      * The device facts, held once the identifier in them has been read.
      *
-     * @param context the host context, read once for its application package.
+     * @param context the host context, read for its application package, again while the identifier is blank.
      * @return the device facts, every field blank where there is no device to ask.
      */
     public fun of(context: Context): TelemetryDeviceContext =
