@@ -26,7 +26,7 @@ class PayInTransactionStatusTest {
 
     @Test
     fun `a number the SDK does not name is kept rather than guessed at`() {
-        listOf(4, 6, 12, -3, -5, Int.MAX_VALUE).forEach {
+        listOf(4, 6, 12, 99, -3, -4, -5, -6, -7, Int.MAX_VALUE, Int.MIN_VALUE).forEach {
             assertEquals(PayInTransactionStatus.Other(it), PayInTransactionStatus.of(it))
         }
     }
