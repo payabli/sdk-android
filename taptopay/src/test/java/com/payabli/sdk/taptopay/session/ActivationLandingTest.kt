@@ -153,9 +153,9 @@ class ActivationLandingTest {
     fun `a refusal from before the service reads the request leaves the session waiting and keeps its code`() =
         runTest(timeout = TEST_TIMEOUT) {
             for ((status, reported) in listOf(
-                // The permission filter: a 403 with no envelope.
+                // A 403 with no envelope.
                 403 to PayabliErrorType.PERMISSION_DENIED,
-                // The rate limiter: a 429 with no envelope and no Retry-After.
+                // A 429 with no envelope and no Retry-After.
                 429 to PayabliErrorType.RATE_LIMITED,
             )) {
                 val fixture = pending("", statusFor = { path -> status.takeIf { path == RouteScript.ACTIVATE } })
