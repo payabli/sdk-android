@@ -85,7 +85,7 @@ public object PayInSummaryRows {
      * [amount] as the form writes it: the default locale's separators, [currency]'s symbol, two places.
      *
      * @param amount the figure on the row.
-     * @param currency the currency's symbol, or null for none.
+     * @param currency the currency's ISO 4217 code, or null for none.
      * @return [amount] as the form writes it.
      */
     public fun formattedAmount(

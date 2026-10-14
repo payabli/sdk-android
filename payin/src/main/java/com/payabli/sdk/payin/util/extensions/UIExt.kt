@@ -12,7 +12,7 @@ import java.util.Locale
  * currency the request does not name. A value too extreme to round is written as its [BigDecimal.toString].
  *
  * @param amount the figure on the row.
- * @param currency the currency's symbol, or null for none.
+ * @param currency the currency's ISO 4217 code, or null for none.
  * @param locale whose grouping and decimal separators are drawn.
  * @return the figure as the form writes it.
  */
