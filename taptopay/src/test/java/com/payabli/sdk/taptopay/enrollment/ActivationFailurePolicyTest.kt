@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.enrollment
 
+import com.payabli.sdk.core.model.PayabliServerException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -55,12 +56,6 @@ class ActivationFailurePolicyTest {
             ),
             Case(
                 400,
-                "Device is not pending activation.",
-                DeviceActivationException.DeviceNotPending::class.java,
-                false,
-            ),
-            Case(
-                400,
                 "Assertion verification failed: timestamp outside the accepted window",
                 DeviceActivationException.AssertionRejected::class.java,
                 false,
@@ -72,22 +67,23 @@ class ActivationFailurePolicyTest {
                 false,
             ),
             Case(
+                400,
+                "X-App-Assertion is not valid base64.",
+                DeviceActivationException.RequestRejected::class.java,
+                false,
+            ),
+            // Sent without a final period, which is the service's own wording.
+            Case(
                 401,
-                "Device not attested or attestation revoked.",
+                "Device not attested or attestation revoked",
                 DeviceActivationException.AttestationRevoked::class.java,
                 true,
             ),
-            Case(
-                401,
-                "Not authorized for this entry point.",
-                DeviceActivationException.EntryNotAuthorized::class.java,
-                false,
-            ),
             Case(404, "Device not found.", DeviceActivationException.DeviceUnknown::class.java, true),
             Case(
-                404,
-                "Paypoint 'entry-point-value' not found.",
-                DeviceActivationException.PaypointUnknown::class.java,
+                403,
+                "Device is not in a state that allows this operation.",
+                DeviceActivationException.DeviceNotPending::class.java,
                 false,
             ),
             Case(
@@ -104,7 +100,6 @@ class ActivationFailurePolicyTest {
                 DeviceActivationException.Unclassified::class.java,
                 false,
             ),
-            Case(500, "Internal server error.", DeviceActivationException.ServiceFailed::class.java, false),
             Case(418, "something nobody has written down", DeviceActivationException.Unclassified::class.java, false),
         )
 
@@ -133,28 +128,46 @@ class ActivationFailurePolicyTest {
         }
 
     @Test
-    fun `the two meanings of result code 401 are told apart, and only one discards`() =
+    fun `a revoked attestation discards the record only on the service's exact words`() =
         runTest(timeout = TEST_TIMEOUT) {
             val revoked =
                 EnrollmentFixture(
                     RouteScript(
-                        RouteScript.ACTIVATE to listOf(decline(401, "Device not attested or attestation revoked.")),
+                        RouteScript.ACTIVATE to listOf(decline(401, "Device not attested or attestation revoked")),
                     ),
                 )
             revoked.seedRecord()
             runCatching { revoked.enrollment.activateDevice(ACTIVATION_CODE) }
             assertNull("a revoked attestation discards the record", revoked.storedRecord())
 
-            val unauthorized =
+            val reworded =
                 EnrollmentFixture(
                     RouteScript(
-                        RouteScript.ACTIVATE to listOf(decline(401, "Not authorized for this entry point.")),
+                        RouteScript.ACTIVATE to listOf(decline(401, "Device not attested or attestation revoked.")),
                     ),
                 )
-            unauthorized.seedRecord()
-            runCatching { unauthorized.enrollment.activateDevice(ACTIVATION_CODE) }
-            // Discarding here would destroy a working enrolment over a token that is merely scoped wrong.
-            assertNotNull("a permission problem discards nothing", unauthorized.storedRecord())
+            reworded.seedRecord()
+            runCatching { reworded.enrollment.activateDevice(ACTIVATION_CODE) }
+            assertNotNull("a reworded refusal discards nothing", reworded.storedRecord())
+        }
+
+    @Test
+    fun `a service failure arrives with its status and any wait, and discards nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(
+                        RouteScript.ACTIVATE to listOf(decline(500, "Internal server error.")),
+                        headersFor = { mapOf("Retry-After" to "7") },
+                    ),
+                )
+            fixture.seedRecord()
+
+            val thrown = runCatching { fixture.enrollment.activateDevice(ACTIVATION_CODE) }.exceptionOrNull()
+
+            assertTrue("expected a server failure, got $thrown", thrown is PayabliServerException)
+            assertEquals(7_000L, (thrown as PayabliServerException).retryAfterMillis)
+            assertNotNull(fixture.storedRecord())
         }
 
     @Test

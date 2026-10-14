@@ -158,30 +158,6 @@ internal sealed class DeviceActivationException(
     ) : DeviceActivationException("this device is no longer attested; enroll again to attest it", resultCode, reason)
 
     /**
-     * The credential is not authorised for this paypoint.
-     *
-     * The enrollment is fine and the credential is not. **Discards nothing.**
-     */
-    class EntryNotAuthorized(
-        resultCode: Int?,
-        reason: String,
-    ) : DeviceActivationException(
-            "this access token is not authorized for this paypoint; check its permissions and entry point",
-            resultCode,
-            reason,
-        )
-
-    /** No such paypoint. The host's configuration names one that does not exist. */
-    class PaypointUnknown(
-        resultCode: Int?,
-        reason: String,
-    ) : DeviceActivationException(
-            "the configured entry point does not exist; check the entry point in PayabliConfig",
-            resultCode,
-            reason,
-        )
-
-    /**
      * The entry point this call names cannot be used for it.
      *
      * The remedy is to correct the entry point or the credential it was paired with. **Discards nothing.**
@@ -201,21 +177,6 @@ internal sealed class DeviceActivationException(
         resultCode: Int?,
         reason: String,
     ) : DeviceActivationException("the service has no record of this device; enroll again", resultCode, reason)
-
-    /**
-     * The service failed internally.
-     *
-     * Whether the attempt counted is not knowable from here. Sending the code again is what there is to do,
-     * and it may cost an attempt.
-     */
-    class ServiceFailed(
-        resultCode: Int?,
-        reason: String,
-    ) : DeviceActivationException(
-            "the device service failed; send the code again, which may cost an attempt",
-            resultCode,
-            reason,
-        )
 
     /** Activation was attempted with no stored identity to activate. Nothing was sent. */
     class NotEnrolled : DeviceActivationException("this device is not enrolled; enroll before activating", null, "")

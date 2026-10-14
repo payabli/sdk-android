@@ -29,32 +29,23 @@ internal class DeviceActivationFailures(
                     reason == TOO_MANY_ATTEMPTS -> DeviceActivationException.AttemptsExhausted(resultCode, reason)
                     reason == NO_CHALLENGE -> DeviceActivationException.CodeNotIssued(resultCode, reason)
                     reason == STORED_CODE_INVALID -> DeviceActivationException.CodeUnreadable(resultCode, reason)
-                    reason == NOT_PENDING -> DeviceActivationException.DeviceNotPending(resultCode, reason)
                     reason.startsWith(ASSERTION_FAILED_PREFIX) ->
                         DeviceActivationException.AssertionRejected(resultCode, reason)
                     reason in MALFORMED_REQUEST -> DeviceActivationException.RequestRejected(resultCode, reason)
                     else -> unclassified(resultCode, reason)
                 }
 
-            // The two meanings of 401. Only the first discards anything.
             resultCode == HttpURLConnection.HTTP_UNAUTHORIZED && reason == ATTESTATION_REVOKED ->
                 DeviceActivationException.AttestationRevoked(resultCode, reason)
-            resultCode == HttpURLConnection.HTTP_UNAUTHORIZED && reason == NOT_AUTHORIZED_FOR_ENTRY ->
-                DeviceActivationException.EntryNotAuthorized(resultCode, reason)
-
-            // And of 404.
             resultCode == HttpURLConnection.HTTP_NOT_FOUND && reason == DEVICE_NOT_FOUND ->
                 DeviceActivationException.DeviceUnknown(resultCode, reason)
-            resultCode == HttpURLConnection.HTTP_NOT_FOUND && reason.startsWith(PAYPOINT_NOT_FOUND_PREFIX) ->
-                DeviceActivationException.PaypointUnknown(resultCode, reason)
+            resultCode == HttpURLConnection.HTTP_FORBIDDEN && reason == NOT_PENDING ->
+                DeviceActivationException.DeviceNotPending(resultCode, reason)
 
             // The literal is EntryPointFailures', so this route and the four that use that mapper cannot
             // drift onto two spellings of one comparison.
             resultCode == HttpURLConnection.HTTP_FORBIDDEN && reason == EntryPointFailures.ENTRY_POINT_UNUSABLE ->
                 DeviceActivationException.EntryPointUnusable(resultCode, reason)
-
-            resultCode != null && resultCode >= HttpURLConnection.HTTP_INTERNAL_ERROR ->
-                DeviceActivationException.ServiceFailed(resultCode, reason)
 
             else -> unclassified(resultCode, reason)
         }
@@ -82,12 +73,12 @@ internal class DeviceActivationFailures(
         const val TOO_MANY_ATTEMPTS = "Too many failed activation attempts. Request a new challenge."
         const val NO_CHALLENGE = "No active challenge for this device."
         const val STORED_CODE_INVALID = "Stored activation code is invalid."
-        const val NOT_PENDING = "Device is not pending activation."
+        const val NOT_PENDING = "Device is not in a state that allows this operation."
         const val ASSERTION_FAILED_PREFIX = "Assertion verification failed: "
-        const val ATTESTATION_REVOKED = "Device not attested or attestation revoked."
-        const val NOT_AUTHORIZED_FOR_ENTRY = "Not authorized for this entry point."
+
+        /** Sent without a final period. */
+        const val ATTESTATION_REVOKED = "Device not attested or attestation revoked"
         const val DEVICE_NOT_FOUND = "Device not found."
-        const val PAYPOINT_NOT_FOUND_PREFIX = "Paypoint '"
 
         /** The fixed body and header complaints. Every one is an SDK defect, not a merchant action. */
         val MALFORMED_REQUEST =
@@ -98,6 +89,7 @@ internal class DeviceActivationFailures(
                 "X-App-Assertion header is required.",
                 "X-App-KeyId header is required.",
                 "X-Assertion-Timestamp header is required.",
+                "X-App-Assertion is not valid base64.",
             )
     }
 }

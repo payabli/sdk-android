@@ -16,6 +16,7 @@ import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.attestation.AppAttestor
 import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
 import com.payabli.sdk.taptopay.attestation.MintProjectResolver
+import com.payabli.sdk.taptopay.attestation.device.AttestFailures
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertion
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceAttestationBinding
@@ -190,7 +191,7 @@ internal class DeviceEnrollment(
                         ),
                     appId = appId,
                     token = token,
-                    failureMapper = EntryPointFailures,
+                    failureMapper = AttestFailures,
                 )
 
                 // One write, so there is no ordering to get right and no half-written state to compensate

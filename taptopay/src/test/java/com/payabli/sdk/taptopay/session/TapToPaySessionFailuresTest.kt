@@ -70,10 +70,7 @@ class TapToPaySessionFailuresTest {
             DeviceActivationException.DeviceUnknown(404, REASON) to failed(DEVICE_SETUP_REQUIRED),
             DeviceActivationException.NotEnrolled() to failed(DEVICE_SETUP_REQUIRED),
             DeviceActivationException.RegistrationReplaced() to failed(DEVICE_SETUP_REQUIRED),
-            DeviceActivationException.EntryNotAuthorized(403, REASON) to failed(CONFIGURATION_REJECTED),
-            DeviceActivationException.PaypointUnknown(404, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceActivationException.EntryPointUnusable(403, REASON) to failed(CONFIGURATION_REJECTED),
-            DeviceActivationException.ServiceFailed(500, REASON) to failed(SERVICE_UNAVAILABLE),
             // A wrong code leaves the session alone: the device still owes one. So does everything else the
             // caller can answer by sending the code again, which is the rest of this group.
             DeviceActivationException.CodeIncorrect(400, REASON) to null,

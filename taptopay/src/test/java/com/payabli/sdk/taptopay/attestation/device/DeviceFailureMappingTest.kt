@@ -4,7 +4,7 @@ import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliRateLimitException
-import com.payabli.sdk.core.model.PayabliValidationException
+import com.payabli.sdk.core.model.PayabliServerException
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.taptopay.attestation.AttestationToken
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
@@ -201,6 +201,57 @@ class DeviceFailureMappingTest {
         }
 
     @Test
+    fun `a refusal sent at its own status reaches the route's mapper`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val failure =
+                challengeAgainst(
+                    declineEnvelope(403, EntryPointFailures.ENTRY_POINT_UNUSABLE),
+                    statusCode = 403,
+                    failureMapper = EntryPointFailures,
+                )
+
+            assertTrue("$failure", failure is DeviceServiceException.EntryPointUnusable)
+        }
+
+    @Test
+    fun `a refusal whose code is not the status it arrived with is left to the transport`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val failure =
+                challengeAgainst(
+                    declineEnvelope(400, EntryPointFailures.ENTRY_POINT_UNUSABLE),
+                    statusCode = 403,
+                    failureMapper = EntryPointFailures,
+                )
+
+            assertEquals(PayabliErrorType.PERMISSION_DENIED, (failure as PayabliException).type)
+        }
+
+    @Test
+    fun `a 400 carrying no envelope is a request this SDK built wrong`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val failure = challengeAgainst("""{"title":"One or more validation errors occurred."}""", statusCode = 400)
+
+            assertTrue("$failure", failure is DeviceServiceException.BadRequest)
+        }
+
+    @Test
+    fun `a 400 whose envelope names another code is left to the transport`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val failure =
+                challengeAgainst(declineEnvelope(403, EntryPointFailures.ENTRY_POINT_UNUSABLE), statusCode = 400)
+
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, (failure as PayabliException).type)
+        }
+
+    @Test
+    fun `a service failure stays a core failure, envelope or not`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val failure = challengeAgainst(declineEnvelope(500, "Internal server error"), statusCode = 500)
+
+            assertTrue("$failure", failure is PayabliServerException)
+        }
+
+    @Test
     fun `a success whose payload is missing a required field is undecodable`() =
         runTest(timeout = TEST_TIMEOUT) {
             val failure = challengeAgainst(successEnvelope("""{"challenge":"Y2g="}"""))
@@ -268,12 +319,9 @@ class DeviceFailureMappingTest {
         }
 
     @Test
-    fun `the DTO validation 400 the service returns is a validation error, not a device one`() =
+    fun `the DTO validation 400 the service returns is a request this SDK built wrong`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Also captured verbatim: POST /attest with the `platform` key absent. The service's DTO validation
-            // refuses it before any controller runs, so there is no envelope in this body at all — a real 400
-            // carrying RFC 9457 problem+json. Proof that the family has two failure shapes and that running
-            // PayabliHttpErrors before looking for an envelope is what makes the second one legible.
+            // Captured verbatim: POST /attest with the `platform` key absent. A real 400 with no envelope at all.
             val recorded =
                 """
                 {"errors":{"$":["JSON deserialization for type 'AttestRequest' was missing required properties including: 'platform'."],
@@ -285,21 +333,8 @@ class DeviceFailureMappingTest {
 
             val failure = challengeAgainst(recorded, statusCode = 400)
 
-            assertFalse(failure is DeviceServiceException)
-            assertEquals(PayabliErrorType.VALIDATION_ERROR, (failure as PayabliException).type)
-            assertEquals("One or more validation errors occurred.", failure.reason)
-            // `errors` names what was refused, and the string under `$` says which property was missing, so a
-            // caller can report it. `:core` reads the service's string arrays as well as the objects
-            // `PayabliFieldError` declares.
-            val fieldErrors = (failure as PayabliValidationException).fieldErrors
-            assertEquals(setOf("$", "request"), fieldErrors.keys)
-            assertTrue(
-                fieldErrors
-                    .getValue("$")
-                    .single()
-                    .message
-                    .contains("'platform'"),
-            )
+            assertTrue("$failure", failure is DeviceServiceException.BadRequest)
+            assertEquals("One or more validation errors occurred.", (failure as DeviceServiceException).reason)
         }
 
     @Test

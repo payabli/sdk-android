@@ -113,6 +113,10 @@ internal object TapToPayErrorCodes {
             is DeviceServiceException.NotAttested -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceServiceException.Forbidden -> PayabliErrorType.DEVICE_PENDING_ACTIVATION
             is DeviceServiceException.EntryPointUnusable -> PayabliErrorType.ENTRY_POINT_REFUSED
+            is DeviceServiceException.IntegrityRefused -> PayabliErrorType.DEVICE_SETUP_REFUSED
+            is DeviceServiceException.VerificationUnavailable -> PayabliErrorType.DEVICE_SETUP_UNAVAILABLE
+            is DeviceServiceException.AppNotAccepted -> PayabliErrorType.DEVICE_SETUP_NOT_CONFIGURED
+            is DeviceServiceException.RegistrationGone -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceServiceException.NotFound -> PayabliErrorType.ENTRY_POINT_REFUSED
             is DeviceServiceException.ServerFailure -> PayabliErrorType.SERVER_ERROR
             is DeviceServiceException.Unclassified -> PayabliErrorType.UNKNOWN
@@ -131,11 +135,8 @@ internal object TapToPayErrorCodes {
             is DeviceActivationException.AssertionRejected -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.RequestRejected -> PayabliErrorType.SDK_INTERNAL_ERROR
             is DeviceActivationException.AttestationRevoked -> PayabliErrorType.DEVICE_SETUP_REQUIRED
-            is DeviceActivationException.EntryNotAuthorized -> PayabliErrorType.ENTRY_POINT_REFUSED
-            is DeviceActivationException.PaypointUnknown -> PayabliErrorType.ENTRY_POINT_REFUSED
             is DeviceActivationException.EntryPointUnusable -> PayabliErrorType.ENTRY_POINT_REFUSED
             is DeviceActivationException.DeviceUnknown -> PayabliErrorType.DEVICE_SETUP_REQUIRED
-            is DeviceActivationException.ServiceFailed -> PayabliErrorType.SERVER_ERROR
             is DeviceActivationException.NotEnrolled -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.RegistrationReplaced -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.Unclassified -> PayabliErrorType.UNKNOWN
