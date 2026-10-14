@@ -6,6 +6,8 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
@@ -21,6 +23,7 @@ import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import kotlinx.serialization.SerializationException
+import java.net.HttpURLConnection
 
 /**
  * The MoneyIn transaction calls: capture, authorize, capture an authorization, and void.
@@ -167,6 +170,64 @@ internal class MoneyInClient(
                 headers = payInHeaders { idempotencyKey(idempotencyKey) },
             )
         return read(PayInRoutes.VOID, transport.execute(payabliRequest))
+    }
+
+    /**
+     * Reads a transaction back by its identifier.
+     *
+     * Two refusals are named before the status table reads the rest: a caller this transaction may not be read
+     * by, which no new credential changes and so is never refreshed or replayed, and an identifier with nothing
+     * visible under it yet. An answer that names no transaction is unreadable rather than empty.
+     *
+     * @param transId the transaction to read.
+     * @return the transaction, filled with the fields a read carries.
+     */
+    suspend fun readTransaction(transId: String): PayInTransaction {
+        PayInValidation.transId(transId)
+
+        val response =
+            transport.execute(
+                PayabliRequest(
+                    method = HttpMethod.GET,
+                    path = PayInRoutes.read(transId.trim()),
+                    route = PayInRoutes.READ,
+                    isCallerRefusal = ::isNotPermitted,
+                ),
+            )
+        readRefusal(response)?.let { failure ->
+            logger.warn(
+                LogField.safe("event", "payin_read_refused"),
+                LogField.safe("route", PayInRoutes.READ),
+                LogField.safe("statusCode", response.statusCode),
+                LogField.safe("errorCode", failure.type),
+            ) { "the transaction read was refused" }
+            throw failure
+        }
+        PayabliHttpErrors.from(response)?.let { failure ->
+            logger.warn(
+                LogField.safe("event", "payin_call_failed"),
+                LogField.safe("route", PayInRoutes.READ),
+                LogField.safe("statusCode", response.statusCode),
+                LogField.safe("errorCode", failure.type),
+            ) { "the transaction call failed at the transport" }
+            throw failure
+        }
+        val record =
+            try {
+                PayabliJson.format.decodeFromString(TransactionRecordPayload.serializer(), response.bodyAsText())
+            } catch (failure: SerializationException) {
+                throw undecodable(PayInRoutes.READ, response.statusCode, failure)
+            }
+        // A body that decodes but names no transaction is not this transaction, and reporting it as one would
+        // hand the caller a status for a payment nobody identified.
+        if (record.paymentTransId.isNullOrBlank()) throw undecodable(PayInRoutes.READ, response.statusCode, null)
+
+        logger.debug(
+            LogField.safe("event", "payin_call_succeeded"),
+            LogField.safe("route", PayInRoutes.READ),
+            LogField.safe("statusCode", response.statusCode),
+        ) { "the transaction call succeeded" }
+        return record.toTransaction()
     }
 
     private fun validate(
@@ -348,6 +409,68 @@ private fun TransactionPayload.toTransaction(): PayInTransaction =
         connectorName = connectorName,
         customerId = payorId,
     )
+
+/**
+ * The fields a read carries. [PayInTransaction.connectorName] and [PayInTransaction.customerId] stay null.
+ *
+ * @return the transaction this record describes.
+ */
+private fun TransactionRecordPayload.toTransaction(): PayInTransaction =
+    PayInTransaction(
+        paymentTransId = paymentTransId,
+        gatewayTransId = gatewayTransId,
+        orderId = orderId,
+        method = method,
+        transStatus = transStatus,
+        paypointId = paypointId,
+        totalAmount = totalAmount,
+        netAmount = netAmount,
+        feeAmount = feeAmount,
+        surchargeFee = surchargeFee,
+        connectorName = null,
+        customerId = null,
+    )
+
+/**
+ * The older envelope's numeric code, or null when the body carries none in that shape.
+ *
+ * @param response the answered request.
+ * @return the refusal's code, or null.
+ */
+private fun legacyCode(response: PayabliResponse): Int? =
+    try {
+        PayabliJson.format.decodeFromString(LegacyRefusal.serializer(), response.bodyAsText()).responseCode
+    } catch (_: SerializationException) {
+        null
+    }
+
+/**
+ * Whether a read was refused because this caller may not read the transaction, which no new credential changes.
+ *
+ * @param response the answered request.
+ * @return true for a 401 carrying [LegacyRefusal.NOT_PERMITTED].
+ */
+private fun isNotPermitted(response: PayabliResponse): Boolean =
+    response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED && legacyCode(response) == LegacyRefusal.NOT_PERMITTED
+
+/**
+ * The two refusals a read names, or null for anything the status table reads instead.
+ *
+ * @param response the answered request.
+ * @return the refusal, or null.
+ */
+private fun readRefusal(response: PayabliResponse): PayabliGenericException? =
+    when {
+        isNotPermitted(response) ->
+            PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, REASON_READ_NOT_PERMITTED)
+        response.statusCode == HttpURLConnection.HTTP_BAD_REQUEST &&
+            legacyCode(response) == LegacyRefusal.NOT_VISIBLE ->
+            PayabliGenericException(PayabliErrorType.TRANSACTION_NOT_FOUND, REASON_READ_NOT_VISIBLE)
+        else -> null
+    }
+
+private const val REASON_READ_NOT_PERMITTED = "This credential may not read this transaction."
+private const val REASON_READ_NOT_VISIBLE = "No transaction is visible under this identifier yet."
 
 /**
  * Only the flags that were set: an absent flag and a false one are different statements to the service.

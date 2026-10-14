@@ -27,12 +27,13 @@ import java.math.BigDecimal
  * [JsonNames], so a re-spelled field costs nothing instead of silently reading null.
  */
 internal object PayInRoutes {
-    /** Templates, and for three of the five also the paths. [CAPTURE_AUTHORIZED] and [VOID] embed an identifier. */
+    /** Templates, and for three of the six also the paths. [CAPTURE_AUTHORIZED], [VOID] and [READ] embed an identifier. */
     const val STORE_METHOD: String = "/api/TokenStorage/add"
     const val CAPTURE: String = "/api/v2/MoneyIn/getpaid"
     const val AUTHORIZE: String = "/api/v2/MoneyIn/authorize"
     const val CAPTURE_AUTHORIZED: String = "/api/v2/MoneyIn/capture/{transId}"
     const val VOID: String = "/api/v2/MoneyIn/void/{transId}"
+    const val READ: String = "/api/MoneyIn/details/{transId}"
 
     /**
      * The resolved path for [CAPTURE_AUTHORIZED], built from that template rather than beside it.
@@ -53,6 +54,14 @@ internal object PayInRoutes {
      * @return the resolved path for [VOID].
      */
     fun void(transId: String): String = PercentEncoding.pathFrom(VOID, PercentEncoding.segment(transId))
+
+    /**
+     * The resolved path for [READ], built and encoded as [captureAuthorized] is, for the same reasons.
+     *
+     * @param transId the transaction to read.
+     * @return the resolved path for [READ].
+     */
+    fun read(transId: String): String = PercentEncoding.pathFrom(READ, PercentEncoding.segment(transId))
 
     /** Spelled once in `:core`, since card-present sends the same header. Read on the transaction routes only. */
     const val HEADER_IDEMPOTENCY_KEY: String = PayabliRequest.IDEMPOTENCY_KEY_HEADER
@@ -246,6 +255,59 @@ internal class TransactionPayload(
     @JsonNames("payorid", "PayorId")
     val payorId: Long? = null,
 )
+
+/**
+ * A transaction read back, which arrives as the bare record rather than inside an envelope.
+ *
+ * Declares only the fields [com.payabli.sdk.payin.model.PayInTransaction] fills on a read. The record carries
+ * card, payer and device data besides, and an undeclared field is never decoded.
+ */
+@Serializable
+internal class TransactionRecordPayload(
+    @JsonNames("PaymentTransId", "paymenttransid")
+    val paymentTransId: String? = null,
+    @JsonNames("GatewayTransId", "gatewaytransid")
+    val gatewayTransId: String? = null,
+    @JsonNames("OrderId", "orderid")
+    val orderId: String? = null,
+    @JsonNames("Method")
+    val method: String? = null,
+    @JsonNames("TransStatus", "transstatus")
+    val transStatus: Int? = null,
+    @JsonNames("PaypointId", "paypointid")
+    val paypointId: Long? = null,
+    @JsonNames("TotalAmount", "totalamount")
+    @Serializable(with = PayInAmountSerializer::class)
+    val totalAmount: BigDecimal? = null,
+    @JsonNames("NetAmount", "netamount")
+    @Serializable(with = PayInAmountSerializer::class)
+    val netAmount: BigDecimal? = null,
+    @JsonNames("FeeAmount", "feeamount")
+    @Serializable(with = PayInAmountSerializer::class)
+    val feeAmount: BigDecimal? = null,
+    @JsonNames("SurchargeFee", "surchargefee")
+    @Serializable(with = PayInAmountSerializer::class)
+    val surchargeFee: BigDecimal? = null,
+)
+
+/**
+ * The numeric code a refusal carries in the older envelope, read alone so any other shape costs only the code.
+ *
+ * @property responseCode the refusal's code, for example 7001.
+ */
+@Serializable
+internal class LegacyRefusal(
+    @JsonNames("ResponseCode")
+    val responseCode: Int? = null,
+) {
+    companion object {
+        /** On a read, no transaction is visible under the identifier yet. */
+        const val NOT_VISIBLE: Int = 7001
+
+        /** On a read, this caller may not read the transaction. */
+        const val NOT_PERMITTED: Int = 9001
+    }
+}
 
 /** The `responseData` of a stored-method reply. */
 @Serializable
