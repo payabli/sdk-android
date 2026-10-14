@@ -15,8 +15,9 @@ internal enum class PayInAmountRefusal {
 
 /**
  * Why submit refuses these amounts, or null when it accepts them, read by submit and the summary alike,
- * so the summary is empty for exactly the payments submit refuses. Each amount is judged at the scale
- * it is sent at: `0.001` is more than zero and reaches the wire as `0.00`.
+ * so the summary is empty for exactly the payments submit refuses. Each amount is judged at the
+ * scale the wire carries: a total of `0.001` is refused as not more than zero once rounded, while
+ * a fee of `0.001` is sent as `0.00`.
  *
  * @return the refusal, or null when submit accepts the amounts.
  */
