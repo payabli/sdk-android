@@ -352,6 +352,7 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType TOKEN_MALFORMED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType TOKEN_PROVIDER_FAILED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType TOO_MANY_OPEN_CHARGES;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType TRANSACTION_NOT_FOUND;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType UNKNOWN;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType USER_CANCELLED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType VALIDATION_ERROR;
