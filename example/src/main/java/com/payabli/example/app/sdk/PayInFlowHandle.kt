@@ -53,6 +53,14 @@ interface PayInFlowHandle {
         transId: String,
         idempotencyKey: String,
     ): PayInOutcome
+
+    /**
+     * Reads [transId] back, to show what became of it.
+     *
+     * @param transId the transaction to read.
+     * @return what the read found, or why it failed.
+     */
+    suspend fun readTransaction(transId: String): PayInReadOutcome
 }
 
 /** The one a session produces, which is every handle outside a test. */
@@ -73,6 +81,9 @@ internal class SdkPayInFlowHandle(
         transId: String,
         idempotencyKey: String,
     ): PayInOutcome = payIn.voidTransaction(transId, idempotencyKey).toOutcome()
+
+    override suspend fun readTransaction(transId: String): PayInReadOutcome =
+        payIn.readTransaction(transId).toReadOutcome()
 }
 
 /** Reads as not busy when there is none yet, which is how a screen reads it before the first token check. */

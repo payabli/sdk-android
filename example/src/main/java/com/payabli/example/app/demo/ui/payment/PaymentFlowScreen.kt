@@ -79,6 +79,12 @@ interface PaymentFlowUiState {
 
     /** A void is in flight. Never true on a screen that offers none. */
     val isVoiding: Boolean get() = false
+
+    /** The transaction a read would name, or null where there is none to read. */
+    val readableTransactionId: String? get() = null
+
+    /** A read is in flight. Never true on a screen that offers none. */
+    val isReading: Boolean get() = false
 }
 
 /** What a payment screen can be asked to do. */
@@ -97,6 +103,7 @@ data class PaymentFlowActions(
      * so that screen supplies none and draws no control.
      */
     val onVoid: (() -> Unit)? = null,
+    val onRead: (() -> Unit)? = null,
 ) {
     companion object {
         /** For a preview, which renders the screen and drives nothing. */
@@ -185,6 +192,15 @@ fun PaymentFlowScreen(
                     icon = DemoIcons.Void,
                     onClick = onVoid,
                     enabled = !state.isVoiding,
+                )
+            }
+            val onRead = actions.onRead
+            if (onRead != null && state.readableTransactionId != null) {
+                BorderedButton(
+                    text = if (state.isReading) "Checking…" else "Check this transaction's status",
+                    icon = DemoIcons.ReadBack,
+                    onClick = onRead,
+                    enabled = !state.isReading,
                 )
             }
             // A finished step draws no controls, so a completed submit takes the form off the screen. This is

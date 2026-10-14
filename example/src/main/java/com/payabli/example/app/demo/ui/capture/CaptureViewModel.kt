@@ -17,6 +17,7 @@ import com.payabli.example.app.sdk.PayInFormSetup
 import com.payabli.example.app.sdk.PayInForms
 import com.payabli.example.app.sdk.PayInOperation
 import com.payabli.example.app.sdk.PayInOutcome
+import com.payabli.example.app.sdk.PayInReadOutcome
 import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.capturePayment
 import com.payabli.example.app.sdk.isBusy
@@ -80,6 +81,8 @@ data class CaptureUiState(
      * Minted when a payment completes and dropped when the screen moves on.
      */
     val voidIdempotencyKey: String? = null,
+    /** A read of the last transaction is in flight. */
+    override val isReading: Boolean = false,
 ) : PaymentFlowUiState {
     /**
      * Its own, because `data class` would synthesize one over the transaction identifier and the key beside it.
@@ -92,6 +95,10 @@ data class CaptureUiState(
             "${voidableTransactionId != null})"
 
     override val finished: Boolean get() = lastResult != null
+
+    /** The transaction a read would name: the last capture's, reversed or not. */
+    override val readableTransactionId: String?
+        get() = lastResult?.transaction?.paymentTransactionId
 
     /** The transaction a void would name, once there is one and it has not already been reversed. */
     override val voidableTransactionId: String?
@@ -319,6 +326,50 @@ class CaptureViewModel(
             _uiState.update { it.afterVoiding(outcome, transId) }
         }
     }
+
+    /**
+     * Reads back the transaction the last capture returned, and shows what became of it.
+     *
+     * Reads the id off the state, as [voidLastTransaction] does, so the control cannot name a transaction the
+     * screen is not showing.
+     */
+    fun readLastTransaction() {
+        if (_uiState.value.isReading) return
+        val payments = _uiState.value.payments ?: return
+        val transId = _uiState.value.readableTransactionId ?: return
+        _uiState.update { it.copy(isReading = true) }
+        viewModelScope.launch {
+            val outcome =
+                try {
+                    payments.readTransaction(transId)
+                } catch (cancellation: CancellationException) {
+                    _uiState.update { it.copy(isReading = false) }
+                    throw cancellation
+                }
+            _uiState.update { it.afterReading(outcome) }
+        }
+    }
+
+    /**
+     * The screen a read leaves behind: the status on success, the reason on failure.
+     *
+     * @param outcome what the read returned.
+     * @return the state with the read's text in the result panel.
+     */
+    internal fun CaptureUiState.afterReading(outcome: PayInReadOutcome): CaptureUiState =
+        copy(
+            isReading = false,
+            resultText =
+                when (outcome) {
+                    is PayInReadOutcome.Read ->
+                        listOfNotNull(
+                            "Status: ${outcome.status}",
+                            outcome.statusNumber?.let { "Status number: $it" },
+                            outcome.paymentTransactionId?.let { "Payment transaction: $it" },
+                        ).joinToString("\n")
+                    is PayInReadOutcome.Failed -> "✗ ${outcome.error.displayMessage}"
+                },
+        )
 
     /**
      * The screen a reversal leaves behind.
