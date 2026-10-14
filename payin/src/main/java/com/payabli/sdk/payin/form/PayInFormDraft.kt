@@ -62,8 +62,8 @@ internal class PayInFormDraft {
 
     /**
      * Starts the form the first time, and applies a different configuration without starting it
-     * again: a new one keeps the method, the values the payer entered and the service's marks,
-     * dropping only what it no longer offers a box for. The comparison is here, so it holds.
+     * again, keeping the method, the values and the marks, dropping what has no box. The comparison
+     * stays here: a `remember` key is gone with its composition, and a write the same composition reads never settles.
      *
      * @param configuration the configuration this composition draws the form from.
      */
