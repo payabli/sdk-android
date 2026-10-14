@@ -153,10 +153,29 @@ class MoneyInReadTest {
         }
 
     @Test
-    fun `an answer that names no transaction is unreadable rather than empty`() =
+    fun `an answer that names no transaction is unreadable`() =
         runTest(timeout = timeout) {
             assertTrue(read(FakePayInTransport.answering("{}")) is PayInException.Undecodable)
             assertTrue(read(FakePayInTransport.answering("""{"PaymentTransId":" "}""")) is PayInException.Undecodable)
+        }
+
+    @Test
+    fun `an answer that names another transaction is unreadable`() =
+        runTest(timeout = timeout) {
+            val other = FakePayInTransport.answering("""{"PaymentTransId":"202-xyz","TransStatus":1}""")
+            val otherCase = FakePayInTransport.answering("""{"PaymentTransId":"101-ABC","TransStatus":1}""")
+
+            assertTrue(read(other) is PayInException.Undecodable)
+            assertTrue("compared exactly", read(otherCase) is PayInException.Undecodable)
+        }
+
+    @Test
+    fun `the record is compared with the identifier as it was sent, trimmed`() =
+        runTest(timeout = timeout) {
+            val transaction =
+                MoneyInClient(FakePayInTransport.answering(RECORD), RecordingSdkLogger()).readTransaction(" 101-abc ")
+
+            assertEquals("101-abc", transaction.paymentTransId)
         }
 
     private suspend fun read(

@@ -177,19 +177,20 @@ internal class MoneyInClient(
      *
      * Two refusals are named before the status table reads the rest: a caller this transaction may not be read
      * by, which no new credential changes and so is never refreshed or replayed, and an identifier with nothing
-     * visible under it yet. An answer that names no transaction is unreadable rather than empty.
+     * visible under it yet. An answer that names no transaction, or another one, is unreadable.
      *
      * @param transId the transaction to read.
      * @return the transaction, filled with the fields a read carries.
      */
     suspend fun readTransaction(transId: String): PayInTransaction {
         PayInValidation.transId(transId)
+        val sent = transId.trim()
 
         val response =
             transport.execute(
                 PayabliRequest(
                     method = HttpMethod.GET,
-                    path = PayInRoutes.read(transId.trim()),
+                    path = PayInRoutes.read(sent),
                     route = PayInRoutes.READ,
                     isCallerRefusal = ::isNotPermitted,
                 ),
@@ -218,9 +219,9 @@ internal class MoneyInClient(
             } catch (failure: SerializationException) {
                 throw undecodable(PayInRoutes.READ, response.statusCode, failure)
             }
-        // A body that decodes but names no transaction is not this transaction, and reporting it as one would
-        // hand the caller a status for a payment nobody identified.
-        if (record.paymentTransId.isNullOrBlank()) throw undecodable(PayInRoutes.READ, response.statusCode, null)
+        // A record that names no transaction, or another one, is not the one asked for, and reporting it would
+        // hand the caller a status for a different payment.
+        if (record.paymentTransId != sent) throw undecodable(PayInRoutes.READ, response.statusCode, null)
 
         logger.debug(
             LogField.safe("event", "payin_call_succeeded"),
