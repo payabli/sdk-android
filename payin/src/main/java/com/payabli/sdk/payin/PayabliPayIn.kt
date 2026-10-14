@@ -156,7 +156,9 @@ public sealed class PayabliPayIn {
      *
      * @param transId the transaction to read, as [PayInTransaction.paymentTransId] reported it.
      * @return the transaction, carrying [PayInTransaction.status]; or the failure, a `PayabliException` whose
-     * [PayabliException.type] is [PayabliErrorType.PERMISSION_DENIED] when this credential may not read it.
+     * [PayabliException.type] is [PayabliErrorType.PERMISSION_DENIED] when this credential may not read it, and
+     * [PayabliErrorType.TRANSACTION_NOT_FOUND] when none is visible under [transId] yet. That is not proof no payment
+     * was made: read again later rather than charging again.
      */
     public abstract suspend fun readTransaction(transId: String): Result<PayInTransaction>
 
