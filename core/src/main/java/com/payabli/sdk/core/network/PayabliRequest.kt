@@ -27,6 +27,15 @@ public class PayabliRequest(
     public val headers: Map<String, String> = emptyMap(),
     public val body: ByteArray? = null,
     public val isCredentialPinned: Boolean = false,
+    /**
+     * Whether a rejection is this caller being refused the request rather than its credential being refused.
+     * Where it answers true, a new credential cannot change the answer, so credential recovery is skipped: no
+     * refresh, no replay, and the rejection reaches the caller as it arrived.
+     *
+     * Read for one response at a time, unlike [isCredentialPinned], so the route's other rejections still
+     * recover.
+     */
+    public val isCallerRefusal: (PayabliResponse) -> Boolean = { false },
 ) {
     /**
      * Never includes headers, body, or the resolved [path] — a path may embed an identifier, which is why

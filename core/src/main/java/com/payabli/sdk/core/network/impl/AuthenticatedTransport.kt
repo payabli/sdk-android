@@ -21,7 +21,8 @@ import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 /**
  * Runs [AuthRecoveryPolicy]: one 401, one refresh, one replay, second 401 terminal. Mechanism only, so
  * what counts as a rejection is the policy's and what may be replayed is this class's, because the policy
- * is `open`. The bearer is `BearerDecoration`'s inside [base]'s chain; a pinned request is read here.
+ * is `open`. The bearer is `BearerDecoration`'s inside [base]'s chain; a pinned request and a refused caller are read
+ * here.
  *
  * @property logger where the replay and pin decisions are logged, [LogCategory.NETWORK] because they are this layer's.
  * @property onAuthFailure told only when auth is finished for good. See [AuthFailureListener] for why it is told rather than inferred.
@@ -51,6 +52,17 @@ internal class AuthenticatedTransport(
                 LogField.safe("statusCode", first.statusCode),
                 routeField(request),
             ) { "recovery declined: the route pins the credential it was sent" }
+            return first
+        }
+
+        // Also above the refresh: a credential the caller is refused with would be refused again, and replacing
+        // it would cost the session a refresh for nothing.
+        if (request.isCallerRefusal(first)) {
+            logger.warn(
+                LogField.safe("method", request.method.wireName),
+                LogField.safe("statusCode", first.statusCode),
+                routeField(request),
+            ) { "recovery declined: the route refused this caller rather than its credential" }
             return first
         }
 

@@ -122,6 +122,15 @@ class AuthenticatedTransportTest {
             isCredentialPinned = true,
         )
 
+    /** [guardedReplayRequest]'s counterpart for a route that says which rejections refuse its caller. */
+    private fun callerRefusalRequest(isCallerRefusal: (PayabliResponse) -> Boolean): PayabliRequest =
+        PayabliRequest(
+            method = HttpMethod.GET,
+            path = "/api/pay/$ID_SENTINEL",
+            route = ROUTE,
+            isCallerRefusal = isCallerRefusal,
+        )
+
     /**
      * 401 the first time it sees a request, 200 when the same instance comes back.
      *
@@ -1016,6 +1025,46 @@ class AuthenticatedTransportTest {
             assertEquals("the ordinary route recovers", OK, ordinary.statusCode)
             assertEquals("only the ordinary route refreshed", 1, calls.get())
             assertEquals("the pinned send, the ordinary send, and its replay", 3, base.sends.size)
+        }
+
+    @Test
+    fun `a rejection the request calls a refusal of its caller is neither refreshed nor replayed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = UnauthorizedUntilReplayed()
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = AuthRecoveryPolicy(),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(callerRefusalRequest { it.statusCode == UNAUTHORIZED })
+
+            assertEquals("the rejection arrives as it came", UNAUTHORIZED, response.statusCode)
+            assertEquals("no refresh", 0, calls.get())
+            assertEquals("no replay", 1, base.sends.size)
+        }
+
+    @Test
+    fun `a rejection the request does not call a refusal of its caller still recovers`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = UnauthorizedUntilReplayed()
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = AuthRecoveryPolicy(),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(callerRefusalRequest { false })
+
+            assertEquals("the replay answered", OK, response.statusCode)
+            assertEquals("one refresh", 1, calls.get())
+            assertEquals("the send and its replay", 2, base.sends.size)
         }
 
     @Test
