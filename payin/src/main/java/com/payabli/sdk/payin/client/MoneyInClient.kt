@@ -176,8 +176,8 @@ internal class MoneyInClient(
      * Reads a transaction back by its identifier.
      *
      * Two refusals are named before the status table reads the rest: a caller this transaction may not be read
-     * by, which no new credential changes and so is never refreshed or replayed, and an identifier with nothing
-     * visible under it yet. An answer that names no transaction, or another one, is unreadable.
+     * by, which no new credential changes and so spends no refresh and never ends the session, and an
+     * identifier with nothing visible under it yet. An answer that names no transaction, or another one, is unreadable.
      *
      * @param transId the transaction to read.
      * @return the transaction, filled with the fields a read carries.

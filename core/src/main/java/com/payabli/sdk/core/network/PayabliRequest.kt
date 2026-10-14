@@ -29,11 +29,11 @@ public class PayabliRequest(
     public val isCredentialPinned: Boolean = false,
     /**
      * Whether a rejection is this caller being refused the request rather than its credential being refused.
-     * Where it answers true, a new credential cannot change the answer, so credential recovery is skipped: no
-     * refresh, no replay, and the rejection reaches the caller as it arrived.
+     * A new credential cannot change that answer. Where it answers true for the first response, there is no
+     * refresh and no replay; where it answers true for a replay after a refresh, the session is not ended.
+     * Either way the rejection reaches the caller as it arrived.
      *
-     * Read for one response at a time, unlike [isCredentialPinned], so the route's other rejections still
-     * recover.
+     * Read for each response, unlike [isCredentialPinned], so the route's other rejections still recover.
      */
     public val isCallerRefusal: (PayabliResponse) -> Boolean = { false },
 ) {

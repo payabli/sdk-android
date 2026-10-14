@@ -86,6 +86,17 @@ internal class AuthenticatedTransport(
         val second = withContext(replayed) { base.execute(request) }
         if (!recovery.isCredentialRejection(second)) return second
 
+        // The fresh credential reached the route, and the route refused this caller with it. That says nothing
+        // about the session, so it must not end it.
+        if (request.isCallerRefusal(second)) {
+            logger.warn(
+                LogField.safe("method", request.method.wireName),
+                LogField.safe("statusCode", second.statusCode),
+                routeField(request),
+            ) { "the replay was refused to this caller rather than its credential" }
+            return second
+        }
+
         // A token minted seconds ago and refused again is an authorization fact, not a transient one, which
         // is the same reason AuthRecoveryPolicy.exhausted is not open. Nothing further inside the SDK can fix
         // it, so the session hears about it before the caller does.
