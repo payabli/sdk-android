@@ -45,7 +45,7 @@ public sealed class PayInTransactionStatus {
 
     internal companion object {
         /**
-         * Maps a wire status number by name, never by position, so a number this SDK does not know is [Other].
+         * Maps a wire status number to its status, and a number this SDK does not name to [Other].
          *
          * @param raw the status number the service sent.
          * @return the status it names.

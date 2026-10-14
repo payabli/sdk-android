@@ -197,7 +197,7 @@ internal class PayInPaymentFlow private constructor(
         idempotencyKey: String?,
     ): Result<PayInResult> = submission.void(entryPoint, transId, idempotencyKey).asPayment()
 
-    /** The interface half: refuses before anything is sent, until the read is built. */
+    /** Refuses before anything is sent. */
     override suspend fun readTransaction(transId: String): Result<PayInTransaction> =
         Result.failure(
             PayabliGenericException(
