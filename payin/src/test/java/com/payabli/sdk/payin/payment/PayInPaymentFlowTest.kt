@@ -119,6 +119,18 @@ class PayInPaymentFlowTest {
         }
 
     @Test
+    fun `the declared read refuses before anything is sent`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val failure = flow.readTransaction("101-abc").exceptionOrNull()
+
+            assertEquals(PayabliErrorType.SDK_INTERNAL_ERROR, (failure as PayabliException).type)
+            assertEquals(0, transport.count)
+        }
+
+    @Test
     fun `a host that collected the card captures without drawing a form`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
