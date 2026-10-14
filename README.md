@@ -169,6 +169,7 @@ Each operation needs its own permission on those credentials:
 |---|---|
 | Charge, authorize, or capture an authorization | `inboundpayments_create` |
 | Void a transaction | `inboundpayments_void` |
+| Read a transaction back | `inboundpayments_read` |
 | Save a payment method | `tokens_create` |
 | Initialize Tap to Pay on a phone | `tools_init` and `pos_create` |
 | Activate a phone with its code | `pos_create` |
@@ -355,9 +356,9 @@ retry.
 | **Unknown** | `PayInException.Unsettled`, or a cancellation of `capture` after it was called | a `TapToPayException` whose `capture` is `UNKNOWN` | Not until you've checked |
 | **Charged, not confirmed** | — | a `TapToPayException` whose `capture` is `CHARGED` | No. Call `closeCapturedCharge` |
 
-When the outcome is unknown, look the transaction up from your backend with
-[`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction)
-before you charge again. `PayInException.Unsettled` and `TapToPayException` carry the `paymentTransId` to
+When the outcome is unknown, look the transaction up before you charge again. On card-not-present, call
+`readTransaction(transId)` and check its `status`. From your backend, use
+[`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction). `PayInException.Unsettled` and `TapToPayException` carry the `paymentTransId` to
 look up when there is one. When there isn't, find the transaction in the Payabli portal before you charge
 again. On card-not-present, setting `orderId` on each request lets you find it by your own reference.
 Store the transaction ID with your order every time you get one.

@@ -23,6 +23,7 @@ OAuth2 credentials with a permission for each operation you use:
 |---|---|
 | `capture`, `authorize`, `captureAuthorizedTransaction` | `inboundpayments_create` |
 | `voidTransaction` | `inboundpayments_void` |
+| `readTransaction` | `inboundpayments_read` |
 | `storeMethod` | `tokens_create` |
 
 ## Before you start
@@ -163,7 +164,7 @@ or "voided":
 | `Result.success` | Charged, except an `isAsync` capture, which is accepted and not yet known | Store the transaction ID; look an async capture up before fulfilling |
 | `PayInException.Refused`, for example a decline | Not charged | You can retry |
 | `PayInException.InvalidInput` | Not charged; the request was refused before it was sent | Fix the named field |
-| `PayInException.Unsettled`, or a cancellation of any call but `storeMethod` after it was called | Unknown | Look the transaction up before charging again: by `Unsettled.paymentTransId` when there is one, otherwise in the Payabli portal by the `orderId` you set on the request, so set and keep one on each request. After `captureAuthorizedTransaction` or `voidTransaction`, look up the transaction ID you passed. |
+| `PayInException.Unsettled`, or a cancellation of any call but `storeMethod` after it was called | Unknown | Read the transaction back with `readTransaction` before charging again: by `Unsettled.paymentTransId` when there is one, otherwise find it in the Payabli portal by the `orderId` you set on the request, so set and keep one on each request. After `captureAuthorizedTransaction` or `voidTransaction`, read back the transaction ID you passed. |
 | `PayInException.AlreadySubmitting` | Not charged; a submission is already running | Wait for it |
 | `PayInException.ServiceError`, `PayInException.Undecodable`, on `storeMethod` | The service answered with an error, or its answer couldn't be read | Read the stored methods back before storing again. On a charge, these arrive as `Unsettled` |
 | A core `PayabliException`, such as a refused credential, a rate limit or `TOKEN_PROVIDER_FAILED` | On a charge, not charged: an unknown outcome arrives as `Unsettled` instead. On `storeMethod`, a network failure may have saved the method | Branch on its `type`, or its `category` for the remedy. After a network failure on `storeMethod`, read the stored methods back before storing again |
@@ -201,6 +202,7 @@ can repeat what was submitted.
 | `authorize(request)` | Authorizes a card, a stored card or a cloud device |
 | `captureAuthorizedTransaction(request)` | Captures an earlier authorization |
 | `voidTransaction(transId)` | Voids a transaction that hasn't settled |
+| `readTransaction(transId)` | Reads a transaction back and returns its `status`. A failure of type `TRANSACTION_NOT_FOUND` means nothing is visible under that ID yet, which isn't proof no payment was made: read again later rather than charging again |
 | `storeMethod(request)` | Saves a payment method and returns its stored ID |
 
 ### Form configuration
