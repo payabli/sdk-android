@@ -17,9 +17,9 @@ internal class DrawnSection(
 )
 
 /**
- * [sections] with every amount other than zero placed in one summary. A host's summary section
- * decides where the figures go and what it is called, never which figures appear; with no
- * figure to show, none is drawn.
+ * [sections] with every displayed amount other than zero placed in one summary; the Amount row
+ * needs [showsBaseAmount]. A host's summary section decides where the figures go and what it
+ * is called, never which figures appear; with no figure to show, none is drawn.
  *
  * @param sections the form's sections.
  * @param amounts what is being charged, or null for none.
