@@ -78,6 +78,7 @@ class TelemetryCatalogTest {
             TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED,
             TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED,
             TelemetryEvents.PAYIN_VOID_COMPLETED,
+            TelemetryEvents.PAYIN_READ_COMPLETED,
         ).forEach { event ->
             val scrubbed =
                 TelemetryCatalog.scrub(
