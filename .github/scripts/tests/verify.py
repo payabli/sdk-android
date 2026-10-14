@@ -1939,6 +1939,7 @@ LIVE_WORKFLOWS = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml")
 MIRROR_WORKFLOW = "card-reader-mirror.yml"
 QA_WORKFLOW = "qa-snapshot.yml"
 RELEASE_WORKFLOW = "release.yml"
+GATE_WORKFLOW = "public-surface.yml"
 
 
 def workflow_text(name: str) -> str:
@@ -2869,7 +2870,7 @@ def test_workflows():
     # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
     # its two mutations could not have run on the change that broke them.
     guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", MIRROR_WORKFLOW,
-               "ci.yml", QA_WORKFLOW, RELEASE_WORKFLOW)
+               "ci.yml", QA_WORKFLOW, RELEASE_WORKFLOW, GATE_WORKFLOW)
     harness = workflow_doc("scripts.yml")
     triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})
     for event in ("pull_request", "push"):
@@ -3330,7 +3331,13 @@ def test_workflows():
             if key not in sources or before is None or after is None:
                 unreadable.append(desc or "<unnamed>")
                 continue
-            found = (SDK / sources[key]).read_text().count(before)
+            # A target the tree under test does not carry is reported rather than raised: a raised
+            # check stops the run before every later one, which reads like a clean run.
+            try:
+                found = (SDK / sources[key]).read_text().count(before)
+            except OSError:
+                broken.append(f"{desc or '<unnamed>'}: target {sources[key]} unreadable")
+                continue
             if found != 1 or before == after:
                 broken.append(f"{desc}: matched {found}x" + (" and changes nothing" if before == after else ""))
         # Not fatal on its own: a row may build its anchor in a way this cannot read. It is reported so the
@@ -4287,6 +4294,48 @@ def test_workflows():
     check("W17 and no ci.yml job replaces the workflow's shell", not overridden, f"{overridden}")
     ci_exits = early_exits([step for job in ci_jobs.values() for step in job_steps(job)])
     check("W17 and no ci.yml step exits except to refuse", not ci_exits, " | ".join(ci_exits))
+
+    # The signature gate is the pull request's own guarantee, and a release names a commit that
+    # passed CI on main, so a gate inside CI is one a release depends on through CI. The gate runs
+    # in a workflow of its own, CI carries none of it, and the release carries its own copy before
+    # the publish. The four commands are compared parsed and in order, because a flattened
+    # substring match passes an echo carrying the words and a diff run before the regeneration.
+    GATE_COMMANDS = [
+        ["rm", "core/api/release.txt"],
+        ["./gradlew", ":core:metalavaGenerateSignatureRelease"],
+        ["git", "ls-files", "--error-unmatch", "core/api/release.txt"],
+        ["git", "diff", "--exit-code", "--", "core/api/release.txt"],
+    ]
+    gate_doc = workflow_doc(GATE_WORKFLOW)
+    gate_on = (gate_doc.get(True) if True in gate_doc else gate_doc.get("on")) or {}
+    gate_jobs = {name: job for name, job in (gate_doc.get("jobs") or {}).items()
+                 if isinstance(job, dict)}
+    gate_steps = [step for job in gate_jobs.values() for step in job_steps(job)]
+    gate = [step for step in gate_steps if step.get("name") == "Public surface"]
+    check("W17 the gate workflow runs on pull requests to main and nothing else",
+          set(gate_on) == {"pull_request"}
+          and (gate_on.get("pull_request") or {}).get("branches") == ["main"],
+          f"{sorted(gate_on)}")
+    check("W17 and it is one job holding the gate as its one step",
+          len(gate_jobs) == 1 and len(gate) == 1,
+          f"{sorted(gate_jobs)} {[step.get('name') for step in gate_steps]}")
+    check("W17 and the gate runs the record's four commands in order",
+          commands_of(gate[0]) == GATE_COMMANDS if len(gate) == 1 else False,
+          f"{commands_of(gate[0]) if gate else ''}")
+    check("W17 and CI carries no gate, so a release never depends on it through CI",
+          not [step for job in ci_jobs.values() for step in job_steps(job)
+               if step.get("name") == "Public surface"], "")
+    release_build_steps = job_steps(
+        (workflow_doc(RELEASE_WORKFLOW).get("jobs") or {}).get("build") or {})
+    release_gate = [i for i, step in enumerate(release_build_steps)
+                    if step.get("name") == "Public surface"]
+    release_publish = [i for i, step in enumerate(release_build_steps)
+                       if step.get("name") == "Publish to the staging directory"]
+    check("W17 and the release runs the gate's four commands before the publish",
+          len(release_gate) == 1 and len(release_publish) == 1
+          and release_gate[0] < release_publish[0]
+          and commands_of(release_build_steps[release_gate[0]]) == GATE_COMMANDS,
+          f"{[step.get('name') for step in release_build_steps]}")
 
 
 

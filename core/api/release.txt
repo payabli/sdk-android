@@ -1,0 +1,921 @@
+// Signature format: 4.0
+package com.payabli.sdk.core {
+
+  public final class BuildConfig {
+    ctor public BuildConfig();
+    field public static final String BUILD_TYPE = "release";
+    field public static final boolean DEBUG = false;
+    field public static final String LIBRARY_PACKAGE_NAME = "com.payabli.sdk.core";
+    field public static final String SDK_IDENTIFIER = "com.payabli.sdk";
+    field public static final String SDK_VERSION = "0.1.1";
+  }
+
+  public final class HostBindings {
+    ctor public HostBindings(android.content.Context appContext);
+    method @InaccessibleFromKotlin public android.content.Context getAppContext();
+    property public android.content.Context appContext;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class PayabliSdkVersion {
+    method @InaccessibleFromKotlin public String getVALUE();
+    property public String VALUE;
+    field public static final com.payabli.sdk.core.PayabliSdkVersion INSTANCE;
+  }
+
+  public final class PayabliSession {
+    method @InaccessibleFromKotlin public String? getDeviceId();
+    method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public com.payabli.sdk.core.telemetry.TelemetrySessionContext getTelemetry();
+    method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public com.payabli.sdk.core.network.PayabliTransport getTransport();
+    property public String? deviceId;
+    property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public com.payabli.sdk.core.telemetry.TelemetrySessionContext telemetry;
+    property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public com.payabli.sdk.core.network.PayabliTransport transport;
+    field public static final com.payabli.sdk.core.PayabliSession.Companion Companion;
+  }
+
+  public static final class PayabliSession.Companion {
+    method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public kotlinx.coroutines.flow.StateFlow<com.payabli.sdk.core.SdkState> getState();
+    method public suspend Object? initialize(com.payabli.sdk.core.config.PayabliConfig config, com.payabli.sdk.core.HostBindings host, kotlin.coroutines.Continuation<? super com.payabli.sdk.core.PayabliSession>);
+    method public void setLogLevel(com.payabli.sdk.core.logging.LogLevel level);
+    property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public kotlinx.coroutines.flow.StateFlow<com.payabli.sdk.core.SdkState> state;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public sealed exhaustive interface SdkState {
+  }
+
+  public static final class SdkState.Ready implements com.payabli.sdk.core.SdkState {
+    field public static final com.payabli.sdk.core.SdkState.Ready INSTANCE;
+  }
+
+  public static final class SdkState.ReinitializeRequired implements com.payabli.sdk.core.SdkState {
+    field public static final com.payabli.sdk.core.SdkState.ReinitializeRequired INSTANCE;
+  }
+
+  public static final class SdkState.Uninitialized implements com.payabli.sdk.core.SdkState {
+    field public static final com.payabli.sdk.core.SdkState.Uninitialized INSTANCE;
+  }
+
+}
+
+package com.payabli.sdk.core.config {
+
+  public final class PayabliConfig {
+    ctor public PayabliConfig(String entryPoint, com.payabli.sdk.core.config.PayabliEnvironment environment, com.payabli.sdk.core.config.PayabliTokenProvider tokenProvider, optional boolean telemetryEnabled);
+    method @InaccessibleFromKotlin public String getEntryPoint();
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.config.PayabliEnvironment getEnvironment();
+    method @InaccessibleFromKotlin public boolean getTelemetryEnabled();
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.config.PayabliTokenProvider getTokenProvider();
+    property public String entryPoint;
+    property public com.payabli.sdk.core.config.PayabliEnvironment environment;
+    property public boolean telemetryEnabled;
+    property public com.payabli.sdk.core.config.PayabliTokenProvider tokenProvider;
+  }
+
+  public final class PayabliEnvironment {
+    method @InaccessibleFromKotlin public String getBaseUrl();
+    method @InaccessibleFromKotlin public String getName();
+    method public static com.payabli.sdk.core.config.PayabliEnvironment? named(String name);
+    property public String baseUrl;
+    property public String name;
+    field public static final com.payabli.sdk.core.config.PayabliEnvironment.Companion Companion;
+    field public static final com.payabli.sdk.core.config.PayabliEnvironment PRODUCTION;
+    field public static final com.payabli.sdk.core.config.PayabliEnvironment SANDBOX;
+    field public static final java.util.List<com.payabli.sdk.core.config.PayabliEnvironment> entries;
+  }
+
+  public static final class PayabliEnvironment.Companion {
+    method public com.payabli.sdk.core.config.PayabliEnvironment? named(String name);
+    property public com.payabli.sdk.core.config.PayabliEnvironment PRODUCTION;
+    property public com.payabli.sdk.core.config.PayabliEnvironment SANDBOX;
+    property public java.util.List<com.payabli.sdk.core.config.PayabliEnvironment> entries;
+  }
+
+  public fun interface PayabliTokenProvider {
+    method public suspend Object? freshToken(kotlin.coroutines.Continuation<? super java.lang.String>);
+  }
+
+}
+
+package com.payabli.sdk.core.device {
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class CardPresentLinkage {
+    method public boolean isLinked();
+    method public boolean resolves(String name);
+    property public static String MODULE;
+    field public static final com.payabli.sdk.core.device.CardPresentLinkage INSTANCE;
+    field public static final String MODULE = "com.payabli.sdk.taptopay.CardPresentModule";
+  }
+
+}
+
+package com.payabli.sdk.core.device.platform {
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class DeviceIdentifierFactory {
+    method public String of(android.content.Context context);
+    field public static final com.payabli.sdk.core.device.platform.DeviceIdentifierFactory INSTANCE;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class DeviceProfileFactory {
+    method public com.payabli.sdk.core.telemetry.TelemetryDeviceContext of(android.content.Context context);
+    field public static final com.payabli.sdk.core.device.platform.DeviceProfileFactory INSTANCE;
+  }
+
+}
+
+package com.payabli.sdk.core.devicekey {
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public interface DeviceKey {
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public void delete();
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public void provision();
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public com.payabli.sdk.core.devicekey.DevicePublicKey publicKey();
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public com.payabli.sdk.core.devicekey.DeviceSignature sign(byte[] payload);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public abstract sealed exhaustive class DeviceKeyException extends java.lang.Exception {
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class DeviceKeyException.CryptoUnavailable extends com.payabli.sdk.core.devicekey.DeviceKeyException {
+    ctor public DeviceKeyException.CryptoUnavailable();
+    ctor public DeviceKeyException.CryptoUnavailable(optional Throwable? cause);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class DeviceKeyException.KeyLost extends com.payabli.sdk.core.devicekey.DeviceKeyException {
+    ctor public DeviceKeyException.KeyLost();
+    ctor public DeviceKeyException.KeyLost(optional Throwable? cause);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class DeviceKeyException.SigningFailed extends com.payabli.sdk.core.devicekey.DeviceKeyException {
+    ctor public DeviceKeyException.SigningFailed();
+    ctor public DeviceKeyException.SigningFailed(optional Throwable? cause);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class DevicePublicKey {
+    ctor public DevicePublicKey(byte[] point, String identity);
+    method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public String getIdentity();
+    method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public byte[] getPoint();
+    property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public String identity;
+    property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public byte[] point;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class DeviceSignature {
+    ctor public DeviceSignature(byte[] signature, String identity);
+    method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public String getIdentity();
+    method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public byte[] getSignature();
+    property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public String identity;
+    property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public byte[] signature;
+  }
+
+}
+
+package com.payabli.sdk.core.devicetrust.platform {
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class DeviceTrust {
+    method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public com.payabli.sdk.core.devicekey.DeviceKey getKey();
+    method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public com.payabli.sdk.core.storage.PayabliSecureStorage getStore();
+    property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public com.payabli.sdk.core.devicekey.DeviceKey key;
+    property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public com.payabli.sdk.core.storage.PayabliSecureStorage store;
+    field public static final com.payabli.sdk.core.devicetrust.platform.DeviceTrust.Companion Companion;
+  }
+
+  public static final class DeviceTrust.Companion {
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public suspend Object? open(android.content.Context context, kotlin.coroutines.Continuation<? super com.payabli.sdk.core.devicetrust.platform.DeviceTrust>);
+  }
+
+}
+
+package com.payabli.sdk.core.event {
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class EventMulticaster<T> {
+    ctor public EventMulticaster();
+    method public void emit(T event);
+    method @InaccessibleFromKotlin public kotlinx.coroutines.flow.SharedFlow<T> getEvents();
+    property public kotlinx.coroutines.flow.SharedFlow<T> events;
+  }
+
+}
+
+package com.payabli.sdk.core.logging {
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public enum LogCategory {
+    method @InaccessibleFromKotlin public String getTag();
+    property public String tag;
+    enum_constant public static final com.payabli.sdk.core.logging.LogCategory AUTH;
+    enum_constant public static final com.payabli.sdk.core.logging.LogCategory CORE;
+    enum_constant public static final com.payabli.sdk.core.logging.LogCategory NETWORK;
+    enum_constant public static final com.payabli.sdk.core.logging.LogCategory TAP_TO_PAY;
+    enum_constant public static final com.payabli.sdk.core.logging.LogCategory TELEMETRY;
+    enum_constant public static final com.payabli.sdk.core.logging.LogCategory TOKENIZATION;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public abstract sealed nonexhaustive class LogField {
+    method @InaccessibleFromKotlin public abstract String getName();
+    property public abstract String name;
+    field public static final com.payabli.sdk.core.logging.LogField.Companion Companion;
+  }
+
+  public static final class LogField.Companion {
+    method public com.payabli.sdk.core.logging.LogField lastFour(String name, String? value);
+    method public com.payabli.sdk.core.logging.LogField redacted(String name, Object? value);
+    method public com.payabli.sdk.core.logging.LogField safe(String name, boolean value);
+    method public com.payabli.sdk.core.logging.LogField safe(String name, int value);
+    method public com.payabli.sdk.core.logging.LogField safe(String name, Enum<? extends java.lang.Object?>? value);
+    method public com.payabli.sdk.core.logging.LogField safe(String name, String? value);
+    method public com.payabli.sdk.core.logging.LogField safe(String name, long value);
+  }
+
+  public enum LogLevel {
+    enum_constant public static final com.payabli.sdk.core.logging.LogLevel DEBUG;
+    enum_constant public static final com.payabli.sdk.core.logging.LogLevel ERROR;
+    enum_constant public static final com.payabli.sdk.core.logging.LogLevel FAULT;
+    enum_constant public static final com.payabli.sdk.core.logging.LogLevel INFO;
+    enum_constant public static final com.payabli.sdk.core.logging.LogLevel NONE;
+    enum_constant public static final com.payabli.sdk.core.logging.LogLevel WARN;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class LoggerRegistry {
+    method public com.payabli.sdk.core.logging.SdkLogger of(com.payabli.sdk.core.logging.LogCategory category);
+    field public static final com.payabli.sdk.core.logging.LoggerRegistry INSTANCE;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class NoOpSdkLogger implements com.payabli.sdk.core.logging.SdkLogger {
+    method public boolean isLoggable(com.payabli.sdk.core.logging.LogLevel level);
+    method public void log(com.payabli.sdk.core.logging.LogLevel level, java.util.List<? extends com.payabli.sdk.core.logging.LogField> fields, Throwable? throwable, kotlin.jvm.functions.Function0<java.lang.String> message);
+    field public static final com.payabli.sdk.core.logging.NoOpSdkLogger INSTANCE;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public interface SdkLogger {
+    method public boolean isLoggable(com.payabli.sdk.core.logging.LogLevel level);
+    method public void log(com.payabli.sdk.core.logging.LogLevel level, java.util.List<? extends com.payabli.sdk.core.logging.LogField> fields, Throwable? throwable, kotlin.jvm.functions.Function0<java.lang.String> message);
+  }
+
+  public final class SdkLoggerLevelsKt {
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static void debug(com.payabli.sdk.core.logging.SdkLogger, com.payabli.sdk.core.logging.LogField[] fields, kotlin.jvm.functions.Function0<java.lang.String> message);
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static void debug(com.payabli.sdk.core.logging.SdkLogger, Throwable throwable, com.payabli.sdk.core.logging.LogField[] fields, kotlin.jvm.functions.Function0<java.lang.String> message);
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static void error(com.payabli.sdk.core.logging.SdkLogger, com.payabli.sdk.core.logging.LogField[] fields, kotlin.jvm.functions.Function0<java.lang.String> message);
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static void error(com.payabli.sdk.core.logging.SdkLogger, Throwable throwable, com.payabli.sdk.core.logging.LogField[] fields, kotlin.jvm.functions.Function0<java.lang.String> message);
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static void fault(com.payabli.sdk.core.logging.SdkLogger, com.payabli.sdk.core.logging.LogField[] fields, kotlin.jvm.functions.Function0<java.lang.String> message);
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static void fault(com.payabli.sdk.core.logging.SdkLogger, Throwable throwable, com.payabli.sdk.core.logging.LogField[] fields, kotlin.jvm.functions.Function0<java.lang.String> message);
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static void info(com.payabli.sdk.core.logging.SdkLogger, com.payabli.sdk.core.logging.LogField[] fields, kotlin.jvm.functions.Function0<java.lang.String> message);
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static void info(com.payabli.sdk.core.logging.SdkLogger, Throwable throwable, com.payabli.sdk.core.logging.LogField[] fields, kotlin.jvm.functions.Function0<java.lang.String> message);
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static void warn(com.payabli.sdk.core.logging.SdkLogger, com.payabli.sdk.core.logging.LogField[] fields, kotlin.jvm.functions.Function0<java.lang.String> message);
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static void warn(com.payabli.sdk.core.logging.SdkLogger, Throwable throwable, com.payabli.sdk.core.logging.LogField[] fields, kotlin.jvm.functions.Function0<java.lang.String> message);
+  }
+
+}
+
+package com.payabli.sdk.core.model {
+
+  public final class PayabliDeclineException extends com.payabli.sdk.core.model.PayabliException {
+    ctor public PayabliDeclineException();
+    ctor public PayabliDeclineException(optional String? rawCode, optional String reason, optional String? explanation, optional String? action);
+    method @InaccessibleFromKotlin public String? getAction();
+    method @InaccessibleFromKotlin public String? getExplanation();
+    method @InaccessibleFromKotlin public String? getRawCode();
+    property public String? action;
+    property public String? explanation;
+    property public String? rawCode;
+    field public static final com.payabli.sdk.core.model.PayabliDeclineException.Companion Companion;
+    field public static final String DEFAULT_REASON = "Payment declined (402)";
+  }
+
+  public static final class PayabliDeclineException.Companion {
+    property public static String DEFAULT_REASON;
+  }
+
+  public enum PayabliErrorCategory {
+    method @InaccessibleFromKotlin public String getWireName();
+    property public String wireName;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorCategory CONFIGURATION;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorCategory CREDENTIAL;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorCategory DECLINED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorCategory DEVICE;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorCategory INTERNAL;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorCategory INVALID_REQUEST;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorCategory OUTCOME_UNKNOWN;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorCategory RETRY_LATER;
+  }
+
+  public enum PayabliErrorType {
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.model.PayabliErrorCategory getCategory();
+    method @InaccessibleFromKotlin public int getCode();
+    method @InaccessibleFromKotlin public String getMessage();
+    method @InaccessibleFromKotlin public String getWireName();
+    property public com.payabli.sdk.core.model.PayabliErrorCategory category;
+    property public int code;
+    property public String message;
+    property public String wireName;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType ACTIVATION_ATTEMPTS_EXHAUSTED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType ACTIVATION_CODE_EXPIRED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType ACTIVATION_CODE_INCORRECT;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType ACTIVATION_CODE_MALFORMED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType ACTIVATION_CODE_NOT_ISSUED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CARD_DECLINED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CARD_PRESENT_NOT_ENABLED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CHARGE_NOT_FINISHED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CONFLICT;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DECODING_ERROR;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_HARDWARE_UNSUPPORTED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_IDENTITY_UNAVAILABLE;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_KEY_UNAVAILABLE;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_NOT_PENDING;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_OS_UNSUPPORTED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_PENDING_ACTIVATION;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_SERVICES_OUTDATED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_SETUP_NOT_CONFIGURED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_SETUP_REFUSED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_SETUP_REQUIRED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_SETUP_UNAVAILABLE;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_SETUP_UNSUPPORTED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType ENTRY_POINT_REFUSED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType INVALID_CONFIGURATION;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType INVALID_SIGNATURE;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType MISSING_TOKEN;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType NETWORK_ERROR;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_DECLINED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_CLOSED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_HELD;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_OPENED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_OUTCOME_UNKNOWN;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PERMISSION_DENIED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType RATE_LIMITED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType READER_CREDENTIALS_UNUSABLE;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType READER_DEVICE_REFUSED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType READER_SESSION_EXPIRED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType READER_UNAVAILABLE;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType SDK_INTERNAL_ERROR;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType SERVER_ERROR;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType SESSION_BURNED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType SESSION_NOT_INITIALIZED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType TAP_NOT_COMPLETED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType TERMINAL_NOT_READY;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType TERMS_NOT_ACCEPTED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType TOKEN_EXPIRED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType TOKEN_MALFORMED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType TOKEN_PROVIDER_FAILED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType TOO_MANY_OPEN_CHARGES;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType UNKNOWN;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType USER_CANCELLED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType VALIDATION_ERROR;
+  }
+
+  public final class PayabliErrorTypeKt {
+    method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static boolean getLeavesOutcomeUnknown(com.payabli.sdk.core.model.PayabliErrorType);
+    property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public static boolean com.payabli.sdk.core.model.PayabliErrorType.leavesOutcomeUnknown;
+  }
+
+  public abstract class PayabliException extends java.lang.Exception {
+    ctor protected PayabliException(com.payabli.sdk.core.model.PayabliErrorType type, String reason, optional String? detail, optional Throwable? cause);
+    method @InaccessibleFromKotlin public final com.payabli.sdk.core.model.PayabliErrorCategory getCategory();
+    method @InaccessibleFromKotlin public final int getCode();
+    method @InaccessibleFromKotlin public final String? getDetail();
+    method @InaccessibleFromKotlin public final String getReason();
+    method @InaccessibleFromKotlin public final com.payabli.sdk.core.model.PayabliErrorType getType();
+    property public final com.payabli.sdk.core.model.PayabliErrorCategory category;
+    property public final int code;
+    property public final String? detail;
+    property public final String reason;
+    property public final com.payabli.sdk.core.model.PayabliErrorType type;
+  }
+
+  @kotlinx.serialization.Serializable public final class PayabliFieldError {
+    ctor public PayabliFieldError(String message, optional String? suggestion);
+    method @InaccessibleFromKotlin public String getMessage();
+    method @InaccessibleFromKotlin public String? getSuggestion();
+    property public String message;
+    property public String? suggestion;
+  }
+
+  public final class PayabliGenericException extends com.payabli.sdk.core.model.PayabliException {
+    ctor public PayabliGenericException(com.payabli.sdk.core.model.PayabliErrorType type, String reason, optional String? detail, optional Throwable? cause);
+  }
+
+  public final class PayabliRateLimitException extends com.payabli.sdk.core.model.PayabliException implements com.payabli.sdk.core.model.PayabliRetryAfter {
+    ctor public PayabliRateLimitException();
+    ctor public PayabliRateLimitException(optional Long? retryAfterMillis, optional String reason, optional String? detail);
+    method @InaccessibleFromKotlin public Long? getRetryAfterMillis();
+    property public Long? retryAfterMillis;
+    field public static final com.payabli.sdk.core.model.PayabliRateLimitException.Companion Companion;
+    field public static final String DEFAULT_REASON = "Rate limited (429)";
+  }
+
+  public static final class PayabliRateLimitException.Companion {
+    property public static String DEFAULT_REASON;
+  }
+
+  public interface PayabliRetryAfter {
+    method @InaccessibleFromKotlin public Long? getRetryAfterMillis();
+    property public abstract Long? retryAfterMillis;
+  }
+
+  public final class PayabliServerException extends com.payabli.sdk.core.model.PayabliException implements com.payabli.sdk.core.model.PayabliRetryAfter {
+    ctor public PayabliServerException(int httpStatus, optional String reason, optional String? detail, optional String? problemType, optional String? instance, optional String? rawCode, optional Long? retryAfterMillis);
+    method @InaccessibleFromKotlin public int getHttpStatus();
+    method @InaccessibleFromKotlin public String? getInstance();
+    method @InaccessibleFromKotlin public String? getProblemType();
+    method @InaccessibleFromKotlin public String? getRawCode();
+    method @InaccessibleFromKotlin public Long? getRetryAfterMillis();
+    property public int httpStatus;
+    property public String? instance;
+    property public String? problemType;
+    property public String? rawCode;
+    property public Long? retryAfterMillis;
+    field public static final com.payabli.sdk.core.model.PayabliServerException.Companion Companion;
+    field public static final String DEFAULT_REASON = "Internal server error";
+  }
+
+  public static final class PayabliServerException.Companion {
+    property public static String DEFAULT_REASON;
+  }
+
+  public final class PayabliValidationException extends com.payabli.sdk.core.model.PayabliException {
+    ctor public PayabliValidationException(int httpStatus, optional String reason, optional String? detail, optional String? problemType, optional String? instance, optional String? rawCode, optional java.util.Map<java.lang.String,? extends java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> fieldErrors);
+    method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> getFieldErrors();
+    method @InaccessibleFromKotlin public int getHttpStatus();
+    method @InaccessibleFromKotlin public String? getInstance();
+    method @InaccessibleFromKotlin public String? getProblemType();
+    method @InaccessibleFromKotlin public String? getRawCode();
+    property public java.util.Map<java.lang.String,java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> fieldErrors;
+    property public int httpStatus;
+    property public String? instance;
+    property public String? problemType;
+    property public String? rawCode;
+    field public static final com.payabli.sdk.core.model.PayabliValidationException.Companion Companion;
+    field public static final String DEFAULT_REASON = "Validation failed";
+  }
+
+  public static final class PayabliValidationException.Companion {
+    property public static String DEFAULT_REASON;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public interface RedactedFailure {
+  }
+
+}
+
+package com.payabli.sdk.core.network {
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public class AuthRecoveryPolicy {
+    ctor public AuthRecoveryPolicy();
+    method public final com.payabli.sdk.core.model.PayabliGenericException exhausted();
+    method public boolean isCredentialRejection(com.payabli.sdk.core.network.PayabliResponse response);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public enum HttpMethod {
+    method @InaccessibleFromKotlin public String getWireName();
+    property public String wireName;
+    enum_constant public static final com.payabli.sdk.core.network.HttpMethod DELETE;
+    enum_constant public static final com.payabli.sdk.core.network.HttpMethod GET;
+    enum_constant public static final com.payabli.sdk.core.network.HttpMethod PATCH;
+    enum_constant public static final com.payabli.sdk.core.network.HttpMethod POST;
+    enum_constant public static final com.payabli.sdk.core.network.HttpMethod PUT;
+  }
+
+  public final class IdempotencyKeyMaxAgeKt {
+    property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public static kotlin.time.Duration IDEMPOTENCY_KEY_MAX_AGE;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class PayabliEnvelope {
+    method public com.payabli.sdk.core.network.PayabliEnvelope.DeclineOutcome? declineOutcome(byte[] body);
+    method public com.payabli.sdk.core.network.PayabliEnvelope.DeclineOutcome? declineOutcome(String body);
+    field public static final com.payabli.sdk.core.network.PayabliEnvelope INSTANCE;
+  }
+
+  @kotlinx.serialization.Serializable public static final class PayabliEnvelope.DeclineEnvelope {
+    ctor public PayabliEnvelope.DeclineEnvelope();
+    ctor public PayabliEnvelope.DeclineEnvelope(optional com.payabli.sdk.core.network.PayabliEnvelope.DeclinePayload? responseData);
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.network.PayabliEnvelope.DeclinePayload? getResponseData();
+    property public com.payabli.sdk.core.network.PayabliEnvelope.DeclinePayload? responseData;
+  }
+
+  public static final class PayabliEnvelope.DeclineOutcome {
+    ctor public PayabliEnvelope.DeclineOutcome(Integer? code, String reason);
+    method @InaccessibleFromKotlin public Integer? getCode();
+    method @InaccessibleFromKotlin public String getReason();
+    property public Integer? code;
+    property public String reason;
+  }
+
+  @kotlinx.serialization.Serializable public static final class PayabliEnvelope.DeclinePayload {
+    ctor public PayabliEnvelope.DeclinePayload();
+    ctor public PayabliEnvelope.DeclinePayload(optional Integer? resultCode, optional String? resultText);
+    method @InaccessibleFromKotlin public Integer? getResultCode();
+    method @InaccessibleFromKotlin public String? getResultText();
+    property public Integer? resultCode;
+    property public String? resultText;
+  }
+
+  @kotlinx.serialization.Serializable public static final class PayabliEnvelope.EmptyPayload {
+    ctor public PayabliEnvelope.EmptyPayload();
+  }
+
+  @kotlinx.serialization.Serializable public static final class PayabliEnvelope.Status {
+    ctor public PayabliEnvelope.Status();
+    ctor public PayabliEnvelope.Status(optional Boolean? isSuccess, optional String? responseText);
+    method @InaccessibleFromKotlin public String? getResponseText();
+    method @InaccessibleFromKotlin public Boolean? isSuccess();
+    property public Boolean? isSuccess;
+    property public String? responseText;
+  }
+
+  @kotlinx.serialization.Serializable public static final class PayabliEnvelope.Success<T> {
+    ctor public PayabliEnvelope.Success();
+    ctor public PayabliEnvelope.Success(optional T? responseData);
+    method @InaccessibleFromKotlin public T? getResponseData();
+    property public T? responseData;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class PayabliHttpErrors {
+    method public com.payabli.sdk.core.model.PayabliException? from(com.payabli.sdk.core.network.PayabliResponse response, optional kotlin.jvm.functions.Function1<? super java.lang.Integer,? extends com.payabli.sdk.core.model.PayabliException?> statusOverride);
+    field public static final com.payabli.sdk.core.network.PayabliHttpErrors INSTANCE;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class PayabliJson {
+    method @InaccessibleFromKotlin public kotlinx.serialization.json.Json getFormat();
+    property public kotlinx.serialization.json.Json format;
+    field public static final com.payabli.sdk.core.network.PayabliJson INSTANCE;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class PayabliRequest {
+    ctor public PayabliRequest(com.payabli.sdk.core.network.HttpMethod method, String path, optional String? route, optional java.util.List<kotlin.Pair<java.lang.String,java.lang.String>> query, optional java.util.Map<java.lang.String,java.lang.String> headers, optional byte[]? body, optional boolean isCredentialPinned);
+    method @InaccessibleFromKotlin public byte[]? getBody();
+    method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.lang.String> getHeaders();
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.network.HttpMethod getMethod();
+    method @InaccessibleFromKotlin public String getPath();
+    method @InaccessibleFromKotlin public java.util.List<kotlin.Pair<java.lang.String,java.lang.String>> getQuery();
+    method @InaccessibleFromKotlin public String? getRoute();
+    method @InaccessibleFromKotlin public boolean isCredentialPinned();
+    property public byte[]? body;
+    property public java.util.Map<java.lang.String,java.lang.String> headers;
+    property public boolean isCredentialPinned;
+    property public com.payabli.sdk.core.network.HttpMethod method;
+    property public String path;
+    property public java.util.List<kotlin.Pair<java.lang.String,java.lang.String>> query;
+    property public String? route;
+    field public static final String APPLICATION_JSON = "application/json";
+    field public static final String CONTENT_TYPE_HEADER = "Content-Type";
+    field public static final com.payabli.sdk.core.network.PayabliRequest.Companion Companion;
+    field public static final String IDEMPOTENCY_KEY_HEADER = "idempotencyKey";
+  }
+
+  public static final class PayabliRequest.Companion {
+    method public <T> com.payabli.sdk.core.network.PayabliRequest json(com.payabli.sdk.core.network.HttpMethod method, String path, T body, kotlinx.serialization.KSerializer<T> bodySerializer, optional String? route, optional java.util.Map<java.lang.String,java.lang.String> headers, optional boolean isCredentialPinned);
+    property public static String APPLICATION_JSON;
+    property public static String CONTENT_TYPE_HEADER;
+    property public static String IDEMPOTENCY_KEY_HEADER;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class PayabliResponse {
+    ctor public PayabliResponse(int statusCode, optional java.util.Map<java.lang.String,java.lang.String> headers, optional byte[] body);
+    method public String bodyAsText();
+    method @InaccessibleFromKotlin public byte[] getBody();
+    method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.lang.String> getHeaders();
+    method @InaccessibleFromKotlin public int getStatusCode();
+    method public String? header(String name);
+    method @InaccessibleFromKotlin public boolean isSuccessful();
+    property public byte[] body;
+    property public java.util.Map<java.lang.String,java.lang.String> headers;
+    property public boolean isSuccessful;
+    property public int statusCode;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public interface PayabliTransport {
+    method public suspend Object? execute(com.payabli.sdk.core.network.PayabliRequest request, kotlin.coroutines.Continuation<? super com.payabli.sdk.core.network.PayabliResponse>);
+    method public suspend <T> Object? execute(com.payabli.sdk.core.network.PayabliRequest request, kotlinx.serialization.KSerializer<T> payloadSerializer, kotlin.coroutines.Continuation<? super com.payabli.sdk.core.network.PayabliV2Envelope<T>>);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) @kotlinx.serialization.Serializable public final class PayabliV2Envelope<T> {
+    ctor public PayabliV2Envelope(String code, optional String? reason, optional String? explanation, optional String? action, optional T? payload);
+    method @InaccessibleFromKotlin public String? getAction();
+    method @InaccessibleFromKotlin public String getCode();
+    method @InaccessibleFromKotlin public String? getExplanation();
+    method @InaccessibleFromKotlin public T? getPayload();
+    method @InaccessibleFromKotlin public String? getReason();
+    method @InaccessibleFromKotlin public boolean isApproved();
+    method @InaccessibleFromKotlin public boolean isDeclined();
+    property public String? action;
+    property public String code;
+    property public String? explanation;
+    property public boolean isApproved;
+    property public boolean isDeclined;
+    property @kotlinx.serialization.SerialName("data") public T? payload;
+    property public String? reason;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class PercentEncoding {
+    method public String pathFrom(String template, String segment);
+    method public String segment(String value);
+    field public static final com.payabli.sdk.core.network.PercentEncoding INSTANCE;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class Retry {
+    method public suspend <T> Object? run(optional String? route, optional com.payabli.sdk.core.network.RetryPolicy policy, optional com.payabli.sdk.core.logging.SdkLogger logger, optional kotlin.time.TimeSource timeSource, kotlin.jvm.functions.Function2<? super java.lang.Integer,? super kotlin.coroutines.Continuation<? super T>,? extends java.lang.Object?> operation, kotlin.coroutines.Continuation<? super T>);
+    field public static final com.payabli.sdk.core.network.Retry INSTANCE;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class RetryPolicy {
+    ctor public RetryPolicy();
+    ctor public RetryPolicy(optional int maxAttempts, optional long baseDelayMillis, optional long maxDelayMillis, optional double multiplier, optional long maxJitterMillis, optional Long? totalTimeoutMillis, optional long maxRetryAfterMillis, optional com.payabli.sdk.core.network.RetryPolicy.Jitter jitter, optional kotlin.jvm.functions.Function1<? super com.payabli.sdk.core.model.PayabliException,java.lang.Boolean> isRetryable);
+    method public long delayMillisFor(int attempt);
+    method @InaccessibleFromKotlin public long getBaseDelayMillis();
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.network.RetryPolicy.Jitter getJitter();
+    method @InaccessibleFromKotlin public int getMaxAttempts();
+    method @InaccessibleFromKotlin public long getMaxDelayMillis();
+    method @InaccessibleFromKotlin public long getMaxJitterMillis();
+    method @InaccessibleFromKotlin public long getMaxRetryAfterMillis();
+    method @InaccessibleFromKotlin public double getMultiplier();
+    method @InaccessibleFromKotlin public Long? getTotalTimeoutMillis();
+    method @InaccessibleFromKotlin public kotlin.jvm.functions.Function1<com.payabli.sdk.core.model.PayabliException,java.lang.Boolean> isRetryable();
+    property public long baseDelayMillis;
+    property public kotlin.jvm.functions.Function1<com.payabli.sdk.core.model.PayabliException,java.lang.Boolean> isRetryable;
+    property public com.payabli.sdk.core.network.RetryPolicy.Jitter jitter;
+    property public int maxAttempts;
+    property public long maxDelayMillis;
+    property public long maxJitterMillis;
+    property public long maxRetryAfterMillis;
+    property public double multiplier;
+    property public Long? totalTimeoutMillis;
+    field public static final com.payabli.sdk.core.network.RetryPolicy.Companion Companion;
+    field public static final long DEFAULT_BASE_DELAY_MILLIS = 1000L; // 0x3e8L
+    field public static final int DEFAULT_MAX_ATTEMPTS = 3; // 0x3
+    field public static final long DEFAULT_MAX_DELAY_MILLIS = 8000L; // 0x1f40L
+    field public static final long DEFAULT_MAX_JITTER_MILLIS = 500L; // 0x1f4L
+    field public static final long DEFAULT_MAX_RETRY_AFTER_MILLIS = 30000L; // 0x7530L
+    field public static final double DEFAULT_MULTIPLIER = 2.0;
+  }
+
+  public static final class RetryPolicy.Companion {
+    method @InaccessibleFromKotlin public kotlin.jvm.functions.Function1<com.payabli.sdk.core.model.PayabliException,java.lang.Boolean> getRETRYABLE_BY_CODE();
+    method @InaccessibleFromKotlin public java.util.Set<com.payabli.sdk.core.model.PayabliErrorType> getRETRYABLE_CODES();
+    property public static long DEFAULT_BASE_DELAY_MILLIS;
+    property public static int DEFAULT_MAX_ATTEMPTS;
+    property public static long DEFAULT_MAX_DELAY_MILLIS;
+    property public static long DEFAULT_MAX_JITTER_MILLIS;
+    property public static long DEFAULT_MAX_RETRY_AFTER_MILLIS;
+    property public static double DEFAULT_MULTIPLIER;
+    property public kotlin.jvm.functions.Function1<com.payabli.sdk.core.model.PayabliException,java.lang.Boolean> RETRYABLE_BY_CODE;
+    property public java.util.Set<com.payabli.sdk.core.model.PayabliErrorType> RETRYABLE_CODES;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static fun interface RetryPolicy.Jitter {
+    method public long millisUpTo(long maxMillis);
+    field public static final com.payabli.sdk.core.network.RetryPolicy.Jitter.Companion Companion;
+  }
+
+  public static final class RetryPolicy.Jitter.Companion {
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.network.RetryPolicy.Jitter getNone();
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.network.RetryPolicy.Jitter getRandom();
+    property public com.payabli.sdk.core.network.RetryPolicy.Jitter None;
+    property public com.payabli.sdk.core.network.RetryPolicy.Jitter Random;
+  }
+
+}
+
+package com.payabli.sdk.core.storage {
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public interface PayabliSecureStorage {
+    method public suspend Object? get(String key, kotlin.coroutines.Continuation<? super byte[]?>);
+    method public suspend Object? remove(String key, kotlin.coroutines.Continuation<? super kotlin.Unit>);
+    method public suspend Object? set(String key, byte[] value, kotlin.coroutines.Continuation<? super kotlin.Unit>);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public abstract sealed exhaustive class SecureStorageException extends java.lang.Exception {
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class SecureStorageException.CipherFailed extends com.payabli.sdk.core.storage.SecureStorageException {
+    ctor public SecureStorageException.CipherFailed();
+    ctor public SecureStorageException.CipherFailed(optional Throwable? cause);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class SecureStorageException.CryptoUnavailable extends com.payabli.sdk.core.storage.SecureStorageException {
+    ctor public SecureStorageException.CryptoUnavailable();
+    ctor public SecureStorageException.CryptoUnavailable(optional Throwable? cause);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class SecureStorageException.KeyInvalidated extends com.payabli.sdk.core.storage.SecureStorageException {
+    ctor public SecureStorageException.KeyInvalidated();
+    ctor public SecureStorageException.KeyInvalidated(optional Throwable? cause);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class SecureStorageException.StorageUnavailable extends com.payabli.sdk.core.storage.SecureStorageException {
+    ctor public SecureStorageException.StorageUnavailable();
+    ctor public SecureStorageException.StorageUnavailable(optional Throwable? cause);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class SecureStorageException.ValueUnreadable extends com.payabli.sdk.core.storage.SecureStorageException {
+    ctor public SecureStorageException.ValueUnreadable();
+    ctor public SecureStorageException.ValueUnreadable(optional Throwable? cause);
+  }
+
+  public final class StorageKeysKt {
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static void requireRepresentableKey(String key);
+  }
+
+}
+
+package com.payabli.sdk.core.telemetry {
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public interface SessionScopedRecorder {
+    method public void record(String event, java.util.Map<java.lang.String,java.lang.String> properties, com.payabli.sdk.core.telemetry.TelemetrySessionContext session);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public interface TelemetryBootstrap {
+    method public void start(com.payabli.sdk.core.PayabliSession session, com.payabli.sdk.core.HostBindings? host);
+    method public void stop();
+    field public static final com.payabli.sdk.core.telemetry.TelemetryBootstrap.Companion Companion;
+    field public static final String IMPLEMENTATION = "com.payabli.sdk.telemetry.TelemetryModule";
+  }
+
+  public static final class TelemetryBootstrap.Companion {
+    property public static String IMPLEMENTATION;
+    field public static final String IMPLEMENTATION = "com.payabli.sdk.telemetry.TelemetryModule";
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class TelemetryCatalog {
+    method public boolean forcesSend(String event, java.util.Map<java.lang.String,java.lang.String> properties);
+    method public java.util.Map<java.lang.String,java.lang.String>? scrub(String event, java.util.Map<java.lang.String,java.lang.String> properties);
+    field public static final com.payabli.sdk.core.telemetry.TelemetryCatalog INSTANCE;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class TelemetryDeviceContext {
+    ctor public TelemetryDeviceContext(String idHash, String type, String os, String osVersion, String modelName, optional String packageName);
+    method @InaccessibleFromKotlin public String getIdHash();
+    method @InaccessibleFromKotlin public String getModelName();
+    method @InaccessibleFromKotlin public String getOs();
+    method @InaccessibleFromKotlin public String getOsVersion();
+    method @InaccessibleFromKotlin public String getPackageName();
+    method @InaccessibleFromKotlin public String getType();
+    property public String idHash;
+    property public String modelName;
+    property public String os;
+    property public String osVersion;
+    property public String packageName;
+    property public String type;
+    field @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final com.payabli.sdk.core.telemetry.TelemetryDeviceContext.Companion Companion;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class TelemetryDeviceContext.Companion {
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.telemetry.TelemetryDeviceContext getNONE();
+    property public com.payabli.sdk.core.telemetry.TelemetryDeviceContext NONE;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class TelemetryEvents {
+    property public static String AUTH_TOKEN_ACQUIRED;
+    property public static String AUTH_TOKEN_FAILED;
+    property public static String AUTH_TOKEN_REFRESHED;
+    property public static String FORM_PRESENTED;
+    property public static String FORM_SUBMITTED;
+    property public static String FORM_VALIDATION_ERROR;
+    property public static String PAYIN_AUTHORIZE_COMPLETED;
+    property public static String PAYIN_CAPTURE_COMPLETED;
+    property public static String PAYIN_STORE_METHOD_COMPLETED;
+    property public static String PAYIN_VOID_COMPLETED;
+    property public static String SDK_INITIALIZED;
+    property public static String SDK_INITIALIZE_FAILED;
+    property public static String SDK_INITIALIZE_STARTED;
+    property public static String SDK_TELEMETRY_DISABLED;
+    property public static String TTP_ATTESTATION_FAILED;
+    property public static String TTP_ATTESTATION_QUOTA_EXHAUSTED;
+    property public static String TTP_ATTESTATION_STARTED;
+    property public static String TTP_ATTESTATION_SUCCEEDED;
+    property public static String TTP_CHARGE_FAILED;
+    property public static String TTP_CHARGE_STARTED;
+    property public static String TTP_CHARGE_SUCCEEDED;
+    property public static String TTP_CLOSE_FAILED;
+    property public static String TTP_CLOSE_STARTED;
+    property public static String TTP_CLOSE_SUCCEEDED;
+    property public static String TTP_DEVICE_ACTIVATE_COMPLETED;
+    property public static String TTP_DEVICE_ATTEST_COMPLETED;
+    property public static String TTP_DEVICE_CHALLENGE_COMPLETED;
+    property public static String TTP_DEVICE_CONFIG_COMPLETED;
+    property public static String TTP_DEVICE_REGISTER_COMPLETED;
+    property public static String TTP_INITIALIZE_FAILED;
+    property public static String TTP_INITIALIZE_STARTED;
+    property public static String TTP_INITIALIZE_SUCCEEDED;
+    property public static String TTP_NFC_FAILED;
+    property public static String TTP_NFC_STARTED;
+    property public static String TTP_NFC_SUCCEEDED;
+    property public static String TTP_REINITIALIZE_STARTED;
+    property public static String TTP_REINITIALIZE_SUCCEEDED;
+    property public static String TTP_SESSION_STATE_CHANGED;
+    field public static final String AUTH_TOKEN_ACQUIRED = "auth.tokenAcquired";
+    field public static final String AUTH_TOKEN_FAILED = "auth.tokenFailed";
+    field public static final String AUTH_TOKEN_REFRESHED = "auth.tokenRefreshed";
+    field public static final String FORM_PRESENTED = "form.presented";
+    field public static final String FORM_SUBMITTED = "form.submitted";
+    field public static final String FORM_VALIDATION_ERROR = "form.validationError";
+    field public static final com.payabli.sdk.core.telemetry.TelemetryEvents INSTANCE;
+    field public static final String PAYIN_AUTHORIZE_COMPLETED = "payin.authorize.completed";
+    field public static final String PAYIN_CAPTURE_COMPLETED = "payin.capture.completed";
+    field public static final String PAYIN_STORE_METHOD_COMPLETED = "payin.storeMethod.completed";
+    field public static final String PAYIN_VOID_COMPLETED = "payin.void.completed";
+    field public static final String SDK_INITIALIZED = "sdk.initialized";
+    field public static final String SDK_INITIALIZE_FAILED = "sdk.initialize.failed";
+    field public static final String SDK_INITIALIZE_STARTED = "sdk.initialize.started";
+    field public static final String SDK_TELEMETRY_DISABLED = "sdk.telemetryDisabled";
+    field public static final String TTP_ATTESTATION_FAILED = "ttp.attestation.failed";
+    field public static final String TTP_ATTESTATION_QUOTA_EXHAUSTED = "ttp.attestation.quotaExhausted";
+    field public static final String TTP_ATTESTATION_STARTED = "ttp.attestation.started";
+    field public static final String TTP_ATTESTATION_SUCCEEDED = "ttp.attestation.succeeded";
+    field public static final String TTP_CHARGE_FAILED = "ttp.charge.failed";
+    field public static final String TTP_CHARGE_STARTED = "ttp.charge.started";
+    field public static final String TTP_CHARGE_SUCCEEDED = "ttp.charge.succeeded";
+    field public static final String TTP_CLOSE_FAILED = "ttp.close.failed";
+    field public static final String TTP_CLOSE_STARTED = "ttp.close.started";
+    field public static final String TTP_CLOSE_SUCCEEDED = "ttp.close.succeeded";
+    field public static final String TTP_DEVICE_ACTIVATE_COMPLETED = "ttp.device.activate.completed";
+    field public static final String TTP_DEVICE_ATTEST_COMPLETED = "ttp.device.attest.completed";
+    field public static final String TTP_DEVICE_CHALLENGE_COMPLETED = "ttp.device.challenge.completed";
+    field public static final String TTP_DEVICE_CONFIG_COMPLETED = "ttp.device.config.completed";
+    field public static final String TTP_DEVICE_REGISTER_COMPLETED = "ttp.device.register.completed";
+    field public static final String TTP_INITIALIZE_FAILED = "ttp.initialize.failed";
+    field public static final String TTP_INITIALIZE_STARTED = "ttp.initialize.started";
+    field public static final String TTP_INITIALIZE_SUCCEEDED = "ttp.initialize.succeeded";
+    field public static final String TTP_NFC_FAILED = "ttp.nfc.failed";
+    field public static final String TTP_NFC_STARTED = "ttp.nfc.started";
+    field public static final String TTP_NFC_SUCCEEDED = "ttp.nfc.succeeded";
+    field public static final String TTP_REINITIALIZE_STARTED = "ttp.reinitialize.started";
+    field public static final String TTP_REINITIALIZE_SUCCEEDED = "ttp.reinitialize.succeeded";
+    field public static final String TTP_SESSION_STATE_CHANGED = "ttp.session.stateChanged";
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class TelemetryProperties {
+    field public static final com.payabli.sdk.core.telemetry.TelemetryProperties INSTANCE;
+  }
+
+  public static final class TelemetryProperties.Origin {
+    property public static String CHARGE;
+    property public static String DIRECT;
+    property public static String FORM;
+    property public static String RETRY;
+    field public static final String CHARGE = "charge";
+    field public static final String DIRECT = "direct";
+    field public static final String FORM = "form";
+    field public static final com.payabli.sdk.core.telemetry.TelemetryProperties.Origin INSTANCE;
+    field public static final String RETRY = "retry";
+  }
+
+  public static final class TelemetryProperties.Outcome {
+    method @InaccessibleFromKotlin public java.util.Set<java.lang.String> getSUCCESSFUL();
+    property public static String APPROVED;
+    property public static String DECLINED;
+    property public static String FAILED;
+    property public static String INTERRUPTED;
+    property public static String REFUSED;
+    property public static String REFUSED_LOCALLY;
+    property public static String SUCCEEDED;
+    property public java.util.Set<java.lang.String> SUCCESSFUL;
+    field public static final String APPROVED = "approved";
+    field public static final String DECLINED = "declined";
+    field public static final String FAILED = "failed";
+    field public static final com.payabli.sdk.core.telemetry.TelemetryProperties.Outcome INSTANCE;
+    field public static final String INTERRUPTED = "interrupted";
+    field public static final String REFUSED = "refused";
+    field public static final String REFUSED_LOCALLY = "refused_locally";
+    field public static final String SUCCEEDED = "succeeded";
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public enum TelemetryProperty {
+    method @InaccessibleFromKotlin public String getKey();
+    property public String key;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty ATTEMPT;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty CODE;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty DURATION_MS;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty ERROR_NUMBER;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty FIELD;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty FROM;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty ORIGIN;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty OUTCOME;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty REASON;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty STATE;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty STEP;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty TO;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public fun interface TelemetryRecorder {
+    method public void record(String event, java.util.Map<java.lang.String,java.lang.String> properties);
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class TelemetryRecorders {
+    method public void clear();
+    method public void install(com.payabli.sdk.core.telemetry.TelemetryRecorder recorder);
+    method public inline void record(String event, optional kotlin.jvm.functions.Function0<? extends java.util.Map<java.lang.String,java.lang.String>> properties);
+    method public inline void recordFor(com.payabli.sdk.core.telemetry.TelemetrySessionContext session, String event, optional kotlin.jvm.functions.Function0<? extends java.util.Map<java.lang.String,java.lang.String>> properties);
+    field public static final com.payabli.sdk.core.telemetry.TelemetryRecorders INSTANCE;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class TelemetrySessionContext {
+    ctor public TelemetrySessionContext(String entryPoint, com.payabli.sdk.core.config.PayabliEnvironment environment, boolean telemetryEnabled, String sessionId, com.payabli.sdk.core.telemetry.TelemetryDeviceContext device);
+    method public com.payabli.sdk.core.telemetry.TelemetrySessionContext forEntryPoint(String entryPoint);
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.telemetry.TelemetryDeviceContext getDevice();
+    method @InaccessibleFromKotlin public String getEntryPoint();
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.config.PayabliEnvironment getEnvironment();
+    method @InaccessibleFromKotlin public String getSessionId();
+    method @InaccessibleFromKotlin public boolean getTelemetryEnabled();
+    property public com.payabli.sdk.core.telemetry.TelemetryDeviceContext device;
+    property public String entryPoint;
+    property public com.payabli.sdk.core.config.PayabliEnvironment environment;
+    property public String sessionId;
+    property public boolean telemetryEnabled;
+  }
+
+}
+

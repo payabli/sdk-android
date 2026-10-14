@@ -15,6 +15,12 @@ dependencies {
     // versions report no violations at all on Gradle 9 with AGP's built-in Kotlin.
     // Keep in sync with `ktlintGradle` in ../gradle/libs.versions.toml.
     implementation("org.jlleitschuh.gradle.ktlint:org.jlleitschuh.gradle.ktlint.gradle.plugin:14.2.0")
+    // metalava, applied by payabli.api-surface.gradle.kts. 0.5.1 is the version measured
+    // attaching to this build (AGP 9.2.1, Gradle 9, AGP's built-in Kotlin); its tasks must be
+    // listed by `:core:tasks --all` to count as attached, because the plugin applying cleanly
+    // proves nothing.
+    // Keep in sync with `metalavaGradle` in ../gradle/libs.versions.toml.
+    implementation("me.tylerbwong.gradle.metalava:me.tylerbwong.gradle.metalava.gradle.plugin:0.5.1")
     testImplementation(gradleTestKit())
     // Keep in sync with `junit` in ../gradle/libs.versions.toml.
     testImplementation("junit:junit:4.13.2")

@@ -67,6 +67,10 @@ jobs:
         run: ./gradlew :core:assembleDebug :payin:assembleDebug :telemetry:assembleDebug
           :testutils:assembleDebug
 
+      # The public-surface gate runs in its own workflow, on the pull request: a release names a
+      # commit that passed this workflow on main, so a gate inside it is one a release depends on
+      # through CI.
+
       - name: Unit tests
         run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test
 

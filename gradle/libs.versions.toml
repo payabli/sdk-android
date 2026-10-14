@@ -22,6 +22,11 @@ espressoCore = "3.7.0"
 activityCompose = "1.8.2"
 kotlin = "2.2.10"
 composeBom = "2026.02.01"
+# The API-signature plugin behind the payabli.api-surface convention plugin, which gates the public
+# surface a published module ships. 0.5.1 is the version measured attaching to this build (AGP
+# 9.2.1, Gradle 9, AGP's built-in Kotlin): a version that applies but registers no tasks passes
+# every check, so the task list is the evidence, not the apply.
+metalavaGradle = "0.5.1"
 # The sample app's navigation and its lifecycle-to-Compose bridges. Both are held to their last 2.9
 # stable: every artifact in those lines declares a kotlin-stdlib of 2.0.21 or 2.1.20, which a 2.2
 # compiler can read. That is the same ceiling the block further down describes, and it is the reason
@@ -80,5 +85,6 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }
+metalava = { id = "me.tylerbwong.gradle.metalava", version.ref = "metalavaGradle" }
 sonarqube = { id = "org.sonarqube", version.ref = "sonarqube" }
 

@@ -188,6 +188,17 @@ jobs:
           # See the note on the first setup-gradle in ci.yml.
           cache-provider: basic
 
+      # The release checks what it ships: the signature of the release build must match the committed
+      # record, so a record corrupted on the release commit, or a surface that drifted without the
+      # record, refuses the publish before a version number is spent. Nothing else in the build reads
+      # the signature: assembling and publishing work with the plugin absent.
+      - name: Public surface
+        run: |
+          rm core/api/release.txt
+          ./gradlew :core:metalavaGenerateSignatureRelease
+          git ls-files --error-unmatch core/api/release.txt
+          git diff --exit-code -- core/api/release.txt
+
       - name: Publish to the staging directory
         env:
           PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}

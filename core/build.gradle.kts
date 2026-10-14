@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     id("payabli.publish")
     id("payabli.quality")
+    id("payabli.api-surface")
 }
 
 // Environments this build adds to the two committed in PayabliEnvironment.kt. The setting appends and can do
