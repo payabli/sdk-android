@@ -64,7 +64,8 @@ internal object PayInAmountSerializer : KSerializer<BigDecimal> {
      * The text is never in the message: an amount is not a secret, but a decode error is not the place.
      *
      * @param text the amount as the wire wrote it.
-     * @return the amount, or a decode failure when it is not a number.
+     * @return the amount.
+     * @throws SerializationException when the text is not a number.
      */
     private fun parse(text: String): BigDecimal =
         text.toBigDecimalOrNull() ?: throw SerializationException("An amount could not be read as a number")
