@@ -1448,20 +1448,31 @@ MUTATIONS = [
     # each anchor below names every line between the one it breaks and `push:`. Adding an entry to the
     # filter therefore moves every anchor after it, and leaves them matching nothing.
     ("The harness stops running when the nightly changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/nightly.yml'\n      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:",
+     "      - '.github/workflows/nightly.yml'\n      - '.github/workflows/card-reader-mirror.yml'\n"
+     "      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n"
+     "      - '.github/workflows/release.yml'\n      - '.github/workflows/public-surface.yml'\n  push:",
      "      - '.github/workflows/nightly-disabled.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n"
+     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n"
+     "      - '.github/workflows/public-surface.yml'\n  push:"),
 
     ("The harness stops running when a live workflow changes", SCRIPTS, "workflows",
      "      - '.github/workflows/live-*.yml'\n      - '.github/workflows/nightly.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n"
+     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n"
+     "      - '.github/workflows/public-surface.yml'\n  push:",
      "      - '.github/workflows/live-disabled-*.yml'\n      - '.github/workflows/nightly.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n"
+     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n"
+     "      - '.github/workflows/public-surface.yml'\n  push:"),
 
     ("The harness stops running when the card reader mirror changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n"
+     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n"
+     "      - '.github/workflows/public-surface.yml'\n  push:",
      "      - '.github/workflows/card-reader-mirror-disabled.yml'\n"
-     "      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:"),
+     "      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n"
+     "      - '.github/workflows/release.yml'\n      - '.github/workflows/public-surface.yml'\n  push:"),
 
     # The mirror's permission split. The token is what turns repository-controlled code into an identity
     # that can write the origin, and every one of these hands it to a run that publishes nothing.
@@ -1639,12 +1650,30 @@ MUTATIONS = [
      'for module in ("taptopay",)'),
 
     ("The harness stops running when only ci.yml changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n"
+     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n"
+     "      - '.github/workflows/public-surface.yml'\n  push:",
      "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
 
     ("The harness stops running when release.yml changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:",
+     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n"
+     "      - '.github/workflows/public-surface.yml'\n  push:",
      "      - '.github/workflows/qa-snapshot.yml'\n  push:"),
+
+    # The gate's own workflow, on each trigger: a pull request that touches nothing else would
+    # rewrite the gate with no check reading it.
+    ("The harness stops running when the gate's workflow changes on a pull request", SCRIPTS,
+     "workflows",
+     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n"
+     "      - '.github/workflows/public-surface.yml'\n  push:",
+     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n"
+     "      - '.github/workflows/public-surface-disabled.yml'\n  push:"),
+
+    ("The harness stops running when the gate's workflow changes on a push", SCRIPTS, "workflows",
+     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n"
+     "      - '.github/workflows/public-surface.yml'\n\nconcurrency:",
+     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n"
+     "      - '.github/workflows/public-surface-disabled.yml'\n\nconcurrency:"),
 
     ("Release drops a suite ci.yml runs", RELEASE, "workflows",
      ":testutils:test :taptopay:test :example:test\n          ./gradlew -p build-logic test",

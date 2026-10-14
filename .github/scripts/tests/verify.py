@@ -2870,7 +2870,7 @@ def test_workflows():
     # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
     # its two mutations could not have run on the change that broke them.
     guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", MIRROR_WORKFLOW,
-               "ci.yml", QA_WORKFLOW, RELEASE_WORKFLOW)
+               "ci.yml", QA_WORKFLOW, RELEASE_WORKFLOW, GATE_WORKFLOW)
     harness = workflow_doc("scripts.yml")
     triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})
     for event in ("pull_request", "push"):
