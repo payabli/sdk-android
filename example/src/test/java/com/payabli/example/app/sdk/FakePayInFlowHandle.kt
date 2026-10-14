@@ -37,5 +37,9 @@ internal class FakePayInFlowHandle(
         return answer(transId, idempotencyKey)
     }
 
-    override suspend fun readTransaction(transId: String): PayInReadOutcome = readAnswer(transId)
+    /** Waits on the same gate as a reversal, so a test can hold a read in flight. */
+    override suspend fun readTransaction(transId: String): PayInReadOutcome {
+        released.await()
+        return readAnswer(transId)
+    }
 }

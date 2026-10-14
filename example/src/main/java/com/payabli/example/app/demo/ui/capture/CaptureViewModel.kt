@@ -303,7 +303,8 @@ class CaptureViewModel(
      * result step keeps its shape. What stops a second void is [CaptureUiState.voidedTransactionId].
      */
     fun voidLastTransaction() {
-        if (_uiState.value.isVoiding) return
+        // A read in flight writes the result panel when it returns, so the two would overwrite each other.
+        if (_uiState.value.isVoiding || _uiState.value.isReading) return
         val payments = _uiState.value.payments ?: return
         val transId = _uiState.value.voidableTransactionId ?: return
         val key = _uiState.value.voidIdempotencyKey ?: return
@@ -334,7 +335,7 @@ class CaptureViewModel(
      * screen is not showing.
      */
     fun readLastTransaction() {
-        if (_uiState.value.isReading) return
+        if (_uiState.value.isReading || _uiState.value.isVoiding) return
         val payments = _uiState.value.payments ?: return
         val transId = _uiState.value.readableTransactionId ?: return
         _uiState.update { it.copy(isReading = true) }
@@ -429,8 +430,9 @@ class CaptureViewModel(
     fun startOver() {
         // Synchronously, before anything is replaced. A void in flight is about the transaction this screen is
         // showing, and clearing it here would leave that coroutine writing its outcome over the next attempt:
-        // a reversal reported against a payment that had not been taken yet.
-        if (_uiState.value.isVoiding) return
+        // a reversal reported against a payment that had not been taken yet. A read is the same, reporting a
+        // status against the next payment.
+        if (_uiState.value.isVoiding || _uiState.value.isReading) return
         _uiState.update {
             val attempt = attempt(SampleAmount.random())
             it.copy(

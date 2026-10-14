@@ -191,7 +191,7 @@ fun PaymentFlowScreen(
                     text = if (state.isVoiding) "Voiding…" else "Void this transaction",
                     icon = DemoIcons.Void,
                     onClick = onVoid,
-                    enabled = !state.isVoiding,
+                    enabled = !state.isVoiding && !state.isReading,
                 )
             }
             val onRead = actions.onRead
@@ -200,7 +200,7 @@ fun PaymentFlowScreen(
                     text = if (state.isReading) "Checking…" else "Check this transaction's status",
                     icon = DemoIcons.ReadBack,
                     onClick = onRead,
-                    enabled = !state.isReading,
+                    enabled = !state.isReading && !state.isVoiding,
                 )
             }
             // A finished step draws no controls, so a completed submit takes the form off the screen. This is
@@ -213,7 +213,7 @@ fun PaymentFlowScreen(
                     // A reversal in flight is about the transaction this step is describing, and starting over
                     // clears it. The model refuses it too: a button disabled through state is not a guard,
                     // because a second tap lands before the recomposition.
-                    enabled = !state.isVoiding,
+                    enabled = !state.isVoiding && !state.isReading,
                 )
             }
         }
