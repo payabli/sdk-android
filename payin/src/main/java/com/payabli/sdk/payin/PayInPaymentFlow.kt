@@ -200,7 +200,12 @@ internal class PayInPaymentFlow private constructor(
         idempotencyKey: String?,
     ): Result<PayInResult> = submission.void(entryPoint, transId, idempotencyKey).asPayment()
 
-    /** Refuses before anything is sent. */
+    /**
+     * Refuses before anything is sent.
+     *
+     * @param transId the transaction to read.
+     * @return a failure of type [PayabliErrorType.SDK_INTERNAL_ERROR].
+     */
     override suspend fun readTransaction(transId: String): Result<PayInTransaction> =
         Result.failure(
             PayabliGenericException(
