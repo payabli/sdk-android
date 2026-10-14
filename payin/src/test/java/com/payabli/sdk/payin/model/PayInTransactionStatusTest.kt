@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -29,6 +30,14 @@ class PayInTransactionStatusTest {
         listOf(4, 6, 12, 99, -3, -4, -5, -6, -7, Int.MAX_VALUE, Int.MIN_VALUE).forEach {
             assertEquals(PayInTransactionStatus.Other(it), PayInTransactionStatus.of(it))
         }
+    }
+
+    @Test
+    fun `two unnamed numbers are told apart by the number`() {
+        assertEquals(PayInTransactionStatus.Other(4).hashCode(), PayInTransactionStatus.Other(4).hashCode())
+        assertNotEquals(PayInTransactionStatus.Other(4), PayInTransactionStatus.Other(6))
+        assertNotEquals(PayInTransactionStatus.Other(1), PayInTransactionStatus.Captured)
+        assertEquals("Other(raw=4)", PayInTransactionStatus.Other(4).toString())
     }
 
     @Test
