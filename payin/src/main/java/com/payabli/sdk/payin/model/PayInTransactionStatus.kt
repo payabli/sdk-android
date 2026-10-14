@@ -1,35 +1,35 @@
 package com.payabli.sdk.payin.model
 
 /**
- * What became of a transaction.
+ * Where a transaction stands, read from [PayInTransaction.transStatus], which keeps the number.
  *
- * Each status says whether its outcome is known. Where it is not, the status may still change, so read the
- * transaction again before acting on it.
+ * Each case names the status numbers it covers and whether the payment's outcome is known. Where it is not, the
+ * status may still change, so read the transaction again before acting on it.
  */
 public sealed class PayInTransactionStatus {
-    /** Opened and not yet charged. Outcome not known. Wire status 10. */
+    /** 10. Outcome not known. */
     public data object Initiated : PayInTransactionStatus()
 
-    /** Held, and waiting to be captured or released. Outcome not known. Wire status 11. */
+    /** 11. Outcome not known. */
     public data object Authorized : PayInTransactionStatus()
 
-    /** Paid. Outcome known, and it can still be voided until its batch closes. Wire status 1. */
+    /** 1. Outcome known: paid, and still voidable until its batch closes. */
     public data object Captured : PayInTransactionStatus()
 
-    /** Not paid: the card or account was declined. Outcome known. Wire statuses 2 and 3. */
+    /** 2 and 3. Outcome known: not paid. */
     public data object Declined : PayInTransactionStatus()
 
-    /** Not paid: reversed by a void. Outcome known. Wire status 5. */
+    /** 5. Outcome known: not paid. */
     public data object Voided : PayInTransactionStatus()
 
-    /** Not paid: refused before it was charged, so no money moved. Outcome known. Wire status -2. */
+    /** -2. Outcome known: not paid, and no money moved. */
     public data object Blocked : PayInTransactionStatus()
 
-    /** Failed, or not yet answered. Outcome not known. Wire statuses -1 and 0. */
+    /** -1 and 0. Outcome not known. */
     public data object Failed : PayInTransactionStatus()
 
     /**
-     * A status this SDK does not name: any other wire status. Outcome not known.
+     * Any other number, carried here. Outcome not known.
      *
      * @property raw the status number the service sent.
      */
