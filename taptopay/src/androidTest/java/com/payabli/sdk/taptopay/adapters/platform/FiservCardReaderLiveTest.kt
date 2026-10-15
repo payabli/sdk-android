@@ -53,13 +53,15 @@ class FiservCardReaderLiveTest {
     fun theReaderComesUpForTheRealPaypoint() =
         runTest(timeout = TEST_TIMEOUT) {
             withContext(Dispatchers.IO) {
+                val session = LiveTapToPay.session(context)
                 val coordinator =
                     TapToPaySessionCoordinator(
                         entry = LiveRunSettings.entry,
                         enrollment = LiveTapToPay.enrollment(context),
-                        client = DeviceServiceClient(LiveTapToPay.session(context).transport),
+                        client = DeviceServiceClient(session.transport),
                         reader = CardReaders.fiserv(context),
                         manager = TapToPaySessionManager(),
+                        renewToken = session::renewRefusedToken,
                     )
 
                 val owed = runCatching { coordinator.initialize() }.exceptionOrNull()

@@ -5,6 +5,8 @@ import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
@@ -47,6 +49,8 @@ internal class TapToPaySessionCoordinator(
     private val client: DeviceServiceClient,
     private val reader: TapToPayProvider,
     private val manager: TapToPaySessionManager,
+    /** Replaces the token a device route last refused, between runs. */
+    private val renewToken: suspend () -> Unit,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
     /** Where the session has got to. Safe to collect at any time; reading it takes no lock. */
@@ -91,7 +95,7 @@ internal class TapToPaySessionCoordinator(
      *
      * Fails with [TapToPaySessionException.PendingActivation] when the device still owes a code.
      */
-    suspend fun initialize() = runExclusively(SessionWorkKind.INITIALIZE) { runInitialize() }
+    suspend fun initialize() = runExclusively(SessionWorkKind.INITIALIZE, SessionRun(sequence = ::runInitialize))
 
     /**
      * Repairs a session whose reader is spent, and does nothing to one that is ready.
@@ -102,7 +106,8 @@ internal class TapToPaySessionCoordinator(
      * fetching the credentials and fails with [TapToPaySessionException.AttestationRequired], because
      * attesting is what would restore it. [initialize] is the remedy for both.
      */
-    suspend fun reinitializeIfNeeded() = runExclusively(SessionWorkKind.REINITIALIZE) { runReinitializeIfNeeded() }
+    suspend fun reinitializeIfNeeded() =
+        runExclusively(SessionWorkKind.REINITIALIZE, SessionRun(prepare = ::enterRepair, sequence = ::bringReaderUp))
 
     /**
      * Spends the code the merchant issued out of band.
@@ -111,13 +116,20 @@ internal class TapToPaySessionCoordinator(
      * handle a concurrent registration has just replaced is a code wasted. A refused code leaves the session
      * exactly where it was, since the device still owes one.
      */
-    suspend fun activateDevice(activationCode: String) =
-        runExclusively(SessionWorkKind.ACTIVATE) { runActivateDevice(activationCode) }
+    suspend fun activateDevice(activationCode: String) {
+        lateinit var pending: TapToPaySessionState.PendingActivation
+        val run =
+            SessionRun(prepare = {
+                pending = pendingActivation()
+                true
+            }) { runActivateDevice(activationCode, pending) }
+        runExclusively(SessionWorkKind.ACTIVATE, run)
+    }
 
     /** Decides whether to join or to run, under [claims], and does neither while holding it. */
     private suspend fun runExclusively(
         kind: SessionWorkKind,
-        work: suspend () -> Unit,
+        run: SessionRun,
     ) {
         val plan =
             claims.withLock {
@@ -137,13 +149,13 @@ internal class TapToPaySessionCoordinator(
                 plan.done.await()
             }
 
-            is RunPlan.Own -> own(plan.claim, work)
+            is RunPlan.Own -> own(plan.claim, run)
         }
     }
 
     private suspend fun own(
         claim: Claim,
-        work: suspend () -> Unit,
+        run: SessionRun,
     ) {
         var entered = false
         try {
@@ -151,11 +163,11 @@ internal class TapToPaySessionCoordinator(
                 entered = true
                 settledFailure = null
                 try {
-                    work()
+                    if (run.prepare()) reported(claim.kind) { renewingOnce(run.sequence) }
                 } catch (withdrawn: CancellationException) {
                     throw withdrawn
                 } catch (failure: Exception) {
-                    throw if (claim.kind == SessionWorkKind.ACTIVATE) settledActivation(failure) else settled(failure)
+                    throw landed(claim.kind, failure)
                 }
             }
         } catch (withdrawn: CancellationException) {
@@ -207,9 +219,62 @@ internal class TapToPaySessionCoordinator(
 
     /** An activation's failure reaches its caller as raised, and does not read the registration to land it. */
     private fun settledActivation(failure: Exception): Exception {
+        if (failure === settledFailure) return failure
         TapToPaySessionFailures.landingForActivationRun(failure)?.let(manager::settle)
         settledFailure = failure
         return failure
+    }
+
+    /** Lands [failure] as its kind of run does and returns what the caller is given. */
+    private suspend fun landed(
+        kind: SessionWorkKind,
+        failure: Exception,
+    ): Exception = if (kind == SessionWorkKind.ACTIVATE) settledActivation(failure) else settled(failure)
+
+    /**
+     * Brackets [sequence] in its entry point's start and outcome events, once however often it runs.
+     *
+     * @param kind the entry point whose events are reported.
+     * @param sequence the run, renewal included.
+     */
+    private suspend fun reported(
+        kind: SessionWorkKind,
+        sequence: suspend () -> Unit,
+    ) {
+        val reports = RunReports.of(kind)
+        val startedAt = System.nanoTime()
+        reports.started()
+        try {
+            sequence()
+        } catch (withdrawn: CancellationException) {
+            // Withdrawing is not a result of the run.
+            throw withdrawn
+        } catch (failure: Exception) {
+            val raised = landed(kind, failure)
+            reports.failed(raised, startedAt)
+            throw raised
+        } catch (fatal: Throwable) {
+            reports.failed(fatal, startedAt)
+            throw fatal
+        }
+        reports.succeeded(startedAt)
+    }
+
+    /**
+     * Runs [sequence], and once more after [renewToken] when a device route refused the token it was sent.
+     * The second attempt re-enters the state the refusal arrived in, which is always legal.
+     *
+     * @param sequence the run, from its first request.
+     */
+    private suspend fun renewingOnce(sequence: suspend () -> Unit) {
+        try {
+            return sequence()
+        } catch (refused: PayabliException) {
+            if (!isRefusedToken(refused)) throw refused
+        }
+        logger.debug(LogField.safe("event", "ttp_token_renewed")) { "renewing a refused token before running again" }
+        renewToken()
+        sequence()
     }
 
     /**
@@ -241,31 +306,19 @@ internal class TapToPaySessionCoordinator(
      * Then a reset, whatever the caller left behind, since the table of legal moves is narrow.
      */
     private suspend fun runInitialize() {
-        val startedAt = System.nanoTime()
-        TapToPayReports.initializeStarted()
-        try {
-            reader.checkEligibility()
-            manager.reset()
-            val outcome = attesting()
-            if (outcome is EnrollmentOutcome.Attested && outcome.activationRequired) {
-                // Registration already said so, so there is nothing to learn from asking for the credentials.
-                throw TapToPaySessionException.PendingActivation()
-            }
-            bringReaderUp()
-        } catch (withdrawn: CancellationException) {
-            // Withdrawing is not an initialize result. `Throwable` covers CancellationException, so a
-            // caller that cancelled was recorded as one whose setup failed.
-            throw withdrawn
-        } catch (failure: Exception) {
-            // Reported as the host is given it.
-            val raised = settled(failure)
-            TapToPayReports.initializeFailed(raised, startedAt)
-            throw raised
-        } catch (fatal: Throwable) {
-            TapToPayReports.initializeFailed(fatal, startedAt)
-            throw fatal
+        reader.checkEligibility()
+        buildSession()
+    }
+
+    /** One attempt at building the session, from the reset onward. */
+    private suspend fun buildSession() {
+        manager.reset()
+        val outcome = attesting()
+        if (outcome is EnrollmentOutcome.Attested && outcome.activationRequired) {
+            // Registration already said so, so there is nothing to learn from asking for the credentials.
+            throw TapToPaySessionException.PendingActivation()
         }
-        TapToPayReports.initializeSucceeded(startedAt)
+        bringReaderUp()
     }
 
     /** Bracketed separately from the initialize it sits inside, because it is the step that can be slow. */
@@ -280,7 +333,8 @@ internal class TapToPaySessionCoordinator(
                 // list, so recording one flushed the batch over a withdrawal.
                 throw withdrawn
             } catch (failure: Exception) {
-                val raised = settled(failure)
+                // A refused token is renewed and the run repeated, so it lands only if the repeat is refused too.
+                val raised = if (isRefusedToken(failure)) failure else settled(failure)
                 TapToPayReports.attestationFailed(raised, startedAt)
                 throw raised
             } catch (failure: Throwable) {
@@ -296,12 +350,9 @@ internal class TapToPaySessionCoordinator(
      *
      * A ready session is left alone. That is the whole reason a charge can call this without a round trip.
      */
-    private suspend fun runReinitializeIfNeeded() {
-        val startedAt = System.nanoTime()
+    private fun enterRepair(): Boolean {
         when (val current = state.value) {
-            // Before the started event: a ready session is the case this returns without doing anything,
-            // and a repair that did no work is not one to count.
-            TapToPaySessionState.Ready -> return
+            TapToPaySessionState.Ready -> return false
             TapToPaySessionState.SessionExpired ->
                 // The only state the table lets a re-initialization be entered from.
                 manager.advance(TapToPaySessionState.Reinitializing)
@@ -309,9 +360,7 @@ internal class TapToPaySessionCoordinator(
             TapToPaySessionState.Idle, is TapToPaySessionState.Failed -> Unit
             else -> throw TapToPaySessionException.NotRecoverable(current)
         }
-        TapToPayReports.reinitializeStarted()
-        bringReaderUp()
-        TapToPayReports.reinitializeSucceeded(startedAt)
+        return true
     }
 
     /** The half both entry points share: credentials, then a reader configured with them. */
@@ -350,16 +399,69 @@ internal class TapToPaySessionCoordinator(
      * Whether the device is active is not this SDK's to hold, so nothing is recorded here. A code that is
      * refused leaves the state alone, because the device still owes one.
      */
-    private suspend fun runActivateDevice(activationCode: String) {
-        // Read at this run's turn. Only a session waiting for a code is activated, against the id it waits under;
-        // any other state is refused with nothing sent and the session left where it is.
-        val pending =
-            state.value as? TapToPaySessionState.PendingActivation
-                ?: throw DeviceActivationException.DeviceNotPending(null, "")
+    private suspend fun runActivateDevice(
+        activationCode: String,
+        pending: TapToPaySessionState.PendingActivation,
+    ) {
         enrollment.activateDevice(activationCode, pending.activationId)
         manager.settle(TapToPaySessionState.Idle)
     }
+
+    /**
+     * The session waiting for a code, read at this run's turn. Any other state is refused with nothing sent
+     * and the session left where it is.
+     */
+    private fun pendingActivation(): TapToPaySessionState.PendingActivation =
+        state.value as? TapToPaySessionState.PendingActivation
+            ?: throw DeviceActivationException.DeviceNotPending(null, "")
 }
+
+/**
+ * What an entry point runs: [prepare] once, then [sequence], which the coordinator runs again after renewing a
+ * refused token. [prepare] answers false when there is nothing to do.
+ */
+private class SessionRun(
+    val prepare: suspend () -> Boolean = { true },
+    val sequence: suspend () -> Unit,
+)
+
+/** An entry point's start and outcome events. A kind with none reports nothing. */
+private class RunReports(
+    val started: () -> Unit = {},
+    val succeeded: (startedAt: Long) -> Unit = {},
+    val failed: (failure: Throwable, startedAt: Long) -> Unit = { _, _ -> },
+) {
+    companion object {
+        /** Exhaustive, so a new kind of run cannot be added without deciding what it reports. */
+        fun of(kind: SessionWorkKind): RunReports =
+            when (kind) {
+                SessionWorkKind.INITIALIZE ->
+                    RunReports(
+                        started = { TapToPayReports.initializeStarted() },
+                        succeeded = { TapToPayReports.initializeSucceeded(it) },
+                        failed = { failure, startedAt -> TapToPayReports.initializeFailed(failure, startedAt) },
+                    )
+
+                SessionWorkKind.REINITIALIZE ->
+                    RunReports(
+                        started = { TapToPayReports.reinitializeStarted() },
+                        succeeded = { TapToPayReports.reinitializeSucceeded(it) },
+                    )
+
+                SessionWorkKind.ACTIVATE -> RunReports()
+            }
+    }
+}
+
+/**
+ * Whether [failure] is a device route refusing the token it was sent. Every device route keeps its token for
+ * the sequence, so that refusal arrives as an expired token.
+ *
+ * @param failure the failure a run raised.
+ * @return true for an expired token; false otherwise.
+ */
+private fun isRefusedToken(failure: Throwable): Boolean =
+    failure is PayabliException && failure.type == PayabliErrorType.TOKEN_EXPIRED
 
 /** An activation moves nothing before its answer, so withdrawing one leaves the code still owed. */
 private val SessionWorkKind.resetsOnWithdrawal: Boolean get() = this != SessionWorkKind.ACTIVATE

@@ -41,7 +41,7 @@ internal object TransportFactory {
         dispatcher: CoroutineDispatcher,
         client: ClientFacts,
         assembly: TransportAssembly = TransportAssembly(),
-    ): PayabliTransport = authenticated(config.environment.baseUrl, config, dispatcher, client, assembly)
+    ): AuthenticatedTransport = authenticated(config.environment.baseUrl, config, dispatcher, client, assembly)
 
     /**
      * Same, against an explicit [baseUrl], for `:core`'s own tests. Kept narrow: `@VisibleForTesting`
@@ -61,7 +61,7 @@ internal object TransportFactory {
         dispatcher: CoroutineDispatcher,
         assembly: TransportAssembly = TransportAssembly(),
         client: ClientFacts = ClientFacts.NONE,
-    ): PayabliTransport = authenticated(baseUrl, config, dispatcher, client, assembly)
+    ): AuthenticatedTransport = authenticated(baseUrl, config, dispatcher, client, assembly)
 
     private fun authenticated(
         baseUrl: String,
@@ -69,7 +69,7 @@ internal object TransportFactory {
         dispatcher: CoroutineDispatcher,
         client: ClientFacts,
         assembly: TransportAssembly,
-    ): PayabliTransport {
+    ): AuthenticatedTransport {
         // One holder for both the chain that reads the token and the wrapper that refreshes it, which is what
         // makes a replay carry the token the refresh minted. Its own category, so a refresh is filterable as
         // auth rather than buried under network.

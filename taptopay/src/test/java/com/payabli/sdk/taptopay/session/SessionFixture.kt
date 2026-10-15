@@ -75,6 +75,7 @@ internal class SessionFixture(
     elapsedRealtimeNanos: () -> Long = { System.nanoTime() },
     storeFailure: (operation: String, key: String) -> SecureStorageException? = { _, _ -> null },
     deviceKey: FakeDeviceKey = FakeDeviceKey(),
+    renewToken: suspend () -> Unit = {},
 ) {
     val enrollment =
         EnrollmentFixture(script, deviceKey = deviceKey, storeFailure = storeFailure, firstReadGate = firstReadGate)
@@ -104,6 +105,7 @@ internal class SessionFixture(
             client = enrollment.client,
             reader = reader,
             manager = manager,
+            renewToken = renewToken,
             logger = enrollment.logger,
         )
 

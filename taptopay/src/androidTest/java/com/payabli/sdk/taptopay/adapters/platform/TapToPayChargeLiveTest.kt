@@ -66,7 +66,8 @@ class TapToPayChargeLiveTest {
         runTest(timeout = TEST_TIMEOUT) {
             withContext(Dispatchers.IO) {
                 val reader = CardReaders.fiserv(context)
-                val transport = LiveTapToPay.session(context).transport
+                val session = LiveTapToPay.session(context)
+                val transport = session.transport
                 val coordinator =
                     TapToPaySessionCoordinator(
                         entry = LiveRunSettings.entry,
@@ -74,6 +75,7 @@ class TapToPayChargeLiveTest {
                         client = DeviceServiceClient(transport),
                         reader = reader,
                         manager = TapToPaySessionManager(),
+                        renewToken = session::renewRefusedToken,
                     )
 
                 val owed = runCatching { coordinator.initialize() }.exceptionOrNull()

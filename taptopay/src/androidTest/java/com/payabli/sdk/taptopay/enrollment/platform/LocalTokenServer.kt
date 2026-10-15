@@ -41,10 +41,7 @@ internal object LocalTokenServer {
                 )
             }
 
-            val body = connection.inputStream.bufferedReader().readText()
-            val json = FORMAT.parseToJsonElement(body).jsonObject
-            (json["accessToken"] ?: json["access_token"])?.jsonPrimitive?.content
-                ?: error("the token server answered without a token")
+            tokenIn(connection.inputStream.bufferedReader().readText())
         } catch (unreachable: java.io.IOException) {
             throw IllegalStateException(
                 "could not reach the token server at $endpoint. Start it on the development machine and " +
@@ -55,6 +52,22 @@ internal object LocalTokenServer {
             connection.disconnect()
         }
     }
+
+    /**
+     * The token in a token server's answer. A malformed body is reported without its text or cause, which can
+     * quote the token.
+     *
+     * @param body the answer's body.
+     * @return the access token it carries.
+     * @throws IllegalStateException when the body is not an object carrying a token.
+     */
+    fun tokenIn(body: String): String =
+        try {
+            val json = FORMAT.parseToJsonElement(body).jsonObject
+            (json["accessToken"] ?: json["access_token"])?.jsonPrimitive?.content
+        } catch (_: IllegalArgumentException) {
+            null
+        } ?: error("the token server answered without a token")
 
     private const val TIMEOUT_MILLIS = 10_000
 }

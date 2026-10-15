@@ -15,11 +15,13 @@ import com.payabli.sdk.core.logging.info
 import com.payabli.sdk.core.logging.platform.applyHostLogLevel
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportAssembly
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
+import com.payabli.sdk.core.network.impl.AuthenticatedTransport
 import com.payabli.sdk.core.network.impl.ClientFacts
 import com.payabli.sdk.core.telemetry.TelemetryBootstraps
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
@@ -52,7 +54,7 @@ private const val REASON_ALREADY_INITIALIZED = "a session is already initialized
  * two auth stacks are two token holders, and a refresh de-duplicated inside one is invisible to the other.
  *
  * **The type is host-facing, its members mostly are not.** An integrator names this type, calls [initialize]
- * and [setLogLevel], and hands the result to a capability. The transport and [state] are
+ * and [setLogLevel], and hands the result to a capability. The transport, [renewRefusedToken] and [state] are
  * `@RestrictTo(LIBRARY_GROUP)`, so a capability shipped as its own artifact can reach them and a host app
  * cannot. Nothing reaches the token at any visibility.
  *
@@ -65,6 +67,7 @@ public class PayabliSession private constructor(
     private val identity: ConfigIdentity,
     private val machine: SessionStateMachine,
     private val readDeviceId: () -> String?,
+    private val renewal: suspend () -> Unit,
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val transport: PayabliTransport,
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
@@ -75,6 +78,18 @@ public class PayabliSession private constructor(
      * cannot be read. It is not the activation id a Tap to Pay enrollment hands over.
      */
     public val deviceId: String? get() = readDeviceId()
+
+    /**
+     * Replaces the token a credential-pinned request was last refused with, so the next request sends a new
+     * one. Call it between requests, never inside a sequence that depends on one token. Does nothing when no
+     * pinned request has been refused since the last renewal, and keeps a token that has rotated since.
+     *
+     * @throws PayabliException when the session is finished or the token provider fails.
+     */
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public suspend fun renewRefusedToken() {
+        renewal()
+    }
 
     public companion object {
         /** Serializes [initialize] so two callers racing at startup install one session rather than two. */
@@ -143,12 +158,13 @@ public class PayabliSession private constructor(
             host.appContext.applicationContext.applyHostLogLevel()
 
             return install(config, host) { onAuthFailure, client ->
-                TransportFactory.authenticated(
-                    config,
-                    IO_DISPATCHER,
-                    client,
-                    TransportAssembly(onAuthFailure = onAuthFailure),
-                )
+                TransportFactory
+                    .authenticated(
+                        config,
+                        IO_DISPATCHER,
+                        client,
+                        TransportAssembly(onAuthFailure = onAuthFailure),
+                    ).let(::SessionAuth)
             }
         }
 
@@ -171,13 +187,14 @@ public class PayabliSession private constructor(
             identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
         ): PayabliSession =
             install(config, host, identifierOf) { onAuthFailure, client ->
-                TransportFactory.authenticatedAgainst(
-                    baseUrl,
-                    config,
-                    IO_DISPATCHER,
-                    TransportAssembly(onAuthFailure = onAuthFailure),
-                    client,
-                )
+                TransportFactory
+                    .authenticatedAgainst(
+                        baseUrl,
+                        config,
+                        IO_DISPATCHER,
+                        TransportAssembly(onAuthFailure = onAuthFailure),
+                        client,
+                    ).let(::SessionAuth)
             }
 
         /**
@@ -201,25 +218,24 @@ public class PayabliSession private constructor(
         }
 
         /**
-         * Same, with the transport supplied, so a test can hold the critical section open: without it the
-         * mutex cannot be shown to do anything, since the section is a few microseconds of object
-         * construction.
+         * Same, with the transport supplied, so a test can hold the critical section open.
          *
          * @param config the configuration to install.
-         * @param buildTransport builds the transport, so a test can hold the critical section open.
+         * @param buildTransport builds the transport. The session renews no refused token.
          * @return the installed session.
          */
         @VisibleForTesting
         internal suspend fun initializeWith(
             config: PayabliConfig,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
-        ): PayabliSession = install(config, host = null) { onAuthFailure, _ -> buildTransport(onAuthFailure) }
+        ): PayabliSession =
+            install(config, host = null) { onAuthFailure, _ -> SessionAuth(buildTransport(onAuthFailure)) {} }
 
         private suspend fun install(
             config: PayabliConfig,
             host: HostBindings?,
             identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
-            buildTransport: suspend (AuthFailureListener, ClientFacts) -> PayabliTransport,
+            buildAuth: suspend (AuthFailureListener, ClientFacts) -> SessionAuth,
         ): PayabliSession {
             val startedAt = System.nanoTime()
 
@@ -268,12 +284,14 @@ public class PayabliSession private constructor(
                 val client = ClientFacts(PayabliSdkVersion.VALUE, device.osVersion, device.modelName, readDeviceId)
                 // The listener is handed in rather than wired afterwards so no request can complete against a
                 // transport whose failures nothing is listening for.
+                val auth = buildAuth(AuthFailureListener { machine.markReinitializeRequired() }, client)
                 val session =
                     PayabliSession(
                         identity = identity,
                         machine = machine,
                         readDeviceId = readDeviceId,
-                        transport = buildTransport(AuthFailureListener { machine.markReinitializeRequired() }, client),
+                        renewal = auth.renewRefusedToken,
+                        transport = auth.transport,
                         // Minted here rather than in the telemetry module, so every capability reporting for
                         // this session quotes the same lifetime even when they are wired independently.
                         telemetry =
@@ -389,4 +407,17 @@ public class PayabliSession private constructor(
          */
         override fun toString(): String = "ConfigIdentity(environment=$environment, telemetryEnabled=$telemetryEnabled)"
     }
+}
+
+/**
+ * The transport a session sends through, and how it renews a token a pinned request was refused with.
+ *
+ * @property transport the authenticated transport.
+ * @property renewRefusedToken replaces the token a pinned request was last refused with.
+ */
+private class SessionAuth(
+    val transport: PayabliTransport,
+    val renewRefusedToken: suspend () -> Unit,
+) {
+    constructor(authenticated: AuthenticatedTransport) : this(authenticated, authenticated::renewRefusedToken)
 }

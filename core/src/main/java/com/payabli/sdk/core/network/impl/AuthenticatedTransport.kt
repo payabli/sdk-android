@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.AuthRecoveryPolicy
 import com.payabli.sdk.core.network.HttpMethod
@@ -51,6 +52,8 @@ internal class AuthenticatedTransport(
                 LogField.safe("statusCode", first.statusCode),
                 routeField(request),
             ) { "recovery declined: the route pins the credential it was sent" }
+            // The caller renews it after the pinned sequence ends.
+            stamped.value?.let { auth.recordPinnedRefusal(it) }
             return first
         }
 
@@ -118,6 +121,17 @@ internal class AuthenticatedTransport(
         // Outside the lock: telling the session runs a listener, and a listener is foreign code.
         if (finished) onAuthFailure.onUnrecoverable(exhausted)
         throw exhausted
+    }
+
+    /**
+     * Replaces the token a credential-pinned request was last refused with, and does nothing when none was.
+     * A token that has rotated since that refusal is kept.
+     *
+     * @throws PayabliException when the session is finished or the token provider fails.
+     */
+    internal suspend fun renewRefusedToken() {
+        auth.terminalFailure?.let { throw PayabliGenericException(it.type, it.reason) }
+        auth.renewPinnedRefusal()
     }
 
     /**

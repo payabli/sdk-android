@@ -78,7 +78,7 @@ class AuthenticatedTransportTest {
         auth: PayabliAuth,
         callTimeout: Duration = PayabliService.DEFAULT_CALL_TIMEOUT,
         recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
-    ): PayabliTransport =
+    ): AuthenticatedTransport =
         AuthenticatedTransport(
             base =
                 PayabliService.create(
@@ -1044,6 +1044,46 @@ class AuthenticatedTransportTest {
             assertEquals("the ordinary route recovers", OK, ordinary.statusCode)
             assertEquals("only the ordinary route refreshed", 1, calls.get())
             assertEquals("the pinned send, the ordinary send, and its replay", 3, base.sends.size)
+        }
+
+    @Test
+    fun `renewing a pinned refusal keeps a token another request has already rotated`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondPerRequest { recorded ->
+                    if (recorded.header(AUTHORIZATION) == "Bearer $TEST_TOKEN") UNAUTHORIZED to "" else OK to ""
+                }
+                val calls = AtomicInteger()
+                val auth = testAuth(tokenProvider = { REFRESHED.also { calls.incrementAndGet() } })
+                val subject = stack(server, auth)
+
+                completing("the pinned request") { subject.execute(pinnedRequest(HttpMethod.GET)) }
+                completing("an ordinary request that refreshes") { subject.execute(ping()) }
+                assertEquals("the ordinary request rotated the token", 1, calls.get())
+
+                subject.renewRefusedToken()
+
+                assertEquals("the rotated token is kept, not replaced again", 1, calls.get())
+                assertEquals(REFRESHED, auth.accessToken())
+            }
+        }
+
+    @Test
+    fun `renewing on a finished auth reports the finish and asks the provider for nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val calls = AtomicInteger()
+                val auth = testAuth(tokenProvider = { REFRESHED.also { calls.incrementAndGet() } })
+                val subject = stack(server, auth)
+                auth.accessToken()
+                assertTrue(auth.finishIfSettledOn(TEST_TOKEN, AuthRecoveryPolicy().exhausted()))
+                val callsWhenFinished = calls.get()
+
+                val failure = runCatching { subject.renewRefusedToken() }.exceptionOrNull()
+
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, (failure as? PayabliException)?.type)
+                assertEquals("a finished auth must not call the provider", callsWhenFinished, calls.get())
+            }
         }
 
     @Test

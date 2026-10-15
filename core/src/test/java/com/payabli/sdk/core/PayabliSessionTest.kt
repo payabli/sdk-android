@@ -109,6 +109,9 @@ class PayabliSessionTest {
 
     private fun ping() = PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping")
 
+    private fun pinnedPing() =
+        PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping", isCredentialPinned = true)
+
     /**
      * Runs blocking socket work off the test scheduler and bounds it, so a wedge names itself here instead
      * of running out `runTest`'s own timeout with a message that names nothing.
@@ -665,6 +668,43 @@ class PayabliSessionTest {
                 // means their session is genuinely finished.
                 assertEquals(SdkState.Ready, PayabliSession.state.value)
                 assertEquals(1, providerCalls.get())
+            }
+        }
+
+    // ---- renewing a token a pinned route refused ----------------------------------------------------
+
+    @Test
+    fun `renewing after a pinned refusal puts a new token on the next pinned request`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                rejectingStale(server)
+                val subject = session(server, config())
+
+                val refused = completing("the pinned request") { subject.transport.execute(pinnedPing()) }
+                assertEquals("the pin keeps the refusal", 401, refused.statusCode)
+                assertEquals("nothing is refreshed inside the pinned request", 0, providerCalls.get())
+
+                subject.renewRefusedToken()
+                val next = completing("the request after renewal") { subject.transport.execute(pinnedPing()) }
+
+                assertEquals(200, next.statusCode)
+                assertEquals(1, providerCalls.get())
+                assertEquals("Bearer $FRESH", server.recorded.last().header(AUTHORIZATION))
+                assertEquals(SdkState.Ready, PayabliSession.state.value)
+            }
+        }
+
+    @Test
+    fun `renewing with no pinned refusal asks the provider for nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondWith(200, "{}")
+                val subject = session(server, config())
+                completing("a request that is accepted") { subject.transport.execute(pinnedPing()) }
+
+                subject.renewRefusedToken()
+
+                assertEquals(0, providerCalls.get())
             }
         }
 }
