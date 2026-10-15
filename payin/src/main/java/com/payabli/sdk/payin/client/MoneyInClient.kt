@@ -309,7 +309,7 @@ internal class MoneyInClient(
                 LogField.safe("errorCode", failure.type),
             ) { "the transaction call failed at the transport" }
             // A 409 with a body an envelope reader takes, as duplicate-payment protection sends, keeps its mapping.
-            throw if (failure.type == PayabliErrorType.CONFLICT && !response.bodyAsText().isEnvelope()) {
+            throw if (failure.type == PayabliErrorType.CONFLICT && !response.bodyAsText().isJsonObject()) {
                 PayInKeyRefusal()
             } else {
                 failure
@@ -391,19 +391,17 @@ internal class MoneyInClient(
 internal class PayInKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)")
 
 /**
- * Whether this body is a v1 (`isSuccess`) or v2 (`code`) envelope, rather than plain text or nothing.
+ * Whether this body is a JSON object, which the idempotency check's refusal never is. No field is read, so
+ * an envelope in any spelling keeps its own mapping, and text that is not an object keeps the key.
  *
- * @return true when the body is a JSON object carrying either field.
+ * @return true when the body parses as a JSON object.
  */
-private fun String.isEnvelope(): Boolean {
-    val body =
-        try {
-            PayabliJson.format.parseToJsonElement(this) as? JsonObject
-        } catch (unreadable: SerializationException) {
-            null
-        } ?: return false
-    return "isSuccess" in body || "code" in body
-}
+private fun String.isJsonObject(): Boolean =
+    try {
+        PayabliJson.format.parseToJsonElement(this) is JsonObject
+    } catch (unreadable: SerializationException) {
+        false
+    }
 
 /**
  * The wire body for a transaction, without `paymentMethod`, which the writer adds.

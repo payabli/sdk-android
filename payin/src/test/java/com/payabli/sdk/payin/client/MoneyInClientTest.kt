@@ -588,11 +588,11 @@ class MoneyInClientTest {
             )
         }
 
-    /** Plain text and an empty body are the idempotency check refusing the key. */
+    /** Plain text, an empty body and JSON that is not an object are the idempotency check refusing the key. */
     @Test
-    fun `a 409 no envelope reader takes is the key refused`() =
+    fun `a 409 whose body is not a JSON object is the key refused`() =
         runTest(timeout = timeout) {
-            for (body in listOf("Duplicated idempotencyKey: key-1", "")) {
+            for (body in listOf("Duplicated idempotencyKey: key-1", "", "[]", "\"Duplicated\"")) {
                 val transport = FakePayInTransport.answering(body, statusCode = 409)
 
                 val failure =
@@ -603,20 +603,22 @@ class MoneyInClientTest {
             }
         }
 
-    /** Duplicate-payment protection answers in the v1 envelope, which keeps the conflict's own mapping. */
+    /** Any JSON object passed the idempotency check, so it keeps the conflict's own mapping in any spelling. */
     @Test
-    fun `a 409 carrying an envelope stays a conflict`() =
+    fun `a 409 carrying a JSON object stays a conflict`() =
         runTest(timeout = timeout) {
-            val duplicate =
-                """{"isSuccess":false,"responseText":"Duplicated","responseData":{"referenceId":"101-abc"}}"""
-            val transport = FakePayInTransport.answering(duplicate, statusCode = 409)
+            for (field in listOf("isSuccess", "IsSuccess", "issuccess", "message")) {
+                val duplicate =
+                    """{"$field":false,"responseText":"Duplicated","responseData":{"referenceId":"101-abc"}}"""
+                val transport = FakePayInTransport.answering(duplicate, statusCode = 409)
 
-            val failure =
-                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
-                    .exceptionOrNull()
+                val failure =
+                    runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                        .exceptionOrNull()
 
-            assertTrue("$failure", failure is com.payabli.sdk.core.model.PayabliGenericException)
-            assertEquals(PayabliErrorType.CONFLICT, (failure as com.payabli.sdk.core.model.PayabliException).type)
+                assertTrue("$field: $failure", failure is com.payabli.sdk.core.model.PayabliGenericException)
+                assertEquals(PayabliErrorType.CONFLICT, (failure as com.payabli.sdk.core.model.PayabliException).type)
+            }
         }
 
     @Test
