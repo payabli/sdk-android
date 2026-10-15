@@ -209,7 +209,9 @@ class ChargeKeyStoreTest {
     fun `an expired key is not resent`() =
         runBlocking {
             val keys = store()
-            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+            val first = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+            assertEquals("key-1", first.key)
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, first.key, arrivedAt = first.reservedAt)
             clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
             assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
             assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key == "key-1")
@@ -232,6 +234,38 @@ class ChargeKeyStoreTest {
             keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, "key-1")
             clock.addAndGet(half)
             assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+        }
+
+    /** Another entry point's sweep runs while a resend is on the wire, and the key must outlive that send. */
+    @Test
+    fun `a key being resent is not aged out by another entry point's sweep`() =
+        runBlocking {
+            val keys = store()
+            val first = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, first.key, arrivedAt = first.reservedAt)
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds - 1)
+            val resend = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+            clock.addAndGet(2)
+            keys.reserve(OTHER_ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, resend.key, arrivedAt = resend.reservedAt)
+
+            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+        }
+
+    /** Held only for the send: a resend answered 409 leaves the clock where it was, so the key then ages out. */
+    @Test
+    fun `a resend that ends without arriving ages out once it is over`() =
+        runBlocking {
+            val keys = store()
+            val first = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, first.key, arrivedAt = first.reservedAt)
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds - 1)
+            val resend = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+            clock.addAndGet(2)
+            keys.reserve(OTHER_ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, resend.key)
+
+            assertEquals("key-3", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
         }
 
     /** A retry only ever claims the newest key, so an older one for the same entry point only takes room. */

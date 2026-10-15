@@ -54,6 +54,7 @@ internal class ChargeKeyStore(
             val existing =
                 held.takeIf { attempt == PayabliAttempt.Retry }?.firstOrNull { it.matches(entry, environment) }
             if (existing != null) {
+                existing.sending++
                 return@withLock Reserved(existing.key, reused = true, reservedAt = now)
             }
             // Nothing live is evicted to make room. Every remaining record names a charge whose outcome
@@ -64,7 +65,7 @@ internal class ChargeKeyStore(
                 throw ChargeKeyStoreFullException(entryPoints.size)
             }
             val minted = newKey()
-            held.add(0, ChargeAttempt(entry, environment.name, minted, reservedAt = now))
+            held.add(0, ChargeAttempt(entry, environment.name, minted, reservedAt = now).apply { sending++ })
             Reserved(minted, reused = false, reservedAt = now)
         }
 
@@ -102,9 +103,8 @@ internal class ChargeKeyStore(
     }
 
     /**
-     * Drops every key [entry] holds under [environment] other than [key], once the charge that sent [key] has
-     * ended unknown, and restarts [key]'s clock at [arrivedAt], the send that may have reached the service.
-     * Does nothing when [key] is no longer held, because a charge that settled answers only itself.
+     * Ends a send of [key]. Once it ended unknown, drops [entry]'s other keys under [environment] and restarts
+     * [key]'s clock at [arrivedAt], the send that may have reached the service. A settled [key] supersedes nothing.
      */
     suspend fun supersede(
         entry: String,
@@ -114,18 +114,19 @@ internal class ChargeKeyStore(
     ) {
         lock.withLock {
             val kept = held.firstOrNull { it.matches(entry, environment) && it.key == key } ?: return@withLock
+            kept.sending = maxOf(0, kept.sending - 1)
             held.removeAll { it.matches(entry, environment) && it.key != key }
             if (arrivedAt != null) kept.reservedAt = maxOf(kept.reservedAt, arrivedAt)
         }
     }
 
     /**
-     * Drops every attempt past [IDEMPOTENCY_KEY_MAX_AGE]: the service forgets a key on that bound, whether
-     * or not it refused a repeat of it. Called with [lock] held.
+     * Drops every attempt past [IDEMPOTENCY_KEY_MAX_AGE] that no send is using: the service forgets a key on that
+     * bound, whether or not it refused a repeat of it. Called with [lock] held.
      */
     private fun sweep(now: Long) {
         val bound = IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds
-        held.removeAll { now - it.reservedAt >= bound }
+        held.removeAll { it.sending == 0 && now - it.reservedAt >= bound }
     }
 
     internal companion object {
@@ -175,6 +176,10 @@ internal class ChargeAttempt(
 ) {
     /** Restarted by a resend that may have reached the service and was not refused as a repeat. */
     var reservedAt: Long = reservedAt
+        internal set
+
+    /** Sends of this key not yet ended, which may still reach the service, so no sweep drops it meanwhile. */
+    var sending: Int = 0
         internal set
 
     fun matches(
