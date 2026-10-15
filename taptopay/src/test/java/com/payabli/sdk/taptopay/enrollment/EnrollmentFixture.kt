@@ -152,6 +152,8 @@ internal class EnrollmentFixture(
     storeFailure: (operation: String, key: String) -> SecureStorageException? = { _, _ -> null },
     hardwareId: String = HARDWARE_ID,
     firstReadGate: (suspend () -> Unit)? = null,
+    /** Thrown for a request before it is recorded, as a failure that never leaves the device would be. */
+    unsent: (PayabliRequest) -> Exception? = { null },
 ) {
     val trace: MutableList<String> = mutableListOf()
     val logger = RecordingSdkLogger()
@@ -166,6 +168,7 @@ internal class EnrollmentFixture(
 
     val transport =
         FakeDeviceTransport { request ->
+            unsent(request)?.let { throw it }
             trace += request.path
             requests += request
             script.respond(request)

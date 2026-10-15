@@ -4,6 +4,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliRetryAfter
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
@@ -522,6 +523,53 @@ class TapToPayChargeRunnerTest {
             }
 
             assertEquals("the resend did not restart the clock", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
+    /** A resend that failed before any connection wrote nothing at the service, so the key's clock stands. */
+    @Test
+    fun `a resend that never left the device keeps its key's earlier time`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val clock =
+                java.util.concurrent.atomic
+                    .AtomicLong(1_000_000_000L)
+            var openings = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(2) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to List(2) { "{}" },
+                    ),
+                    elapsedRealtimeNanos = clock::get,
+                    unsent = { request ->
+                        if (request.path == INITIATE && ++openings == 2) {
+                            PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, "no token")
+                        } else {
+                            null
+                        }
+                    },
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+            val half = com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            clock.addAndGet(half)
+            val unsentFailure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+                }.exceptionOrNull()
+            clock.addAndGet(half)
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+
+            assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, (unsentFailure as? TapToPayException)?.type)
+            assertEquals("a send that never left restarted the clock", "$MINTED_KEY-2", fixture.keySent(1))
         }
 
     /** A ready session whose [opening]-th charge opening, counting from 1, is answered 409. */
