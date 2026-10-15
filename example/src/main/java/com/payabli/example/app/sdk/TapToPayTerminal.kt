@@ -9,8 +9,11 @@ import com.payabli.example.app.demo.terminal.TerminalEventCode
 import com.payabli.example.app.demo.terminal.TerminalFailure
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.PayabliTTP
+import com.payabli.sdk.taptopay.TapToPayCapture
+import com.payabli.sdk.taptopay.TapToPayException
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.session.TapToPayChargeActivity
@@ -58,6 +61,12 @@ class TapToPayTerminal(
     private var terminal: PayabliTTP? = null
 
     /**
+     * Whether the last charge ended with its outcome unknown, so the next one is declared a retry of it. Without
+     * the declaration the SDK sends a new key, and a sale that went through would be taken a second time.
+     */
+    private var retryOpen = false
+
+    /**
      * A device that owes activation is a handoff, not a failure.
      *
      * `initialize` throws for it, because the reader did not come up. The screen reads that as setup having
@@ -85,14 +94,21 @@ class TapToPayTerminal(
             // tap taken without this cannot be opened at all. It also names the device in a dashboard,
             // which is why the card-not-present side has always sent it.
             val receipt =
-                ttp.charge(
-                    TapToPayPaymentDetails(amount),
-                    TapToPayCustomerData(
-                        firstName = identity.firstName,
-                        lastName = identity.lastName,
-                        customerNumber = identity.customerNumber,
-                    ),
-                )
+                try {
+                    ttp.charge(
+                        TapToPayPaymentDetails(amount),
+                        TapToPayCustomerData(
+                            firstName = identity.firstName,
+                            lastName = identity.lastName,
+                            customerNumber = identity.customerNumber,
+                        ),
+                        attempt = if (retryOpen) PayabliAttempt.Retry else PayabliAttempt.NewPayment,
+                    )
+                } catch (failure: TapToPayException) {
+                    retryOpen = failure.capture == TapToPayCapture.UNKNOWN
+                    throw failure
+                }
+            retryOpen = false
             emit(TerminalEventCode.UpdateCompleted, receipt.cardNetwork.orEmpty())
             ChargeReceipt(receipt.paymentTransId)
         }
