@@ -110,6 +110,7 @@ internal class AuthenticatedTransport(
      * @throws PayabliException when the session is finished or the token provider fails.
      */
     internal suspend fun renewRefusedToken() {
+        auth.terminalFailure?.let { throw PayabliGenericException(it.type, it.reason) }
         auth.renewPinnedRefusal()
     }
 

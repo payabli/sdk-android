@@ -86,6 +86,10 @@ class TokenRotationLiveTest {
                 val otherToken = rawConfig(fresh, enrollment.assertion()!!.asHeaders())
                 Log.i(LIVE_TAG, "config under a fresh token $freshPrint: $otherToken")
 
+                assertTrue(
+                    "no token reached this run's provider: another live class installed the session first",
+                    first.fingerprints.isNotEmpty(),
+                )
                 assertNotEquals("the fresh token is the attesting one", first.fingerprints.first(), freshPrint)
                 assertTrue("under the attesting token: $sameToken", sameToken == "200")
                 assertTrue("under a fresh token: $otherToken", otherToken == "200")
@@ -151,7 +155,7 @@ class TokenRotationLiveTest {
             "${refused.javaClass.simpleName}(${refused.resultCode}): ${refused.reason}"
         }
 
-    /** Hands out a fresh token on each call and keeps the first 8 hex of each one's SHA-256. */
+    /** Hands out the token server's token on each call and keeps the first 8 hex of each one's SHA-256. */
     private inner class RecordingProvider {
         val fingerprints = mutableListOf<String>()
 

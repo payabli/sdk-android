@@ -1041,6 +1041,24 @@ class AuthenticatedTransportTest {
         }
 
     @Test
+    fun `renewing on a finished auth reports the finish and asks the provider for nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val calls = AtomicInteger()
+                val auth = testAuth(tokenProvider = { REFRESHED.also { calls.incrementAndGet() } })
+                val subject = stack(server, auth)
+                auth.accessToken()
+                assertTrue(auth.finishIfSettledOn(TEST_TOKEN, AuthRecoveryPolicy().exhausted()))
+                val callsWhenFinished = calls.get()
+
+                val failure = runCatching { subject.renewRefusedToken() }.exceptionOrNull()
+
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, (failure as? PayabliException)?.type)
+                assertEquals("a finished auth must not call the provider", callsWhenFinished, calls.get())
+            }
+        }
+
+    @Test
     fun `a refused recovery says why, without the token, the body or the resolved path`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
