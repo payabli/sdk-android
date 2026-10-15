@@ -259,7 +259,8 @@ internal class TapToPayChargeRunner(
                     val key = reserved
                     // Uncancellable, so a withdrawal cannot skip the settle.
                     withContext(NonCancellable) {
-                        if (isAnswered(failure, resentKey)) {
+                        // The host is told this opening was not charged, so its key protects no sale.
+                        if (capture == TapToPayCapture.NOT_CHARGED || isAnswered(failure, resentKey)) {
                             key?.let { keys.settle(entry, environment, it) }
                         }
                     }

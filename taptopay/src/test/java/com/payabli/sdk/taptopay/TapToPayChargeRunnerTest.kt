@@ -572,6 +572,46 @@ class TapToPayChargeRunnerTest {
             assertEquals("a send that never left restarted the clock", "$MINTED_KEY-2", fixture.keySent(1))
         }
 
+    /** A sale whose opening failed before the card is not charged, so the open sale before it stays claimable. */
+    @Test
+    fun `an opening that fails before the card leaves the earlier unknown sale's key claimable`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var openings = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(2) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to List(2) { "{}" },
+                    ),
+                    unsent = { request ->
+                        if (request.path == INITIATE && ++openings == 2) {
+                            PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "dropped")
+                        } else {
+                            null
+                        }
+                    },
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            runCatching { runnerOver(fixture).charge(details("10.00"), PAYER, TapToPayInvoiceData(), null) }
+            val failedOpening =
+                runCatching {
+                    runnerOver(fixture).charge(details("20.00"), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+            runCatching {
+                runnerOver(fixture).charge(details("10.00"), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+
+            assertEquals(TapToPayCapture.NOT_CHARGED, (failedOpening as? TapToPayException)?.capture)
+            assertEquals("the failed opening replaced the open sale's key", "$MINTED_KEY-1", fixture.keySent(1))
+        }
+
     /** A ready session whose [opening]-th charge opening, counting from 1, is answered 409. */
     private suspend fun conflictOnOpening(opening: Int): SessionFixture {
         var openings = 0
