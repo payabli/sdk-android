@@ -209,13 +209,12 @@ class PayInRedactionTest {
                 accountId = "acct-77",
                 ipAddress = "203.0.113.9",
                 idempotencyKey = "key-1",
-                validationCode = "code-9",
             )
         // Both halves, because either can reach a log line on its own: a host holds the options while it
         // configures a screen, and only the SDK ever holds the request.
         val rendered = PayInRequest(PayInPaymentMethod.Card(card()), options).toString() + " " + options
 
-        listOf(pan, securityCode, "Ada", "ada@example.test", "acct-77", "203.0.113.9", "key-1", "code-9")
+        listOf(pan, securityCode, "Ada", "ada@example.test", "acct-77", "203.0.113.9", "key-1")
             .forEach { assertFalse("$it was rendered", rendered.contains(it)) }
     }
 

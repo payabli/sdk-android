@@ -82,7 +82,8 @@ public class PayInVendorData(
  * No `idempotencyKey`: a repeat is not recognizable on the store route, so a key sent there is read by
  * nobody.
  *
- * @property achValidation validates a bank account before storing it.
+ * @property achValidation checks a bank account before it is stored. On this call nothing else asks for the
+ *   check, so a method stored without it is not checked.
  * @property createAnonymous stores the method against a new anonymous customer when no customer is identified.
  * @property temporary stores it for a single use rather than permanently.
  * @property validation which structural checks run; both run by default, and a flag set false skips its own.
@@ -126,9 +127,10 @@ public class PayInValidationOptions(
  *   rather than a second one. Sent as the `idempotencyKey` header; one is minted per attempt when it is
  *   absent, and a minted one is not held for a later call on these routes, so a retry that has to be
  *   recognized as one sets this itself — [PayabliPayIn.capture] says why.
- * @property sameDayAch settles a bank debit the same day where the paypoint is configured for it.
- * @property isAsync returns before the processor answers, leaving the result to be read later.
- * @property validationCode sent as the `validationCode` header, for a paypoint that requires one.
+ * @property achValidation checks a bank account before it is debited, on top of any check the merchant's own
+ *   settings already run. `false` does not turn that check off.
+ * @property forceCustomerCreation applies only when the payer cannot be matched to an existing customer: `true`
+ *   creates a new customer record, a new one on each such payment.
  * @property attempt whether this is a new payment or a retry of the most recent payment whose outcome is not
  *   known. [idempotencyKey], when set, is sent whatever this says.
  */
@@ -145,10 +147,6 @@ public class PayInTransactionOptions(
     public val idempotencyKey: String? = null,
     public val achValidation: Boolean? = null,
     public val forceCustomerCreation: Boolean? = null,
-    public val sameDayAch: Boolean? = null,
-    public val isAsync: Boolean? = null,
-    public val useCaching: Boolean? = null,
-    public val validationCode: String? = null,
     public val validation: PayInValidationOptions = PayInValidationOptions(),
     public val attempt: PayabliAttempt = PayabliAttempt.NewPayment,
 )

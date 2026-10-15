@@ -351,7 +351,7 @@ retry.
 
 | Outcome | Card-not-present | Tap to Pay | Retry? |
 |---|---|---|---|
-| **Charged** | `Result.success`, except a capture with `isAsync = true`, which is **unknown** | `charge` returns a `TapToPayResult` | No |
+| **Charged** | `Result.success` | `charge` returns a `TapToPayResult` | No |
 | **Not charged** | a failure such as `PayInException.Refused`, a decline | a `TapToPayException` whose `capture` is `NOT_CHARGED` | Yes |
 | **Unknown** | `PayInException.Unsettled`, or a cancellation of `capture` after it was called | a `TapToPayException` whose `capture` is `UNKNOWN` | Not until you've checked |
 | **Charged, not confirmed** | — | a `TapToPayException` whose `capture` is `CHARGED` | No. Call `closeCapturedCharge` |
@@ -363,9 +363,6 @@ When the outcome is unknown, look the transaction up before you charge again. On
 look up when there is one. When there isn't, find the transaction in the Payabli portal before you charge
 again. On card-not-present, setting `orderId` on each request lets you find it by your own reference.
 Store the transaction ID with your order every time you get one.
-
-A card-not-present capture sent with `isAsync = true` returns once the service accepts it, before the
-processor answers. Treat its success as unknown, and look the transaction up before you fulfill the order.
 
 Each guide lists its errors in full: [card-not-present](payin/README.md#outcomes-and-errors) and
 [Tap to Pay](taptopay/README.md#outcomes-and-errors).
