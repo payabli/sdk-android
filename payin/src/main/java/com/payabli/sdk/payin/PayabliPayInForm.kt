@@ -49,8 +49,9 @@ import com.payabli.sdk.payin.ui.PayInSubmitText
  * change, and a rotation keeps both the outcome of a submission in flight and everything the payer has typed.
  * Held anywhere else, the form empties whenever it leaves the composition.
  *
- * **Nothing typed reaches saved instance state**, so a form reopened after process death is an empty form. What
- * recovers a payment interrupted there is `PayInSubmissionState.Failed.retryKey`.
+ * **Nothing typed reaches saved instance state**, so a form reopened after process death is an empty form. A
+ * payment interrupted there is retried by submitting with `attempt` set to `PayabliAttempt.Retry`, which the
+ * SDK sends under the interrupted attempt's key while this process holds it.
  *
  * **One form per [payIn].** The typed values are its own, so two forms given the same one draw the same
  * boxes, and two given the same one with different configurations refill each other on every frame. A second

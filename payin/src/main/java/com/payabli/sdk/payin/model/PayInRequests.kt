@@ -124,8 +124,8 @@ public class PayInValidationOptions(
  *
  * @property idempotencyKey identifies this attempt, so a retry sending the same key is the same request
  *   rather than a second one. Sent as the `idempotencyKey` header; one is minted per attempt when it is
- *   absent, and a minted one is not held for a later call on these routes, so a retry that has to be
- *   recognized as one sets this itself — [PayabliPayIn.capture] says why.
+ *   absent, and a minted one is resent only to a retry declared with [attempt] — [PayabliPayIn.capture]
+ *   says when.
  * @property sameDayAch settles a bank debit the same day where the paypoint is configured for it.
  * @property isAsync returns before the processor answers, leaving the result to be read later.
  * @property validationCode sent as the `validationCode` header, for a paypoint that requires one.

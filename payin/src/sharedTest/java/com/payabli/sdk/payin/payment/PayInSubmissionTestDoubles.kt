@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
@@ -198,15 +199,22 @@ internal const val READ_RECORD: String = """{"PaymentTransId":"101-abc","TransSt
 internal const val TEST_ENTRY_POINT: String = "merchant-entry"
 
 /** A capture of the test amount. */
-internal fun captureOf(idempotencyKey: String? = null): PayabliPayInOperation.Capture =
-    PayabliPayInOperation.Capture(testOptions(idempotencyKey))
+internal fun captureOf(
+    idempotencyKey: String? = null,
+    attempt: PayabliAttempt = PayabliAttempt.NewPayment,
+): PayabliPayInOperation.Capture = PayabliPayInOperation.Capture(testOptions(idempotencyKey, attempt))
 
 /** An authorization, which the service takes for entered card data only. */
-internal fun authorizeOf(idempotencyKey: String? = null): PayabliPayInOperation.Authorize =
-    PayabliPayInOperation.Authorize(testOptions(idempotencyKey))
+internal fun authorizeOf(
+    idempotencyKey: String? = null,
+    attempt: PayabliAttempt = PayabliAttempt.NewPayment,
+): PayabliPayInOperation.Authorize = PayabliPayInOperation.Authorize(testOptions(idempotencyKey, attempt))
 
-internal fun testOptions(idempotencyKey: String? = null): PayInTransactionOptions =
-    PayInTransactionOptions(paymentDetails = testDetails(), idempotencyKey = idempotencyKey)
+internal fun testOptions(
+    idempotencyKey: String? = null,
+    attempt: PayabliAttempt = PayabliAttempt.NewPayment,
+): PayInTransactionOptions =
+    PayInTransactionOptions(paymentDetails = testDetails(), idempotencyKey = idempotencyKey, attempt = attempt)
 
 /**
  * A card request as a host that collected the instrument itself would build it.
@@ -217,7 +225,8 @@ internal fun testOptions(idempotencyKey: String? = null): PayInTransactionOption
 internal fun cardRequest(
     idempotencyKey: String? = null,
     cardData: PayInCardData = testCardData(),
-): PayInRequest = PayInRequest(PayInPaymentMethod.Card(cardData), testOptions(idempotencyKey))
+    attempt: PayabliAttempt = PayabliAttempt.NewPayment,
+): PayInRequest = PayInRequest(PayInPaymentMethod.Card(cardData), testOptions(idempotencyKey, attempt))
 
 /** A store request as a host that collected the card itself would build it; the caller owns the buffers. */
 internal fun cardStoreRequest(cardData: PayInCardData = testCardData()): PayInStoreRequest =
