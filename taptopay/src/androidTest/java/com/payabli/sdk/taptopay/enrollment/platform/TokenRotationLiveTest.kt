@@ -143,7 +143,7 @@ class TokenRotationLiveTest {
         }
     }
 
-    /** `200`, or the refusal's class, result code and wording. */
+    /** `200`, or the refusal's class and result code. Its wording is server text and is never logged. */
     private suspend fun configAnswer(
         client: DeviceServiceClient,
         enrollment: DeviceEnrollment,
@@ -152,7 +152,7 @@ class TokenRotationLiveTest {
             client.config(LiveRunSettings.entry, enrollment.assertion()!!)
             "200"
         } catch (refused: DeviceServiceException) {
-            "${refused.javaClass.simpleName}(${refused.resultCode}): ${refused.reason}"
+            "${refused.javaClass.simpleName}(${refused.resultCode})"
         }
 
     /** Hands out the token server's token on each call and keeps the first 8 hex of each one's SHA-256. */
