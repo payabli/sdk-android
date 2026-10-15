@@ -7,9 +7,11 @@ import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.sdk.FakePayInFlowHandle
 import com.payabli.example.app.sdk.PayInFlowHandle
+import com.payabli.example.app.sdk.PayInReadOutcome
 import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.readyStartup
 import com.payabli.example.app.sdk.refusedOutcome
+import com.payabli.example.app.sdk.unsettledOutcome
 import com.payabli.example.app.sdk.voidedOutcome
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +23,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -43,16 +46,67 @@ class VoidingTest {
     fun tearDown() = Dispatchers.resetMain()
 
     @Test
-    fun `a tap sends the transaction on screen, under the key that payment carries`() =
+    fun `each tap sends the transaction on screen under a new key`() =
         runTest {
-            val handle = FakePayInFlowHandle { _, _ -> voidedOutcome() }
+            val handle = FakePayInFlowHandle { _, _ -> refusedOutcome() }
             val model = captureModel(handle)
             model.onCompleted(capturedPaymentOutcome())
-            val key = requireNotNull(model.uiState.value.voidIdempotencyKey)
 
             model.voidLastTransaction()
+            model.voidLastTransaction()
 
-            assertEquals(listOf("101-abc" to key), handle.reversals)
+            assertEquals(listOf("101-abc", "101-abc"), handle.reversals.map { it.first })
+            assertNotEquals(handle.reversals[0].second, handle.reversals[1].second)
+        }
+
+    @Test
+    fun `after a void in doubt nothing is resent until a read shows the transaction still captured`() =
+        runTest {
+            var status = PayInReadOutcome.Read("initiated", 10, "101-abc")
+            val handle = FakePayInFlowHandle(readAnswer = { status }) { _, _ -> unsettledOutcome() }
+            val model = captureModel(handle)
+            model.onCompleted(capturedPaymentOutcome())
+            model.voidLastTransaction()
+
+            model.voidLastTransaction()
+            model.readLastTransaction()
+            model.voidLastTransaction()
+            assertEquals("a void in doubt was sent again", 1, handle.reversals.size)
+
+            status = PayInReadOutcome.Read("captured", 1, "101-abc", isCaptured = true)
+            model.readLastTransaction()
+            model.voidLastTransaction()
+            assertEquals(2, handle.reversals.size)
+            assertNotEquals(handle.reversals[0].second, handle.reversals[1].second)
+        }
+
+    @Test
+    fun `a read showing the void settles it`() =
+        runTest {
+            val handle =
+                FakePayInFlowHandle(readAnswer = { PayInReadOutcome.Read("voided", 5, it, isVoided = true) }) { _, _ ->
+                    unsettledOutcome()
+                }
+            val model = captureModel(handle)
+            model.onCompleted(capturedPaymentOutcome())
+            model.voidLastTransaction()
+
+            model.readLastTransaction()
+
+            assertEquals("101-abc", model.uiState.value.voidedTransactionId)
+            assertNull(model.uiState.value.voidableTransactionId)
+        }
+
+    @Test
+    fun `taking another payment clears a void in doubt`() =
+        runTest {
+            val model = captureModel(FakePayInFlowHandle { _, _ -> unsettledOutcome() })
+            model.onCompleted(capturedPaymentOutcome())
+            model.voidLastTransaction()
+
+            model.startOver()
+
+            assertFalse(model.uiState.value.voidOutcomeUnknown)
         }
 
     @Test
@@ -123,8 +177,9 @@ class VoidingTest {
             model.voidLastTransaction()
 
             assertFalse("the control was left showing a reversal in flight", model.uiState.value.isVoiding)
-            // Not recorded as reversed: the outcome is unknown, so the transaction still stands.
+            // Not recorded as reversed, and not offered again: the void may have gone out.
             assertNull(model.uiState.value.voidedTransactionId)
+            assertNull(model.uiState.value.voidableTransactionId)
         }
 
     /** Starting over is refused mid-reversal, so that coroutine cannot report onto the next attempt. */

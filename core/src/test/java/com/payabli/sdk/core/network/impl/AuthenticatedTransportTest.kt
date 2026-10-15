@@ -32,6 +32,7 @@ import kotlinx.serialization.Serializable
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -45,6 +46,7 @@ private val COMPLETION_TIMEOUT = 2.seconds
 
 private const val REFRESHED = "refreshed-token"
 private const val AUTHORIZATION = "Authorization"
+private const val REFUSED_BODY = "refused"
 private const val UNAUTHORIZED = 401
 private const val OK = 200
 
@@ -122,6 +124,15 @@ class AuthenticatedTransportTest {
             isCredentialPinned = true,
         )
 
+    /** [guardedReplayRequest]'s counterpart for a route that says which rejections refuse its caller. */
+    private fun callerRefusalRequest(isCallerRefusal: (PayabliResponse) -> Boolean): PayabliRequest =
+        PayabliRequest(
+            method = HttpMethod.GET,
+            path = "/api/pay/$ID_SENTINEL",
+            route = ROUTE,
+            isCallerRefusal = isCallerRefusal,
+        )
+
     /**
      * 401 the first time it sees a request, 200 when the same instance comes back.
      *
@@ -135,6 +146,23 @@ class AuthenticatedTransportTest {
             val replay = sends.any { it === request }
             sends += request
             return PayabliResponse(if (replay) OK else UNAUTHORIZED)
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = execute(request).asV2Envelope(payloadSerializer)
+    }
+
+    /** 401 on every send: an empty body first, as an expired credential gets, then [REFUSED_BODY]. */
+    private class UnauthorizedTwice : PayabliTransport {
+        var sends = 0
+            private set
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            sends++
+            val body = if (sends == 1) ByteArray(0) else REFUSED_BODY.toByteArray(Charsets.UTF_8)
+            return PayabliResponse(UNAUTHORIZED, emptyMap(), body)
         }
 
         override suspend fun <T> execute(
@@ -1056,6 +1084,69 @@ class AuthenticatedTransportTest {
                 assertEquals(PayabliErrorType.TOKEN_EXPIRED, (failure as? PayabliException)?.type)
                 assertEquals("a finished auth must not call the provider", callsWhenFinished, calls.get())
             }
+        }
+
+    @Test
+    fun `a rejection the request calls a refusal of its caller is neither refreshed nor replayed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = UnauthorizedUntilReplayed()
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = AuthRecoveryPolicy(),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(callerRefusalRequest { it.statusCode == UNAUTHORIZED })
+
+            assertEquals("the rejection arrives as it came", UNAUTHORIZED, response.statusCode)
+            assertEquals("no refresh", 0, calls.get())
+            assertEquals("no replay", 1, base.sends.size)
+        }
+
+    /** An expired credential is refreshed first, and the refusal only arrives on the replay. */
+    @Test
+    fun `a refusal of the caller on the replay is returned without ending the session`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = UnauthorizedTwice()
+            val calls = AtomicInteger()
+            val auth = authWithCountingRefresh(calls)
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = auth,
+                    recovery = AuthRecoveryPolicy(),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(callerRefusalRequest { it.bodyAsText() == REFUSED_BODY })
+
+            assertEquals("the replay's refusal arrives as it came", REFUSED_BODY, response.bodyAsText())
+            assertEquals("the expired credential was refreshed once", 1, calls.get())
+            assertEquals("the send and its replay", 2, base.sends)
+            assertNull("the session was ended over one refusal", auth.terminalFailure)
+        }
+
+    @Test
+    fun `a rejection the request does not call a refusal of its caller still recovers`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = UnauthorizedUntilReplayed()
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = AuthRecoveryPolicy(),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(callerRefusalRequest { false })
+
+            assertEquals("the replay answered", OK, response.statusCode)
+            assertEquals("one refresh", 1, calls.get())
+            assertEquals("the send and its replay", 2, base.sends.size)
         }
 
     @Test

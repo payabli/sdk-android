@@ -2,6 +2,7 @@ package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
 import com.payabli.sdk.core.network.PayabliResponse
@@ -24,6 +25,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -1230,6 +1232,46 @@ class PayInSubmissionTest {
             submitting.join()
             assertTrue("$submission", submission.state.value is PayInSubmissionState.Succeeded)
             assertTrue("a terminal state cannot be acknowledged", submission.reset())
+            assertEquals(PayInSubmissionState.Idle, submission.state.value)
+        }
+
+    @Test
+    fun `a read while a form submission is in flight reaches the wire`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val first = launch { submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()) }
+            transport.arrived.await()
+            val read = async { submission.readTransaction(TEST_ENTRY_POINT, "101-abc") }
+            testScheduler.runCurrent()
+
+            assertEquals("the read waited behind the submission", 2, transport.sent.size)
+            assertEquals(PayInSubmissionState.Submitting, submission.state.value)
+            transport.release()
+            first.join()
+            read.await()
+        }
+
+    @Test
+    fun `a read that fails is never an outcome nobody knows`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.answering("", statusCode = 500))
+
+            val failure = submission.readTransaction(TEST_ENTRY_POINT, "101-abc").exceptionOrNull()
+
+            assertFalse("$failure", failure is PayInException.Unsettled)
+            assertEquals(PayabliErrorType.SERVER_ERROR, (failure as? PayabliException)?.type)
+        }
+
+    @Test
+    fun `a read leaves the form's state alone`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.answering(READ_RECORD))
+
+            val transaction = submission.readTransaction(TEST_ENTRY_POINT, "101-abc").getOrNull()
+
+            assertEquals("101-abc", transaction?.paymentTransId)
             assertEquals(PayInSubmissionState.Idle, submission.state.value)
         }
 

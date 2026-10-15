@@ -6,6 +6,8 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
@@ -21,6 +23,7 @@ import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import kotlinx.serialization.SerializationException
+import java.net.HttpURLConnection
 
 /**
  * The MoneyIn transaction calls: capture, authorize, capture an authorization, and void.
@@ -169,6 +172,64 @@ internal class MoneyInClient(
         return read(PayInRoutes.VOID, transport.execute(payabliRequest))
     }
 
+    /**
+     * Reads a transaction back by its identifier.
+     *
+     * A caller refused this transaction gets [PayabliErrorType.PERMISSION_DENIED], with no token refresh. An
+     * identifier with nothing visible under it yet gets [PayabliErrorType.TRANSACTION_NOT_FOUND]. A record that
+     * names no transaction, or another one, is [PayInException.Undecodable].
+     *
+     * @param transId the transaction to read.
+     * @return the transaction, filled with the fields a read carries.
+     */
+    suspend fun readTransaction(transId: String): PayInTransaction {
+        PayInValidation.transId(transId)
+        val sent = transId.trim()
+
+        val response =
+            transport.execute(
+                PayabliRequest(
+                    method = HttpMethod.GET,
+                    path = PayInRoutes.read(sent),
+                    route = PayInRoutes.READ,
+                    isCallerRefusal = ::isNotPermitted,
+                ),
+            )
+        readRefusal(response)?.let { failure ->
+            logger.warn(
+                LogField.safe("event", "payin_read_refused"),
+                LogField.safe("route", PayInRoutes.READ),
+                LogField.safe("statusCode", response.statusCode),
+                LogField.safe("errorCode", failure.type),
+            ) { "the transaction read was refused" }
+            throw failure
+        }
+        PayabliHttpErrors.from(response)?.let { failure ->
+            logger.warn(
+                LogField.safe("event", "payin_call_failed"),
+                LogField.safe("route", PayInRoutes.READ),
+                LogField.safe("statusCode", response.statusCode),
+                LogField.safe("errorCode", failure.type),
+            ) { "the transaction call failed at the transport" }
+            throw failure
+        }
+        val record =
+            try {
+                PayabliJson.format.decodeFromString(TransactionPayload.serializer(), response.bodyAsText())
+            } catch (failure: SerializationException) {
+                throw undecodable(PayInRoutes.READ, response.statusCode, failure)
+            }
+        // Otherwise the caller would get the status of a different payment.
+        if (record.paymentTransId != sent) throw undecodable(PayInRoutes.READ, response.statusCode, null)
+
+        logger.debug(
+            LogField.safe("event", "payin_call_succeeded"),
+            LogField.safe("route", PayInRoutes.READ),
+            LogField.safe("statusCode", response.statusCode),
+        ) { "the transaction call succeeded" }
+        return record.toTransaction()
+    }
+
     private fun validate(
         entryPoint: String,
         request: PayInRequest,
@@ -247,12 +308,18 @@ internal class MoneyInClient(
             ) { "the transaction call failed at the transport" }
             throw failure
         }
-        val envelope =
+        val (envelope, parties) =
             try {
-                PayabliJson.format.decodeFromString(
+                val body = PayabliJson.format.parseToJsonElement(response.bodyAsText())
+                PayabliJson.format.decodeFromJsonElement(
                     PayabliV2Envelope.serializer(TransactionPayload.serializer()),
-                    response.bodyAsText(),
-                )
+                    body,
+                ) to
+                    PayabliJson.format
+                        .decodeFromJsonElement(
+                            PayabliV2Envelope.serializer(ApprovalPartiesPayload.serializer()),
+                            body,
+                        ).payload
             } catch (failure: SerializationException) {
                 // The supertype is not caught: SerializationException extends IllegalArgumentException, so
                 // catching that would swallow a programming error raised from inside a serializer.
@@ -291,7 +358,7 @@ internal class MoneyInClient(
             reason = envelope.reason,
             explanation = envelope.explanation,
             action = envelope.action,
-            transaction = envelope.payload?.toTransaction(),
+            transaction = envelope.payload?.toTransaction(parties),
         )
     }
 
@@ -333,7 +400,13 @@ private fun PayInTransactionOptions.toBody(
         subscriptionId = subscriptionId,
     )
 
-private fun TransactionPayload.toTransaction(): PayInTransaction =
+/**
+ * The transaction this record describes.
+ *
+ * @param parties the connector and payer an approval names, or null for a read, which reports neither.
+ * @return the transaction.
+ */
+private fun TransactionPayload.toTransaction(parties: ApprovalPartiesPayload? = null): PayInTransaction =
     PayInTransaction(
         paymentTransId = paymentTransId,
         gatewayTransId = gatewayTransId,
@@ -345,9 +418,50 @@ private fun TransactionPayload.toTransaction(): PayInTransaction =
         netAmount = netAmount,
         feeAmount = feeAmount,
         surchargeFee = surchargeFee,
-        connectorName = connectorName,
-        customerId = payorId,
+        connectorName = parties?.connectorName,
+        customerId = parties?.payorId,
     )
+
+/**
+ * The older envelope's numeric code, or null when the body carries none in that shape.
+ *
+ * @param response the answered request.
+ * @return the refusal's code, or null.
+ */
+private fun legacyCode(response: PayabliResponse): Int? =
+    try {
+        PayabliJson.format.decodeFromString(LegacyRefusal.serializer(), response.bodyAsText()).responseCode
+    } catch (_: SerializationException) {
+        null
+    }
+
+/**
+ * Whether a read was refused because this caller may not read the transaction.
+ *
+ * @param response the answered request.
+ * @return true for a 401 carrying [LegacyRefusal.NOT_PERMITTED].
+ */
+private fun isNotPermitted(response: PayabliResponse): Boolean =
+    response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED && legacyCode(response) == LegacyRefusal.NOT_PERMITTED
+
+/**
+ * Maps the two refusals specific to a read. Any other failure goes to the shared status mapping.
+ *
+ * @param response the answered request.
+ * @return the refusal, or null when the response is neither.
+ */
+private fun readRefusal(response: PayabliResponse): PayabliGenericException? =
+    when {
+        isNotPermitted(response) ->
+            PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, PayabliErrorType.PERMISSION_DENIED.message)
+        response.statusCode == HttpURLConnection.HTTP_BAD_REQUEST &&
+            legacyCode(response) == LegacyRefusal.NOT_VISIBLE ->
+            PayabliGenericException(
+                PayabliErrorType.TRANSACTION_NOT_FOUND,
+                PayabliErrorType.TRANSACTION_NOT_FOUND.message,
+            )
+        else -> null
+    }
 
 /**
  * Only the flags that were set: an absent flag and a false one are different statements to the service.

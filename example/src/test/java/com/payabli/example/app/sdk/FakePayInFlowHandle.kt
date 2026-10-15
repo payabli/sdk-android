@@ -17,6 +17,7 @@ internal class FakePayInFlowHandle(
     override val isBusy: Boolean = false,
     /** Held open to keep a reversal in flight, so a test can look at the screen while one is running. */
     private val released: CompletableDeferred<Unit> = CompletableDeferred(Unit),
+    private val readAnswer: (String) -> PayInReadOutcome = { error("this test reads nothing") },
     private val answer: (String, String) -> PayInOutcome,
 ) : PayInFlowHandle {
     /** Every reversal asked for, so a test can assert what was sent and under which key. */
@@ -34,5 +35,11 @@ internal class FakePayInFlowHandle(
         reversals += transId to idempotencyKey
         released.await()
         return answer(transId, idempotencyKey)
+    }
+
+    /** Waits on the same gate as a reversal, so a test can hold a read in flight. */
+    override suspend fun readTransaction(transId: String): PayInReadOutcome {
+        released.await()
+        return readAnswer(transId)
     }
 }

@@ -132,6 +132,9 @@ public object TelemetryEvents {
     /** A void reached a terminal outcome. Its own name, because the operation is what these are counted by. */
     public const val PAYIN_VOID_COMPLETED: String = "payin.void.completed"
 
+    /** A read of a transaction reached a terminal outcome. It carries no identifier and no status. */
+    public const val PAYIN_READ_COMPLETED: String = "payin.read.completed"
+
     // System.
 
     /** Initialization was asked for. Emitted before a session exists, so the first one has no listener. */

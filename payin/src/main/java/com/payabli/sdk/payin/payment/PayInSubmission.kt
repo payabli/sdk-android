@@ -27,6 +27,7 @@ import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreRequest
+import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.RedactedCause
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -262,6 +263,40 @@ internal class PayInSubmission(
             val key = retry.reserve(idempotencyKey)
             PayInSubmissionState.Succeeded.Payment(moneyIn.void(transId, key))
         }
+
+    /**
+     * Reads a transaction back. It moves no money and holds no key, so it runs beside a submission in flight,
+     * never changes [state], and a failure is never [PayInException.Unsettled].
+     *
+     * @param entryPoint the partner integration point the read is attributed to.
+     * @param transId the transaction to read.
+     * @return the transaction, or the failure the read ended in.
+     */
+    suspend fun readTransaction(
+        entryPoint: String,
+        transId: String,
+    ): Result<PayInTransaction> {
+        val event = TelemetryEvents.PAYIN_READ_COMPLETED
+        val startedAt = elapsedRealtimeNanos()
+        return try {
+            val transaction = withContext(dispatcher) { moneyIn.readTransaction(transId) }
+            report(event, TelemetryProperties.Outcome.APPROVED, null, startedAt, entryPoint, fromForm = false)
+            Result.success(transaction)
+        } catch (cancellation: CancellationException) {
+            report(event, TelemetryProperties.Outcome.INTERRUPTED, null, startedAt, entryPoint, fromForm = false)
+            throw cancellation
+        } catch (failure: Exception) {
+            val cause =
+                failure as? PayabliException
+                    ?: PayabliGenericException(
+                        PayabliErrorType.UNKNOWN,
+                        REASON_UNEXPECTED,
+                        cause = RedactedCause(failure),
+                    )
+            report(event, outcomeOf(cause), cause.type, startedAt, entryPoint, fromForm = false)
+            Result.failure(cause)
+        }
+    }
 
     /**
      * Back to [PayInSubmissionState.Idle], for a screen taking a second payment.

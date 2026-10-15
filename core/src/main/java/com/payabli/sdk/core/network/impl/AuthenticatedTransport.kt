@@ -20,9 +20,9 @@ import kotlinx.serialization.KSerializer
 import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 
 /**
- * Runs [AuthRecoveryPolicy]: one 401, one refresh, one replay, second 401 terminal. Mechanism only, so
- * what counts as a rejection is the policy's and what may be replayed is this class's, because the policy
- * is `open`. The bearer is `BearerDecoration`'s inside [base]'s chain; a pinned request is read here.
+ * Runs [AuthRecoveryPolicy]: one 401, one refresh, one replay, second 401 terminal. What counts as a
+ * rejection is the policy's; what may be replayed, a pinned request and a refused caller are this class's,
+ * because the policy is `open`. The bearer is `BearerDecoration`'s, inside [base]'s chain.
  *
  * @property logger where the replay and pin decisions are logged, [LogCategory.NETWORK] because they are this layer's.
  * @property onAuthFailure told only when auth is finished for good. See [AuthFailureListener] for why it is told rather than inferred.
@@ -57,6 +57,16 @@ internal class AuthenticatedTransport(
             return first
         }
 
+        // Before the refresh: a fresh credential would be refused for this caller too.
+        if (request.isCallerRefusal(first)) {
+            logger.warn(
+                LogField.safe("method", request.method.wireName),
+                LogField.safe("statusCode", first.statusCode),
+                routeField(request),
+            ) { "recovery declined: the route refused this caller rather than its credential" }
+            return first
+        }
+
         // The token the chain stamped, not one this class read earlier: a rotation between the two reads would
         // make them disagree, and reporting the earlier one replays the credential just refused.
         refresh(stamped.value ?: auth.accessToken())
@@ -76,6 +86,16 @@ internal class AuthenticatedTransport(
         val replayed = SentToken()
         val second = withContext(replayed) { base.execute(request) }
         if (!recovery.isCredentialRejection(second)) return second
+
+        // The fresh credential was refused for this caller, which says nothing about the session.
+        if (request.isCallerRefusal(second)) {
+            logger.warn(
+                LogField.safe("method", request.method.wireName),
+                LogField.safe("statusCode", second.statusCode),
+                routeField(request),
+            ) { "the replay was refused to this caller rather than its credential" }
+            return second
+        }
 
         // A token minted seconds ago and refused again is an authorization fact, not a transient one, which
         // is the same reason AuthRecoveryPolicy.exhausted is not open. Nothing further inside the SDK can fix

@@ -219,7 +219,8 @@ public sealed class PayInException(
      *
      * Acting on this promptly is what matters either way, because no bound is this SDK's to extend: a key
      * the service no longer recognises is carried out as a new payment whoever chose it. What came back the
-     * first time is not repeated, so a caller that needs the outcome reads the transaction back.
+     * first time is not repeated, so a caller that needs the outcome reads the transaction back with
+     * [com.payabli.sdk.payin.PayabliPayIn.readTransaction].
      *
      * [PayabliException.type] is [cause]'s own, so a caller branching on it reads what went wrong as well
      * as that it is unresolved. It is taken from [cause] rather than accepted beside it, because two
