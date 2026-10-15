@@ -248,7 +248,11 @@ internal class TapToPayChargeRunner(
                     }
                 }
             } catch (withdrawn: CancellationException) {
-                // Ahead of the `Throwable` branch: a withdrawn caller is not a failure.
+                // Ahead of the `Throwable` branch: a withdrawn caller is not a failure. Withdrawn before the card, a
+                // fresh key protects no sale, so it is released and the earlier unknown sale's key stays claimable.
+                if (!askedForCard && capture == TapToPayCapture.NOT_CHARGED) {
+                    reserved?.let { withContext(NonCancellable) { keys.settle(entry, environment, it) } }
+                }
                 throw withdrawn
             } catch (failure: Throwable) {
                 // A 409 does not extend the marker an earlier send wrote, and a send that never left starts none.

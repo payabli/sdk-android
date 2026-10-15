@@ -612,6 +612,42 @@ class TapToPayChargeRunnerTest {
             assertEquals("the failed opening replaced the open sale's key", "$MINTED_KEY-1", fixture.keySent(1))
         }
 
+    /** The host withdraws a new sale while it opens: nothing was charged, so the earlier sale's key stays held. */
+    @Test
+    fun `a sale withdrawn while it opens leaves the earlier unknown sale's key claimable`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var openings = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(2) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to List(2) { "{}" },
+                    ),
+                    unsent = { request ->
+                        if (request.path == INITIATE && ++openings == 2) CancellationException("withdrawn") else null
+                    },
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            runCatching { runnerOver(fixture).charge(details("10.00"), PAYER, TapToPayInvoiceData(), null) }
+            val withdrawn =
+                runCatching {
+                    runnerOver(fixture).charge(details("20.00"), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+            runCatching {
+                runnerOver(fixture).charge(details("10.00"), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+
+            assertTrue(withdrawn is CancellationException)
+            assertEquals("the withdrawn sale replaced the open sale's key", "$MINTED_KEY-1", fixture.keySent(1))
+        }
+
     /** A ready session whose [opening]-th charge opening, counting from 1, is answered 409. */
     private suspend fun conflictOnOpening(opening: Int): SessionFixture {
         var openings = 0
