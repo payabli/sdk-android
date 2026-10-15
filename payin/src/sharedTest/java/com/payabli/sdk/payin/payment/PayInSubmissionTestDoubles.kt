@@ -59,6 +59,13 @@ internal val PROCESSOR_UNRECOGNISED: String =
      "explanation":"Unexpected error","data":{"paymentTransId":"101-unk","transStatus":0},"token":null}
     """.trimIndent()
 
+/** The paypoint's duplicate-payment refusal, a 409 in the older shape naming the earlier payment. */
+internal val DUPLICATE_PAYMENT: String =
+    """
+    {"responseText":"Possible duplicate payment","isSuccess":false,
+     "responseData":{"resultCode":3,"referenceId":"101-first","resultText":"Captured"}}
+    """.trimIndent()
+
 /** A stored method, in the older envelope that route answers in. */
 internal val STORED_METHOD: String =
     """

@@ -29,6 +29,7 @@ import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.RedactedCause
+import com.payabli.sdk.payin.model.leavesThePaymentOpen
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -566,7 +567,7 @@ internal class PayInSubmission(
         if (reused) {
             !answersThePayment(true)
         } else {
-            type.leavesOutcomeUnknown || type == PayabliErrorType.CONFLICT
+            type.leavesThePaymentOpen
         }
 
     /**

@@ -8,7 +8,6 @@ import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
-import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
@@ -23,8 +22,8 @@ import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.model.leavesThePaymentOpen
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.net.HttpURLConnection
@@ -322,7 +321,7 @@ internal class MoneyInClient(
                 LogField.safe("errorCode", failure.type),
             ) { "the transaction call failed at the transport" }
             // An open outcome keeps the transaction its body names, which the status mapping cannot carry.
-            throw if (failure.type.leavesOutcomeUnknown && said.paymentTransId != null) {
+            throw if (failure.type.leavesThePaymentOpen && said.paymentTransId != null) {
                 PayInException.ServiceError(said.failure(response.statusCode), failure.type)
             } else {
                 failure
@@ -410,7 +409,7 @@ private val OPEN_OUTCOME_CODES: Map<String?, PayabliErrorType> =
 /**
  * The v2 envelope's fields, each read on its own, so a missing or malformed field costs only itself.
  *
- * @property paymentTransId the transaction `data` names, trimmed, or null when absent or blank once trimmed.
+ * @property paymentTransId the transaction the body names, trimmed, or null when absent or blank once trimmed.
  */
 private class AnswerFields(
     val code: String?,
@@ -447,7 +446,10 @@ private class AnswerFields(
                 reason = root.string("reason"),
                 explanation = root.string("explanation"),
                 action = root.string("action"),
-                paymentTransId = root?.get("data").namedTransaction(),
+                // The duplicate-payment 409 is the older shape, naming the earlier payment.
+                paymentTransId =
+                    (root?.get("data") as? JsonObject).identifier("paymentTransId")
+                        ?: (root?.get("responseData") as? JsonObject).identifier("referenceId"),
             )
         }
 
@@ -457,29 +459,16 @@ private class AnswerFields(
          * @param key the member's name.
          * @return the member's value when it is a JSON string, or null.
          */
-        private fun JsonObject?.string(key: String): String? = this?.get(key).stringOrNull()
+        private fun JsonObject?.string(key: String): String? =
+            (this?.get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
 
         /**
-         * The transaction `data` names, under any spelling the record decoder takes, the last one winning as it
-         * does there.
+         * A transaction identifier, under exactly [key].
          *
+         * @param key the member's name.
          * @return the identifier trimmed, or null when absent or blank once trimmed.
          */
-        private fun JsonElement?.namedTransaction(): String? =
-            (this as? JsonObject)
-                ?.entries
-                ?.lastOrNull { it.key in PAYMENT_TRANS_ID_NAMES }
-                ?.value
-                .stringOrNull()
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
-
-        /**
-         * A JSON string's content, or null.
-         *
-         * @return the content when this is a JSON string, or null.
-         */
-        private fun JsonElement?.stringOrNull(): String? = (this as? JsonPrimitive)?.takeIf { it.isString }?.content
+        private fun JsonObject?.identifier(key: String): String? = string(key)?.trim()?.takeIf { it.isNotEmpty() }
     }
 }
 

@@ -525,6 +525,17 @@ class PayInPaymentFlowTest {
         }
 
     @Test
+    fun `a duplicate payment reaches the host as an unsettled conflict, naming the earlier payment`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.answering(DUPLICATE_PAYMENT, statusCode = 409))
+
+            val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull() as? PayInException.Unsettled
+
+            assertEquals(PayabliErrorType.CONFLICT, cause?.type)
+            assertEquals("101-first", cause?.paymentTransId)
+        }
+
+    @Test
     fun `an answer that cannot be read reaches the host as unsettled, naming the transaction`() =
         runTest(timeout = timeout) {
             val body = """{"code":"A0000","data":{"paymentTransId":"101-abc","transStatus":"settled"}}"""

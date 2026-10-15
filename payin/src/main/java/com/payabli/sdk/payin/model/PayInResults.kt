@@ -3,6 +3,7 @@ package com.payabli.sdk.payin.model
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.RedactedFailure
+import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import java.math.BigDecimal
 
 /**
@@ -290,6 +291,13 @@ public sealed class PayInException(
         internal const val DEFAULT_ALREADY_SUBMITTING_REASON: String = "A submission is already in flight"
     }
 }
+
+/**
+ * Whether a failure of this type leaves a payment's outcome open, where the key sent was not one held for it.
+ * A conflict does, because a 409 never settles the outcome.
+ */
+internal val PayabliErrorType.leavesThePaymentOpen: Boolean
+    get() = leavesOutcomeUnknown || this == PayabliErrorType.CONFLICT
 
 /**
  * The redaction [PayabliException.cause] already is, or a new one standing in for the failure itself:

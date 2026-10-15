@@ -10,6 +10,7 @@ import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.payment.DUPLICATE_PAYMENT
 import com.payabli.sdk.payin.payment.PROCESSOR_TIMEOUT
 import com.payabli.sdk.payin.payment.PROCESSOR_UNRECOGNISED
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
@@ -625,15 +626,31 @@ class MoneyInClientTest {
         }
 
     @Test
-    fun `a transaction named under another spelling is kept, the last one winning as the record decoder does`() =
+    fun `a failure names its transaction under the money routes' spelling only`() =
         runTest(timeout = timeout) {
             val declined = """{"code":"D0329","data":{"PaymentTransId":"101-abc"}}"""
             val timedOut = PROCESSOR_TIMEOUT.replace("\"paymentTransId\"", "\"paymenttransid\"")
-            val both = """{"code":"E9060","data":{"paymentTransId":"declared","paymenttransid":"alias"}}"""
 
-            assertEquals("101-abc", (failureOf(declined, 200) as PayInException.Refused).failure.paymentTransId)
-            assertEquals("101-tmo", (failureOf(timedOut, 400) as PayInException.ServiceError).failure.paymentTransId)
-            assertEquals("alias", (failureOf(both, 400) as PayInException.ServiceError).failure.paymentTransId)
+            assertNull((failureOf(declined, 200) as PayInException.Refused).failure.paymentTransId)
+            assertNull((failureOf(timedOut, 400) as PayInException.ServiceError).failure.paymentTransId)
+        }
+
+    @Test
+    fun `a duplicate payment names the earlier one, and stays a conflict`() =
+        runTest(timeout = timeout) {
+            val failure = failureOf(DUPLICATE_PAYMENT, 409) as? PayInException.ServiceError
+
+            assertEquals(PayabliErrorType.CONFLICT, failure?.type)
+            assertEquals("101-first", failure?.failure?.paymentTransId)
+        }
+
+    @Test
+    fun `a repeated key's conflict names nothing, and keeps the conflict it was`() =
+        runTest(timeout = timeout) {
+            val failure = failureOf("Duplicated idempotencyKey", 409)
+
+            assertTrue("$failure", failure is com.payabli.sdk.core.model.PayabliGenericException)
+            assertEquals(PayabliErrorType.CONFLICT, (failure as com.payabli.sdk.core.model.PayabliException).type)
         }
 
     @Test
