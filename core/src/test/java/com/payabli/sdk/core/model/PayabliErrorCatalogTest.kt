@@ -73,6 +73,12 @@ class PayabliErrorCatalogTest {
                 "The session has not been initialized.",
             ),
             Row(
+                "TRANSACTION_NOT_FOUND",
+                1020,
+                PayabliErrorCategory.RETRY_LATER,
+                "No transaction is visible under this identifier yet. A transaction can take a short while to appear, so this is not proof no payment was made. Read again later rather than charging again.",
+            ),
+            Row(
                 "DEVICE_KEY_UNAVAILABLE",
                 3001,
                 PayabliErrorCategory.RETRY_LATER,

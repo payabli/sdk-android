@@ -28,12 +28,12 @@ public class PayInStoredMethod(
 }
 
 /**
- * A transaction that was accepted.
+ * A transaction, as an operation answered it or as [com.payabli.sdk.payin.PayabliPayIn.readTransaction] read it
+ * back.
  *
- * **An authorization code, an AVS result and a security-code result are not here.** The record a v2 approval
- * carries holds none of the three: they exist only in the older response shape this SDK does not use.
- * Declaring them would give a caller three fields that are null on every approval and imply the SDK went
- * looking.
+ * **An authorization code, an AVS result and a security-code result are not here.** No operation's answer
+ * carries them, and a read does not fill them. Declaring them would give a caller three fields that are always
+ * null and imply the SDK went looking.
  *
  * @property transStatus the transaction's status number, as it is reported on the wire.
  * @property paypointId the paypoint that took it, by its own key rather than by the entry point a caller configured.
@@ -54,6 +54,10 @@ public class PayInTransaction(
     public val connectorName: String?,
     public val customerId: Long?,
 ) {
+    /** What became of it, or null when no status number was reported. [transStatus] keeps the number itself. */
+    public val status: PayInTransactionStatus?
+        get() = transStatus?.let(PayInTransactionStatus::of)
+
     /**
      * Never the amount or the customer: an identifier is enough to correlate, and the rest is data.
      *

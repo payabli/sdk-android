@@ -6,6 +6,7 @@ import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInStoredMethod
+import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.coroutines.CoroutineScope
@@ -158,6 +159,25 @@ public sealed class PayabliPayIn {
         transId: String,
         idempotencyKey: String? = null,
     ): Result<PayInResult>
+
+    /**
+     * Reads a transaction back by its identifier, to learn what became of it.
+     *
+     * This is how an outcome left open by [PayInException.Unsettled] is resolved, when it names the payment: pass
+     * its [PayInException.Unsettled.paymentTransId], and read [PayInTransaction.status]. A status whose outcome is
+     * not known may still change, so read again later rather than repeating the payment. When
+     * [PayInException.Unsettled.paymentTransId] is null, no identifier came back, and there is nothing to read.
+     *
+     * A read moves no money and holds no key, so it runs beside a submission in flight, and a failed read is
+     * never [PayInException.Unsettled]: repeating it is always safe.
+     *
+     * @param transId the transaction to read, as [PayInTransaction.paymentTransId] reported it.
+     * @return the transaction, carrying [PayInTransaction.status]; or the failure, a `PayabliException` whose
+     * [PayabliException.type] is [PayabliErrorType.PERMISSION_DENIED] when this credential may not read it, and
+     * [PayabliErrorType.TRANSACTION_NOT_FOUND] when none is visible under [transId] yet. That is not proof no payment
+     * was made: read again later rather than charging again.
+     */
+    public abstract suspend fun readTransaction(transId: String): Result<PayInTransaction>
 
     public companion object {
         /**

@@ -127,6 +127,12 @@ public enum class PayabliErrorType(
         PayabliErrorCategory.INVALID_REQUEST,
         "The session has not been initialized.",
     ),
+    TRANSACTION_NOT_FOUND(
+        1020,
+        "TRANSACTION_NOT_FOUND",
+        PayabliErrorCategory.RETRY_LATER,
+        "No transaction is visible under this identifier yet. A transaction can take a short while to appear, so this is not proof no payment was made. Read again later rather than charging again.",
+    ),
 
     // Card-present.
     DEVICE_KEY_UNAVAILABLE(
