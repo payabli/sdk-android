@@ -227,7 +227,7 @@ internal class MoneyInClient(
             LogField.safe("route", PayInRoutes.READ),
             LogField.safe("statusCode", response.statusCode),
         ) { "the transaction call succeeded" }
-        return record.toTransaction(connectorName = null, customerId = null)
+        return record.toTransaction()
     }
 
     private fun validate(
@@ -308,12 +308,18 @@ internal class MoneyInClient(
             ) { "the transaction call failed at the transport" }
             throw failure
         }
-        val envelope =
+        val (envelope, parties) =
             try {
-                PayabliJson.format.decodeFromString(
+                val body = PayabliJson.format.parseToJsonElement(response.bodyAsText())
+                PayabliJson.format.decodeFromJsonElement(
                     PayabliV2Envelope.serializer(TransactionPayload.serializer()),
-                    response.bodyAsText(),
-                )
+                    body,
+                ) to
+                    PayabliJson.format
+                        .decodeFromJsonElement(
+                            PayabliV2Envelope.serializer(ApprovalPartiesPayload.serializer()),
+                            body,
+                        ).payload
             } catch (failure: SerializationException) {
                 // The supertype is not caught: SerializationException extends IllegalArgumentException, so
                 // catching that would swallow a programming error raised from inside a serializer.
@@ -352,7 +358,7 @@ internal class MoneyInClient(
             reason = envelope.reason,
             explanation = envelope.explanation,
             action = envelope.action,
-            transaction = envelope.payload?.toTransaction(),
+            transaction = envelope.payload?.toTransaction(parties),
         )
     }
 
@@ -397,14 +403,10 @@ private fun PayInTransactionOptions.toBody(
 /**
  * The transaction this record describes.
  *
- * @param connectorName the connector to report, which a read passes as null.
- * @param customerId the customer to report, which a read passes as null.
+ * @param parties the connector and payer an approval names, or null for a read, which reports neither.
  * @return the transaction.
  */
-private fun TransactionPayload.toTransaction(
-    connectorName: String? = this.connectorName,
-    customerId: Long? = payorId,
-): PayInTransaction =
+private fun TransactionPayload.toTransaction(parties: ApprovalPartiesPayload? = null): PayInTransaction =
     PayInTransaction(
         paymentTransId = paymentTransId,
         gatewayTransId = gatewayTransId,
@@ -416,8 +418,8 @@ private fun TransactionPayload.toTransaction(
         netAmount = netAmount,
         feeAmount = feeAmount,
         surchargeFee = surchargeFee,
-        connectorName = connectorName,
-        customerId = customerId,
+        connectorName = parties?.connectorName,
+        customerId = parties?.payorId,
     )
 
 /**
@@ -451,15 +453,15 @@ private fun isNotPermitted(response: PayabliResponse): Boolean =
 private fun readRefusal(response: PayabliResponse): PayabliGenericException? =
     when {
         isNotPermitted(response) ->
-            PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, REASON_READ_NOT_PERMITTED)
+            PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, PayabliErrorType.PERMISSION_DENIED.message)
         response.statusCode == HttpURLConnection.HTTP_BAD_REQUEST &&
             legacyCode(response) == LegacyRefusal.NOT_VISIBLE ->
-            PayabliGenericException(PayabliErrorType.TRANSACTION_NOT_FOUND, REASON_READ_NOT_VISIBLE)
+            PayabliGenericException(
+                PayabliErrorType.TRANSACTION_NOT_FOUND,
+                PayabliErrorType.TRANSACTION_NOT_FOUND.message,
+            )
         else -> null
     }
-
-private const val REASON_READ_NOT_PERMITTED = "This credential may not read this transaction."
-private const val REASON_READ_NOT_VISIBLE = "No transaction is visible under this identifier yet."
 
 /**
  * Only the flags that were set: an absent flag and a false one are different statements to the service.

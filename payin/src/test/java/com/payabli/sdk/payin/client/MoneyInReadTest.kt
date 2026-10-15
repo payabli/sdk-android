@@ -85,11 +85,27 @@ class MoneyInReadTest {
         }
 
     @Test
+    fun `a connector or payer the read does not report cannot fail it`() =
+        runTest(timeout = timeout) {
+            val record =
+                RECORD.replace(
+                    """"ConnectorName":"connector","PayorId":7""",
+                    """"ConnectorName":{},"PayorId":[]""",
+                )
+
+            val transaction =
+                MoneyInClient(FakePayInTransport.answering(record), RecordingSdkLogger()).readTransaction("101-abc")
+
+            assertEquals(PayInTransactionStatus.Voided, transaction.status)
+        }
+
+    @Test
     fun `nothing visible under the identifier is a transaction not found`() =
         runTest(timeout = timeout) {
             val failure = read(FakePayInTransport.answering(LEGACY_7001, statusCode = 400)) as? PayabliException
 
             assertEquals(PayabliErrorType.TRANSACTION_NOT_FOUND, failure?.type)
+            assertEquals(PayabliErrorType.TRANSACTION_NOT_FOUND.message, failure?.reason)
         }
 
     @Test
@@ -98,6 +114,7 @@ class MoneyInReadTest {
             val failure = read(FakePayInTransport.answering(LEGACY_9001, statusCode = 401)) as? PayabliException
 
             assertEquals(PayabliErrorType.PERMISSION_DENIED, failure?.type)
+            assertEquals(PayabliErrorType.PERMISSION_DENIED.message, failure?.reason)
         }
 
     @Test

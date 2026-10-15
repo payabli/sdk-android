@@ -219,9 +219,9 @@ internal class AuthorizedCaptureBody(
 )
 
 /**
- * The record a v2 approval carries in `data`, and the bare record a read returns. Undeclared fields, such as a
- * read's card, payer and device data, are never decoded. Only the older response shape carries the
- * authorization code, AVS and security-code results.
+ * The fields a v2 approval's `data` and a read's bare record share. Undeclared fields, such as a read's card,
+ * payer and device data, are never decoded. Only the older response shape carries the authorization code, AVS
+ * and security-code results.
  */
 @Serializable
 internal class TransactionPayload(
@@ -249,6 +249,17 @@ internal class TransactionPayload(
     @JsonNames("surchargefee", "SurchargeFee")
     @Serializable(with = PayInAmountSerializer::class)
     val surchargeFee: BigDecimal? = null,
+)
+
+/**
+ * The connector and payer a v2 approval's `data` also names. Decoded apart from [TransactionPayload], so a read
+ * never decodes them.
+ *
+ * @property connectorName the connector that processed the payment.
+ * @property payorId the customer the payment was charged to.
+ */
+@Serializable
+internal class ApprovalPartiesPayload(
     @JsonNames("connectorname", "ConnectorName")
     val connectorName: String? = null,
     @JsonNames("payorid", "PayorId")
