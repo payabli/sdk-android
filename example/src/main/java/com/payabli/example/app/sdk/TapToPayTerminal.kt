@@ -61,10 +61,11 @@ class TapToPayTerminal(
     private var terminal: PayabliTTP? = null
 
     /**
-     * Whether the last charge ended with its outcome unknown, so the next one is declared a retry of it. Without
-     * the declaration the SDK sends a new key, and a sale that went through would be taken a second time.
+     * The amount of the last charge when its outcome was unknown, so the next charge for that amount is declared
+     * a retry of it. Without the declaration the SDK sends a new key, and a sale that went through would be
+     * taken a second time. A different amount is a different sale, and goes out as one.
      */
-    private var retryOpen = false
+    private var openAmount: BigDecimal? = null
 
     /**
      * A device that owes activation is a handoff, not a failure.
@@ -102,13 +103,13 @@ class TapToPayTerminal(
                             lastName = identity.lastName,
                             customerNumber = identity.customerNumber,
                         ),
-                        attempt = if (retryOpen) PayabliAttempt.Retry else PayabliAttempt.NewPayment,
+                        attempt = if (amount == openAmount) PayabliAttempt.Retry else PayabliAttempt.NewPayment,
                     )
                 } catch (failure: TapToPayException) {
-                    retryOpen = failure.capture == TapToPayCapture.UNKNOWN
+                    openAmount = amount.takeIf { failure.capture == TapToPayCapture.UNKNOWN }
                     throw failure
                 }
-            retryOpen = false
+            openAmount = null
             emit(TerminalEventCode.UpdateCompleted, receipt.cardNetwork.orEmpty())
             ChargeReceipt(receipt.paymentTransId)
         }
