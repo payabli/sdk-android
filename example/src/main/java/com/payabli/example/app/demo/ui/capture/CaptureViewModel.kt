@@ -31,6 +31,12 @@ import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import kotlin.coroutines.cancellation.CancellationException
 
+/**
+ * What the capture screen shows.
+ *
+ * @property voidOutcomeUnknown whether a void of the current transaction ended with its outcome unknown. The
+ *   control is withheld until a read shows the transaction voided or still captured.
+ */
 data class CaptureUiState(
     override val setup: PayInFormSetup,
     /**
@@ -72,19 +78,11 @@ data class CaptureUiState(
     override val isVoiding: Boolean = false,
     /** The transaction this screen has already reversed, so the control cannot offer it twice. */
     val voidedTransactionId: String? = null,
-    /**
-     * The key every reversal of the current transaction sends.
-     *
-     * One per transaction rather than one per tap. A reversal whose response is lost may have been applied,
-     * and only a repeat carrying this key is recognized as that same attempt; a fresh key would ask the
-     * service to reverse a transaction it has already reversed, which comes back as a failure over a success.
-     * Minted when a payment completes and dropped when the screen moves on.
-     */
-    val voidIdempotencyKey: String? = null,
+    val voidOutcomeUnknown: Boolean = false,
     override val isReading: Boolean = false,
 ) : PaymentFlowUiState {
     /**
-     * Its own, because `data class` would synthesize one over the transaction identifier and the key beside it.
+     * Its own, because `data class` would synthesize one over the transaction identifier and the capture's key.
      *
      * The readout types this holds each declare theirs for the same reason, and a state that carries them
      * would put back what those took out: this reaches an assertion failure or a crash report whole.
@@ -99,13 +97,13 @@ data class CaptureUiState(
     override val readableTransactionId: String?
         get() = lastResult?.transaction?.paymentTransactionId
 
-    /** The transaction a void would name, once there is one and it has not already been reversed. */
+    /** The transaction a void would name, once there is one, it is not reversed and no void of it is in doubt. */
     override val voidableTransactionId: String?
         get() =
             lastResult
                 ?.transaction
                 ?.paymentTransactionId
-                ?.takeIf { it != voidedTransactionId }
+                ?.takeIf { it != voidedTransactionId && !voidOutcomeUnknown }
 }
 
 /**
@@ -263,8 +261,7 @@ class CaptureViewModel(
                 submitFailed = false,
                 isSheetOpen = false,
                 outcomeReady = transaction != null,
-                // One per transaction, minted here so every reversal of it is the same attempt.
-                voidIdempotencyKey = transaction?.let { newIdempotencyKey() },
+                voidOutcomeUnknown = false,
             )
         }
     }
@@ -286,35 +283,29 @@ class CaptureViewModel(
                 outcomeReady = false,
                 lastResult = null,
                 submitFailed = true,
-                voidIdempotencyKey = null,
             )
         }
     }
 
     /**
-     * Reverses the transaction the last capture returned.
-     *
-     * Reads the id off the state rather than taking one, so the control cannot name a transaction the screen
-     * is not showing. The result replaces the panel's text: a void is what the screen last did, and leaving
-     * the capture's text under a reversed transaction is the screen disagreeing with the service.
-     *
-     * [CaptureUiState.lastResult] is left standing on success, so the identifiers stay on screen and the
-     * result step keeps its shape. What stops a second void is [CaptureUiState.voidedTransactionId].
+     * Voids the transaction on screen under a new key. A void whose outcome is unknown is never repeated: the
+     * control stays withheld until a read settles it.
      */
     fun voidLastTransaction() {
         // A read in flight writes the result panel when it returns, and would overwrite this void's outcome.
         if (_uiState.value.isVoiding || _uiState.value.isReading) return
         val payments = _uiState.value.payments ?: return
         val transId = _uiState.value.voidableTransactionId ?: return
-        val key = _uiState.value.voidIdempotencyKey ?: return
+        val key = newIdempotencyKey()
         _uiState.update { it.copy(isVoiding = true) }
         viewModelScope.launch {
             val outcome =
                 try {
                     payments.voidTransaction(transId, key)
                 } catch (cancellation: CancellationException) {
-                    // The flag is cleared on the way out, or the control never comes back.
-                    _uiState.update { it.copy(isVoiding = false) }
+                    // The flag is cleared on the way out, or the controls never come back. The void may have gone
+                    // out, so it is withheld as an unknown outcome is.
+                    _uiState.update { it.copy(isVoiding = false, voidOutcomeUnknown = true) }
                     throw cancellation
                 }
             record(
@@ -351,7 +342,8 @@ class CaptureViewModel(
 
     /**
      * The state after a read: the status on success, the reason on failure. A read that reports the transaction
-     * voided marks it reversed and drops the void key, as an approved void does.
+     * voided marks it reversed, as an approved void does. After a void whose outcome is unknown, a read that
+     * reports it captured offers the void again, and any other status leaves it withheld.
      *
      * @param outcome what the read returned.
      * @param transId the transaction that was read.
@@ -364,7 +356,7 @@ class CaptureViewModel(
         copy(
             isReading = false,
             voidedTransactionId = if (outcome.isVoidOf()) transId else voidedTransactionId,
-            voidIdempotencyKey = if (outcome.isVoidOf()) null else voidIdempotencyKey,
+            voidOutcomeUnknown = voidOutcomeUnknown && !outcome.settlesAVoid(),
             resultText =
                 when (outcome) {
                     is PayInReadOutcome.Read ->
@@ -379,14 +371,15 @@ class CaptureViewModel(
 
     private fun PayInReadOutcome.isVoidOf(): Boolean = this is PayInReadOutcome.Read && isVoided
 
+    private fun PayInReadOutcome.settlesAVoid(): Boolean = this is PayInReadOutcome.Read && (isVoided || isCaptured)
+
     /**
-     * The screen a reversal leaves behind.
+     * The state after a void: an approval marks the transaction reversed, and a refusal whose outcome is unknown
+     * withholds the control and says to check the status.
      *
-     * Separate from the call so the branch is a value a test can ask for, and the two outcomes differ in more
-     * than their wording: only an approval records the transaction as reversed.
-     *
-     * A refusal leaves [CaptureUiState.voidedTransactionId] alone, because the transaction still stands and
-     * the control has to stay available for another try.
+     * @param outcome what the void returned.
+     * @param transId the transaction that was voided.
+     * @return the state with the void's result in the result panel.
      */
     internal fun CaptureUiState.afterVoiding(
         outcome: PayInOutcome,
@@ -397,8 +390,6 @@ class CaptureViewModel(
                 copy(
                     isVoiding = false,
                     voidedTransactionId = transId,
-                    // Reversed, so the control goes and the key has nothing left to identify.
-                    voidIdempotencyKey = null,
                     resultText =
                         listOfNotNull(
                             "✓ Voided: ${outcome.result.code}",
@@ -408,12 +399,17 @@ class CaptureViewModel(
                 )
 
             is PayInOutcome.Refused ->
-                // The key is left alone, whatever the refusal was. A reversal takes only the transaction, so a
-                // second attempt is the same request byte for byte and belongs under the same key: it may have
-                // been applied and gone unreported, and a fresh key would ask the service to reverse a
-                // transaction it has already reversed. The capture above rotates because correcting a rejected
-                // field genuinely sends something else. Starting over is what ends this attempt.
-                copy(isVoiding = false, resultText = "✗ ${outcome.error.displayMessage}")
+                copy(
+                    isVoiding = false,
+                    voidOutcomeUnknown = outcome.isOutcomeUnknown,
+                    resultText =
+                        listOfNotNull(
+                            "✗ ${outcome.error.displayMessage}",
+                            "Check this transaction's status to see whether it was voided.".takeIf {
+                                outcome.isOutcomeUnknown
+                            },
+                        ).joinToString("\n"),
+                )
         }
 
     /** Records only when diagnostics are on, so the setting governs what is kept and not only what is shown. */
@@ -448,10 +444,9 @@ class CaptureViewModel(
                 setup = attempt.setup,
                 amount = attempt.amount,
                 operation = attempt.operation,
-                // The next payment is a different transaction, so neither what was reversed nor the key that
-                // identified a reversal of it carries over.
+                // The next payment is a different transaction, so nothing about voiding this one carries over.
                 voidedTransactionId = null,
-                voidIdempotencyKey = null,
+                voidOutcomeUnknown = false,
             )
         }
     }

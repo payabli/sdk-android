@@ -182,9 +182,8 @@ fun PaymentFlowScreen(
 
         StepRow(index = 3, step = steps[2]) {
             ResultCard(text = state.resultText, emptyText = resultEmptyText)
-            // Above Take another payment, because it acts on the transaction this step is describing while
-            // that one leaves it behind. Drawn only where there is something to reverse: a screen that stores
-            // a method supplies no action, and a reversed transaction stops offering it.
+            // Above Take another payment, because it acts on the transaction this step describes. Drawn only
+            // while there is something to void: not once it is reversed or a void of it is in doubt.
             val onVoid = actions.onVoid
             if (onVoid != null && state.voidableTransactionId != null) {
                 BorderedButton(

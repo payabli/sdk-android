@@ -95,12 +95,12 @@ class ReadControlTest {
             }
 
         assertNull(after.voidableTransactionId)
-        assertNull(after.voidIdempotencyKey)
+        assertEquals("101-abc", after.voidedTransactionId)
         assertEquals("101-abc", after.readableTransactionId)
     }
 
     @Test
-    fun `a read reporting another status leaves the void control and its key`() {
+    fun `with no void in doubt, a read reporting another status leaves the void control`() {
         val model = captureModel()
         model.onCompleted(capturedPaymentOutcome())
         val taken = model.uiState.value
@@ -111,7 +111,32 @@ class ReadControlTest {
             }
 
         assertEquals("101-abc", after.voidableTransactionId)
-        assertEquals(taken.voidIdempotencyKey, after.voidIdempotencyKey)
+    }
+
+    @Test
+    fun `after a void in doubt, only a captured or voided read lifts the hold`() {
+        val model = captureModel()
+        model.onCompleted(capturedPaymentOutcome())
+        val held = model.uiState.value.copy(voidOutcomeUnknown = true)
+        val failed = PayInReadOutcome.Failed(IllegalStateException().toPaymentError())
+
+        listOf(
+            PayInReadOutcome.Read("initiated", 10, "101-abc"),
+            PayInReadOutcome.Read("authorized", 11, "101-abc"),
+            PayInReadOutcome.Read("declined", 2, "101-abc"),
+            PayInReadOutcome.Read("failed", -1, "101-abc"),
+            PayInReadOutcome.Read("unrecognised", 99, "101-abc"),
+            failed,
+        ).forEach { outcome ->
+            val after = with(model) { held.afterReading(outcome, "101-abc") }
+            assertNull(outcome.toString(), after.voidableTransactionId)
+        }
+
+        val captured =
+            with(
+                model,
+            ) { held.afterReading(PayInReadOutcome.Read("captured", 1, "101-abc", isCaptured = true), "101-abc") }
+        assertEquals("101-abc", captured.voidableTransactionId)
     }
 
     private fun captureModel() =

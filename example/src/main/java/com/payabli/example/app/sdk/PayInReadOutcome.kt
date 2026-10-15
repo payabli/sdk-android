@@ -13,12 +13,14 @@ sealed class PayInReadOutcome {
      * @property statusNumber the raw status number from the service, or null when it sent none.
      * @property paymentTransactionId the transaction that was read.
      * @property isVoided whether the service reports the transaction voided.
+     * @property isCaptured whether the service reports the transaction captured.
      */
     class Read internal constructor(
         val status: String,
         val statusNumber: Int?,
         val paymentTransactionId: String?,
         val isVoided: Boolean = false,
+        val isCaptured: Boolean = false,
     ) : PayInReadOutcome() {
         /**
          * Leaves out the transaction ID.
@@ -51,6 +53,7 @@ internal fun Result<PayInTransaction>.toReadOutcome(): PayInReadOutcome =
                 statusNumber = it.transStatus,
                 paymentTransactionId = it.paymentTransId,
                 isVoided = it.status == PayInTransactionStatus.Voided,
+                isCaptured = it.status == PayInTransactionStatus.Captured,
             )
         },
         onFailure = { PayInReadOutcome.Failed(it.toPaymentError()) },
