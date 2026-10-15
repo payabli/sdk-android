@@ -265,6 +265,11 @@ package com.payabli.sdk.core.logging {
 
 package com.payabli.sdk.core.model {
 
+  public enum PayabliAttempt {
+    enum_constant public static final com.payabli.sdk.core.model.PayabliAttempt NewPayment;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliAttempt Retry;
+  }
+
   public final class PayabliDeclineException extends com.payabli.sdk.core.model.PayabliException {
     ctor public PayabliDeclineException();
     ctor public PayabliDeclineException(optional String? rawCode, optional String reason, optional String? explanation, optional String? action);
@@ -342,6 +347,7 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType READER_DEVICE_REFUSED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType READER_SESSION_EXPIRED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType READER_UNAVAILABLE;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType RETRY_REFUSED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType SDK_INTERNAL_ERROR;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType SERVER_ERROR;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType SESSION_BURNED;
