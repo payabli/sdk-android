@@ -218,13 +218,10 @@ public class PayabliSession private constructor(
         }
 
         /**
-         * Same, with the transport supplied, so a test can hold the critical section open: without it the
-         * mutex cannot be shown to do anything, since the section is a few microseconds of object
-         * construction.
+         * Same, with the transport supplied, so a test can hold the critical section open.
          *
          * @param config the configuration to install.
-         * @param buildTransport builds the transport, so a test can hold the critical section open. The session
-         *   renews no refused token.
+         * @param buildTransport builds the transport. The session renews no refused token.
          * @return the installed session.
          */
         @VisibleForTesting

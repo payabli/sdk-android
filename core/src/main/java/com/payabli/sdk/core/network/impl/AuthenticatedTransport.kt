@@ -52,7 +52,7 @@ internal class AuthenticatedTransport(
                 LogField.safe("statusCode", first.statusCode),
                 routeField(request),
             ) { "recovery declined: the route pins the credential it was sent" }
-            // Kept rather than replaced, so the caller can renew it once the pinned sequence has stopped.
+            // The caller renews it after the pinned sequence ends.
             stamped.value?.let { auth.recordPinnedRefusal(it) }
             return first
         }

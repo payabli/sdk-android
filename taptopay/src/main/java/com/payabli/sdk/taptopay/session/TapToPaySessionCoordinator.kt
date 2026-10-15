@@ -42,13 +42,6 @@ import kotlinx.coroutines.withContext
  *
  * **Locks are taken in one order and only one:** this region, then the enrollment coordinator's, then the
  * attestor's. The state monitor is never held across any of them.
- *
- * **A device route that refuses its token is run once more.** The device routes keep the token they were sent
- * for a whole sequence, so a refused one is not replaced inside it. Building a session and spending a code each
- * renew the token through [renewToken] after that refusal and run again from their first request. A second
- * refusal reaches the caller.
- *
- * @param renewToken replaces the token a device route last refused, between runs.
  */
 internal class TapToPaySessionCoordinator(
     private val entry: String,
@@ -56,6 +49,7 @@ internal class TapToPaySessionCoordinator(
     private val client: DeviceServiceClient,
     private val reader: TapToPayProvider,
     private val manager: TapToPaySessionManager,
+    /** Replaces the token a device route last refused, between runs. */
     private val renewToken: suspend () -> Unit,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
@@ -285,6 +279,7 @@ internal class TapToPaySessionCoordinator(
 
     /**
      * Runs [attempt], and once more after [renewToken] when a device route refused the token it was sent.
+     * A device route keeps its token for the whole sequence, so a second refusal reaches the caller.
      *
      * @param attempt the run, from its first request.
      * @return what [attempt] returned.
@@ -396,7 +391,7 @@ internal class TapToPaySessionCoordinator(
 
 /**
  * Whether [failure] is a device route refusing the token it was sent. Every device route keeps its token for
- * the sequence, so that refusal arrives as an expired token rather than being refreshed underneath.
+ * the sequence, so that refusal arrives as an expired token.
  *
  * @param failure the failure a run raised.
  * @return true for an expired token; false otherwise.
