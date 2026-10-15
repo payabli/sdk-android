@@ -366,7 +366,9 @@ Store the transaction ID with your order every time you get one.
 
 If you then try the same payment again, say so: pass `attempt = PayabliAttempt.Retry`, in
 `PayInTransactionOptions` or to `charge`. The SDK sends it under the key of the most recent payment whose
-outcome is unknown, so the service recognizes the repeat rather than taking the money twice. Without it, every
+outcome is unknown: on card-not-present, the most recent capture or authorization, whichever you're retrying,
+taken through the same `PayabliPayIn`; on Tap to Pay, the most recent charge for that entry point. The service
+then recognizes the repeat rather than taking the money twice. Without it, every
 call is a new payment. If the service refuses the retry because it already has that payment, a card-not-present
 retry fails with `RETRY_REFUSED` and a Tap to Pay one with `CHARGE_NOT_FINISHED`; check that payment before
 trying again.
