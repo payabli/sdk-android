@@ -26,6 +26,7 @@ package com.payabli.sdk.core {
     method @InaccessibleFromKotlin public String? getDeviceId();
     method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public com.payabli.sdk.core.telemetry.TelemetrySessionContext getTelemetry();
     method @InaccessibleFromKotlin @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public com.payabli.sdk.core.network.PayabliTransport getTransport();
+    method @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public suspend Object? renewRefusedToken(kotlin.coroutines.Continuation<? super kotlin.Unit>);
     property public String? deviceId;
     property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public com.payabli.sdk.core.telemetry.TelemetrySessionContext telemetry;
     property @RestrictTo({androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP}) public com.payabli.sdk.core.network.PayabliTransport transport;

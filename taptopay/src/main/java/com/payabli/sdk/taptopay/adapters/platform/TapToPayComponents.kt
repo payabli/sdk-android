@@ -69,6 +69,7 @@ internal object TapToPayComponents {
                 client = deviceService,
                 reader = reader,
                 manager = manager,
+                renewToken = session::renewRefusedToken,
             )
         return PayabliTTP.over(
             coordinator = coordinator,

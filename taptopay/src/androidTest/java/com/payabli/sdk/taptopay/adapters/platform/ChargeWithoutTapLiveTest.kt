@@ -87,7 +87,8 @@ class ChargeWithoutTapLiveTest {
     fun aPaymentIsOpenedAndClosedAgainstTheRealPaypoint() =
         runTest(timeout = TEST_TIMEOUT) {
             withContext(Dispatchers.IO) {
-                val transport = LiveTapToPay.session(context).transport
+                val session = LiveTapToPay.session(context)
+                val transport = session.transport
                 val manager = TapToPaySessionManager()
                 val coordinator =
                     TapToPaySessionCoordinator(
@@ -96,6 +97,7 @@ class ChargeWithoutTapLiveTest {
                         client = DeviceServiceClient(transport),
                         reader = StubReader(),
                         manager = manager,
+                        renewToken = session::renewRefusedToken,
                     )
 
                 val owed = runCatching { coordinator.initialize() }.exceptionOrNull()

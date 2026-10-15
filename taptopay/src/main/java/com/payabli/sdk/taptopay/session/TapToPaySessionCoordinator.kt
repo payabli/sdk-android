@@ -5,6 +5,8 @@ import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
@@ -40,6 +42,13 @@ import kotlinx.coroutines.withContext
  *
  * **Locks are taken in one order and only one:** this region, then the enrollment coordinator's, then the
  * attestor's. The state monitor is never held across any of them.
+ *
+ * **A device route that refuses its token is run once more.** The device routes keep the token they were sent
+ * for a whole sequence, so a refused one is not replaced inside it. Building a session and spending a code each
+ * renew the token through [renewToken] after that refusal and run again from their first request. A second
+ * refusal reaches the caller.
+ *
+ * @param renewToken replaces the token a device route last refused, between runs.
  */
 internal class TapToPaySessionCoordinator(
     private val entry: String,
@@ -47,6 +56,7 @@ internal class TapToPaySessionCoordinator(
     private val client: DeviceServiceClient,
     private val reader: TapToPayProvider,
     private val manager: TapToPaySessionManager,
+    private val renewToken: suspend () -> Unit,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
     /** Where the session has got to. Safe to collect at any time; reading it takes no lock. */
@@ -245,13 +255,7 @@ internal class TapToPaySessionCoordinator(
         TapToPayReports.initializeStarted()
         try {
             reader.checkEligibility()
-            manager.reset()
-            val outcome = attesting()
-            if (outcome is EnrollmentOutcome.Attested && outcome.activationRequired) {
-                // Registration already said so, so there is nothing to learn from asking for the credentials.
-                throw TapToPaySessionException.PendingActivation()
-            }
-            bringReaderUp()
+            renewingOnce { buildSession() }
         } catch (withdrawn: CancellationException) {
             // Withdrawing is not an initialize result. `Throwable` covers CancellationException, so a
             // caller that cancelled was recorded as one whose setup failed.
@@ -268,6 +272,34 @@ internal class TapToPaySessionCoordinator(
         TapToPayReports.initializeSucceeded(startedAt)
     }
 
+    /** One attempt at building the session, from the reset onward. */
+    private suspend fun buildSession() {
+        manager.reset()
+        val outcome = attesting()
+        if (outcome is EnrollmentOutcome.Attested && outcome.activationRequired) {
+            // Registration already said so, so there is nothing to learn from asking for the credentials.
+            throw TapToPaySessionException.PendingActivation()
+        }
+        bringReaderUp()
+    }
+
+    /**
+     * Runs [attempt], and once more after [renewToken] when a device route refused the token it was sent.
+     *
+     * @param attempt the run, from its first request.
+     * @return what [attempt] returned.
+     */
+    private suspend fun <T> renewingOnce(attempt: suspend () -> T): T {
+        try {
+            return attempt()
+        } catch (refused: PayabliException) {
+            if (!isRefusedToken(refused)) throw refused
+        }
+        logger.debug(LogField.safe("event", "ttp_token_renewed")) { "renewing a refused token before running again" }
+        renewToken()
+        return attempt()
+    }
+
     /** Bracketed separately from the initialize it sits inside, because it is the step that can be slow. */
     private suspend fun attesting(): EnrollmentOutcome {
         val startedAt = System.nanoTime()
@@ -280,7 +312,8 @@ internal class TapToPaySessionCoordinator(
                 // list, so recording one flushed the batch over a withdrawal.
                 throw withdrawn
             } catch (failure: Exception) {
-                val raised = settled(failure)
+                // A refused token is renewed and the run repeated, so it lands only if the repeat is refused too.
+                val raised = if (isRefusedToken(failure)) failure else settled(failure)
                 TapToPayReports.attestationFailed(raised, startedAt)
                 throw raised
             } catch (failure: Throwable) {
@@ -356,10 +389,20 @@ internal class TapToPaySessionCoordinator(
         val pending =
             state.value as? TapToPaySessionState.PendingActivation
                 ?: throw DeviceActivationException.DeviceNotPending(null, "")
-        enrollment.activateDevice(activationCode, pending.activationId)
+        renewingOnce { enrollment.activateDevice(activationCode, pending.activationId) }
         manager.settle(TapToPaySessionState.Idle)
     }
 }
+
+/**
+ * Whether [failure] is a device route refusing the token it was sent. Every device route keeps its token for
+ * the sequence, so that refusal arrives as an expired token rather than being refreshed underneath.
+ *
+ * @param failure the failure a run raised.
+ * @return true for an expired token; false otherwise.
+ */
+private fun isRefusedToken(failure: Throwable): Boolean =
+    failure is PayabliException && failure.type == PayabliErrorType.TOKEN_EXPIRED
 
 /** An activation moves nothing before its answer, so withdrawing one leaves the code still owed. */
 private val SessionWorkKind.resetsOnWithdrawal: Boolean get() = this != SessionWorkKind.ACTIVATE

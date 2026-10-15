@@ -94,6 +94,9 @@ internal class PayabliAuth(
     private var currentToken: String? = null
     private var inFlight: Refresh? = null
 
+    // The token a credential-pinned request was refused with, held until [renewPinnedRefusal] replaces it.
+    private var pinnedRefusal: String? = null
+
     // A stalled collector must not stall a refresh, so this buffers and drops rather than suspending
     // the emitter, which a rendezvous SharedFlow would do.
     private val tokenChangeSink =
@@ -213,12 +216,35 @@ internal class PayabliAuth(
         }
     }
 
+    /**
+     * Records [token] as refused by a request that pins its credential, which is not refreshed inside that
+     * request. [renewPinnedRefusal] replaces it later, between requests.
+     *
+     * @param token the token the pinned request was sent with.
+     */
+    @JvmSynthetic
+    internal suspend fun recordPinnedRefusal(token: String) {
+        mutex.withLock { pinnedRefusal = token }
+    }
+
+    /**
+     * Replaces the token [recordPinnedRefusal] last recorded, through [invalidateAndRefresh], and clears the
+     * record. Does nothing when no refusal is recorded. A token that has rotated since the refusal is kept.
+     *
+     * @throws PayabliException when this instance is finished or the provider fails.
+     */
+    internal suspend fun renewPinnedRefusal() {
+        val refused = mutex.withLock { pinnedRefusal.also { pinnedRefusal = null } } ?: return
+        invalidateAndRefresh(refused)
+    }
+
     /** Drops the held token and any in-flight claim, and revives a finished instance. */
     @VisibleForTesting
     internal suspend fun reset() {
         mutex.withLock {
             currentToken = null
             inFlight = null
+            pinnedRefusal = null
             // Without this a test that finishes the instance leaves it dead for every later one, and the
             // failure lands somewhere unrelated.
             finished = null
