@@ -14,6 +14,10 @@ public enum class PayabliAttempt {
      * Another try at the most recent payment whose outcome is not known. It is sent under that payment's
      * idempotency key, so the service recognises it and does not charge twice. If no such payment is held, or
      * the service would no longer recognise its key, it is sent under a new key.
+     *
+     * A retry describes the same payment: one that describes another is refused as
+     * [PayabliErrorType.RETRY_NOT_SAME_PAYMENT] and not sent. A host that keeps more than one payment open sets
+     * its own idempotency key on each.
      */
     Retry,
 }
