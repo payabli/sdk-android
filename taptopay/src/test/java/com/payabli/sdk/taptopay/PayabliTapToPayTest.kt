@@ -65,16 +65,20 @@ class PayabliTapToPayTest {
                 ),
         )
 
-    private fun script(registerStatus: String = "active") =
-        RouteScript(
-            RouteScript.CHALLENGE to listOf(challengeBody()),
-            RouteScript.REGISTER to listOf(registerBody(status = registerStatus)),
-            RouteScript.ATTEST to listOf(attestBody()),
-            RouteScript.CONFIG to listOf(configBody()),
-            RouteScript.ACTIVATE to listOf(activateBody()),
-            "/api/v2/MoneyIn/initiate" to listOf(approved("""{"paymentTransId":"$TRANS_ID"}""")),
-            "/api/v2/MoneyIn/update/$TRANS_ID" to listOf("{}"),
-        )
+    private fun script(
+        registerStatus: String = "active",
+        config: List<String> = listOf(configBody()),
+        statusFor: (String) -> Int? = { null },
+    ) = RouteScript(
+        RouteScript.CHALLENGE to listOf(challengeBody()),
+        RouteScript.REGISTER to listOf(registerBody(status = registerStatus)),
+        RouteScript.ATTEST to listOf(attestBody()),
+        RouteScript.CONFIG to config,
+        RouteScript.ACTIVATE to listOf(activateBody()),
+        "/api/v2/MoneyIn/initiate" to listOf(approved("""{"paymentTransId":"$TRANS_ID"}""")),
+        "/api/v2/MoneyIn/update/$TRANS_ID" to listOf("{}"),
+        statusFor = statusFor,
+    )
 
     @Test
     fun `initialize walks the phases and lands ready`() =
@@ -260,6 +264,30 @@ class PayabliTapToPayTest {
 
             assertTrue(failure.toString(), failure is TapToPayException)
             assertEquals(TRANS_ID, (failure as TapToPayException).paymentTransId)
+        }
+
+    @Test
+    fun `a charge on an expired session renews a token its repair was refused and goes ahead`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var configs = 0
+            var renewals = 0
+            val fixture =
+                SessionFixture(
+                    script(
+                        config = listOf(configBody(), "", configBody()),
+                        statusFor = { path -> 401.takeIf { path == RouteScript.CONFIG && ++configs == 2 } },
+                    ),
+                    renewToken = { renewals++ },
+                )
+            val terminal = terminalOver(fixture)
+            terminal.initialize()
+            fixture.manager.invalidate()
+
+            val result = terminal.charge(TapToPayPaymentDetails(BigDecimal("12.34")), PAYER)
+
+            assertEquals(TRANS_ID, result.paymentTransId)
+            assertEquals(1, renewals)
+            assertEquals(3, fixture.requestsTo(RouteScript.CONFIG).size)
         }
 
     @Test

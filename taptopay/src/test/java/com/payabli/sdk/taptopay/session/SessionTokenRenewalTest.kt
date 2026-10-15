@@ -2,6 +2,9 @@ package com.payabli.sdk.taptopay.session
 
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryProperty
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.TapToPayErrorCodes
 import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
 import com.payabli.sdk.taptopay.enrollment.RouteScript
@@ -12,8 +15,10 @@ import com.payabli.sdk.taptopay.enrollment.configBody
 import com.payabli.sdk.taptopay.enrollment.decline
 import com.payabli.sdk.taptopay.enrollment.registerBody
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 private const val UNAUTHORIZED = 401
@@ -24,6 +29,33 @@ private const val NOT_ACTIVE = "Device is not active."
  * runs and runs once more from the first call. A second refusal reaches the caller as an expired token.
  */
 class SessionTokenRenewalTest {
+    private val recorded = mutableListOf<Pair<String, Map<String, String>>>()
+
+    @Before
+    fun record() = TelemetryRecorders.install { event, properties -> recorded += event to properties }
+
+    @After
+    fun stopRecording() = TelemetryRecorders.clear()
+
+    private fun count(event: String): Int = recorded.count { it.first == event }
+
+    /** Answers a plain 401 to the requests to [path] whose number, counting from 1, is in [refused]. */
+    private fun refusing(
+        path: String,
+        vararg refused: Int,
+    ): (String) -> Int? {
+        var seen = 0
+        return { requested -> if (requested == path && ++seen in refused) UNAUTHORIZED else null }
+    }
+
+    /** A ready session whose reader has since been found spent, so the next repair fetches config. */
+    private suspend fun expired(fixture: SessionFixture) {
+        fixture.seedRecord()
+        fixture.coordinator.initialize()
+        fixture.manager.invalidate()
+        assertEquals(TapToPaySessionState.SessionExpired, fixture.state)
+    }
+
     /** Answers a plain 401 to the first [refusals] requests to [path], and the script's answer after. */
     private class RefusingFirst(
         private val path: String,
@@ -176,6 +208,87 @@ class SessionTokenRenewalTest {
 
             assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, failure?.let(TapToPayErrorCodes::typeFor))
             assertEquals(1, fixture.routes.size)
+        }
+
+    @Test
+    fun `a refused token on a repair is renewed and the repair reaches ready`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val (fixture, renewal) =
+                fixture(
+                    RouteScript(
+                        RouteScript.CONFIG to listOf(configBody(), "", configBody()),
+                        statusFor = refusing(RouteScript.CONFIG, 2),
+                    ),
+                )
+            expired(fixture)
+
+            fixture.coordinator.reinitializeIfNeeded()
+
+            assertEquals(TapToPaySessionState.Ready, fixture.state)
+            assertEquals(1, renewal.statesSeen.size)
+            assertEquals(3, fixture.requestsTo(RouteScript.CONFIG).size)
+        }
+
+    @Test
+    fun `a second refusal on a repair reports an expired token`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val (fixture, renewal) =
+                fixture(
+                    RouteScript(
+                        RouteScript.CONFIG to listOf(configBody(), "", ""),
+                        statusFor = refusing(RouteScript.CONFIG, 2, 3),
+                    ),
+                )
+            expired(fixture)
+
+            val failure = runCatching { fixture.coordinator.reinitializeIfNeeded() }.exceptionOrNull()
+
+            assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure?.let(TapToPayErrorCodes::typeFor))
+            assertEquals(1, renewal.statesSeen.size)
+            assertEquals(3, fixture.requestsTo(RouteScript.CONFIG).size)
+        }
+
+    @Test
+    fun `a renewed initialize reports one start and one outcome, and each attestation attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val (fixture, _) =
+                fixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf("", challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        statusFor = refusing(RouteScript.CHALLENGE, 1),
+                    ),
+                )
+
+            fixture.coordinator.initialize()
+
+            assertEquals(1, count(TelemetryEvents.TTP_INITIALIZE_STARTED))
+            assertEquals(1, count(TelemetryEvents.TTP_INITIALIZE_SUCCEEDED))
+            assertEquals(0, count(TelemetryEvents.TTP_INITIALIZE_FAILED))
+            assertEquals(2, count(TelemetryEvents.TTP_ATTESTATION_STARTED))
+            assertEquals(1, count(TelemetryEvents.TTP_ATTESTATION_SUCCEEDED))
+            val failed = recorded.single { it.first == TelemetryEvents.TTP_ATTESTATION_FAILED }.second
+            assertEquals(PayabliErrorType.TOKEN_EXPIRED.code.toString(), failed[TelemetryProperty.ERROR_NUMBER.key])
+        }
+
+    @Test
+    fun `a renewed repair reports one start and one outcome`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val (fixture, _) =
+                fixture(
+                    RouteScript(
+                        RouteScript.CONFIG to listOf(configBody(), "", configBody()),
+                        statusFor = refusing(RouteScript.CONFIG, 2),
+                    ),
+                )
+            expired(fixture)
+
+            fixture.coordinator.reinitializeIfNeeded()
+
+            assertEquals(1, count(TelemetryEvents.TTP_REINITIALIZE_STARTED))
+            assertEquals(1, count(TelemetryEvents.TTP_REINITIALIZE_SUCCEEDED))
         }
 
     @Test
