@@ -22,16 +22,9 @@ internal object LiveRunSettings {
     val entry: String get() = required("entry", "payabli.ttp.entry")
 
     /**
-     * Where a fresh bearer comes from. Defaults to the token server reached over `adb reverse`.
-     *
-     * A token, not a token *value*, because the ones this server issues are short-lived and a run pinned to
-     * one fails partway through as `TOKEN_EXPIRED`.
-     *
-     * The bearer needs `tools_init` for the challenge and `pos_create` for everything else. The service
-     * pins the exact token used at `/attest` into the attestation row, and `/activate` looks that row up by
-     * it, so the SDK holding one token across the sequence is what makes activation work. Minting the
-     * activation code uses the same one: `/activate/challenge` takes `pos_create` too. In production that
-     * call comes from the merchant's backend under its own credential.
+     * Where a fresh bearer comes from, the token server over `adb reverse` by default. Its tokens are short-lived,
+     * so a run pinned to one value fails partway as `TOKEN_EXPIRED`. The bearer needs `tools_init` for the
+     * challenge and `pos_create` for the rest, the activation code included.
      */
     val tokenEndpoint: String
         get() =
