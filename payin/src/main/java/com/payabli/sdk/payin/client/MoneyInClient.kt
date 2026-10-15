@@ -24,6 +24,7 @@ import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.net.HttpURLConnection
@@ -409,7 +410,7 @@ private val OPEN_OUTCOME_CODES: Map<String?, PayabliErrorType> =
 /**
  * The v2 envelope's fields, each read on its own, so a missing or malformed field costs only itself.
  *
- * @property paymentTransId `data.paymentTransId` trimmed, or null when absent or blank once trimmed.
+ * @property paymentTransId the transaction `data` names, trimmed, or null when absent or blank once trimmed.
  */
 private class AnswerFields(
     val code: String?,
@@ -446,11 +447,7 @@ private class AnswerFields(
                 reason = root.string("reason"),
                 explanation = root.string("explanation"),
                 action = root.string("action"),
-                paymentTransId =
-                    (root?.get("data") as? JsonObject)
-                        .string("paymentTransId")
-                        ?.trim()
-                        ?.takeIf { it.isNotEmpty() },
+                paymentTransId = root?.get("data").namedTransaction(),
             )
         }
 
@@ -460,8 +457,29 @@ private class AnswerFields(
          * @param key the member's name.
          * @return the member's value when it is a JSON string, or null.
          */
-        private fun JsonObject?.string(key: String): String? =
-            (this?.get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
+        private fun JsonObject?.string(key: String): String? = this?.get(key).stringOrNull()
+
+        /**
+         * The transaction `data` names, under any spelling the record decoder takes, the last one winning as it
+         * does there.
+         *
+         * @return the identifier trimmed, or null when absent or blank once trimmed.
+         */
+        private fun JsonElement?.namedTransaction(): String? =
+            (this as? JsonObject)
+                ?.entries
+                ?.lastOrNull { it.key in PAYMENT_TRANS_ID_NAMES }
+                ?.value
+                .stringOrNull()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+
+        /**
+         * A JSON string's content, or null.
+         *
+         * @return the content when this is a JSON string, or null.
+         */
+        private fun JsonElement?.stringOrNull(): String? = (this as? JsonPrimitive)?.takeIf { it.isString }?.content
     }
 }
 

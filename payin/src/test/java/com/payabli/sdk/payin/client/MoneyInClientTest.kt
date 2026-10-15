@@ -625,6 +625,18 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `a transaction named under another spelling is kept, the last one winning as the record decoder does`() =
+        runTest(timeout = timeout) {
+            val declined = """{"code":"D0329","data":{"PaymentTransId":"101-abc"}}"""
+            val timedOut = PROCESSOR_TIMEOUT.replace("\"paymentTransId\"", "\"paymenttransid\"")
+            val both = """{"code":"E9060","data":{"paymentTransId":"declared","paymenttransid":"alias"}}"""
+
+            assertEquals("101-abc", (failureOf(declined, 200) as PayInException.Refused).failure.paymentTransId)
+            assertEquals("101-tmo", (failureOf(timedOut, 400) as PayInException.ServiceError).failure.paymentTransId)
+            assertEquals("alias", (failureOf(both, 400) as PayInException.ServiceError).failure.paymentTransId)
+        }
+
+    @Test
     fun `an answer that cannot be read still names its transaction`() =
         runTest(timeout = timeout) {
             // A malformed sibling field fails the envelope, and must not take the identifier with it.

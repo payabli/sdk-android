@@ -218,6 +218,14 @@ internal class AuthorizedCaptureBody(
     val paymentDetails: PaymentDetailsBody,
 )
 
+/** Every spelling [TransactionPayload.paymentTransId] is read under, taken from its own declaration. */
+internal val PAYMENT_TRANS_ID_NAMES: Set<String> =
+    TransactionPayload.serializer().descriptor.let { record ->
+        val field = record.getElementIndex("paymentTransId")
+        val aliases = record.getElementAnnotations(field).filterIsInstance<JsonNames>().flatMap { it.names.asList() }
+        setOf(record.getElementName(field)) + aliases
+    }
+
 /**
  * The fields a v2 approval's `data` and a read's bare record share. Undeclared fields, such as a read's card,
  * payer and device data, are never decoded. Only the older response shape carries the authorization code, AVS
