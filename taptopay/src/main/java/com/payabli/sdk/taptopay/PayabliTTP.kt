@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay
 
 import android.content.Context
 import com.payabli.sdk.core.PayabliSession
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.taptopay.adapters.platform.CardReaderEligibility
 import com.payabli.sdk.taptopay.adapters.platform.TapToPayComponents
 import com.payabli.sdk.taptopay.adapters.platform.looksEmulated
@@ -58,12 +59,15 @@ public class PayabliTTP private constructor(
      * for. Any one of `customerId`, `customerNumber`, `firstName` or `lastName` satisfies that, so a caller
      * holding only the identifier the service already knows does not have to invent a name to go with it.
      * What a given paypoint then requires is its own rule and is answered by the service.
+     *
+     * @param attempt whether this is a new sale or a retry of the most recent sale whose outcome is not known.
      */
     public suspend fun charge(
         paymentDetails: TapToPayPaymentDetails,
         customer: TapToPayCustomerData,
         invoice: TapToPayInvoiceData = TapToPayInvoiceData(),
         orderDescription: String? = null,
+        attempt: PayabliAttempt = PayabliAttempt.NewPayment,
     ): TapToPayResult = wrapping { runner.charge(paymentDetails, customer, invoice, orderDescription) }
 
     /**

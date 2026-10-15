@@ -79,6 +79,12 @@ class PayabliErrorCatalogTest {
                 "No transaction is visible under this identifier yet. A transaction can take a short while to appear, so this is not proof no payment was made. Read again later rather than charging again.",
             ),
             Row(
+                "RETRY_REFUSED",
+                1021,
+                PayabliErrorCategory.OUTCOME_UNKNOWN,
+                "An earlier attempt at this payment reached the service, so this retry was not sent on. Check that payment before trying again.",
+            ),
+            Row(
                 "DEVICE_KEY_UNAVAILABLE",
                 3001,
                 PayabliErrorCategory.RETRY_LATER,
