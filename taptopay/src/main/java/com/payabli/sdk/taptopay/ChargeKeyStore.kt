@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -8,12 +9,14 @@ import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 /**
- * The idempotency key of a charge that has not settled, one per entry point under one environment.
+ * The idempotency keys of charges that have not settled, newest first, per entry point under one environment.
  *
  * A charge opens a transaction, waits on a card, then closes it. Every step after the open can fail
  * leaving the caller unsure whether money moved, and the recovery a host reaches for is to charge
  * again. Reusing the key of the unsettled attempt is what names that repeat as one attempt and not
- * two sales, and the service refuses such a repeat instead of opening a second transaction. Past
+ * two sales, and the service refuses such a repeat instead of opening a second transaction. Only the
+ * host knows whether a charge is that repeat or a sale of its own, so only a charge it declares a
+ * [PayabliAttempt.Retry] is handed a held key; any other charge mints its own and is held beside it. Past
  * [IDEMPOTENCY_KEY_MAX_AGE] a resend opens a transaction exactly as a first send would, so nothing is
  * resent past that bound — except a key the service was seen to recognise, which never ages out.
  *
@@ -44,21 +47,32 @@ internal class ChargeKeyStore(
     /**
      * The key [entry]'s next opening sends under [environment], and whether it is one already held.
      *
+     * A [PayabliAttempt.Retry] is handed the newest key held for [entry] under [environment], and mints
+     * only when none is held. A [PayabliAttempt.NewPayment] always mints, and leaves every held key where
+     * it is: a sale of its own is not a repeat of one whose outcome is unknown.
+     *
      * [Reserved.reused] is what tells a caller a refusal answers the send rather than the charge: an
      * opening refused as a repeat of a key this SDK already sent says the earlier attempt reached the
      * service, and says nothing about how it ended.
      *
      * Reading and reserving are one operation, under one lock. Split in two they leave a window where
      * two charges both find nothing held and mint separately.
+     *
+     * @param entry the entry point the charge is for.
+     * @param environment the environment the charge is sent to.
+     * @param attempt whether the host declared this charge a retry.
+     * @return the key to send, and whether it was already held.
      */
     suspend fun reserve(
         entry: String,
         environment: PayabliEnvironment,
+        attempt: PayabliAttempt,
     ): Reserved =
         lock.withLock {
             val now = elapsedRealtimeNanos()
             sweep(now)
-            val existing = held.firstOrNull { it.matches(entry, environment) }
+            val existing =
+                held.takeIf { attempt == PayabliAttempt.Retry }?.firstOrNull { it.matches(entry, environment) }
             if (existing != null) {
                 return@withLock Reserved(existing.key, reused = true)
             }

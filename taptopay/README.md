@@ -262,7 +262,7 @@ It also carries `capture` and `paymentTransId`:
 | `capture` | Meaning | What to do |
 |---|---|---|
 | `NOT_CHARGED` | The card wasn't charged. | You can retry. |
-| `UNKNOWN` | The outcome isn't known. | Look up `paymentTransId` with [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction) before charging again. When there's no ID, find the transaction in the Payabli portal. |
+| `UNKNOWN` | The outcome isn't known. | Look up `paymentTransId` with [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction) before charging again. When there's no ID, find the transaction in the Payabli portal. To charge for the same sale again, pass `attempt = PayabliAttempt.Retry` to `charge`, so it's sent as a repeat of that sale rather than a second one. |
 | `CHARGED` | The card was charged, but the step that confirms it didn't complete. | Don't charge again. Call `closeCapturedCharge(paymentTransId)`, which confirms it without reading the card again. |
 
 Call `closeCapturedCharge` again only while the close is unconfirmed. Once one succeeds, the SDK no longer

@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliRetryAfter
@@ -330,7 +331,11 @@ class TapToPayChargeRunnerTest {
                 runCatching {
                     runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
 
             assertTrue(failure.toString(), failure is TapToPayException)
             val unknown = failure as TapToPayException
@@ -362,8 +367,16 @@ class TapToPayChargeRunnerTest {
             )
 
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
 
             assertEquals("a suppressed repeat released the attempt", "$MINTED_KEY-1", fixture.keySent(2))
         }
@@ -418,7 +431,9 @@ class TapToPayChargeRunnerTest {
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
             val failure =
                 runCatching {
-                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                    runnerOver(
+                        fixture,
+                    ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
@@ -454,10 +469,14 @@ class TapToPayChargeRunnerTest {
             )
 
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
             clock.addAndGet(com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
             fixture.reader.answerReadWith(cardRead())
-            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
 
             assertEquals(
                 "an arrived key was swept after the bound",
@@ -493,7 +512,7 @@ class TapToPayChargeRunnerTest {
                 runCatching {
                     runnerOver(
                         fixture,
-                    ).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                    ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
                 }.exceptionOrNull()
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(1))
@@ -542,7 +561,9 @@ class TapToPayChargeRunnerTest {
             )
             val failure =
                 runCatching {
-                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                    runnerOver(
+                        fixture,
+                    ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
@@ -552,7 +573,11 @@ class TapToPayChargeRunnerTest {
                 (failure as TapToPayException).capture,
             )
             fixture.reader.answerReadWith(cardRead())
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
             assertEquals(
                 "a decline on a resent opening settled the earlier attempt",
                 "$MINTED_KEY-1",
@@ -583,8 +608,16 @@ class TapToPayChargeRunnerTest {
             )
 
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
 
             assertEquals("a refused send released the attempt", "$MINTED_KEY-1", fixture.keySent(2))
         }
@@ -636,8 +669,16 @@ class TapToPayChargeRunnerTest {
             )
 
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
 
             assertEquals("an unequipped answer released an earlier attempt", "$MINTED_KEY-1", fixture.keySent(2))
         }
@@ -670,8 +711,16 @@ class TapToPayChargeRunnerTest {
             )
 
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
 
             assertEquals("a rejection released the attempt", "$MINTED_KEY-1", fixture.keySent(2))
         }
@@ -727,8 +776,16 @@ class TapToPayChargeRunnerTest {
             )
 
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
 
             assertEquals("a decline kept the earlier attempt", "$MINTED_KEY-1", fixture.keySent(2))
         }
@@ -756,7 +813,9 @@ class TapToPayChargeRunnerTest {
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
             val failure =
                 runCatching {
-                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                    runnerOver(
+                        fixture,
+                    ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
@@ -877,7 +936,7 @@ class TapToPayChargeRunnerTest {
             val runner = runnerOver(fixture)
 
             runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry) }
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(0))
             assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
@@ -904,7 +963,7 @@ class TapToPayChargeRunnerTest {
             val runner = runnerOver(fixture)
 
             runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry) }
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(0))
             assertEquals(
@@ -926,7 +985,7 @@ class TapToPayChargeRunnerTest {
             val runner = runnerOver(fixture)
 
             runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+            runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
 
             assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
         }
@@ -952,7 +1011,7 @@ class TapToPayChargeRunnerTest {
             val runner = runnerOver(fixture)
 
             runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry) }
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(0))
             assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
@@ -1001,7 +1060,7 @@ class TapToPayChargeRunnerTest {
             val runner = runnerOver(fixture)
 
             runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry) }
 
             assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
         }
@@ -1015,9 +1074,9 @@ class TapToPayChargeRunnerTest {
 
             runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
             fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
-            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry) }
             fixture.reader.answerReadWith(cardRead())
-            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry) }
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(1))
             assertEquals("the earlier opening's key was let go", "$MINTED_KEY-1", fixture.keySent(2))
@@ -1031,10 +1090,55 @@ class TapToPayChargeRunnerTest {
             val fixture = readyFixture(updates = 0, opens = 2)
 
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(0))
             assertEquals("the second terminal named its own attempt", "$MINTED_KEY-1", fixture.keySent(1))
+        }
+
+    /** A sale of its own after one whose outcome is unknown is a second sale, so it sends a key of its own. */
+    @Test
+    fun `an ordinary charge after an unsettled one sends a fresh key`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 0, opens = 2)
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(0))
+            assertEquals("an ordinary charge took the held key", "$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    /** The ordinary sale in between is held as the newest, so the retry that follows it is of that sale. */
+    @Test
+    fun `a declared retry after two unsettled charges repeats the later one`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 0, opens = 3)
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+
+            assertEquals("$MINTED_KEY-2", fixture.keySent(2))
+        }
+
+    /** The terminal a host holds passes the declaration on, so a retry declared there repeats the held sale. */
+    @Test
+    fun `a retry declared on the terminal repeats the unsettled charge`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 0, opens = 2)
+            val terminal = { PayabliTTP.over(fixture.coordinator, runnerOver(fixture)) }
+
+            runCatching { terminal().charge(details(), PAYER) }
+            runCatching { terminal().charge(details(), PAYER, attempt = PayabliAttempt.Retry) }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(1))
         }
 
     @Test
@@ -1453,10 +1557,10 @@ class TapToPayChargeRunnerTest {
             fixture.reader.answerReadWith(
                 cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
             )
-            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry) }
 
             closeFails = false
-            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry) }
 
             assertEquals("a refusal settled the earlier attempt", "$MINTED_KEY-1", fixture.keySent(2))
         }
@@ -1639,7 +1743,7 @@ class TapToPayChargeRunnerTest {
             runner.closeCaptured(TRANS_ID)
 
             fixture.reader.answerReadWith(cardRead())
-            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
 
             // The same key both times, rather than a literal: a kept attempt is one the retry names again.
             assertEquals(
@@ -1692,7 +1796,7 @@ class TapToPayChargeRunnerTest {
             fixture.reader.answerReadWith(
                 cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
             )
-            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry) }
             val failure = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)

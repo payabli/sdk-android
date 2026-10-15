@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -33,43 +34,90 @@ class ChargeKeyStoreTest {
             elapsedRealtimeNanos = clock::get,
         )
 
+    /** A sale of its own is not a repeat, so it never takes the key an unsettled charge is holding. */
+    @Test
+    fun `an ordinary charge mints its own key while one is held`() =
+        runBlocking {
+            val keys = store()
+            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+
+            val ordinary = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+
+            assertEquals("key-2", ordinary.key)
+            assertFalse(ordinary.reused)
+        }
+
+    @Test
+    fun `an ordinary charge that settles leaves the held key for a declared retry`() =
+        runBlocking {
+            val keys = store()
+            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            val ordinary = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            keys.settle(ENTRY, PayabliEnvironment.SANDBOX, ordinary.key)
+
+            val retry = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+
+            assertEquals("key-1", retry.key)
+            assertTrue(retry.reused)
+        }
+
+    /** Two charges left unsettled: a retry is of the latest, the one the host just saw fail. */
+    @Test
+    fun `a declared retry claims the newest held key`() =
+        runBlocking {
+            val keys = store()
+            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+
+            assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+        }
+
+    @Test
+    fun `a declared retry with nothing held mints`() =
+        runBlocking {
+            val retry = store().reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+
+            assertEquals("key-1", retry.key)
+            assertFalse(retry.reused)
+        }
+
     @Test
     fun `an unsettled charge keeps the key it reserved`() =
         runBlocking {
             val keys = store()
-            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
-            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
+            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
         }
 
     @Test
     fun `a second reservation of the same attempt is reported as reused`() =
         runBlocking {
             val keys = store()
-            assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).reused)
-            assertTrue(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).reused)
+            assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
+            assertTrue(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
         }
 
     @Test
     fun `a settled charge leaves the next one to reserve its own`() =
         runBlocking {
             val keys = store()
-            val first = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key
+            val first = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
             keys.settle(ENTRY, PayabliEnvironment.SANDBOX, first)
-            assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
+            assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
         }
 
     @Test
     fun `a settle whose key no longer matches leaves the held attempt alone`() =
         runBlocking {
             val keys = store()
-            val stale = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key
+            val stale = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
             keys.settle(ENTRY, PayabliEnvironment.SANDBOX, stale)
-            val current = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key
+            val current = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
             keys.settle(ENTRY, PayabliEnvironment.SANDBOX, stale)
             assertEquals(
                 "the in-flight attempt was dropped by a stale settle",
                 current,
-                keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key,
+                keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key,
             )
         }
 
@@ -102,9 +150,9 @@ class ChargeKeyStoreTest {
                     elapsedRealtimeNanos = clock::get,
                 )
 
-            val one = async { first.reserve(ENTRY, PayabliEnvironment.SANDBOX).key }
+            val one = async { first.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key }
             mintStarted.await()
-            val other = async { second.reserve(ENTRY, PayabliEnvironment.SANDBOX).key }
+            val other = async { second.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key }
             yield()
             releaseMint.complete(Unit)
 
@@ -119,76 +167,79 @@ class ChargeKeyStoreTest {
             val first = store()
             val second = store()
             assertEquals(
-                first.reserve(ENTRY, PayabliEnvironment.SANDBOX).key,
-                second.reserve(ENTRY, PayabliEnvironment.SANDBOX).key,
+                first.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key,
+                second.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key,
             )
-            assertTrue(second.reserve(ENTRY, PayabliEnvironment.SANDBOX).reused)
+            assertTrue(second.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
         }
 
     @Test
     fun `two entry points hold independent keys`() =
         runBlocking {
             val keys = store()
-            val one = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key
-            val other = keys.reserve(OTHER_ENTRY, PayabliEnvironment.SANDBOX).key
+            val one = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
+            val other = keys.reserve(OTHER_ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
             assertNotEquals(one, other)
-            assertEquals(one, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
+            assertEquals(one, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
         }
 
     @Test
     fun `settling one entry point leaves the other held`() =
         runBlocking {
             val keys = store()
-            val one = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key
-            val other = keys.reserve(OTHER_ENTRY, PayabliEnvironment.SANDBOX).key
+            val one = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
+            val other = keys.reserve(OTHER_ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
             keys.settle(ENTRY, PayabliEnvironment.SANDBOX, one)
-            assertEquals(other, keys.reserve(OTHER_ENTRY, PayabliEnvironment.SANDBOX).key)
-            assertNotEquals(one, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
+            assertEquals(other, keys.reserve(OTHER_ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+            assertNotEquals(one, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
         }
 
     @Test
     fun `a sandbox attempt is not handed to production for the same entry point`() =
         runBlocking {
             val keys = store()
-            val sandbox = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key
-            val production = keys.reserve(ENTRY, PayabliEnvironment.PRODUCTION).key
+            val sandbox = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
+            val production = keys.reserve(ENTRY, PayabliEnvironment.PRODUCTION, PayabliAttempt.Retry).key
             assertNotEquals(sandbox, production)
             keys.settle(ENTRY, PayabliEnvironment.PRODUCTION, production)
-            assertEquals(sandbox, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
+            assertEquals(sandbox, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
         }
 
     @Test
     fun `an expired key is not resent`() =
         runBlocking {
             val keys = store()
-            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
+            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
             clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
-            assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
-            assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key == "key-1")
+            assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+            assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key == "key-1")
         }
 
     @Test
     fun `an arrived key is not swept past the bound`() =
         runBlocking {
             val keys = store()
-            val reserved = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX)
+            val reserved = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
             keys.markArrived(ENTRY, PayabliEnvironment.SANDBOX, reserved.key)
             clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds * 2)
-            assertEquals(reserved.key, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
-            assertTrue(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).reused)
+            assertEquals(reserved.key, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+            assertTrue(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
         }
 
     @Test
     fun `a full store refuses rather than evicting a live attempt`() =
         runBlocking {
             val keys = store()
-            repeat(ChargeKeyStore.MAX) { keys.reserve("entry-$it", PayabliEnvironment.SANDBOX) }
-            val refused = runCatching { keys.reserve("entry-overflow", PayabliEnvironment.SANDBOX) }.exceptionOrNull()
+            repeat(ChargeKeyStore.MAX) { keys.reserve("entry-$it", PayabliEnvironment.SANDBOX, PayabliAttempt.Retry) }
+            val refused =
+                runCatching {
+                    keys.reserve("entry-overflow", PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+                }.exceptionOrNull()
             assertTrue("$refused", refused is ChargeKeyStoreFullException)
             assertEquals(
                 "an oldest unresolved attempt was evicted",
                 "key-1",
-                keys.reserve("entry-0", PayabliEnvironment.SANDBOX).key,
+                keys.reserve("entry-0", PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key,
             )
         }
 
@@ -196,9 +247,9 @@ class ChargeKeyStoreTest {
     fun `forgetting held keys empties the process map`() =
         runBlocking {
             val keys = store()
-            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX)
+            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
             ChargeKeyStore.forgetHeld()
-            assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).reused)
-            assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
+            assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
+            assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
         }
 }

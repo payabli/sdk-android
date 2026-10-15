@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliValidationException
@@ -139,6 +140,7 @@ internal class TapToPayChargeRunner(
         customer: TapToPayCustomerData,
         invoice: TapToPayInvoiceData,
         orderDescription: String?,
+        attempt: PayabliAttempt = PayabliAttempt.NewPayment,
     ): TapToPayResult =
         region.withLock {
             val sendable = sendableAmountOf(paymentDetails)
@@ -166,7 +168,7 @@ internal class TapToPayChargeRunner(
                             throw TapToPayCallException.NoDeviceToChargeAs()
                         }
                     // After the checks, so a charge that never reaches the wire holds no key.
-                    val reservation = keys.reserve(entry, environment)
+                    val reservation = keys.reserve(entry, environment, attempt)
                     val idempotencyKey = reservation.key
                     reserved = idempotencyKey
                     resentKey = reservation.reused
