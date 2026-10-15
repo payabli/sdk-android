@@ -51,8 +51,13 @@ private const val TIMEOUT_MILLIS = 15_000
 class TokenRotationLiveTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
+    /** A record a previous run left would make the enrollment below warm, so the run starts cold. */
     @Before
-    fun requireHardware() = LiveTapToPay.requireWiredHandset("the live tier is for wired handsets")
+    fun startCold() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LiveTapToPay.requireWiredHandset("the live tier is for wired handsets")
+            AttestedDeviceStore(DeviceTrust.open(context).store).clear(LiveRunSettings.entry)
+        }
 
     @After
     fun forgetTheDevice() =
