@@ -167,7 +167,9 @@ public sealed class PayabliPayIn {
      * This is how an outcome left open by [PayInException.Unsettled] is resolved, when it names the payment: pass
      * its [PayInException.Unsettled.paymentTransId], and read [PayInTransaction.status]. A status whose outcome is
      * not known may still change, so read again later rather than repeating the payment. When
-     * [PayInException.Unsettled.paymentTransId] is null, no identifier came back, and there is nothing to read.
+     * [PayInException.Unsettled.paymentTransId] is null, the answer named no transaction. After [voidTransaction] or
+     * [captureAuthorizedTransaction], read back the identifier you passed. After [capture] or [authorize], find the
+     * transaction in the Payabli portal by its `orderId`.
      *
      * A read moves no money and holds no key, so it runs beside a submission in flight, and a failed read is
      * never [PayInException.Unsettled]: repeating it is always safe.
