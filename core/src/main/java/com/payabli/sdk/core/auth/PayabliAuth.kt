@@ -229,14 +229,15 @@ internal class PayabliAuth(
     }
 
     /**
-     * Replaces the token [recordPinnedRefusal] last recorded, through [invalidateAndRefresh], and clears the
-     * record. Does nothing when no refusal is recorded. A token that has rotated since the refusal is kept.
+     * Replaces the token [recordPinnedRefusal] recorded, through [invalidateAndRefresh], and then clears the
+     * record. Does nothing when none is recorded. A renewal that starts while another runs joins it.
      *
      * @throws PayabliException when this instance is finished or the provider fails.
      */
     internal suspend fun renewPinnedRefusal() {
-        val refused = mutex.withLock { pinnedRefusal.also { pinnedRefusal = null } } ?: return
+        val refused = mutex.withLock { pinnedRefusal } ?: return
         invalidateAndRefresh(refused)
+        mutex.withLock { if (pinnedRefusal == refused) pinnedRefusal = null }
     }
 
     /** Drops the held token and any in-flight claim, and revives a finished instance. */
