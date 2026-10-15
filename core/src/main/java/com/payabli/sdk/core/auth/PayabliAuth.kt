@@ -218,13 +218,14 @@ internal class PayabliAuth(
 
     /**
      * Records [token] as refused by a request that pins its credential, which is not refreshed inside that
-     * request. [renewPinnedRefusal] replaces it later, between requests.
+     * request. [renewPinnedRefusal] replaces it later, between requests. A token already replaced is not
+     * recorded, so a late refusal cannot hide the current token's.
      *
      * @param token the token the pinned request was sent with.
      */
     @JvmSynthetic
     internal suspend fun recordPinnedRefusal(token: String) {
-        mutex.withLock { pinnedRefusal = token }
+        mutex.withLock { if (token == currentToken) pinnedRefusal = token }
     }
 
     /**

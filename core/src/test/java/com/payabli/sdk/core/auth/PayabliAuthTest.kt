@@ -1075,6 +1075,21 @@ class PayabliAuthTest {
         }
 
     @Test
+    fun `a late refusal of a replaced token leaves the current token's refusal to be renewed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val calls = AtomicInteger()
+            val subject = holding("old-token") { "token-${calls.incrementAndGet()}" }
+            subject.invalidateAndRefresh("old-token")
+            subject.recordPinnedRefusal("token-1")
+
+            subject.recordPinnedRefusal("old-token")
+            subject.renewPinnedRefusal()
+
+            assertEquals("the current token's refusal was renewed", 2, calls.get())
+            assertEquals("token-2", subject.accessToken())
+        }
+
+    @Test
     fun `no member that carries the token is callable from Java`() {
         // internal is a Kotlin rule only: these are emitted as public final accessToken$core() and friends,
         // so without @JvmSynthetic a Java caller takes the credential the SDK exists to hold. javac refuses
