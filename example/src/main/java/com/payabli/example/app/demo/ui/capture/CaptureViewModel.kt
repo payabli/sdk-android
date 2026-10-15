@@ -288,20 +288,19 @@ class CaptureViewModel(
     }
 
     /**
-     * Voids the transaction on screen under a new key. A void whose outcome is unknown is never repeated: the
-     * control stays withheld until a read settles it.
+     * Voids the transaction on screen. A void whose outcome is unknown is not repeated until a read shows the
+     * transaction still captured; the SDK then sends the same void again, so the service recognises it.
      */
     fun voidLastTransaction() {
         // A read in flight writes the result panel when it returns, and would overwrite this void's outcome.
         if (_uiState.value.isVoiding || _uiState.value.isReading) return
         val payments = _uiState.value.payments ?: return
         val transId = _uiState.value.voidableTransactionId ?: return
-        val key = newIdempotencyKey()
         _uiState.update { it.copy(isVoiding = true) }
         viewModelScope.launch {
             val outcome =
                 try {
-                    payments.voidTransaction(transId, key)
+                    payments.voidTransaction(transId)
                 } catch (cancellation: CancellationException) {
                     // The flag is cleared on the way out, or the controls never come back. The void may have gone
                     // out, so it is withheld as an unknown outcome is.
@@ -405,8 +404,12 @@ class CaptureViewModel(
                     resultText =
                         listOfNotNull(
                             "✗ ${outcome.error.displayMessage}",
-                            "Check this transaction's status to see whether it was voided.".takeIf {
-                                outcome.isOutcomeUnknown
+                            when {
+                                outcome.isRetryRefused ->
+                                    "The earlier reversal may still be running. Read this transaction again shortly."
+                                outcome.isOutcomeUnknown ->
+                                    "Check this transaction's status to see whether it was voided."
+                                else -> null
                             },
                         ).joinToString("\n"),
                 )

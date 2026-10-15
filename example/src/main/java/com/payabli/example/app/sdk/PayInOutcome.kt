@@ -2,6 +2,8 @@ package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.payment.PayInSubmissionState
@@ -25,6 +27,7 @@ sealed class PayInOutcome {
      * safe to record. [error] is displayable and is what a screen shows.
      *
      * @property isOutcomeUnknown whether the service may have applied the request without the answer arriving.
+     * @property isRetryRefused whether the service refused a repeat of an earlier attempt that may still be running.
      */
     class Refused internal constructor(
         val error: PaymentError,
@@ -38,6 +41,7 @@ sealed class PayInOutcome {
          */
         val keepsItsIdempotencyKey: Boolean,
         val isOutcomeUnknown: Boolean = false,
+        val isRetryRefused: Boolean = false,
     ) : PayInOutcome()
 }
 
@@ -61,6 +65,7 @@ internal fun Result<PayInResult>.toOutcome(): PayInOutcome =
                 keepsItsIdempotencyKey =
                     failure is PayInException.Unsettled || failure is PayInException.AlreadySubmitting,
                 isOutcomeUnknown = failure is PayInException.Unsettled,
+                isRetryRefused = (failure as? PayabliException)?.type == PayabliErrorType.RETRY_REFUSED,
             )
         },
     )

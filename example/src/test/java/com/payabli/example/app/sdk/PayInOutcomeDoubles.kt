@@ -78,6 +78,13 @@ internal fun voidedOutcome() =
             ),
         ).toOutcome()
 
+/** A repeated reversal the service refused because the earlier one may still be running. */
+internal fun retryRefusedOutcome() =
+    Result
+        .failure<PayInResult>(
+            PayInException.Unsettled(PayabliGenericException(PayabliErrorType.RETRY_REFUSED, "refused")),
+        ).toOutcome()
+
 /** A void or capture whose answer was lost, so the service may have applied it. */
 internal fun unsettledOutcome() =
     Result
