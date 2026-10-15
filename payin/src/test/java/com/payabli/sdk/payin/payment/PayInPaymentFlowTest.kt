@@ -501,6 +501,41 @@ class PayInPaymentFlowTest {
             assertEquals("101-abc", cause.paymentTransId)
         }
 
+    /** A processor timeout answered as a 400 is not a field refusal: the payment may have been taken. */
+    @Test
+    fun `a processor timeout on a 400 reaches the host as unsettled, naming the transaction`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.answering(PROCESSOR_TIMEOUT, statusCode = 400))
+
+            val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull() as? PayInException.Unsettled
+
+            assertEquals(PayabliErrorType.UNKNOWN, cause?.type)
+            assertEquals("101-tmo", cause?.paymentTransId)
+        }
+
+    @Test
+    fun `an unrecognised processor answer on a 500 reaches the host as unsettled, naming the transaction`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.answering(PROCESSOR_UNRECOGNISED, statusCode = 500))
+
+            val cause = flow.authorize(testOptions(), cardForm()).exceptionOrNull() as? PayInException.Unsettled
+
+            assertEquals(PayabliErrorType.SERVER_ERROR, cause?.type)
+            assertEquals("101-unk", cause?.paymentTransId)
+        }
+
+    @Test
+    fun `an answer that cannot be read reaches the host as unsettled, naming the transaction`() =
+        runTest(timeout = timeout) {
+            val body = """{"code":"A0000","data":{"paymentTransId":"101-abc","transStatus":"settled"}}"""
+            val flow = flowOver(FakePayInTransport.answering(body))
+
+            val cause = flow.voidTransaction("101-abc").exceptionOrNull() as? PayInException.Unsettled
+
+            assertEquals(PayabliErrorType.DECODING_ERROR, cause?.type)
+            assertEquals("101-abc", cause?.paymentTransId)
+        }
+
     /**
      * A redaction happens once. Wrapping one that has already happened names this SDK's own stand-in and
      * carries the frames of the site that built it, so the type that failed is gone from what a host reads.

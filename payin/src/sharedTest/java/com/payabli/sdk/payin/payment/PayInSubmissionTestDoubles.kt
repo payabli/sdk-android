@@ -44,6 +44,21 @@ internal val SERVICE_ERROR_NAMING_TRANSACTION: String =
      "data":{"paymentTransId":"101-abc"}}
     """.trimIndent()
 
+/** A processor timeout, which one environment answers with a 400. The payment may have been taken. */
+internal val PROCESSOR_TIMEOUT: String =
+    """
+    {"code":"E9060","reason":"Timeout","action":"Contact support",
+     "explanation":"Timeout threshold with processor exceeded. Transaction may have been successful on processor.",
+     "data":{"paymentTransId":"101-tmo","transStatus":0},"token":null}
+    """.trimIndent()
+
+/** The processor's answer the service did not recognise, which arrives as a 500 where no status is set. */
+internal val PROCESSOR_UNRECOGNISED: String =
+    """
+    {"code":"E9999","reason":"Unexpected error","action":"Contact support",
+     "explanation":"Unexpected error","data":{"paymentTransId":"101-unk","transStatus":0},"token":null}
+    """.trimIndent()
+
 /** A stored method, in the older envelope that route answers in. */
 internal val STORED_METHOD: String =
     """

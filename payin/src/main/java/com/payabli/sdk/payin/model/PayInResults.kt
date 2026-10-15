@@ -161,13 +161,21 @@ public sealed class PayInException(
      * the far side. Reporting one as the other puts decline wording in front of a payer whose card was never
      * asked, and hides a condition a caller might retry.
      */
-    public class ServiceError(
+    public class ServiceError internal constructor(
         public val failure: PayInFailure,
+        type: PayabliErrorType,
     ) : PayInException(
-            PayabliErrorType.SERVER_ERROR,
+            type,
             failure.reason ?: DEFAULT_SERVICE_ERROR_REASON,
             failure.explanation,
         ) {
+        /**
+         * A service error, typed [PayabliErrorType.SERVER_ERROR].
+         *
+         * @param failure what the service said.
+         */
+        public constructor(failure: PayInFailure) : this(failure, PayabliErrorType.SERVER_ERROR)
+
         override fun toString(): String = "PayInException.ServiceError(code=${failure.code})"
     }
 
@@ -177,13 +185,21 @@ public sealed class PayInException(
      * A refusal and an unreadable answer call for different actions: one is about the payment, the other is
      * about this SDK or the service.
      */
-    public class Undecodable(
-        cause: Throwable? = null,
+    public class Undecodable internal constructor(
+        cause: Throwable?,
+        internal val paymentTransId: String?,
     ) : PayInException(
             PayabliErrorType.DECODING_ERROR,
             DEFAULT_UNDECODABLE_REASON,
             cause = cause?.let(::RedactedCause),
         ) {
+        /**
+         * An answer that could not be read.
+         *
+         * @param cause the decode failure, kept as its type and frames without its message.
+         */
+        public constructor(cause: Throwable? = null) : this(cause, null)
+
         override fun toString(): String = "PayInException.Undecodable"
     }
 
@@ -289,10 +305,14 @@ private fun PayabliException.redactedOnce(): Throwable = cause?.takeIf { it is R
  * [PayInFailure]: `reason`, `explanation` and `action` are displayable and never loggable, and a type
  * whose work is to withhold a message does not republish them in another slot.
  *
- * @return the transaction a service error named, or null where none was named.
+ * @return the transaction the answer named, or null where none was named.
  */
 private fun PayabliException.namedTransaction(): String? =
-    (this as? PayInException.ServiceError)?.failure?.paymentTransId
+    when (this) {
+        is PayInException.ServiceError -> failure.paymentTransId
+        is PayInException.Undecodable -> paymentTransId
+        else -> null
+    }
 
 /**
  * Carries a cause's type without its message.
