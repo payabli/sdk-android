@@ -57,10 +57,7 @@ class TapToPayTerminal(
     private val _failureReason = MutableStateFlow<TerminalFailureReason?>(null)
     override val failureReason: StateFlow<TerminalFailureReason?> = _failureReason.asStateFlow()
 
-    /**
-     * The amount of the last charge whose outcome was unknown. A charge for that amount is declared a retry, so a
-     * sale that went through is not taken twice; a different amount is a different sale.
-     */
+    /** The amount of the last sale that may have moved money unconfirmed; a charge for it is declared a retry. */
     private var openAmount: BigDecimal? = null
 
     private val lock = Mutex()
@@ -102,13 +99,16 @@ class TapToPayTerminal(
                             lastName = identity.lastName,
                             customerNumber = identity.customerNumber,
                         ),
-                        attempt = if (amount == openAmount) PayabliAttempt.Retry else PayabliAttempt.NewPayment,
+                        attempt = attemptFor(amount, openAmount),
                     )
+                } catch (withdrawn: CancellationException) {
+                    openAmount = openAmountAfter(openAmount, amount, TapToPayCapture.UNKNOWN)
+                    throw withdrawn
                 } catch (failure: TapToPayException) {
-                    openAmount = amount.takeIf { failure.capture == TapToPayCapture.UNKNOWN }
+                    openAmount = openAmountAfter(openAmount, amount, failure.capture)
                     throw failure
                 }
-            openAmount = null
+            openAmount = openAmountAfter(openAmount, amount, capture = null)
             emit(TerminalEventCode.UpdateCompleted, receipt.cardNetwork.orEmpty())
             ChargeReceipt(receipt.paymentTransId)
         }
@@ -233,3 +233,29 @@ class TapToPayTerminal(
  * catalog number support looks up.
  */
 internal fun PayabliException.forScreen(): TerminalFailure = TerminalFailure("$reason ($code)", this)
+
+/**
+ * A charge for the open sale's amount, compared by value so `1.0` and `1.00` are one sale, is its retry.
+ *
+ * @return [PayabliAttempt.Retry] for the open amount, [PayabliAttempt.NewPayment] otherwise.
+ */
+internal fun attemptFor(
+    amount: BigDecimal,
+    open: BigDecimal?,
+): PayabliAttempt = if (open != null && amount.compareTo(open) == 0) PayabliAttempt.Retry else PayabliAttempt.NewPayment
+
+/**
+ * The open amount once a charge ends: [capture] null for a success, which settles only its own amount.
+ *
+ * @return [amount] when money may have moved unconfirmed, null once that sale succeeded, [open] otherwise.
+ */
+internal fun openAmountAfter(
+    open: BigDecimal?,
+    amount: BigDecimal,
+    capture: TapToPayCapture?,
+): BigDecimal? =
+    when (capture) {
+        TapToPayCapture.UNKNOWN, TapToPayCapture.CHARGED -> amount
+        TapToPayCapture.NOT_CHARGED -> open
+        null -> open.takeUnless { attemptFor(amount, it) == PayabliAttempt.Retry }
+    }
