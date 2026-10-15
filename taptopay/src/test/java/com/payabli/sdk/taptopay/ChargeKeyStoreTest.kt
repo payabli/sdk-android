@@ -215,6 +215,25 @@ class ChargeKeyStoreTest {
             assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key == "key-1")
         }
 
+    /** The clock restarts at the resend that may have reached the service, never earlier and never without one. */
+    @Test
+    fun `a resend that may have arrived restarts its key's clock, and a supersede without one does not`() =
+        runBlocking {
+            val keys = store()
+            val half = IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
+            val first = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            clock.addAndGet(half)
+            val resend = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, resend.key, arrivedAt = resend.reservedAt)
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, resend.key, arrivedAt = first.reservedAt)
+            clock.addAndGet(half)
+            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, "key-1")
+            clock.addAndGet(half)
+            assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+        }
+
     /** A retry only ever claims the newest key, so an older one for the same entry point only takes room. */
     @Test
     fun `a charge that ends unknown drops the older key held for its entry point`() =

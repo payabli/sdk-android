@@ -156,6 +156,7 @@ internal class TapToPayChargeRunner(
 
             var reserved: String? = null
             var resentKey = false
+            var arrivedAt: Long? = null
             // Never unset: once a card is asked for, no failure releases the key.
             var askedForCard = false
             try {
@@ -173,6 +174,7 @@ internal class TapToPayChargeRunner(
                     reserved = idempotencyKey
                     resentKey = reservation.reused
                     if (resentKey) capture = TapToPayCapture.UNKNOWN
+                    arrivedAt = reservation.reservedAt
                     val paymentTransId =
                         client.initiate(
                             entryPoint = entry,
@@ -249,6 +251,9 @@ internal class TapToPayChargeRunner(
                 // Ahead of the `Throwable` branch: a withdrawn caller is not a failure.
                 throw withdrawn
             } catch (failure: Throwable) {
+                // A 409 does not extend the marker an earlier send wrote, and a send that never left starts none.
+                val unsent = !TapToPayErrorCodes.typeFor(failure).leavesOutcomeUnknown
+                if (!askedForCard && (isConflict(failure) || unsent)) arrivedAt = null
                 // Only before the read: after it, no failure proves the money did not move.
                 if (!askedForCard) {
                     val key = reserved
@@ -266,7 +271,7 @@ internal class TapToPayChargeRunner(
                 throw if (failure is Exception) failed(failure, type, openedAs, capture) else failure
             } finally {
                 // A key still held names the newest unsettled charge, the only one a retry can claim.
-                reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it) } }
+                reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it, arrivedAt) } }
             }
         }
 

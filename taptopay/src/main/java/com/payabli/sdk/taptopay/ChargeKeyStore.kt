@@ -54,7 +54,7 @@ internal class ChargeKeyStore(
             val existing =
                 held.takeIf { attempt == PayabliAttempt.Retry }?.firstOrNull { it.matches(entry, environment) }
             if (existing != null) {
-                return@withLock Reserved(existing.key, reused = true)
+                return@withLock Reserved(existing.key, reused = true, reservedAt = now)
             }
             // Nothing live is evicted to make room. Every remaining record names a charge whose outcome
             // is still in doubt, so dropping the coldest to admit a new one loses the only thing that
@@ -65,20 +65,17 @@ internal class ChargeKeyStore(
             }
             val minted = newKey()
             held.add(0, ChargeAttempt(entry, environment.name, minted, reservedAt = now))
-            Reserved(minted, reused = false)
+            Reserved(minted, reused = false, reservedAt = now)
         }
 
     /**
-     * A reserved key, and whether it was already held for this entry point under this environment.
-     *
-     * Not a `data class`: the synthesized `toString` would put the key into anything that renders one.
-     *
-     * `internal` is a public name-mangled member on the JVM, so the key's getter is reachable from Java
-     * without it. `@get:JvmSynthetic` is what removes it; [reused] is a flag and carries nothing.
+     * A reserved key, whether it was already held, and when this send reserved it. Not a `data class`, and the
+     * key's getter is `@get:JvmSynthetic`, so neither a `toString` nor Java reaches the key.
      */
     internal class Reserved(
         @get:JvmSynthetic val key: String,
         val reused: Boolean,
+        val reservedAt: Long,
     )
 
     /**
@@ -106,17 +103,19 @@ internal class ChargeKeyStore(
 
     /**
      * Drops every key [entry] holds under [environment] other than [key], once the charge that sent [key] has
-     * ended unknown: a retry is handed only the newest, so an older key could only take room. Does nothing when
-     * [key] is no longer held, because a charge that settled answers only itself.
+     * ended unknown, and restarts [key]'s clock at [arrivedAt], the send that may have reached the service.
+     * Does nothing when [key] is no longer held, because a charge that settled answers only itself.
      */
     suspend fun supersede(
         entry: String,
         environment: PayabliEnvironment,
         key: String,
+        arrivedAt: Long? = null,
     ) {
         lock.withLock {
-            if (held.none { it.matches(entry, environment) && it.key == key }) return@withLock
+            val kept = held.firstOrNull { it.matches(entry, environment) && it.key == key } ?: return@withLock
             held.removeAll { it.matches(entry, environment) && it.key != key }
+            if (arrivedAt != null) kept.reservedAt = maxOf(kept.reservedAt, arrivedAt)
         }
     }
 
@@ -172,8 +171,12 @@ internal class ChargeAttempt(
     val entry: String,
     val environment: String,
     val key: String,
-    val reservedAt: Long,
+    reservedAt: Long,
 ) {
+    /** Restarted by a resend that may have reached the service and was not refused as a repeat. */
+    var reservedAt: Long = reservedAt
+        internal set
+
     fun matches(
         entry: String,
         environment: PayabliEnvironment,

@@ -235,7 +235,7 @@ class PayabliErrorCatalogTest {
                 "CHARGE_NOT_FINISHED",
                 3034,
                 PayabliErrorCategory.OUTCOME_UNKNOWN,
-                "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait three minutes.",
+                "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes.",
             ),
         )
 

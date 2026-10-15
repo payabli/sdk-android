@@ -469,12 +469,14 @@ class TapToPayChargeRunnerTest {
             )
 
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            // Half the bound before the refused resend and half after: a 409 does not restart the clock.
+            clock.addAndGet(com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2)
             runCatching {
                 runnerOver(
                     fixture,
                 ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
             }
-            clock.addAndGet(com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
+            clock.addAndGet(com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2)
             fixture.reader.answerReadWith(cardRead())
             runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
 
@@ -483,6 +485,43 @@ class TapToPayChargeRunnerTest {
                 "$MINTED_KEY-2",
                 fixture.keySent(2),
             )
+        }
+
+    /** A resend that may have reached the service starts its two minutes again, so the key is held from then. */
+    @Test
+    fun `a resend that ends unknown restarts its key's clock`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val clock =
+                java.util.concurrent.atomic
+                    .AtomicLong(1_000_000_000L)
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(3) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to List(3) { "{}" },
+                    ),
+                    elapsedRealtimeNanos = clock::get,
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+            val half = com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            clock.addAndGet(half)
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+            clock.addAndGet(half)
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+
+            assertEquals("the resend did not restart the clock", "$MINTED_KEY-1", fixture.keySent(2))
         }
 
     /** A ready session whose [opening]-th charge opening, counting from 1, is answered 409. */

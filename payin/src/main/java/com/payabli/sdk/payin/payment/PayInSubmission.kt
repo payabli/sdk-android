@@ -437,13 +437,13 @@ internal class PayInSubmission(
             retry.reused && failure.type == PayabliErrorType.RETRY_REFUSED ->
                 hold(HeldKey(payment, key, retry.reservedAt, arrived = true))
 
-            failure.type.leavesOutcomeUnknown -> hold(HeldKey(payment, key, retry.reservedAt))
+            failure.type.leavesOutcomeUnknown -> hold(HeldKey(payment, key, retry.sentAt))
             else -> Unit
         }
     }
 
     /**
-     * Keeps [held] without displacing what protects another payment: the same key merges, keeping the earliest
+     * Keeps [held] without displacing what protects another payment: the same key merges, keeping the latest
      * reservation and any arrival, a transaction gets no second key, and a capture or authorization is held
      * as the newest.
      *
@@ -459,7 +459,7 @@ internal class PayInSubmission(
                     HeldKey(
                         held.payment,
                         held.key,
-                        minOf(existing.reservedAt, held.reservedAt),
+                        maxOf(existing.reservedAt, held.reservedAt),
                         arrived = existing.arrived || held.arrived,
                     )
             }
@@ -703,9 +703,14 @@ internal class PayInSubmission(
          * When the key this attempt sends was reserved, read as the key is chosen rather than as the call
          * began: encoding and dispatch sit between the two and would spend part of the window.
          *
-         * A reused key keeps the reservation it already had, so a resend does not start the window again.
+         * A reused key keeps the reservation it already had; [sentAt] is this send's, which restarts the clock
+         * when the send may have reached the service and was not refused as a repeat.
          */
         var reservedAt: Long = 0
+            private set
+
+        /** When this send reserved its key, whether or not the key was already held. */
+        var sentAt: Long = 0
             private set
 
         /** Whether the key sent is the one held for this payment rather than the caller's or a new one. */
@@ -724,6 +729,7 @@ internal class PayInSubmission(
          */
         fun reserve(supplied: String?): String {
             val now = elapsedRealtimeNanos()
+            sentAt = now
             val held = payment?.takeIf { claimsHeldKey }?.let { stillWorthSending(it, now) }
             val chosen =
                 when {

@@ -334,19 +334,23 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
         }
 
+    /** A resend that may have reached the service starts its two minutes again, so the window runs from it. */
     @Test
-    fun `resending does not start the window again`() =
+    fun `a resend that ends unknown starts the window again`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.failingWith(dropped())
             val submission = submissionOver(transport)
             val request = PayInAuthorizedRequest("101-abc", testDetails())
+            val half = IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
 
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
-            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2)
+            clock.addAndGet(half)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            clock.addAndGet(half)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
 
-            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2)
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
