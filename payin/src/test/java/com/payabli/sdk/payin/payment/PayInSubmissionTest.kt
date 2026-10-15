@@ -734,6 +734,40 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
+    /** Keys past the window hold no room, so a payment after a day of open outcomes is still held. */
+    @Test
+    fun `expired attempts do not fill the holder for the next one`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            repeat(PayInSubmission.HELD_KEYS_MAX) { submission.capture(TEST_ENTRY_POINT, cardRequest()) }
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
+            submission.capture(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
+
+            assertEquals(
+                "$MINTED_KEY-${PayInSubmission.HELD_KEYS_MAX + 1}",
+                transport.request?.headers?.get("idempotencyKey"),
+            )
+        }
+
+    /** The newest attempt is the one a retry is of, so when it could not be held an older one is not sent. */
+    @Test
+    fun `a declared retry of an attempt there was no room to hold mints rather than claiming an older one`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            repeat(PayInSubmission.HELD_KEYS_MAX + 1) { submission.capture(TEST_ENTRY_POINT, cardRequest()) }
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
+
+            assertEquals(
+                "$MINTED_KEY-${PayInSubmission.HELD_KEYS_MAX + 2}",
+                transport.request?.headers?.get("idempotencyKey"),
+            )
+        }
+
     /** A key the caller chose is sent whatever the declaration says. */
     @Test
     fun `a caller's own key outranks the held one on a declared retry`() =

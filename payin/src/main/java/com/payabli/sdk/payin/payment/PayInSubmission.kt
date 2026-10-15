@@ -83,6 +83,13 @@ internal class PayInSubmission(
     private val unresolved = mutableListOf<HeldKey>()
 
     /**
+     * The routes whose newest open attempt there was no room to hold. A retry on one of them is of that
+     * attempt, so it is sent under a new key rather than an older attempt's. Cleared by the next key held on
+     * the route. Read and written under [inFlight].
+     */
+    private val unheldNewest = mutableSetOf<String>()
+
+    /**
      * Whether the holder has already said it is full, so it says so once rather than once per payment.
      * Cleared by the next key that is kept, which needs room again.
      */
@@ -449,6 +456,7 @@ internal class PayInSubmission(
      * @param held the payment, its key and the reservation to keep.
      */
     private fun hold(held: HeldKey) {
+        sweep(elapsedRealtimeNanos())
         val same = unresolved.indexOfFirst { it.payment == held.payment && it.key == held.key }
         when {
             same >= 0 -> {
@@ -463,16 +471,19 @@ internal class PayInSubmission(
             }
 
             held.payment.namesATransaction && unresolved.any { it.payment == held.payment } -> Unit
-            unresolved.size >= HELD_KEYS_MAX ->
+            unresolved.size >= HELD_KEYS_MAX -> {
+                if (!held.payment.namesATransaction) unheldNewest += held.payment
                 if (!reportedFull) {
                     reportedFull = true
                     logger.warn(LogField.safe("event", "payin_retry_keys_full")) {
                         "a payment's key was not held, because too many are unresolved at once"
                     }
                 }
+            }
 
             else -> {
                 reportedFull = false
+                unheldNewest -= held.payment
                 unresolved.add(0, held)
             }
         }
@@ -520,7 +531,8 @@ internal class PayInSubmission(
     /**
      * The newest key held for [payment], or null once it is too old to send: a key the service no longer
      * recognizes is executed as a new payment, so sending one reads as protection and takes the money
-     * twice. An entry the service was seen to hold is exempt.
+     * twice. An entry the service was seen to hold is exempt. Null too when the newest attempt for [payment]
+     * could not be held, since a retry is of that attempt and an older key would name another payment.
      *
      * @param payment what names the payment.
      * @param now the clock, read as the key is chosen.
@@ -530,11 +542,21 @@ internal class PayInSubmission(
         payment: String,
         now: Long,
     ): HeldKey? {
-        // Every entry, not just this payment's: a flow meets many transactions and revisits few.
+        sweep(now)
+        if (payment in unheldNewest) return null
+        return unresolved.firstOrNull { it.payment == payment }
+    }
+
+    /**
+     * Drops every key too old to send. Every entry, not just one payment's: a flow meets many transactions
+     * and revisits few, and an entry left in place takes room a later payment needs.
+     *
+     * @param now the clock.
+     */
+    private fun sweep(now: Long) {
         unresolved.removeAll {
             !it.arrived && now - it.reservedAt >= IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds
         }
-        return unresolved.firstOrNull { it.payment == payment }
     }
 
     /**
