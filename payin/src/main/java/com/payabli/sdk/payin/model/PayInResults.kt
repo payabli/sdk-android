@@ -199,6 +199,7 @@ public sealed class PayInException(
          *
          * @param cause the decode failure, kept as its type and frames without its message.
          */
+        @JvmOverloads
         public constructor(cause: Throwable? = null) : this(cause, null)
 
         override fun toString(): String = "PayInException.Undecodable"
