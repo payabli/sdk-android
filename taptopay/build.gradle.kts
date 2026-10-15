@@ -50,6 +50,7 @@ android {
                     add("com.payabli.sdk.taptopay.enrollment.platform.TokenRotationLiveTest")
                     add("com.payabli.sdk.taptopay.network.platform.TTPTransactionLiveTest")
                     add("com.payabli.sdk.taptopay.session.platform.TapToPaySessionLiveTest")
+                    add("com.payabli.sdk.taptopay.session.platform.TokenRenewalLiveTest")
                     add("com.payabli.sdk.taptopay.adapters.platform.FiservCardReaderLiveTest")
                     add("com.payabli.sdk.taptopay.adapters.platform.TapToPayChargeLiveTest")
                     add("com.payabli.sdk.taptopay.adapters.platform.FiservDiagnosticsLiveTest")
