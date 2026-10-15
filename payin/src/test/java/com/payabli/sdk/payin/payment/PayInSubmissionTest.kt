@@ -410,20 +410,21 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", sentKey(transport))
         }
 
-    /** A refused repeat is proof the attempt arrived, so its key outlives the window. */
+    /** A refused repeat keeps the key inside the window only, and does not restart its clock. */
     @Test
-    fun `a key the service was seen to hold is not aged out`() =
+    fun `a key the service refused as a repeat ages out on the window`() =
         runTest(timeout = timeout) {
             val (transport, submission) = unknownThenConflict()
             val request = PayInAuthorizedRequest("101-abc", testDetails())
 
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
-            clock.addAndGet(TimeUnit.MINUTES.toNanos(10))
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
-            assertEquals("$MINTED_KEY-1", sentKey(transport))
+            assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
     /** A caller's own key is a second attempt, not a replacement for the one nobody has an answer for. */
@@ -523,9 +524,9 @@ class PayInSubmissionTest {
             )
         }
 
-    /** A later failure that has not seen a conflict must not forget that an earlier one did. */
+    /** A refused repeat does not restart the key's clock, and a later resend that ends unknown does. */
     @Test
-    fun `an unknown outcome after a refused repeat leaves the key exempt from ageing`() =
+    fun `an unknown outcome after a refused repeat restarts the key's clock`() =
         runTest(timeout = timeout) {
             val transport =
                 ScriptedPayInTransport(
@@ -538,11 +539,13 @@ class PayInSubmissionTest {
             val submission = submissionOver(transport)
             val request = PayInAuthorizedRequest("101-abc", testDetails())
 
+            val half = IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            clock.addAndGet(half)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
-            clock.addAndGet(TimeUnit.MINUTES.toNanos(10))
+            clock.addAndGet(half)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-1", sentKey(transport))
@@ -916,9 +919,9 @@ class PayInSubmissionTest {
             assertEquals(PayabliErrorType.RETRY_REFUSED, cause.type)
         }
 
-    /** A key the service was seen to hold never ages out, so a later retry still names the same payment. */
+    /** A refused retry does not keep the key past the window, so a later retry is a new payment. */
     @Test
-    fun `a refused retry keeps the key past the window`() =
+    fun `a refused retry does not keep the key past the window`() =
         runTest(timeout = timeout) {
             val (transport, submission) = unknownThenConflict()
 
@@ -926,10 +929,10 @@ class PayInSubmissionTest {
             submission.reset()
             submission.submit(TEST_ENTRY_POINT, captureOf(attempt = PayabliAttempt.Retry), cardForm())
             submission.reset()
-            clock.addAndGet(TimeUnit.MINUTES.toNanos(10))
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
             submission.submit(TEST_ENTRY_POINT, captureOf(attempt = PayabliAttempt.Retry), cardForm())
 
-            assertEquals("$MINTED_KEY-1", sentKey(transport))
+            assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
     /** A 409 naming an earlier payment answers the key, so the payment stays open and the next retry mints. */

@@ -95,14 +95,11 @@ internal class PayInSubmission(
      * would put the key into any assertion failure or crash report that renders one.
      *
      * @property payment what names the payment: its route, and the transaction where the call names one.
-     * @property arrived whether the service has been seen to hold this key. A repeat it refused is proof
-     *   the attempt arrived, so the entry never ages out.
      */
     private class HeldKey(
         val payment: String,
         val key: String,
         val reservedAt: Long,
-        val arrived: Boolean = false,
     )
 
     private val sink = MutableStateFlow<PayInSubmissionState>(PayInSubmissionState.Idle)
@@ -433,9 +430,9 @@ internal class PayInSubmission(
         when {
             key == null -> Unit
             failure == null || failure.answersThePayment() -> forget(payment, key)
-            // Ahead of the general case, which would hold the key without the proof that it arrived.
+            // Ahead of the general case: a refused resend keeps the key without restarting its clock.
             retry.reused && failure.type == PayabliErrorType.RETRY_REFUSED ->
-                hold(HeldKey(payment, key, retry.reservedAt, arrived = true))
+                hold(HeldKey(payment, key, retry.reservedAt))
 
             failure.type.leavesOutcomeUnknown -> hold(HeldKey(payment, key, retry.sentAt))
             else -> Unit
@@ -444,7 +441,7 @@ internal class PayInSubmission(
 
     /**
      * Keeps [held] without displacing what protects another payment: the same key merges, keeping the latest
-     * reservation and any arrival, a transaction gets no second key, and a capture or authorization is held
+     * reservation, a transaction gets no second key, and a capture or authorization is held
      * as the newest.
      *
      * @param held the payment, its key and the reservation to keep.
@@ -456,12 +453,7 @@ internal class PayInSubmission(
             same >= 0 -> {
                 val existing = unresolved[same]
                 unresolved[same] =
-                    HeldKey(
-                        held.payment,
-                        held.key,
-                        maxOf(existing.reservedAt, held.reservedAt),
-                        arrived = existing.arrived || held.arrived,
-                    )
+                    HeldKey(held.payment, held.key, maxOf(existing.reservedAt, held.reservedAt))
             }
 
             held.payment.namesATransaction && unresolved.any { it.payment == held.payment } -> Unit
@@ -523,7 +515,7 @@ internal class PayInSubmission(
 
     /**
      * The newest key held for [payment], or null when none is worth sending: past the window the service runs
-     * a key as a new payment (an arrived key is exempt), and when the newest attempt was not held, an older key
+     * a key as a new payment, and when the newest attempt was not held, an older key
      * would name another payment.
      *
      * @param payment what names the payment.
@@ -546,9 +538,7 @@ internal class PayInSubmission(
      * @param now the clock.
      */
     private fun sweep(now: Long) {
-        unresolved.removeAll {
-            !it.arrived && now - it.reservedAt >= IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds
-        }
+        unresolved.removeAll { now - it.reservedAt >= IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds }
     }
 
     /**
