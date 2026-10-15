@@ -125,7 +125,7 @@ class TokenRotationLiveTest {
         }
     }
 
-    /** `200`, or the status and the refusal's body. A 200 body carries reader credentials, so it is never kept. */
+    /** The status alone. A 200 body carries reader credentials and a refusal's can quote the request. */
     private fun rawConfig(
         token: String,
         assertion: Map<String, String>,
@@ -137,12 +137,7 @@ class TokenRotationLiveTest {
             connection.readTimeout = TIMEOUT_MILLIS
             connection.setRequestProperty("Authorization", "Bearer $token")
             assertion.forEach { (name, value) -> connection.setRequestProperty(name, value) }
-            val status = connection.responseCode
-            if (status == HttpURLConnection.HTTP_OK) {
-                "200"
-            } else {
-                "$status ${connection.errorStream?.bufferedReader()?.readText().orEmpty()}"
-            }
+            connection.responseCode.toString()
         } finally {
             connection.disconnect()
         }
