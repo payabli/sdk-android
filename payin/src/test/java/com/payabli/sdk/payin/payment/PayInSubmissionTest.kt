@@ -897,7 +897,7 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
         }
 
-    /** A refused retry proves the first attempt arrived and says nothing of how it ended. */
+    /** A refused retry proves the open attempt arrived and says nothing of how it ended. */
     @Test
     fun `a declared retry the service refuses is reported as a refused retry, the outcome still open`() =
         runTest(timeout = timeout) {

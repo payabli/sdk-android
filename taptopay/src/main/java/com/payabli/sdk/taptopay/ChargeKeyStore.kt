@@ -9,14 +9,12 @@ import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 /**
- * The idempotency keys of charges that have not settled, newest first, per entry point under one environment.
+ * The idempotency key of a charge that has not settled, one per entry point under one environment.
  *
  * A charge opens a transaction, waits on a card, then closes it. Every step after the open can fail
  * leaving the caller unsure whether money moved, and the recovery a host reaches for is to charge
  * again. Reusing the key of the unsettled attempt is what names that repeat as one attempt and not
- * two sales, and the service refuses such a repeat instead of opening a second transaction. Only the
- * host knows whether a charge is that repeat or a sale of its own, so only a charge it declares a
- * [PayabliAttempt.Retry] is handed a held key; any other charge mints its own and is held beside it. Past
+ * two sales, and the service refuses such a repeat instead of opening a second transaction. Past
  * [IDEMPOTENCY_KEY_MAX_AGE] a resend opens a transaction exactly as a first send would, so nothing is
  * resent past that bound — except a key the service was seen to recognise, which never ages out.
  *

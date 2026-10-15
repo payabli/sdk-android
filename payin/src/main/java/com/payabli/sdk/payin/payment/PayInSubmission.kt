@@ -70,14 +70,8 @@ internal class PayInSubmission(
     private val inFlight = Mutex()
 
     /**
-     * The keys of attempts whose outcome nobody knows, newest first, each against the payment it was for.
-     *
-     * A resend carries the same key, so the service recognizes the repeat instead of taking the money a
-     * second time. A call naming the transaction it acts on holds one key for that transaction. A capture
-     * or an authorization names no transaction, so each open attempt on its route is held in turn, and only
-     * a retry the host declared is sent the newest of them: two payments of equal value are otherwise two
-     * payments.
-     *
+     * Keys of attempts whose outcome nobody knows, newest first. A call naming a transaction holds one per
+     * transaction; capture and authorize hold every open attempt, and only a declared retry is sent the newest.
      * Read and written under [inFlight].
      */
     private val unresolved = mutableListOf<HeldKey>()
@@ -393,7 +387,7 @@ internal class PayInSubmission(
             outcome = withContext(dispatcher) { call(retry) }
         } catch (cancellation: CancellationException) {
             // Rethrown: a coroutine that swallows its own cancellation stops being cancellable. The state still
-            // records it, because the charge may have landed and the held key is what a declared retry needs.
+            // records it, because the charge may have landed and the retry key is what a second attempt needs.
             //
             // The key is what says how far this got. Reserved, and the request may have been carried out, so
             // it reports the open outcome every other interrupted attempt does. Not reserved, and nothing was
@@ -448,9 +442,8 @@ internal class PayInSubmission(
     }
 
     /**
-     * Keeps [held], without displacing a record that is protecting something else. The same key merges, so
-     * the earliest reservation stands and an arrival already seen is not forgotten. On a route that names a
-     * transaction, a different key for that transaction is not written. On one that names none, it is held
+     * Keeps [held] without displacing what protects another payment: the same key merges, keeping the earliest
+     * reservation and any arrival, a transaction gets no second key, and a capture or authorization is held
      * as the newest.
      *
      * @param held the payment, its key and the reservation to keep.
@@ -529,10 +522,9 @@ internal class PayInSubmission(
         }
 
     /**
-     * The newest key held for [payment], or null once it is too old to send: a key the service no longer
-     * recognizes is executed as a new payment, so sending one reads as protection and takes the money
-     * twice. An entry the service was seen to hold is exempt. Null too when the newest attempt for [payment]
-     * could not be held, since a retry is of that attempt and an older key would name another payment.
+     * The newest key held for [payment], or null when none is worth sending: past the window the service runs
+     * a key as a new payment (an arrived key is exempt), and when the newest attempt was not held, an older key
+     * would name another payment.
      *
      * @param payment what names the payment.
      * @param now the clock, read as the key is chosen.
@@ -560,10 +552,9 @@ internal class PayInSubmission(
     }
 
     /**
-     * The failure, with the field it blamed: anything not a [PayabliException] is a defect in this
-     * SDK, arriving as [PayabliErrorType.UNKNOWN] with its type and frames but not its message. A conflict
-     * on a key this holder resent is [PayabliErrorType.RETRY_REFUSED]: it proves the earlier attempt
-     * reached the service, and nothing about how that attempt ended.
+     * The failure, with the field it blamed. A non-[PayabliException] arrives as [PayabliErrorType.UNKNOWN],
+     * keeping its type and frames but not its message; a conflict on a key this holder resent is
+     * [PayabliErrorType.RETRY_REFUSED], which proves only that the earlier attempt arrived.
      *
      * @param retry the key this attempt carried.
      * @param movesMoney whether the operation can take a payment.

@@ -13,11 +13,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Whether the simple sample's next attempt is declared a retry.
- *
- * This screen sets `attempt` from what it holds, so the value here decides whether the next tap is the same
- * payment or another one. It keeps its own copy of the rule rather than reading the one in
- * `sdk/PayInOutcome.kt`, because the screen is meant to be read end to end without following a boundary.
+ * Whether the simple sample's next attempt is declared a retry, which decides whether the next tap is the same
+ * payment or another. The screen keeps its own copy of the rule so it reads end to end.
  */
 class SimpleCaptureKeyTest {
     @Test

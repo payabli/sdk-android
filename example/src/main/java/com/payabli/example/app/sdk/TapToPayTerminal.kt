@@ -57,15 +57,14 @@ class TapToPayTerminal(
     private val _failureReason = MutableStateFlow<TerminalFailureReason?>(null)
     override val failureReason: StateFlow<TerminalFailureReason?> = _failureReason.asStateFlow()
 
-    private val lock = Mutex()
-    private var terminal: PayabliTTP? = null
-
     /**
-     * The amount of the last charge when its outcome was unknown, so the next charge for that amount is declared
-     * a retry of it. Without the declaration the SDK sends a new key, and a sale that went through would be
-     * taken a second time. A different amount is a different sale, and goes out as one.
+     * The amount of the last charge whose outcome was unknown. A charge for that amount is declared a retry, so a
+     * sale that went through is not taken twice; a different amount is a different sale.
      */
     private var openAmount: BigDecimal? = null
+
+    private val lock = Mutex()
+    private var terminal: PayabliTTP? = null
 
     /**
      * A device that owes activation is a handoff, not a failure.

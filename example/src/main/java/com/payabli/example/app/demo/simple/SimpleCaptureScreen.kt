@@ -44,15 +44,8 @@ import kotlinx.coroutines.launch
 import java.math.BigDecimal
 
 /**
- * Whether the next attempt of [submitted] is a retry, once it has ended in [outcome], or in success when
- * [outcome] is null.
- *
- * **Whether a payment may still be outstanding is [PayInException.Unsettled]'s to say.** While it is, the
- * next tap declares a retry, and the SDK sends it under the key of the attempt nobody has an answer for, so it
- * is not a second payment. A refused retry is still unsettled, so the tap after it is refused too, which is
- * the honest outcome: the payer's next move is to check the payment rather than to pay again.
- *
- * A store sends no key, so its outcome leaves a capture's open retry in place.
+ * Whether the next attempt of [submitted] is a retry once it ended in [outcome], null being success: it is while
+ * [PayInException.Unsettled] says a payment may be outstanding, a refused retry included. A store changes nothing.
  */
 internal fun retryAfter(
     open: Boolean,
@@ -126,15 +119,8 @@ internal fun outcomeMessage(
     }
 
 /**
- * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed.
- *
- * `PayabliPayInForm` states that retention is the flow's owner's: held in the composition, the form empties
- * whenever it leaves it, and the key the SDK holds for a retry goes with it.
- *
- * A view model survives rotation and backgrounding, not the process ending, so the held key is gone after a
- * kill and this screen cannot recover a payment interrupted that way. A host that needs to survive it sets
- * `idempotencyKey` on the transaction options itself and persists it before submitting;
- * `payin/src/androidTest/PROCESS-DEATH.md` covers what is and is not recoverable.
+ * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed. It does not
+ * outlive the process, and nor does the key a retry needs: `payin/src/androidTest/PROCESS-DEATH.md` says more.
  */
 class SimpleCaptureViewModel(
     sessionSource: PayInSessionSource,
@@ -146,13 +132,7 @@ class SimpleCaptureViewModel(
     var failure by mutableStateOf<String?>(null)
         private set
 
-    /**
-     * Whether the next attempt is declared a retry, so it settles the earlier charge instead of making a
-     * second one.
-     *
-     * False until a failure leaves the outcome unknown, and false again once one is settled: an undeclared
-     * attempt is a new payment, which is what a new payment needs.
-     */
+    /** Whether the next attempt is declared a retry: true while the last payment's outcome is unknown. */
     var retryOpen by mutableStateOf(false)
         private set
 
