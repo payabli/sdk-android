@@ -252,11 +252,8 @@ internal class TapToPayChargeRunner(
                 // Only before the read: after it, no failure proves the money did not move.
                 if (!askedForCard) {
                     val key = reserved
-                    // Uncancellable, so a withdrawal cannot skip the arrival mark or the settle.
+                    // Uncancellable, so a withdrawal cannot skip the settle.
                     withContext(NonCancellable) {
-                        if (key != null && resentKey && isConflict(failure)) {
-                            keys.markArrived(entry, environment, key)
-                        }
                         if (isAnswered(failure, resentKey)) {
                             key?.let { keys.settle(entry, environment, it) }
                         }
@@ -267,6 +264,9 @@ internal class TapToPayChargeRunner(
                 TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard, type = type)
                 // A JVM Error passes through unwrapped, as the facade promises.
                 throw if (failure is Exception) failed(failure, type, openedAs, capture) else failure
+            } finally {
+                // A key still held names the newest unsettled charge, the only one a retry can claim.
+                reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it) } }
             }
         }
 

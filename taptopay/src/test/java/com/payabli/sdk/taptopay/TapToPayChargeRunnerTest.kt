@@ -445,7 +445,7 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a 409 on a resent key marks it arrived so it outlives the bound`() =
+    fun `a key the service refused as a repeat is not resent past the bound`() =
         runTest(timeout = TEST_TIMEOUT) {
             val clock =
                 java.util.concurrent.atomic
@@ -479,8 +479,8 @@ class TapToPayChargeRunnerTest {
             runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
 
             assertEquals(
-                "an arrived key was swept after the bound",
-                "$MINTED_KEY-1",
+                "an arrived key was resent after the service forgot it",
+                "$MINTED_KEY-2",
                 fixture.keySent(2),
             )
         }
@@ -1126,6 +1126,51 @@ class TapToPayChargeRunnerTest {
             }
 
             assertEquals("$MINTED_KEY-2", fixture.keySent(2))
+        }
+
+    /** Each unknown charge leaves only its own key, so an entry point never fills the store by itself. */
+    @Test
+    fun `four unknown charges on one entry point leave room for a fifth`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 0, opens = ChargeKeyStore.MAX + 1)
+
+            repeat(ChargeKeyStore.MAX) {
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("$MINTED_KEY-${ChargeKeyStore.MAX + 1}", fixture.keySent(ChargeKeyStore.MAX))
+        }
+
+    /** A retry is of the newest unknown charge, so the one before it is let go rather than held to take room. */
+    @Test
+    fun `a charge that ends unknown drops the older unknown charge's key`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2, opens = 2)
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            repeat(2) { runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) } }
+
+            fixture.keys.settle(ENTRY, PayabliEnvironment.SANDBOX, "$MINTED_KEY-2")
+            val next = fixture.keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+
+            assertEquals("the older unknown charge's key was kept", "$MINTED_KEY-3", next.key)
+        }
+
+    /** A sale that settles answers only itself, so the unknown one before it can still be retried. */
+    @Test
+    fun `a newer charge that settles leaves the older unknown one claimable`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 3, opens = 3)
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            fixture.reader.answerReadWith(cardRead())
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(2))
         }
 
     /** The terminal a host holds passes the declaration on, so a retry declared there repeats the held sale. */

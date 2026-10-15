@@ -215,15 +215,41 @@ class ChargeKeyStoreTest {
             assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key == "key-1")
         }
 
+    /** A retry only ever claims the newest key, so an older one for the same entry point only takes room. */
     @Test
-    fun `an arrived key is not swept past the bound`() =
+    fun `a charge that ends unknown drops the older key held for its entry point`() =
         runBlocking {
             val keys = store()
-            val reserved = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
-            keys.markArrived(ENTRY, PayabliEnvironment.SANDBOX, reserved.key)
-            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds * 2)
-            assertEquals(reserved.key, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
-            assertTrue(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
+            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            val newer = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, newer.key)
+            keys.settle(ENTRY, PayabliEnvironment.SANDBOX, newer.key)
+
+            assertEquals("key-3", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+        }
+
+    @Test
+    fun `a charge that settled supersedes nothing`() =
+        runBlocking {
+            val keys = store()
+            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            val newer = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            keys.settle(ENTRY, PayabliEnvironment.SANDBOX, newer.key)
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, newer.key)
+
+            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+        }
+
+    /** The cap is on entry points, so one entry point's keys never refuse its own next sale. */
+    @Test
+    fun `the cap counts entry points, not keys`() =
+        runBlocking {
+            val keys = store()
+            repeat(ChargeKeyStore.MAX) { keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment) }
+
+            val next = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+
+            assertEquals("key-${ChargeKeyStore.MAX + 1}", next.key)
         }
 
     @Test
