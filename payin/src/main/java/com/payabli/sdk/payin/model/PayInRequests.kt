@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.model
 
+import com.payabli.sdk.core.model.PayabliAttempt
 import java.math.BigDecimal
 
 /**
@@ -128,6 +129,8 @@ public class PayInValidationOptions(
  * @property sameDayAch settles a bank debit the same day where the paypoint is configured for it.
  * @property isAsync returns before the processor answers, leaving the result to be read later.
  * @property validationCode sent as the `validationCode` header, for a paypoint that requires one.
+ * @property attempt whether this is a new payment or a retry of the most recent payment whose outcome is not
+ *   known. [idempotencyKey], when set, is sent whatever this says.
  */
 public class PayInTransactionOptions(
     public val paymentDetails: PayInPaymentDetails,
@@ -147,6 +150,7 @@ public class PayInTransactionOptions(
     public val useCaching: Boolean? = null,
     public val validationCode: String? = null,
     public val validation: PayInValidationOptions = PayInValidationOptions(),
+    public val attempt: PayabliAttempt = PayabliAttempt.NewPayment,
 )
 
 /**

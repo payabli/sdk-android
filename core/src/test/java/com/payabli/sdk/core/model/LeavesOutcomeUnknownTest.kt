@@ -26,6 +26,7 @@ class LeavesOutcomeUnknownTest {
             PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN,
             PayabliErrorType.PAYMENT_NOT_CLOSED,
             PayabliErrorType.CHARGE_NOT_FINISHED,
+            PayabliErrorType.RETRY_REFUSED,
         )
 
     /** Answered, so what comes next is a different request. */

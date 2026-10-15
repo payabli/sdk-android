@@ -134,6 +134,14 @@ public enum class PayabliErrorType(
         "No transaction is visible under this identifier yet. A transaction can take a short while to appear, so this is not proof no payment was made. Read again later rather than charging again.",
     ),
 
+    /** A retry the host declared was refused because the service had already received that payment. */
+    RETRY_REFUSED(
+        1021,
+        "RETRY_REFUSED",
+        PayabliErrorCategory.OUTCOME_UNKNOWN,
+        "An earlier attempt at this payment reached the service, so this retry was not sent on. Check that payment before trying again.",
+    ),
+
     // Card-present.
     DEVICE_KEY_UNAVAILABLE(
         3001,
@@ -378,6 +386,7 @@ public val PayabliErrorType.leavesOutcomeUnknown: Boolean
             PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN,
             PayabliErrorType.PAYMENT_NOT_CLOSED,
             PayabliErrorType.CHARGE_NOT_FINISHED,
+            PayabliErrorType.RETRY_REFUSED,
             -> true
 
             else -> false
