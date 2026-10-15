@@ -22,9 +22,6 @@ import com.payabli.sdk.taptopay.enrollment.platform.LiveTapToPay.LIVE_TAG
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -115,11 +112,7 @@ class TokenRotationLiveTest {
             check(
                 connection.responseCode == HttpURLConnection.HTTP_OK,
             ) { "exchange-token answered ${connection.responseCode}" }
-            Json
-                .parseToJsonElement(connection.inputStream.bufferedReader().readText())
-                .jsonObject["accessToken"]!!
-                .jsonPrimitive
-                .content
+            LocalTokenServer.tokenIn(connection.inputStream.bufferedReader().readText())
         } finally {
             connection.disconnect()
         }
