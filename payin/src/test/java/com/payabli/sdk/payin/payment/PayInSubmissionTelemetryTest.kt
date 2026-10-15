@@ -25,6 +25,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -137,6 +138,36 @@ class PayInSubmissionTelemetryTest {
             assertEquals(TelemetryEvents.PAYIN_VOID_COMPLETED, event)
             assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
             assertTimed(properties)
+        }
+
+    @Test
+    fun `a read is reported under its own name, timed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission = submissionOver(FakePayInTransport.answering(READ_RECORD))
+
+            submission.readTransaction(TEST_ENTRY_POINT, "101-abc")
+
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_READ_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
+            assertEquals(TelemetryProperties.Origin.DIRECT, properties[TelemetryProperty.ORIGIN.key])
+            assertTimed(properties)
+        }
+
+    @Test
+    fun `a read that finds nothing carries its classification and no identifier`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission =
+                submissionOver(
+                    FakePayInTransport.answering("""{"isSuccess":false,"responseCode":7001}""", statusCode = 400),
+                )
+
+            submission.readTransaction(TEST_ENTRY_POINT, "101-abc")
+
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_READ_COMPLETED, event)
+            assertEquals("TRANSACTION_NOT_FOUND", properties[TelemetryProperty.CODE.key])
+            assertFalse(properties.values.any { it.contains("101-abc") })
         }
 
     @Test

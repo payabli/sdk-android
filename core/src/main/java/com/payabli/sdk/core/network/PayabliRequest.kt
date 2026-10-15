@@ -17,6 +17,8 @@ import kotlinx.serialization.KSerializer
  *   replay, and the rejection reaches the caller as it arrived. It is a property of the route rather
  *   than of a response. A route that answers something other than a 401 today is still pinned, and its
  *   rejection becomes one the day that changes.
+ * @property isCallerRefusal whether a response refuses this caller, which a new credential cannot change. Such a
+ *   rejection reaches the caller as it arrived and never ends the session.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class PayabliRequest(
@@ -27,6 +29,7 @@ public class PayabliRequest(
     public val headers: Map<String, String> = emptyMap(),
     public val body: ByteArray? = null,
     public val isCredentialPinned: Boolean = false,
+    public val isCallerRefusal: (PayabliResponse) -> Boolean = { false },
 ) {
     /**
      * Never includes headers, body, or the resolved [path] — a path may embed an identifier, which is why

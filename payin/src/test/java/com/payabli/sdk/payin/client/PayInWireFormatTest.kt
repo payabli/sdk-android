@@ -37,8 +37,20 @@ class PayInWireFormatTest {
         assertEquals(BigDecimal("9.71"), decoded.netAmount)
         assertEquals(BigDecimal("0.29"), decoded.feeAmount)
         assertEquals(BigDecimal("0.31"), decoded.surchargeFee)
-        assertEquals("fiserv", decoded.connectorName)
-        assertEquals(7L, decoded.payorId)
+    }
+
+    @Test
+    fun `an approval's connector and payer decode in every casing`() {
+        listOf(
+            """{"connectorName":"fiserv","payorId":7}""",
+            """{"connectorname":"fiserv","payorid":7}""",
+            """{"ConnectorName":"fiserv","PayorId":7}""",
+        ).forEach { body ->
+            val decoded = PayabliJson.format.decodeFromString(ApprovalPartiesPayload.serializer(), body)
+
+            assertEquals(body, "fiserv", decoded.connectorName)
+            assertEquals(body, 7L, decoded.payorId)
+        }
     }
 
     @Test
@@ -79,8 +91,6 @@ class PayInWireFormatTest {
         assertEquals(BigDecimal("9.71"), decoded.netAmount)
         assertEquals(BigDecimal("0.29"), decoded.feeAmount)
         assertEquals(BigDecimal("0.31"), decoded.surchargeFee)
-        assertEquals("fiserv", decoded.connectorName)
-        assertEquals(7L, decoded.payorId)
     }
 
     @Test
@@ -105,8 +115,6 @@ class PayInWireFormatTest {
         assertEquals(BigDecimal("9.71"), decoded.netAmount)
         assertEquals(BigDecimal("0.29"), decoded.feeAmount)
         assertEquals(BigDecimal("0.31"), decoded.surchargeFee)
-        assertEquals("fiserv", decoded.connectorName)
-        assertEquals(7L, decoded.payorId)
     }
 
     @Test

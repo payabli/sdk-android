@@ -125,7 +125,8 @@ public sealed class PayabliPayIn {
      * **A repeat the service refuses outright is the end of what repeating can tell you.** It arrives as
      * [PayInException.Unsettled] over [PayabliErrorType.CONFLICT], which says a request under that key got
      * past the service's check and nothing about whether the capture was applied. Repeating again is
-     * refused the same way, and a fresh key applies a second capture. Read the transaction back instead.
+     * refused the same way, and a fresh key applies a second capture. Read the transaction back with
+     * [readTransaction] instead.
      *
      * **A key the SDK minted is resent only while it still holds one** for this transaction, and how long
      * that is is not published. It holds none past the point where too many payments are unresolved at
@@ -166,7 +167,9 @@ public sealed class PayabliPayIn {
      * This is how an outcome left open by [PayInException.Unsettled] is resolved, when it names the payment: pass
      * its [PayInException.Unsettled.paymentTransId], and read [PayInTransaction.status]. A status whose outcome is
      * not known may still change, so read again later rather than repeating the payment. When
-     * [PayInException.Unsettled.paymentTransId] is null, no identifier came back, and there is nothing to read.
+     * [PayInException.Unsettled.paymentTransId] is null, the answer named no transaction. After [voidTransaction] or
+     * [captureAuthorizedTransaction], read back the identifier you passed. After [capture] or [authorize], find the
+     * transaction in the Payabli portal by its `orderId`.
      *
      * A read moves no money and holds no key, so it runs beside a submission in flight, and a failed read is
      * never [PayInException.Unsettled]: repeating it is always safe.

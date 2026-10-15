@@ -27,12 +27,13 @@ import java.math.BigDecimal
  * [JsonNames], so a re-spelled field costs nothing instead of silently reading null.
  */
 internal object PayInRoutes {
-    /** Templates, and for three of the five also the paths. [CAPTURE_AUTHORIZED] and [VOID] embed an identifier. */
+    /** Route templates. [CAPTURE_AUTHORIZED], [VOID] and [READ] embed an identifier, so their paths differ. */
     const val STORE_METHOD: String = "/api/TokenStorage/add"
     const val CAPTURE: String = "/api/v2/MoneyIn/getpaid"
     const val AUTHORIZE: String = "/api/v2/MoneyIn/authorize"
     const val CAPTURE_AUTHORIZED: String = "/api/v2/MoneyIn/capture/{transId}"
     const val VOID: String = "/api/v2/MoneyIn/void/{transId}"
+    const val READ: String = "/api/MoneyIn/details/{transId}"
 
     /**
      * The resolved path for [CAPTURE_AUTHORIZED], built from that template rather than beside it.
@@ -53,6 +54,14 @@ internal object PayInRoutes {
      * @return the resolved path for [VOID].
      */
     fun void(transId: String): String = PercentEncoding.pathFrom(VOID, PercentEncoding.segment(transId))
+
+    /**
+     * The resolved path for [READ], with the identifier encoded as [captureAuthorized] encodes it.
+     *
+     * @param transId the transaction to read.
+     * @return the resolved path for [READ].
+     */
+    fun read(transId: String): String = PercentEncoding.pathFrom(READ, PercentEncoding.segment(transId))
 
     /** Spelled once in `:core`, since card-present sends the same header. Read on the transaction routes only. */
     const val HEADER_IDEMPOTENCY_KEY: String = PayabliRequest.IDEMPOTENCY_KEY_HEADER
@@ -210,10 +219,9 @@ internal class AuthorizedCaptureBody(
 )
 
 /**
- * The transaction record a v2 approval carries in `data`.
- *
- * The v2 payload carries no authorization code, AVS result or security-code result. Those three are in the
- * older response shape only.
+ * The fields a v2 approval's `data` and a read's bare record share. Undeclared fields, such as a read's card,
+ * payer and device data, are never decoded. Only the older response shape carries the authorization code, AVS
+ * and security-code results.
  */
 @Serializable
 internal class TransactionPayload(
@@ -241,11 +249,42 @@ internal class TransactionPayload(
     @JsonNames("surchargefee", "SurchargeFee")
     @Serializable(with = PayInAmountSerializer::class)
     val surchargeFee: BigDecimal? = null,
+)
+
+/**
+ * The connector and payer a v2 approval's `data` also names. Decoded apart from [TransactionPayload], so a read
+ * never decodes them.
+ *
+ * @property connectorName the connector that processed the payment.
+ * @property payorId the customer the payment was charged to.
+ */
+@Serializable
+internal class ApprovalPartiesPayload(
     @JsonNames("connectorname", "ConnectorName")
     val connectorName: String? = null,
     @JsonNames("payorid", "PayorId")
     val payorId: Long? = null,
 )
+
+/**
+ * The numeric code a refusal carries in the older envelope. Decoded on its own, so a body in any other shape
+ * yields no code instead of a failure.
+ *
+ * @property responseCode the refusal's code, for example 7001.
+ */
+@Serializable
+internal class LegacyRefusal(
+    @JsonNames("ResponseCode")
+    val responseCode: Int? = null,
+) {
+    companion object {
+        /** On a read, no transaction is visible under the identifier yet. */
+        const val NOT_VISIBLE: Int = 7001
+
+        /** On a read, this caller may not read the transaction. */
+        const val NOT_PERMITTED: Int = 9001
+    }
+}
 
 /** The `responseData` of a stored-method reply. */
 @Serializable

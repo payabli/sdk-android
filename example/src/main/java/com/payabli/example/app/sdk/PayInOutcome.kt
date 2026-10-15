@@ -23,6 +23,8 @@ sealed class PayInOutcome {
      *
      * [diagnostic] is the failure's own classification and carries nothing from the wire, so it is the part
      * safe to record. [error] is displayable and is what a screen shows.
+     *
+     * @property isOutcomeUnknown whether the service may have applied the request without the answer arriving.
      */
     class Refused internal constructor(
         val error: PaymentError,
@@ -35,6 +37,7 @@ sealed class PayInOutcome {
          * when the service answered: what the payer sends next is a different request.
          */
         val keepsItsIdempotencyKey: Boolean,
+        val isOutcomeUnknown: Boolean = false,
     ) : PayInOutcome()
 }
 
@@ -57,6 +60,7 @@ internal fun Result<PayInResult>.toOutcome(): PayInOutcome =
                 diagnostic = failure.toString(),
                 keepsItsIdempotencyKey =
                     failure is PayInException.Unsettled || failure is PayInException.AlreadySubmitting,
+                isOutcomeUnknown = failure is PayInException.Unsettled,
             )
         },
     )
@@ -67,4 +71,5 @@ internal fun PayInSubmissionState.Failed.toOutcome(): PayInOutcome.Refused =
         diagnostic = cause.toString(),
         keepsItsIdempotencyKey =
             cause is PayInException.Unsettled || cause is PayInException.AlreadySubmitting,
+        isOutcomeUnknown = cause is PayInException.Unsettled,
     )

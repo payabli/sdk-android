@@ -1,5 +1,7 @@
 package com.payabli.example.app.sdk
 
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
@@ -76,11 +78,19 @@ internal fun voidedOutcome() =
             ),
         ).toOutcome()
 
+/** A void or capture whose answer was lost, so the service may have applied it. */
+internal fun unsettledOutcome() =
+    Result
+        .failure<PayInResult>(
+            PayInException.Unsettled(PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "timed out")),
+        ).toOutcome()
+
 /**
  * A failure that leaves it unknown whether the request was carried out, which is what keeps a key alive.
  *
  * A cancellation rather than a network failure only because it is the one shape with no wire text at all.
  */
+
 internal fun interruptedOutcome() = Result.failure<PayInResult>(PayInException.Interrupted()).toOutcome()
 
 /** A decline, which is the failure a payer meets most and the one whose wording reaches the screen. */

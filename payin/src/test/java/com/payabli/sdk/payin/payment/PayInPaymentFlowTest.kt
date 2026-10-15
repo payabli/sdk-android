@@ -21,6 +21,7 @@ import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreRequest
+import com.payabli.sdk.payin.model.PayInTransactionStatus
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -119,15 +120,16 @@ class PayInPaymentFlowTest {
         }
 
     @Test
-    fun `the declared read refuses before anything is sent`() =
+    fun `reading answers with the transaction and its status`() =
         runTest(timeout = timeout) {
-            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val transport = FakePayInTransport.answering(READ_RECORD)
             val flow: PayabliPayIn = flowOver(transport)
 
-            val failure = flow.readTransaction("101-abc").exceptionOrNull()
+            val transaction = flow.readTransaction("101-abc").getOrNull()
 
-            assertEquals(PayabliErrorType.SDK_INTERNAL_ERROR, (failure as PayabliException).type)
-            assertEquals(0, transport.count)
+            assertEquals("101-abc", transaction?.paymentTransId)
+            assertEquals(PayInTransactionStatus.Captured, transaction?.status)
+            assertEquals("/api/MoneyIn/details/101-abc", transport.request?.path)
         }
 
     @Test

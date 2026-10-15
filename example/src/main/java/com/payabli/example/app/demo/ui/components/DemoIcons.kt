@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TapAndPlay
 import androidx.compose.material.icons.filled.Undo
@@ -49,6 +50,7 @@ object DemoIcons {
     val Reinitialize: ImageVector get() = Icons.Filled.Refresh
     val StartOver: ImageVector get() = Icons.Filled.RestartAlt
     val Void: ImageVector get() = Icons.Filled.Undo
+    val ReadBack: ImageVector get() = Icons.Filled.Search
     val More: ImageVector get() = Icons.Filled.MoreVert
 
     // Status.

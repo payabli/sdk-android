@@ -79,6 +79,12 @@ interface PaymentFlowUiState {
 
     /** A void is in flight. Never true on a screen that offers none. */
     val isVoiding: Boolean get() = false
+
+    /** The transaction a read would name, or null when there is none. */
+    val readableTransactionId: String? get() = null
+
+    /** Whether a read is in flight. Always false on a screen that offers no read. */
+    val isReading: Boolean get() = false
 }
 
 /** What a payment screen can be asked to do. */
@@ -97,6 +103,7 @@ data class PaymentFlowActions(
      * so that screen supplies none and draws no control.
      */
     val onVoid: (() -> Unit)? = null,
+    val onRead: (() -> Unit)? = null,
 ) {
     companion object {
         /** For a preview, which renders the screen and drives nothing. */
@@ -175,16 +182,24 @@ fun PaymentFlowScreen(
 
         StepRow(index = 3, step = steps[2]) {
             ResultCard(text = state.resultText, emptyText = resultEmptyText)
-            // Above Take another payment, because it acts on the transaction this step is describing while
-            // that one leaves it behind. Drawn only where there is something to reverse: a screen that stores
-            // a method supplies no action, and a reversed transaction stops offering it.
+            // Above Take another payment, because it acts on the transaction this step describes. Drawn only
+            // while there is something to void: not once it is reversed or a void of it is in doubt.
             val onVoid = actions.onVoid
             if (onVoid != null && state.voidableTransactionId != null) {
                 BorderedButton(
                     text = if (state.isVoiding) "Voiding…" else "Void this transaction",
                     icon = DemoIcons.Void,
                     onClick = onVoid,
-                    enabled = !state.isVoiding,
+                    enabled = !state.isVoiding && !state.isReading,
+                )
+            }
+            val onRead = actions.onRead
+            if (onRead != null && state.readableTransactionId != null) {
+                BorderedButton(
+                    text = if (state.isReading) "Checking…" else "Check this transaction's status",
+                    icon = DemoIcons.ReadBack,
+                    onClick = onRead,
+                    enabled = !state.isReading && !state.isVoiding,
                 )
             }
             // A finished step draws no controls, so a completed submit takes the form off the screen. This is
@@ -197,7 +212,7 @@ fun PaymentFlowScreen(
                     // A reversal in flight is about the transaction this step is describing, and starting over
                     // clears it. The model refuses it too: a button disabled through state is not a guard,
                     // because a second tap lands before the recomposition.
-                    enabled = !state.isVoiding,
+                    enabled = !state.isVoiding && !state.isReading,
                 )
             }
         }

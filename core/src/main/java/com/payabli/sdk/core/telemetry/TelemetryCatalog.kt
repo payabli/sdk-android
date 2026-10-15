@@ -113,6 +113,7 @@ public object TelemetryCatalog {
             TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED to PAYIN,
             TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED to PAYIN,
             TelemetryEvents.PAYIN_VOID_COMPLETED to PAYIN,
+            TelemetryEvents.PAYIN_READ_COMPLETED to PAYIN,
             TelemetryEvents.SDK_INITIALIZE_STARTED to setOf(TelemetryProperty.STATE.key),
             TelemetryEvents.SDK_INITIALIZE_FAILED to
                 setOf(

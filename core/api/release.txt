@@ -536,16 +536,18 @@ package com.payabli.sdk.core.network {
   }
 
   @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class PayabliRequest {
-    ctor public PayabliRequest(com.payabli.sdk.core.network.HttpMethod method, String path, optional String? route, optional java.util.List<kotlin.Pair<java.lang.String,java.lang.String>> query, optional java.util.Map<java.lang.String,java.lang.String> headers, optional byte[]? body, optional boolean isCredentialPinned);
+    ctor public PayabliRequest(com.payabli.sdk.core.network.HttpMethod method, String path, optional String? route, optional java.util.List<kotlin.Pair<java.lang.String,java.lang.String>> query, optional java.util.Map<java.lang.String,java.lang.String> headers, optional byte[]? body, optional boolean isCredentialPinned, optional kotlin.jvm.functions.Function1<? super com.payabli.sdk.core.network.PayabliResponse,java.lang.Boolean> isCallerRefusal);
     method @InaccessibleFromKotlin public byte[]? getBody();
     method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.lang.String> getHeaders();
     method @InaccessibleFromKotlin public com.payabli.sdk.core.network.HttpMethod getMethod();
     method @InaccessibleFromKotlin public String getPath();
     method @InaccessibleFromKotlin public java.util.List<kotlin.Pair<java.lang.String,java.lang.String>> getQuery();
     method @InaccessibleFromKotlin public String? getRoute();
+    method @InaccessibleFromKotlin public kotlin.jvm.functions.Function1<com.payabli.sdk.core.network.PayabliResponse,java.lang.Boolean> isCallerRefusal();
     method @InaccessibleFromKotlin public boolean isCredentialPinned();
     property public byte[]? body;
     property public java.util.Map<java.lang.String,java.lang.String> headers;
+    property public kotlin.jvm.functions.Function1<com.payabli.sdk.core.network.PayabliResponse,java.lang.Boolean> isCallerRefusal;
     property public boolean isCredentialPinned;
     property public com.payabli.sdk.core.network.HttpMethod method;
     property public String path;
@@ -767,6 +769,7 @@ package com.payabli.sdk.core.telemetry {
     property public static String FORM_VALIDATION_ERROR;
     property public static String PAYIN_AUTHORIZE_COMPLETED;
     property public static String PAYIN_CAPTURE_COMPLETED;
+    property public static String PAYIN_READ_COMPLETED;
     property public static String PAYIN_STORE_METHOD_COMPLETED;
     property public static String PAYIN_VOID_COMPLETED;
     property public static String SDK_INITIALIZED;
@@ -806,6 +809,7 @@ package com.payabli.sdk.core.telemetry {
     field public static final com.payabli.sdk.core.telemetry.TelemetryEvents INSTANCE;
     field public static final String PAYIN_AUTHORIZE_COMPLETED = "payin.authorize.completed";
     field public static final String PAYIN_CAPTURE_COMPLETED = "payin.capture.completed";
+    field public static final String PAYIN_READ_COMPLETED = "payin.read.completed";
     field public static final String PAYIN_STORE_METHOD_COMPLETED = "payin.storeMethod.completed";
     field public static final String PAYIN_VOID_COMPLETED = "payin.void.completed";
     field public static final String SDK_INITIALIZED = "sdk.initialized";

@@ -191,6 +191,9 @@ internal class GatedPayInTransport(
     }
 }
 
+/** A transaction as a read answers it: the bare record, PascalCase. */
+internal const val READ_RECORD: String = """{"PaymentTransId":"101-abc","TransStatus":1,"TotalAmount":1.10}"""
+
 /** The entry point every test here submits against. */
 internal const val TEST_ENTRY_POINT: String = "merchant-entry"
 
