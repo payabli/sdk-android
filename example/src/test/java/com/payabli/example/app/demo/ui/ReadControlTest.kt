@@ -53,7 +53,7 @@ class ReadControlTest {
 
         val after =
             with(model) {
-                taken.copy(isReading = true).afterReading(PayInReadOutcome.Read("voided", 5, "101-abc"))
+                taken.copy(isReading = true).afterReading(PayInReadOutcome.Read("voided", 5, "101-abc"), "101-abc")
             }
 
         assertFalse(after.isReading)
@@ -73,12 +73,45 @@ class ReadControlTest {
                 taken
                     .copy(
                         isReading = true,
-                    ).afterReading(PayInReadOutcome.Failed(IllegalStateException().toPaymentError()))
+                    ).afterReading(PayInReadOutcome.Failed(IllegalStateException().toPaymentError()), "101-abc")
             }
 
         assertFalse(after.isReading)
         assertEquals("101-abc", after.readableTransactionId)
         assertTrue(after.resultText, after.resultText.startsWith("✗"))
+    }
+
+    @Test
+    fun `a read reporting the void withdraws the void control, as an approved void does`() {
+        val model = captureModel()
+        model.onCompleted(capturedPaymentOutcome())
+        val taken = model.uiState.value
+
+        val after =
+            with(model) {
+                taken
+                    .copy(isReading = true)
+                    .afterReading(PayInReadOutcome.Read("voided", 5, "101-abc", isVoided = true), "101-abc")
+            }
+
+        assertNull(after.voidableTransactionId)
+        assertNull(after.voidIdempotencyKey)
+        assertEquals("101-abc", after.readableTransactionId)
+    }
+
+    @Test
+    fun `a read reporting another status leaves the void control and its key`() {
+        val model = captureModel()
+        model.onCompleted(capturedPaymentOutcome())
+        val taken = model.uiState.value
+
+        val after =
+            with(model) {
+                taken.copy(isReading = true).afterReading(PayInReadOutcome.Read("captured", 1, "101-abc"), "101-abc")
+            }
+
+        assertEquals("101-abc", after.voidableTransactionId)
+        assertEquals(taken.voidIdempotencyKey, after.voidIdempotencyKey)
     }
 
     private fun captureModel() =

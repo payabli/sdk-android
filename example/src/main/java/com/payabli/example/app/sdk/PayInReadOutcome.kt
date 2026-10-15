@@ -12,11 +12,13 @@ sealed class PayInReadOutcome {
      * @property status the status's name, and whether its outcome is known.
      * @property statusNumber the status number the service sent.
      * @property paymentTransactionId the transaction that was read.
+     * @property isVoided whether the service reports the transaction reversed.
      */
     class Read internal constructor(
         val status: String,
         val statusNumber: Int?,
         val paymentTransactionId: String?,
+        val isVoided: Boolean = false,
     ) : PayInReadOutcome() {
         /**
          * Never the identifier.
@@ -48,6 +50,7 @@ internal fun Result<PayInTransaction>.toReadOutcome(): PayInReadOutcome =
                 status = it.status?.label() ?: "not reported",
                 statusNumber = it.transStatus,
                 paymentTransactionId = it.paymentTransId,
+                isVoided = it.status == PayInTransactionStatus.Voided,
             )
         },
         onFailure = { PayInReadOutcome.Failed(it.toPaymentError()) },

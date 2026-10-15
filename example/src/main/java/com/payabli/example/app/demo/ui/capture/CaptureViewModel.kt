@@ -347,19 +347,26 @@ class CaptureViewModel(
                     _uiState.update { it.copy(isReading = false) }
                     throw cancellation
                 }
-            _uiState.update { it.afterReading(outcome) }
+            _uiState.update { it.afterReading(outcome, transId) }
         }
     }
 
     /**
-     * The screen a read leaves behind: the status on success, the reason on failure.
+     * The screen a read leaves behind: the status on success, the reason on failure. A read reporting the
+     * transaction voided records it as reversed, as an approved void does, so the void control goes.
      *
      * @param outcome what the read returned.
+     * @param transId the transaction that was read.
      * @return the state with the read's text in the result panel.
      */
-    internal fun CaptureUiState.afterReading(outcome: PayInReadOutcome): CaptureUiState =
+    internal fun CaptureUiState.afterReading(
+        outcome: PayInReadOutcome,
+        transId: String,
+    ): CaptureUiState =
         copy(
             isReading = false,
+            voidedTransactionId = if (outcome.isVoidOf()) transId else voidedTransactionId,
+            voidIdempotencyKey = if (outcome.isVoidOf()) null else voidIdempotencyKey,
             resultText =
                 when (outcome) {
                     is PayInReadOutcome.Read ->
@@ -371,6 +378,8 @@ class CaptureViewModel(
                     is PayInReadOutcome.Failed -> "✗ ${outcome.error.displayMessage}"
                 },
         )
+
+    private fun PayInReadOutcome.isVoidOf(): Boolean = this is PayInReadOutcome.Read && isVoided
 
     /**
      * The screen a reversal leaves behind.
