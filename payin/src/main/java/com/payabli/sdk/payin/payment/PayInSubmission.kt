@@ -72,17 +72,10 @@ internal class PayInSubmission(
 
     /**
      * Keys of attempts whose outcome nobody knows, newest first. A call naming a transaction holds one per
-     * transaction; capture and authorize hold every open attempt, and only a declared retry is sent the newest.
-     * Read and written under [inFlight].
+     * transaction; capture and authorize hold one per route, the newest open attempt's, and only a declared
+     * retry is sent it. Read and written under [inFlight].
      */
     private val unresolved = mutableListOf<HeldKey>()
-
-    /**
-     * The routes whose newest open attempt there was no room to hold. A retry on one of them is of that
-     * attempt, so it is sent under a new key rather than an older attempt's. Cleared by the next key held on
-     * the route. Read and written under [inFlight].
-     */
-    private val unheldNewest = mutableSetOf<String>()
 
     /**
      * Whether the holder has already said it is full, so it says so once rather than once per payment.
@@ -441,14 +434,15 @@ internal class PayInSubmission(
 
     /**
      * Keeps [held] without displacing what protects another payment: the same key merges, keeping the latest
-     * reservation, a transaction gets no second key, and a capture or authorization is held
-     * as the newest.
+     * reservation, a transaction gets no second key, and a capture or authorization replaces its route's key.
      *
      * @param held the payment, its key and the reservation to keep.
      */
     private fun hold(held: HeldKey) {
         sweep(elapsedRealtimeNanos())
         val same = unresolved.indexOfFirst { it.payment == held.payment && it.key == held.key }
+        // A retry claims the newest open attempt, so an older key on the route can never be the one to send.
+        if (same < 0 && !held.payment.namesATransaction) unresolved.removeAll { it.payment == held.payment }
         when {
             same >= 0 -> {
                 val existing = unresolved[same]
@@ -458,7 +452,6 @@ internal class PayInSubmission(
 
             held.payment.namesATransaction && unresolved.any { it.payment == held.payment } -> Unit
             unresolved.size >= HELD_KEYS_MAX -> {
-                if (!held.payment.namesATransaction) unheldNewest += held.payment
                 if (!reportedFull) {
                     reportedFull = true
                     logger.warn(LogField.safe("event", "payin_retry_keys_full")) {
@@ -469,7 +462,6 @@ internal class PayInSubmission(
 
             else -> {
                 reportedFull = false
-                unheldNewest -= held.payment
                 unresolved.add(0, held)
             }
         }
@@ -514,20 +506,18 @@ internal class PayInSubmission(
         }
 
     /**
-     * The newest key held for [payment], or null when none is worth sending: past the window the service runs
-     * a key as a new payment, and when the newest attempt was not held, an older key
-     * would name another payment.
+     * The key held for [payment], or null when none is worth sending: past the window the service runs a key
+     * as a new payment.
      *
      * @param payment what names the payment.
      * @param now the clock, read as the key is chosen.
-     * @return the newest key held for [payment], or null once it is too old to send.
+     * @return the key held for [payment], or null once it is too old to send.
      */
     private fun stillWorthSending(
         payment: String,
         now: Long,
     ): HeldKey? {
         sweep(now)
-        if (payment in unheldNewest) return null
         return unresolved.firstOrNull { it.payment == payment }
     }
 
@@ -708,7 +698,7 @@ internal class PayInSubmission(
             private set
 
         /**
-         * The key this attempt sends: [supplied] first, then the newest key held for this payment where the
+         * The key this attempt sends: [supplied] first, then the key held for this payment where the
          * attempt may claim one, otherwise a new one. The held key's age is read here, where the key is
          * sent, not where the call began:
          * this clock counts device sleep, so a check taken earlier can be arbitrarily stale by the

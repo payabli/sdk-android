@@ -747,7 +747,7 @@ class PayInSubmissionTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.failingWith(dropped())
             val submission = submissionOver(transport)
-            repeat(PayInSubmission.HELD_KEYS_MAX) { submission.capture(TEST_ENTRY_POINT, cardRequest()) }
+            fillTheHolder(submission)
             clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
 
             submission.capture(TEST_ENTRY_POINT, cardRequest())
@@ -759,13 +759,14 @@ class PayInSubmissionTest {
             )
         }
 
-    /** The newest attempt is the one a retry is of, so when it could not be held an older one is not sent. */
+    /** A capture with no room to hold its key leaves nothing for a retry to claim, so the retry mints. */
     @Test
-    fun `a declared retry of an attempt there was no room to hold mints rather than claiming an older one`() =
+    fun `a declared retry of an attempt there was no room to hold mints`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.failingWith(dropped())
             val submission = submissionOver(transport)
-            repeat(PayInSubmission.HELD_KEYS_MAX + 1) { submission.capture(TEST_ENTRY_POINT, cardRequest()) }
+            fillTheHolder(submission)
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
 
             submission.capture(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
 
@@ -951,6 +952,23 @@ class PayInSubmissionTest {
             submission.reset()
             submission.submit(TEST_ENTRY_POINT, captureOf(attempt = PayabliAttempt.Retry), cardForm())
             assertEquals("$MINTED_KEY-2", sentKey(transport))
+        }
+
+    /** A route holds only its newest open attempt's key, so once that key is forgotten a retry mints. */
+    @Test
+    fun `a retry after the newest key is forgotten mints rather than sending an older payment's key`() =
+        runTest(timeout = timeout) {
+            val unknown = ScriptedPayInTransport.failingWith(dropped())
+            val transport = ScriptedPayInTransport(listOf(unknown, unknown, duplicate()))
+            val submission = submissionOver(transport)
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
+            submission.capture(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
+            assertEquals("$MINTED_KEY-2", sentKey(transport))
+            submission.capture(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
+
+            assertEquals("$MINTED_KEY-3", sentKey(transport))
         }
 
     /** The same rule on a route that resends its own key: only the plain refusal is a refused retry. */
@@ -1632,6 +1650,12 @@ class PayInSubmissionTest {
             ScriptedPayInTransport.failingWith(dropped()),
             ScriptedPayInTransport.answering(409, "Duplicated idempotencyKey"),
         )
+
+    /** Holds as many keys as there is room for, one per authorization, each under a minted key. */
+    private suspend fun fillTheHolder(submission: PayInSubmission) =
+        repeat(PayInSubmission.HELD_KEYS_MAX) {
+            submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
+        }
 
     /** Duplicate-payment protection's 409, a v1 envelope naming the earlier payment. */
     private fun duplicate(): Result<PayabliResponse> =
