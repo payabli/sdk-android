@@ -215,7 +215,7 @@ internal class MoneyInClient(
         }
         val record =
             try {
-                PayabliJson.format.decodeFromString(TransactionRecordPayload.serializer(), response.bodyAsText())
+                PayabliJson.format.decodeFromString(TransactionPayload.serializer(), response.bodyAsText())
             } catch (failure: SerializationException) {
                 throw undecodable(PayInRoutes.READ, response.statusCode, failure)
             }
@@ -228,7 +228,7 @@ internal class MoneyInClient(
             LogField.safe("route", PayInRoutes.READ),
             LogField.safe("statusCode", response.statusCode),
         ) { "the transaction call succeeded" }
-        return record.toTransaction()
+        return record.toTransaction(connectorName = null, customerId = null)
     }
 
     private fun validate(
@@ -395,7 +395,17 @@ private fun PayInTransactionOptions.toBody(
         subscriptionId = subscriptionId,
     )
 
-private fun TransactionPayload.toTransaction(): PayInTransaction =
+/**
+ * The transaction this record describes.
+ *
+ * @param connectorName the connector to report, which a read passes as null.
+ * @param customerId the customer to report, which a read passes as null.
+ * @return the transaction.
+ */
+private fun TransactionPayload.toTransaction(
+    connectorName: String? = this.connectorName,
+    customerId: Long? = payorId,
+): PayInTransaction =
     PayInTransaction(
         paymentTransId = paymentTransId,
         gatewayTransId = gatewayTransId,
@@ -408,28 +418,7 @@ private fun TransactionPayload.toTransaction(): PayInTransaction =
         feeAmount = feeAmount,
         surchargeFee = surchargeFee,
         connectorName = connectorName,
-        customerId = payorId,
-    )
-
-/**
- * The fields a read carries. [PayInTransaction.connectorName] and [PayInTransaction.customerId] stay null.
- *
- * @return the transaction this record describes.
- */
-private fun TransactionRecordPayload.toTransaction(): PayInTransaction =
-    PayInTransaction(
-        paymentTransId = paymentTransId,
-        gatewayTransId = gatewayTransId,
-        orderId = orderId,
-        method = method,
-        transStatus = transStatus,
-        paypointId = paypointId,
-        totalAmount = totalAmount,
-        netAmount = netAmount,
-        feeAmount = feeAmount,
-        surchargeFee = surchargeFee,
-        connectorName = null,
-        customerId = null,
+        customerId = customerId,
     )
 
 /**

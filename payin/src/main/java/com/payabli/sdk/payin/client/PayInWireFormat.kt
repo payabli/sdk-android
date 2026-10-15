@@ -219,10 +219,8 @@ internal class AuthorizedCaptureBody(
 )
 
 /**
- * The transaction record a v2 approval carries in `data`.
- *
- * The v2 payload carries no authorization code, AVS result or security-code result. Those three are in the
- * older response shape only.
+ * The record a v2 approval carries in `data`, and the bare record a read answers with. A read's card, payer and
+ * device fields are undeclared, so never decoded. The authorization code, AVS and security-code results are not here.
  */
 @Serializable
 internal class TransactionPayload(
@@ -254,40 +252,6 @@ internal class TransactionPayload(
     val connectorName: String? = null,
     @JsonNames("payorid", "PayorId")
     val payorId: Long? = null,
-)
-
-/**
- * A transaction read back, which arrives as the bare record rather than inside an envelope.
- *
- * Declares only the fields [com.payabli.sdk.payin.model.PayInTransaction] fills on a read. The record carries
- * card, payer and device data besides, and an undeclared field is never decoded.
- */
-@Serializable
-internal class TransactionRecordPayload(
-    @JsonNames("PaymentTransId", "paymenttransid")
-    val paymentTransId: String? = null,
-    @JsonNames("GatewayTransId", "gatewaytransid")
-    val gatewayTransId: String? = null,
-    @JsonNames("OrderId", "orderid")
-    val orderId: String? = null,
-    @JsonNames("Method")
-    val method: String? = null,
-    @JsonNames("TransStatus", "transstatus")
-    val transStatus: Int? = null,
-    @JsonNames("PaypointId", "paypointid")
-    val paypointId: Long? = null,
-    @JsonNames("TotalAmount", "totalamount")
-    @Serializable(with = PayInAmountSerializer::class)
-    val totalAmount: BigDecimal? = null,
-    @JsonNames("NetAmount", "netamount")
-    @Serializable(with = PayInAmountSerializer::class)
-    val netAmount: BigDecimal? = null,
-    @JsonNames("FeeAmount", "feeamount")
-    @Serializable(with = PayInAmountSerializer::class)
-    val feeAmount: BigDecimal? = null,
-    @JsonNames("SurchargeFee", "surchargefee")
-    @Serializable(with = PayInAmountSerializer::class)
-    val surchargeFee: BigDecimal? = null,
 )
 
 /**
