@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
@@ -23,6 +24,7 @@ import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.JsonObject
 import java.net.HttpURLConnection
 
 /**
@@ -306,7 +308,12 @@ internal class MoneyInClient(
                 LogField.safe("statusCode", response.statusCode),
                 LogField.safe("errorCode", failure.type),
             ) { "the transaction call failed at the transport" }
-            throw failure
+            // A 409 with a body an envelope reader takes, as duplicate-payment protection sends, keeps its mapping.
+            throw if (failure.type == PayabliErrorType.CONFLICT && !response.bodyAsText().isEnvelope()) {
+                PayInKeyRefusal()
+            } else {
+                failure
+            }
         }
         val (envelope, parties) =
             try {
@@ -374,6 +381,28 @@ internal class MoneyInClient(
         ) { "the transaction response could not be read" }
         return PayInException.Undecodable(cause)
     }
+}
+
+/**
+ * The service refused the request's idempotency key because it had already seen it.
+ *
+ * A conflict like any other until the flow reads it, which tells a resent held key from a caller's own.
+ */
+internal class PayInKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)")
+
+/**
+ * Whether this body is a v1 (`isSuccess`) or v2 (`code`) envelope, rather than plain text or nothing.
+ *
+ * @return true when the body is a JSON object carrying either field.
+ */
+private fun String.isEnvelope(): Boolean {
+    val body =
+        try {
+            PayabliJson.format.parseToJsonElement(this) as? JsonObject
+        } catch (unreadable: SerializationException) {
+            null
+        } ?: return false
+    return "isSuccess" in body || "code" in body
 }
 
 /**

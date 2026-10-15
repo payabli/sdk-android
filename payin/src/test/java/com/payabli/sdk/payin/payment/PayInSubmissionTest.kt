@@ -928,6 +928,40 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", sentKey(transport))
         }
 
+    /** A 409 naming an earlier payment answers the key, so the payment stays open and the next retry mints. */
+    @Test
+    fun `a declared retry answered with an enveloped conflict stays a conflict and forgets the key`() =
+        runTest(timeout = timeout) {
+            val (transport, submission) = scriptedFrom(ScriptedPayInTransport.failingWith(dropped()), duplicate())
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+            submission.reset()
+            submission.submit(TEST_ENTRY_POINT, captureOf(attempt = PayabliAttempt.Retry), cardForm())
+
+            val cause = failed(submission.state.value).cause
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorType.CONFLICT, cause.type)
+            submission.reset()
+            submission.submit(TEST_ENTRY_POINT, captureOf(attempt = PayabliAttempt.Retry), cardForm())
+            assertEquals("$MINTED_KEY-2", sentKey(transport))
+        }
+
+    /** The same rule on a route that resends its own key: only the plain refusal is a refused retry. */
+    @Test
+    fun `a capture of an authorization answered with an enveloped conflict stays a conflict and forgets the key`() =
+        runTest(timeout = timeout) {
+            val (transport, submission) = scriptedFrom(ScriptedPayInTransport.failingWith(dropped()), duplicate())
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            val second = submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            val cause = failed(second!!).cause
+            assertEquals(PayabliErrorType.CONFLICT, cause.type)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            assertEquals("$MINTED_KEY-2", sentKey(transport))
+        }
+
     /** A conflict on a key the caller chose is the caller's to read, so it keeps its own classification. */
     @Test
     fun `a conflict on a caller's own key stays a conflict`() =
@@ -1590,6 +1624,13 @@ class PayInSubmissionTest {
         scriptedFrom(
             ScriptedPayInTransport.failingWith(dropped()),
             ScriptedPayInTransport.answering(409, "Duplicated idempotencyKey"),
+        )
+
+    /** Duplicate-payment protection's 409, a v1 envelope naming the earlier payment. */
+    private fun duplicate(): Result<PayabliResponse> =
+        ScriptedPayInTransport.answering(
+            409,
+            """{"isSuccess":false,"responseText":"Duplicated","responseData":{"referenceId":"101-abc"}}""",
         )
 
     private fun sentKey(transport: ScriptedPayInTransport): String? =

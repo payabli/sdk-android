@@ -20,6 +20,7 @@ import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.PayInEnteredDetails
+import com.payabli.sdk.payin.client.PayInKeyRefusal
 import com.payabli.sdk.payin.client.PayInRoutes
 import com.payabli.sdk.payin.client.TokenStorageClient
 import com.payabli.sdk.payin.client.trimOrNull
@@ -431,7 +432,7 @@ internal class PayInSubmission(
         val key = retry.key
         when {
             key == null -> Unit
-            failure == null || failure.answersThePayment(retry.reused) -> forget(payment, key)
+            failure == null || failure.answersThePayment() -> forget(payment, key)
             // Ahead of the general case, which would hold the key without the proof that it arrived.
             retry.reused && failure.type == PayabliErrorType.RETRY_REFUSED ->
                 hold(HeldKey(payment, key, retry.reservedAt, arrived = true))
@@ -506,18 +507,17 @@ internal class PayInSubmission(
     }
 
     /**
-     * Whether this failure answers the payment rather than the attempt that carried it. A decline and a
-     * refusal the service made about the request are answers; a rejected credential, a refusal to act at
-     * all and anything that never left the device are not. A conflict answers only a key the caller named.
+     * Whether this failure answers the payment rather than the attempt that carried it: a decline, a conflict
+     * and a refusal of the request are; a rejected credential, a refusal to act at all, a refused held key
+     * ([PayabliErrorType.RETRY_REFUSED]) and anything that never left the device are not.
      *
-     * @param reused whether the key sent was the one held for this payment.
      * @return true when the failure answers the payment; false otherwise.
      */
-    private fun PayabliException.answersThePayment(reused: Boolean): Boolean =
+    private fun PayabliException.answersThePayment(): Boolean =
         when (type) {
             PayabliErrorType.PAYMENT_DECLINED -> true
             PayabliErrorType.VALIDATION_ERROR -> this is PayabliValidationException
-            PayabliErrorType.CONFLICT -> !reused
+            PayabliErrorType.CONFLICT -> true
             else -> false
         }
 
@@ -553,7 +553,7 @@ internal class PayInSubmission(
 
     /**
      * The failure, with the field it blamed. A non-[PayabliException] arrives as [PayabliErrorType.UNKNOWN],
-     * keeping its type and frames but not its message; a conflict on a key this holder resent is
+     * keeping its type and frames but not its message; the service refusing a key this holder resent is
      * [PayabliErrorType.RETRY_REFUSED], which proves only that the earlier attempt arrived.
      *
      * @param retry the key this attempt carried.
@@ -569,8 +569,12 @@ internal class PayInSubmission(
                 this !is PayabliException ->
                     PayabliGenericException(PayabliErrorType.UNKNOWN, REASON_UNEXPECTED, cause = RedactedCause(this))
 
-                retry.reused && type == PayabliErrorType.CONFLICT ->
-                    PayabliGenericException(PayabliErrorType.RETRY_REFUSED, REASON_RETRY_REFUSED)
+                this is PayInKeyRefusal ->
+                    if (retry.reused) {
+                        PayabliGenericException(PayabliErrorType.RETRY_REFUSED, REASON_RETRY_REFUSED)
+                    } else {
+                        PayabliGenericException(PayabliErrorType.CONFLICT, reason)
+                    }
 
                 else -> this
             }
@@ -584,16 +588,16 @@ internal class PayInSubmission(
     /**
      * Whether the payment's outcome is unknown once this failure has arrived. A key this holder resent
      * names an attempt nobody has an answer for, so anything short of an answer leaves it unresolved.
-     * A conflict is decided here, not on the property, which decides which attempt is kept alive.
+     * A conflict answers the key and leaves the payment open, so it is decided here, not on the property.
      *
      * @param reused whether the key sent was the one held for this payment.
      * @return true when the failure leaves the payment's outcome unknown; false otherwise.
      */
     private fun PayabliException.leavesTheOutcomeUnknown(reused: Boolean): Boolean =
-        if (reused) {
-            !answersThePayment(true)
-        } else {
-            type.leavesOutcomeUnknown || type == PayabliErrorType.CONFLICT
+        when {
+            type == PayabliErrorType.CONFLICT -> true
+            reused -> !answersThePayment()
+            else -> type.leavesOutcomeUnknown
         }
 
     /**

@@ -588,6 +588,37 @@ class MoneyInClientTest {
             )
         }
 
+    /** Plain text and an empty body are the idempotency check refusing the key. */
+    @Test
+    fun `a 409 no envelope reader takes is the key refused`() =
+        runTest(timeout = timeout) {
+            for (body in listOf("Duplicated idempotencyKey: key-1", "")) {
+                val transport = FakePayInTransport.answering(body, statusCode = 409)
+
+                val failure =
+                    runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                        .exceptionOrNull()
+
+                assertTrue("$failure", failure is PayInKeyRefusal)
+            }
+        }
+
+    /** Duplicate-payment protection answers in the v1 envelope, which keeps the conflict's own mapping. */
+    @Test
+    fun `a 409 carrying an envelope stays a conflict`() =
+        runTest(timeout = timeout) {
+            val duplicate =
+                """{"isSuccess":false,"responseText":"Duplicated","responseData":{"referenceId":"101-abc"}}"""
+            val transport = FakePayInTransport.answering(duplicate, statusCode = 409)
+
+            val failure =
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                    .exceptionOrNull()
+
+            assertTrue("$failure", failure is com.payabli.sdk.core.model.PayabliGenericException)
+            assertEquals(PayabliErrorType.CONFLICT, (failure as com.payabli.sdk.core.model.PayabliException).type)
+        }
+
     @Test
     fun `the body bytes are overwritten once the call returns`() =
         runTest(timeout = timeout) {
