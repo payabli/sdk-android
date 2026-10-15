@@ -265,9 +265,8 @@ internal class PayInSubmission(
         }
 
     /**
-     * Reads a transaction back. Outside the single flight, because it moves no money and holds no key: it runs
-     * beside a submission in flight, never touches [state], and a failure is reported as it arrived rather than
-     * as an outcome nobody knows.
+     * Reads a transaction back. It moves no money and holds no key, so it runs beside a submission in flight,
+     * never changes [state], and a failure is never [PayInException.Unsettled].
      *
      * @param entryPoint the partner integration point the read is attributed to.
      * @param transId the transaction to read.

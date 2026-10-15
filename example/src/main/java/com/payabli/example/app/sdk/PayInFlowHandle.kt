@@ -55,7 +55,7 @@ interface PayInFlowHandle {
     ): PayInOutcome
 
     /**
-     * Reads [transId] back, to show what became of it.
+     * Reads [transId] back.
      *
      * @param transId the transaction to read.
      * @return what the read found, or why it failed.

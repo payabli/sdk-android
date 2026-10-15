@@ -27,7 +27,7 @@ import java.math.BigDecimal
  * [JsonNames], so a re-spelled field costs nothing instead of silently reading null.
  */
 internal object PayInRoutes {
-    /** Templates, and for three of the six also the paths. [CAPTURE_AUTHORIZED], [VOID] and [READ] embed an identifier. */
+    /** Route templates. [CAPTURE_AUTHORIZED], [VOID] and [READ] embed an identifier, so their paths differ. */
     const val STORE_METHOD: String = "/api/TokenStorage/add"
     const val CAPTURE: String = "/api/v2/MoneyIn/getpaid"
     const val AUTHORIZE: String = "/api/v2/MoneyIn/authorize"
@@ -56,7 +56,7 @@ internal object PayInRoutes {
     fun void(transId: String): String = PercentEncoding.pathFrom(VOID, PercentEncoding.segment(transId))
 
     /**
-     * The resolved path for [READ], built and encoded as [captureAuthorized] is, for the same reasons.
+     * The resolved path for [READ], with the identifier encoded as [captureAuthorized] encodes it.
      *
      * @param transId the transaction to read.
      * @return the resolved path for [READ].
@@ -219,8 +219,9 @@ internal class AuthorizedCaptureBody(
 )
 
 /**
- * The record a v2 approval carries in `data`, and the bare record a read answers with. A read's card, payer and
- * device fields are undeclared, so never decoded. The authorization code, AVS and security-code results are not here.
+ * The record a v2 approval carries in `data`, and the bare record a read returns. Undeclared fields, such as a
+ * read's card, payer and device data, are never decoded. Only the older response shape carries the
+ * authorization code, AVS and security-code results.
  */
 @Serializable
 internal class TransactionPayload(
@@ -255,7 +256,8 @@ internal class TransactionPayload(
 )
 
 /**
- * The numeric code a refusal carries in the older envelope, read alone so any other shape costs only the code.
+ * The numeric code a refusal carries in the older envelope. Decoded on its own, so a body in any other shape
+ * yields no code instead of a failure.
  *
  * @property responseCode the refusal's code, for example 7001.
  */

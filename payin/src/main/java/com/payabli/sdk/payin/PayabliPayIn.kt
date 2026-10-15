@@ -125,7 +125,8 @@ public sealed class PayabliPayIn {
      * **A repeat the service refuses outright is the end of what repeating can tell you.** It arrives as
      * [PayInException.Unsettled] over [PayabliErrorType.CONFLICT], which says a request under that key got
      * past the service's check and nothing about whether the capture was applied. Repeating again is
-     * refused the same way, and a fresh key applies a second capture. Read the transaction back with [readTransaction] instead.
+     * refused the same way, and a fresh key applies a second capture. Read the transaction back with
+     * [readTransaction] instead.
      *
      * **A key the SDK minted is resent only while it still holds one** for this transaction, and how long
      * that is is not published. It holds none past the point where too many payments are unresolved at

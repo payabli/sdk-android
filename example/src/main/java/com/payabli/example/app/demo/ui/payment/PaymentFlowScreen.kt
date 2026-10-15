@@ -80,10 +80,10 @@ interface PaymentFlowUiState {
     /** A void is in flight. Never true on a screen that offers none. */
     val isVoiding: Boolean get() = false
 
-    /** The transaction a read would name, or null where there is none to read. */
+    /** The transaction a read would name, or null when there is none. */
     val readableTransactionId: String? get() = null
 
-    /** A read is in flight. Never true on a screen that offers none. */
+    /** Whether a read is in flight. Always false on a screen that offers no read. */
     val isReading: Boolean get() = false
 }
 

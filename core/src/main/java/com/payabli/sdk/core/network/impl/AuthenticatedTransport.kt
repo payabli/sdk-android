@@ -54,8 +54,7 @@ internal class AuthenticatedTransport(
             return first
         }
 
-        // Also above the refresh: a credential the caller is refused with would be refused again, and replacing
-        // it would cost the session a refresh for nothing.
+        // Before the refresh: a fresh credential would be refused for this caller too.
         if (request.isCallerRefusal(first)) {
             logger.warn(
                 LogField.safe("method", request.method.wireName),
@@ -85,8 +84,7 @@ internal class AuthenticatedTransport(
         val second = withContext(replayed) { base.execute(request) }
         if (!recovery.isCredentialRejection(second)) return second
 
-        // The fresh credential reached the route, and the route refused this caller with it. That says nothing
-        // about the session, so it must not end it.
+        // The fresh credential was refused for this caller, which says nothing about the session.
         if (request.isCallerRefusal(second)) {
             logger.warn(
                 LogField.safe("method", request.method.wireName),

@@ -81,7 +81,6 @@ data class CaptureUiState(
      * Minted when a payment completes and dropped when the screen moves on.
      */
     val voidIdempotencyKey: String? = null,
-    /** A read of the last transaction is in flight. */
     override val isReading: Boolean = false,
 ) : PaymentFlowUiState {
     /**
@@ -96,7 +95,7 @@ data class CaptureUiState(
 
     override val finished: Boolean get() = lastResult != null
 
-    /** The transaction a read would name: the last capture's, reversed or not. */
+    /** The last capture's transaction, reversed or not. */
     override val readableTransactionId: String?
         get() = lastResult?.transaction?.paymentTransactionId
 
@@ -303,7 +302,7 @@ class CaptureViewModel(
      * result step keeps its shape. What stops a second void is [CaptureUiState.voidedTransactionId].
      */
     fun voidLastTransaction() {
-        // A read in flight writes the result panel when it returns, so the two would overwrite each other.
+        // A read in flight writes the result panel when it returns, and would overwrite this void's outcome.
         if (_uiState.value.isVoiding || _uiState.value.isReading) return
         val payments = _uiState.value.payments ?: return
         val transId = _uiState.value.voidableTransactionId ?: return
@@ -329,10 +328,9 @@ class CaptureViewModel(
     }
 
     /**
-     * Reads back the transaction the last capture returned, and shows what became of it.
+     * Reads back the transaction the last capture returned, and shows its status.
      *
-     * Reads the id off the state, as [voidLastTransaction] does, so the control cannot name a transaction the
-     * screen is not showing.
+     * Takes the ID from the state, as [voidLastTransaction] does, so it reads only the transaction on screen.
      */
     fun readLastTransaction() {
         if (_uiState.value.isReading || _uiState.value.isVoiding) return
@@ -352,8 +350,8 @@ class CaptureViewModel(
     }
 
     /**
-     * The screen a read leaves behind: the status on success, the reason on failure. A read reporting the
-     * transaction voided records it as reversed, as an approved void does, so the void control goes.
+     * The state after a read: the status on success, the reason on failure. A read that reports the transaction
+     * voided marks it reversed and drops the void key, as an approved void does.
      *
      * @param outcome what the read returned.
      * @param transId the transaction that was read.
@@ -437,9 +435,8 @@ class CaptureViewModel(
      * again: what tells two rows from one device apart is the order identifier, which carries the second.
      */
     fun startOver() {
-        // Synchronously, before anything is replaced. A void or a read in flight is about the transaction this
-        // screen is showing, and clearing it here would leave that coroutine writing its outcome over the next
-        // attempt, against a payment that had not been taken yet.
+        // Checked before anything is replaced: a void or read in flight would write its outcome over the next
+        // payment.
         if (_uiState.value.isVoiding || _uiState.value.isReading) return
         _uiState.update {
             val attempt = attempt(SampleAmount.random())

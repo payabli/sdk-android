@@ -9,10 +9,10 @@ sealed class PayInReadOutcome {
     /**
      * The transaction was read.
      *
-     * @property status the status's name, and whether its outcome is known.
-     * @property statusNumber the status number the service sent.
+     * @property status the status as a screen shows it, saying whether the outcome is known.
+     * @property statusNumber the raw status number from the service, or null when it sent none.
      * @property paymentTransactionId the transaction that was read.
-     * @property isVoided whether the service reports the transaction reversed.
+     * @property isVoided whether the service reports the transaction voided.
      */
     class Read internal constructor(
         val status: String,
@@ -21,7 +21,7 @@ sealed class PayInReadOutcome {
         val isVoided: Boolean = false,
     ) : PayInReadOutcome() {
         /**
-         * Never the identifier.
+         * Leaves out the transaction ID.
          *
          * @return the status alone.
          */
@@ -31,7 +31,7 @@ sealed class PayInReadOutcome {
     /**
      * The read failed.
      *
-     * @property error displayable, and what a screen shows.
+     * @property error the failure as a screen shows it.
      */
     class Failed internal constructor(
         val error: PaymentError,
@@ -39,7 +39,7 @@ sealed class PayInReadOutcome {
 }
 
 /**
- * The read's result in this app's words.
+ * Converts the SDK's read result into this app's type.
  *
  * @return what the read found, or why it failed.
  */
@@ -57,9 +57,9 @@ internal fun Result<PayInTransaction>.toReadOutcome(): PayInReadOutcome =
     )
 
 /**
- * The status's name, and whether its outcome is known.
+ * Names the status for display.
  *
- * @return the label a screen shows.
+ * @return the status name, saying whether the outcome is known.
  */
 private fun PayInTransactionStatus.label(): String =
     when (this) {

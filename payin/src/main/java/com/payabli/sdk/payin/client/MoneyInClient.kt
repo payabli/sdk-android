@@ -175,9 +175,9 @@ internal class MoneyInClient(
     /**
      * Reads a transaction back by its identifier.
      *
-     * Two refusals are named before the status table reads the rest: a caller this transaction may not be read
-     * by, which no new credential changes and so spends no refresh and never ends the session, and an
-     * identifier with nothing visible under it yet. An answer that names no transaction, or another one, is unreadable.
+     * A caller refused this transaction gets [PayabliErrorType.PERMISSION_DENIED], with no token refresh. An
+     * identifier with nothing visible under it yet gets [PayabliErrorType.TRANSACTION_NOT_FOUND]. A record that
+     * names no transaction, or another one, is [PayInException.Undecodable].
      *
      * @param transId the transaction to read.
      * @return the transaction, filled with the fields a read carries.
@@ -219,8 +219,7 @@ internal class MoneyInClient(
             } catch (failure: SerializationException) {
                 throw undecodable(PayInRoutes.READ, response.statusCode, failure)
             }
-        // A record that names no transaction, or another one, is not the one asked for, and reporting it would
-        // hand the caller a status for a different payment.
+        // Otherwise the caller would get the status of a different payment.
         if (record.paymentTransId != sent) throw undecodable(PayInRoutes.READ, response.statusCode, null)
 
         logger.debug(
@@ -435,7 +434,7 @@ private fun legacyCode(response: PayabliResponse): Int? =
     }
 
 /**
- * Whether a read was refused because this caller may not read the transaction, which no new credential changes.
+ * Whether a read was refused because this caller may not read the transaction.
  *
  * @param response the answered request.
  * @return true for a 401 carrying [LegacyRefusal.NOT_PERMITTED].
@@ -444,10 +443,10 @@ private fun isNotPermitted(response: PayabliResponse): Boolean =
     response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED && legacyCode(response) == LegacyRefusal.NOT_PERMITTED
 
 /**
- * The two refusals a read names, or null for anything the status table reads instead.
+ * Maps the two refusals specific to a read. Any other failure goes to the shared status mapping.
  *
  * @param response the answered request.
- * @return the refusal, or null.
+ * @return the refusal, or null when the response is neither.
  */
 private fun readRefusal(response: PayabliResponse): PayabliGenericException? =
     when {

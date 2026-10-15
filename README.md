@@ -358,7 +358,8 @@ retry.
 
 When the outcome is unknown, look the transaction up before you charge again. On card-not-present, call
 `readTransaction(transId)` and check its `status`. From your backend, use
-[`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction). `PayInException.Unsettled` and `TapToPayException` carry the `paymentTransId` to
+[`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction).
+`PayInException.Unsettled` and `TapToPayException` carry the `paymentTransId` to
 look up when there is one. When there isn't, find the transaction in the Payabli portal before you charge
 again. On card-not-present, setting `orderId` on each request lets you find it by your own reference.
 Store the transaction ID with your order every time you get one.
