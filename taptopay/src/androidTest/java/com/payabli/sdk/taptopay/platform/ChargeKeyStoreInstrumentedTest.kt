@@ -80,7 +80,10 @@ class ChargeKeyStoreInstrumentedTest {
     @Test
     fun anExpiredKeyIsNotResent() =
         runTest(timeout = TEST_TIMEOUT) {
-            storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+            val store = storeOver("minted-1")
+            val sent = store.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+            // The send ends first: a key still being sent is not aged out.
+            store.supersede(ENTRY, PayabliEnvironment.SANDBOX, sent.key)
             clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
             assertEquals(
                 "minted-2",
