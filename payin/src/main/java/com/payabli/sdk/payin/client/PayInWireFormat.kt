@@ -66,16 +66,10 @@ internal object PayInRoutes {
     /** Spelled once in `:core`, since card-present sends the same header. Read on the transaction routes only. */
     const val HEADER_IDEMPOTENCY_KEY: String = PayabliRequest.IDEMPOTENCY_KEY_HEADER
 
-    /** A header rather than a query flag, for a paypoint that requires one. */
-    const val HEADER_VALIDATION_CODE: String = "validationCode"
-
     const val QUERY_ACH_VALIDATION: String = "achValidation"
     const val QUERY_FORCE_CUSTOMER_CREATION: String = "forceCustomerCreation"
     const val QUERY_CREATE_ANONYMOUS: String = "createAnonymous"
     const val QUERY_TEMPORARY: String = "temporary"
-    const val QUERY_SAME_DAY_ACH: String = "sameDayACH"
-    const val QUERY_IS_ASYNC: String = "isAsync"
-    const val QUERY_USE_CACHING: String = "useCaching"
 
     /** `paymentMethod`, the one member the body writer adds itself, because two of its fields are buffers. */
     const val FIELD_PAYMENT_METHOD: String = "paymentMethod"

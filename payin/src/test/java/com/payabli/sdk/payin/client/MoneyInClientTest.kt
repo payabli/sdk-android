@@ -10,6 +10,9 @@ import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.payment.DUPLICATE_PAYMENT
+import com.payabli.sdk.payin.payment.PROCESSOR_TIMEOUT
+import com.payabli.sdk.payin.payment.PROCESSOR_UNRECOGNISED
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -39,11 +42,7 @@ class MoneyInClientTest {
     private fun cardRequest(
         method: PayInPaymentMethod = PayInPaymentMethod.Card(testCard()),
         idempotencyKey: String? = null,
-        validationCode: String? = null,
         achValidation: Boolean? = null,
-        sameDayAch: Boolean? = null,
-        isAsync: Boolean? = null,
-        useCaching: Boolean? = null,
         forceCustomerCreation: Boolean? = null,
     ) = PayInRequest(
         paymentMethod = method,
@@ -51,11 +50,7 @@ class MoneyInClientTest {
             PayInTransactionOptions(
                 paymentDetails = testDetails(),
                 idempotencyKey = idempotencyKey,
-                validationCode = validationCode,
                 achValidation = achValidation,
-                sameDayAch = sameDayAch,
-                isAsync = isAsync,
-                useCaching = useCaching,
                 forceCustomerCreation = forceCustomerCreation,
             ),
     )
@@ -138,18 +133,17 @@ class MoneyInClientTest {
         runCatching { block() }.exceptionOrNull() as? PayInException.InvalidInput
 
     @Test
-    fun `the idempotency key and the validation code are headers, spelled as the service reads them`() =
+    fun `the idempotency key is a header, spelled as the service reads it`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
             MoneyInClient(transport, RecordingSdkLogger())
-                .capture("e", cardRequest(idempotencyKey = "key-1", validationCode = "code-9"))
+                .capture("e", cardRequest(idempotencyKey = "key-1"))
 
             assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
-            assertEquals("code-9", transport.request?.headers?.get("validationCode"))
             // Only the caller's own headers are here. `Authorization` and the JSON content type are chain
             // steps applied inside the transport, so an undecorated request carries neither.
-            assertEquals(setOf("idempotencyKey", "validationCode"), transport.request?.headers?.keys)
+            assertEquals(setOf("idempotencyKey"), transport.request?.headers?.keys)
         }
 
     @Test
@@ -171,17 +165,17 @@ class MoneyInClientTest {
         }
 
     @Test
-    fun `a validation code carrying a control character is refused the same way`() =
+    fun `a header value carrying a control character is refused the same way`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
             val failure =
                 refusal {
                     MoneyInClient(transport, RecordingSdkLogger())
-                        .capture("e", cardRequest(validationCode = "code\u0000nine"))
+                        .capture("e", cardRequest(idempotencyKey = "key\u0000one"))
                 }
 
-            assertEquals("validationCode", failure?.field)
+            assertEquals("idempotencyKey", failure?.field)
         }
 
     @Test
@@ -250,16 +244,10 @@ class MoneyInClientTest {
             val transport = FakePayInTransport.answering(approved)
 
             MoneyInClient(transport, RecordingSdkLogger())
-                .capture("e", cardRequest(achValidation = true, sameDayAch = false, isAsync = true))
+                .capture("e", cardRequest(achValidation = false))
 
-            val query = transport.request?.query.orEmpty()
-            assertEquals(
-                listOf("achValidation" to "true", "sameDayACH" to "false", "isAsync" to "true"),
-                query,
-            )
             // An absent flag is not a false one: the paypoint's own default decides.
-            assertFalse(query.any { it.first == "useCaching" })
-            assertFalse(query.any { it.first == "forceCustomerCreation" })
+            assertEquals(listOf("achValidation" to "false"), transport.request?.query.orEmpty())
         }
 
     @Test
@@ -530,6 +518,138 @@ class MoneyInClientTest {
             assertNull((failure as PayInException.Refused).failure.paymentTransId)
         }
 
+    /** Each money route, so a code that leaves the outcome open is asserted on all four. */
+    private val routes: List<Pair<String, suspend MoneyInClient.() -> Unit>> =
+        listOf(
+            "capture" to { capture("e", cardRequest()) },
+            "authorize" to { authorize("e", cardRequest()) },
+            "captureAuthorized" to { captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails("4.50"))) },
+            "void" to { void("101-abc") },
+        )
+
+    private suspend fun failureOf(
+        body: String,
+        statusCode: Int,
+        call: suspend MoneyInClient.() -> Unit = { capture("e", cardRequest()) },
+    ): Throwable? =
+        runCatching { MoneyInClient(FakePayInTransport.answering(body, statusCode), RecordingSdkLogger()).call() }
+            .exceptionOrNull()
+
+    @Test
+    fun `a processor timeout on a 400 leaves the outcome open on every route, naming the transaction`() =
+        runTest(timeout = timeout) {
+            // A 400 is a field refusal by status, and this one may have taken the payment.
+            routes.forEach { (name, call) ->
+                val failure = failureOf(PROCESSOR_TIMEOUT, 400, call) as? PayInException.ServiceError
+
+                assertEquals(name, PayabliErrorType.UNKNOWN, failure?.type)
+                assertEquals(name, "101-tmo", failure?.failure?.paymentTransId)
+                assertEquals(name, 400, failure?.failure?.httpStatus)
+            }
+        }
+
+    @Test
+    fun `an unrecognised processor answer is a server error on every route, whatever the status`() =
+        runTest(timeout = timeout) {
+            listOf(500, 400, 200).forEach { status ->
+                routes.forEach { (name, call) ->
+                    val failure = failureOf(PROCESSOR_UNRECOGNISED, status, call) as? PayInException.ServiceError
+
+                    assertEquals("$name $status", PayabliErrorType.SERVER_ERROR, failure?.type)
+                    assertEquals("$name $status", "101-unk", failure?.failure?.paymentTransId)
+                }
+            }
+        }
+
+    @Test
+    fun `a processor timeout behind a 2xx is open too, not a service error`() =
+        runTest(timeout = timeout) {
+            val failure = failureOf(PROCESSOR_TIMEOUT, 200) as? PayInException.ServiceError
+
+            assertEquals(PayabliErrorType.UNKNOWN, failure?.type)
+        }
+
+    @Test
+    fun `any other code on a 400 is still the field refusal the status says`() =
+        runTest(timeout = timeout) {
+            val body = """{"code":"E9001","reason":"Bad entry","data":{"paymentTransId":"101-abc"}}"""
+
+            assertTrue(failureOf(body, 400) is PayabliValidationException)
+        }
+
+    @Test
+    fun `a 5xx that names a transaction keeps it, whatever else the body says`() =
+        runTest(timeout = timeout) {
+            listOf(
+                """{"code":"E4001","data":{"paymentTransId":"101-abc"}}""",
+                // No code, which the envelope requires, so only the identifier is read.
+                """{"data":{"paymentTransId":"101-abc"}}""",
+            ).forEach { body ->
+                val failure = failureOf(body, 503) as? PayInException.ServiceError
+
+                assertEquals(body, PayabliErrorType.SERVER_ERROR, failure?.type)
+                assertEquals(body, "101-abc", failure?.failure?.paymentTransId)
+            }
+        }
+
+    @Test
+    fun `a 5xx that names no transaction is the server failure the status says`() =
+        runTest(timeout = timeout) {
+            val failure = failureOf("""{"title":"Internal error"}""", 500)
+
+            assertTrue("$failure", failure is com.payabli.sdk.core.model.PayabliServerException)
+        }
+
+    @Test
+    fun `the transaction an open outcome names is trimmed, and a blank one is none`() =
+        runTest(timeout = timeout) {
+            val padded = PROCESSOR_TIMEOUT.replace("\"101-tmo\"", "\"  101-tmo \"")
+            val blank = PROCESSOR_TIMEOUT.replace("\"101-tmo\"", "\"   \"")
+
+            assertEquals("101-tmo", (failureOf(padded, 400) as PayInException.ServiceError).failure.paymentTransId)
+            assertNull((failureOf(blank, 400) as PayInException.ServiceError).failure.paymentTransId)
+        }
+
+    @Test
+    fun `a failure names its transaction under the money routes' spelling only`() =
+        runTest(timeout = timeout) {
+            val declined = """{"code":"D0329","data":{"PaymentTransId":"101-abc"}}"""
+            val timedOut = PROCESSOR_TIMEOUT.replace("\"paymentTransId\"", "\"paymenttransid\"")
+
+            assertNull((failureOf(declined, 200) as PayInException.Refused).failure.paymentTransId)
+            assertNull((failureOf(timedOut, 400) as PayInException.ServiceError).failure.paymentTransId)
+        }
+
+    @Test
+    fun `a duplicate payment names the earlier one, and stays a conflict`() =
+        runTest(timeout = timeout) {
+            val failure = failureOf(DUPLICATE_PAYMENT, 409) as? PayInException.ServiceError
+
+            assertEquals(PayabliErrorType.CONFLICT, failure?.type)
+            assertEquals("101-first", failure?.failure?.paymentTransId)
+        }
+
+    @Test
+    fun `a repeated key's conflict names nothing, and keeps the conflict it was`() =
+        runTest(timeout = timeout) {
+            val failure = failureOf("Duplicated idempotencyKey", 409)
+
+            // The idempotency check's plain-text refusal, which the flow tells apart from a payment's conflict.
+            assertTrue("$failure", failure is PayInKeyRefusal)
+            assertEquals(PayabliErrorType.CONFLICT, (failure as com.payabli.sdk.core.model.PayabliException).type)
+        }
+
+    @Test
+    fun `an answer that cannot be read still names its transaction`() =
+        runTest(timeout = timeout) {
+            // A malformed sibling field fails the envelope, and must not take the identifier with it.
+            val body = """{"code":"A0000","data":{"paymentTransId":"101-abc","transStatus":"settled"}}"""
+
+            val failure = failureOf(body, 200) as? PayInException.Undecodable
+
+            assertEquals("101-abc", failure?.paymentTransId)
+        }
+
     @Test
     fun `a code family this SDK does not know is not a decline either`() =
         runTest(timeout = timeout) {
@@ -616,7 +736,7 @@ class MoneyInClientTest {
                     runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
                         .exceptionOrNull()
 
-                assertTrue("$field: $failure", failure is com.payabli.sdk.core.model.PayabliGenericException)
+                assertFalse("$field: $failure", failure is PayInKeyRefusal)
                 assertEquals(PayabliErrorType.CONFLICT, (failure as com.payabli.sdk.core.model.PayabliException).type)
             }
         }

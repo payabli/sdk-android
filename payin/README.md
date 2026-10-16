@@ -156,7 +156,7 @@ A success means what the call did, which depends on the call:
 
 | Call | A success means |
 |---|---|
-| `capture` | The payment was charged. With `isAsync = true`, only that the service accepted it: look the transaction up before you fulfill the order |
+| `capture` | The payment was charged |
 | `authorize` | An amount is held on the card. Nothing is charged until you capture it |
 | `captureAuthorizedTransaction` | The held amount was charged |
 | `voidTransaction` | The transaction was voided. A refused void doesn't mean the original payment wasn't charged |
@@ -168,7 +168,7 @@ or "voided":
 
 | Result | Outcome | What to do |
 |---|---|---|
-| `Result.success` | Charged, except an `isAsync` capture, which is accepted and not yet known | Store the transaction ID; look an async capture up before fulfilling |
+| `Result.success` | Charged | Store the transaction ID |
 | `PayInException.Refused`, for example a decline | Not charged | You can retry |
 | `PayInException.InvalidInput` | Not charged; the request was refused before it was sent | Fix the named field |
 | `PayInException.Unsettled`, or a cancellation of `capture`, `authorize`, `captureAuthorizedTransaction` or `voidTransaction` after it was called | Unknown | Read the transaction back with `readTransaction` before charging again: by `Unsettled.paymentTransId` when there is one, otherwise find it in the Payabli portal by the `orderId` you set on the request, so set and keep one on each request. After `captureAuthorizedTransaction` or `voidTransaction`, read back the transaction ID you passed. |

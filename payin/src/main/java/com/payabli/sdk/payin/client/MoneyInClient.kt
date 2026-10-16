@@ -23,8 +23,10 @@ import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.model.leavesThePaymentOpen
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.net.HttpURLConnection
 
 /**
@@ -289,9 +291,9 @@ internal class MoneyInClient(
     }
 
     /**
-     * Reads the outcome, in the order the classification depends on: the status first, then the
-     * envelope — a refusal arrives as a `D`-prefixed code behind a 2xx, and skipping this is how a
-     * decline reads as an approval — then the payload. A success is a 201 as often as a 200.
+     * Reads the outcome: a code that leaves it open, whatever the status; then the status; then the
+     * envelope, because a decline behind a 2xx otherwise reads as an approval; then the payload. A success
+     * is a 201 as often as a 200.
      *
      * @param route the route template a log may carry.
      * @param response the answered request.
@@ -301,6 +303,17 @@ internal class MoneyInClient(
         route: String,
         response: PayabliResponse,
     ): PayInResult {
+        val text = response.bodyAsText()
+        val said = AnswerFields.of(text)
+        OPEN_OUTCOME_CODES[said.code]?.let { type ->
+            logger.warn(
+                LogField.safe("event", "payin_transaction_not_approved"),
+                LogField.safe("route", route),
+                LogField.safe("statusCode", response.statusCode),
+                LogField.safe("errorCode", said.code),
+            ) { "the service left the transaction's outcome open" }
+            throw PayInException.ServiceError(said.failure(response.statusCode), type)
+        }
         PayabliHttpErrors.from(response)?.let { failure ->
             logger.warn(
                 LogField.safe("event", "payin_call_failed"),
@@ -308,16 +321,19 @@ internal class MoneyInClient(
                 LogField.safe("statusCode", response.statusCode),
                 LogField.safe("errorCode", failure.type),
             ) { "the transaction call failed at the transport" }
-            // A 409 with a body an envelope reader takes, as duplicate-payment protection sends, keeps its mapping.
-            throw if (failure.type == PayabliErrorType.CONFLICT && !response.bodyAsText().isJsonObject()) {
+            // A 409 whose body is not a JSON object is the idempotency check refusing the key. Any other open
+            // outcome keeps the transaction its body names, which the status mapping cannot carry.
+            throw if (failure.type == PayabliErrorType.CONFLICT && !text.isJsonObject()) {
                 PayInKeyRefusal()
+            } else if (failure.type.leavesThePaymentOpen && said.paymentTransId != null) {
+                PayInException.ServiceError(said.failure(response.statusCode), failure.type)
             } else {
                 failure
             }
         }
         val (envelope, parties) =
             try {
-                val body = PayabliJson.format.parseToJsonElement(response.bodyAsText())
+                val body = PayabliJson.format.parseToJsonElement(text)
                 PayabliJson.format.decodeFromJsonElement(
                     PayabliV2Envelope.serializer(TransactionPayload.serializer()),
                     body,
@@ -330,7 +346,7 @@ internal class MoneyInClient(
             } catch (failure: SerializationException) {
                 // The supertype is not caught: SerializationException extends IllegalArgumentException, so
                 // catching that would swallow a programming error raised from inside a serializer.
-                throw undecodable(route, response.statusCode, failure)
+                throw undecodable(route, response.statusCode, failure, said.paymentTransId)
             }
         if (!envelope.isApproved) {
             val failure =
@@ -340,7 +356,7 @@ internal class MoneyInClient(
                     explanation = envelope.explanation,
                     action = envelope.action,
                     httpStatus = response.statusCode,
-                    paymentTransId = envelope.payload?.paymentTransId,
+                    paymentTransId = said.paymentTransId,
                 )
             logger.warn(
                 LogField.safe("event", "payin_transaction_not_approved"),
@@ -373,13 +389,90 @@ internal class MoneyInClient(
         route: String,
         statusCode: Int,
         cause: Throwable?,
+        paymentTransId: String? = null,
     ): PayInException {
         logger.warn(
             LogField.safe("event", "payin_response_undecodable"),
             LogField.safe("route", route),
             LogField.safe("statusCode", statusCode),
         ) { "the transaction response could not be read" }
-        return PayInException.Undecodable(cause)
+        return PayInException.Undecodable(cause, paymentTransId)
+    }
+}
+
+/**
+ * The codes that leave a payment's outcome open whatever status carries them, and the type each lands as.
+ * The status carrying them differs between environments, so it cannot decide these.
+ */
+private val OPEN_OUTCOME_CODES: Map<String?, PayabliErrorType> =
+    mapOf(
+        "E9060" to PayabliErrorType.UNKNOWN,
+        "E9999" to PayabliErrorType.SERVER_ERROR,
+    )
+
+/**
+ * The v2 envelope's fields, each read on its own, so a missing or malformed field costs only itself.
+ *
+ * @property paymentTransId the transaction the body names, trimmed, or null when absent or blank once trimmed.
+ */
+private class AnswerFields(
+    val code: String?,
+    val reason: String?,
+    val explanation: String?,
+    val action: String?,
+    val paymentTransId: String?,
+) {
+    /**
+     * The failure these fields describe.
+     *
+     * @param httpStatus the status the answer arrived with.
+     * @return the failure, naming the transaction where the answer named one.
+     */
+    fun failure(httpStatus: Int): PayInFailure =
+        PayInFailure(code, reason, explanation, action, httpStatus, paymentTransId)
+
+    companion object {
+        /**
+         * Reads [text]'s fields, each on its own.
+         *
+         * @param text the response body.
+         * @return the fields, each null where the body does not carry it as a string.
+         */
+        fun of(text: String): AnswerFields {
+            val root =
+                try {
+                    PayabliJson.format.parseToJsonElement(text) as? JsonObject
+                } catch (_: SerializationException) {
+                    null
+                }
+            return AnswerFields(
+                code = root.string("code"),
+                reason = root.string("reason"),
+                explanation = root.string("explanation"),
+                action = root.string("action"),
+                // The duplicate-payment 409 is the older shape, naming the earlier payment.
+                paymentTransId =
+                    (root?.get("data") as? JsonObject).identifier("paymentTransId")
+                        ?: (root?.get("responseData") as? JsonObject).identifier("referenceId"),
+            )
+        }
+
+        /**
+         * A string member, or null.
+         *
+         * @param key the member's name.
+         * @return the member's value when it is a JSON string, or null.
+         */
+        private fun JsonObject?.string(key: String): String? =
+            (this?.get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+        /**
+         * A transaction identifier, under exactly [key].
+         *
+         * @param key the member's name.
+         * @return the identifier trimmed, or null when absent or blank once trimmed.
+         */
+        private fun JsonObject?.identifier(key: String): String? = string(key)?.trim()?.takeIf { it.isNotEmpty() }
     }
 }
 
@@ -500,9 +593,6 @@ private fun PayInTransactionOptions.query(allowsAchValidation: Boolean): List<Pa
     buildList {
         if (allowsAchValidation) achValidation?.let { add(PayInRoutes.QUERY_ACH_VALIDATION to it.wire()) }
         forceCustomerCreation?.let { add(PayInRoutes.QUERY_FORCE_CUSTOMER_CREATION to it.wire()) }
-        sameDayAch?.let { add(PayInRoutes.QUERY_SAME_DAY_ACH to it.wire()) }
-        isAsync?.let { add(PayInRoutes.QUERY_IS_ASYNC to it.wire()) }
-        useCaching?.let { add(PayInRoutes.QUERY_USE_CACHING to it.wire()) }
     }
 
 /**
@@ -516,5 +606,4 @@ private fun PayInTransactionOptions.query(allowsAchValidation: Boolean): List<Pa
 private fun PayInTransactionOptions.headers(key: String?): Map<String, String> =
     payInHeaders {
         idempotencyKey(key)
-        validationCode(validationCode)
     }

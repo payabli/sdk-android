@@ -351,7 +351,7 @@ retry.
 
 | Outcome | Card-not-present | Tap to Pay | Retry? |
 |---|---|---|---|
-| **Charged** | `Result.success`, except a capture with `isAsync = true`, which is **unknown** | `charge` returns a `TapToPayResult` | No |
+| **Charged** | `Result.success` | `charge` returns a `TapToPayResult` | No |
 | **Not charged** | a failure such as `PayInException.Refused`, a decline | a `TapToPayException` whose `capture` is `NOT_CHARGED` | Yes |
 | **Unknown** | `PayInException.Unsettled`, or a cancellation of `capture` after it was called | a `TapToPayException` whose `capture` is `UNKNOWN` | Not until you've checked |
 | **Charged, not confirmed** | — | a `TapToPayException` whose `capture` is `CHARGED` | No. Call `closeCapturedCharge` |
@@ -372,9 +372,6 @@ then recognizes the repeat rather than taking the money twice. Without it, every
 call is a new payment. If the service refuses the retry because it already has that payment, a card-not-present
 retry fails with `RETRY_REFUSED` and a Tap to Pay one with `CHARGE_NOT_FINISHED`; check that payment before
 trying again.
-
-A card-not-present capture sent with `isAsync = true` returns once the service accepts it, before the
-processor answers. Treat its success as unknown, and look the transaction up before you fulfill the order.
 
 Each guide lists its errors in full: [card-not-present](payin/README.md#outcomes-and-errors) and
 [Tap to Pay](taptopay/README.md#outcomes-and-errors).

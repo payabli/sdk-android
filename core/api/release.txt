@@ -347,6 +347,7 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType READER_DEVICE_REFUSED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType READER_SESSION_EXPIRED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType READER_UNAVAILABLE;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType RETRY_NOT_SAME_PAYMENT;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType RETRY_REFUSED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType SDK_INTERNAL_ERROR;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType SERVER_ERROR;

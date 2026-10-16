@@ -145,6 +145,14 @@ public enum class PayabliErrorType(
         "An earlier attempt at this payment reached the service, so this retry was not sent on. Check that payment before trying again.",
     ),
 
+    /** A retry the host declared describes a different payment from the one whose key is held, so it was not sent. */
+    RETRY_NOT_SAME_PAYMENT(
+        1022,
+        "RETRY_NOT_SAME_PAYMENT",
+        PayabliErrorCategory.INVALID_REQUEST,
+        "This retry describes a different payment from the one still unresolved, so it was not sent. Check that payment first; to charge a different payment, send it as a new payment.",
+    ),
+
     // Card-present.
     DEVICE_KEY_UNAVAILABLE(
         3001,
