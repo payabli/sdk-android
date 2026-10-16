@@ -25,6 +25,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
@@ -358,6 +359,25 @@ class PayabliSessionTest {
                         completing("the request through the replaced session") { dead.transport.execute(ping()) }
                     }.exceptionOrNull()
                 assertEquals(PayabliErrorType.TOKEN_EXPIRED, (throughDead as PayabliException).type)
+            }
+        }
+
+    @Test
+    fun `a session is live while installed, even requiring re-initialization, and not once replaced`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondWith(401, "{}")
+                val dead = session(server, config())
+                assertTrue(dead.isLive)
+
+                runCatching { completing("the request that finishes the session") { dead.transport.execute(ping()) } }
+                assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
+                assertTrue("a session requiring re-initialization is still the installed one", dead.isLive)
+
+                val revived = session(server, config())
+
+                assertFalse("a replaced session is not live", dead.isLive)
+                assertTrue(revived.isLive)
             }
         }
 

@@ -80,6 +80,13 @@ public class PayabliSession private constructor(
     public val deviceId: String? get() = readDeviceId()
 
     /**
+     * Whether this is still the installed session, requiring re-initialization included. A capability built
+     * from a session that was replaced reads false here and must stop using the session's reader.
+     */
+    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public val isLive: Boolean get() = installed === this
+
+    /**
      * Replaces the token a credential-pinned request was last refused with, so the next request sends a new
      * one. Call it between requests, never inside a sequence that depends on one token. Does nothing when no
      * pinned request has been refused since the last renewal, and keeps a token that has rotated since.
