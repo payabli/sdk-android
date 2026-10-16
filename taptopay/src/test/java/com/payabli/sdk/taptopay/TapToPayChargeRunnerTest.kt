@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliRetryAfter
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
@@ -2377,18 +2378,32 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a read under way when its session is replaced finishes, and its close is sent`() =
+    fun `a read under way when its session is replaced finishes, stays held, and a new terminal closes it`() =
         runTest(timeout = TEST_TIMEOUT) {
+            // A session is replaced only once it has finished, and a finished session's transport refuses every
+            // request before sending it, so the close this charge attempts never leaves the device.
             var live = true
-            val fixture =
-                SessionFixture(script(), readGate = { live = false }, isLive = { live })
+            val old =
+                SessionFixture(script(updates = 0), readGate = { live = false }, isLive = { live })
                     .also { it.coordinator.initialize() }
+            val oldRunner =
+                runnerGatedOnClose(old) {
+                    if (!live) throw PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "the session finished")
+                }
 
-            val receipt = runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+            val failure =
+                runCatching { oldRunner.charge(details(), PAYER, TapToPayInvoiceData(), null) }.exceptionOrNull()
 
-            assertFalse("the replacement landed during the read", live)
-            assertEquals(TRANS_ID, receipt.paymentTransId)
-            assertTrue("the close was not sent", UPDATE in fixture.routes)
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, (failure as TapToPayException).type)
+            assertEquals("the read answered, so the card was charged", TapToPayCapture.CHARGED, failure.capture)
+            assertEquals(TRANS_ID, failure.paymentTransId)
+            assertFalse("the old session sent a close", UPDATE in old.routes)
+
+            val current = SessionFixture(script())
+            runnerOver(current).closeCaptured(TRANS_ID)
+
+            assertEquals("the new terminal closed the held payment", listOf(UPDATE), current.routes)
         }
 
     @Test
