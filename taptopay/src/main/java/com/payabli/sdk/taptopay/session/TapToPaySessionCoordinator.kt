@@ -106,8 +106,9 @@ internal class TapToPaySessionCoordinator(
      * fetching the credentials and fails with [TapToPaySessionException.AttestationRequired], because
      * attesting is what would restore it. [initialize] is the remedy for both.
      */
-    suspend fun reinitializeIfNeeded() =
-        runExclusively(SessionWorkKind.REINITIALIZE, SessionRun(prepare = ::enterRepair, sequence = ::bringReaderUp))
+    suspend fun reinitializeIfNeeded() = runExclusively(SessionWorkKind.REINITIALIZE, repair())
+
+    private fun repair() = SessionRun(prepare = ::enterRepair, sequence = ::bringReaderUp)
 
     /**
      * Spends the code the merchant issued out of band.
@@ -125,6 +126,27 @@ internal class TapToPaySessionCoordinator(
             }) { runActivateDevice(activationCode, pending) }
         runExclusively(SessionWorkKind.ACTIVATE, run)
     }
+
+    /**
+     * Runs [charge] holding the region, so a setup call made meanwhile waits for it, after a repair that does
+     * not wait on the region it runs in.
+     *
+     * Called inside the charge's own lock, which comes before this region in the lock order.
+     *
+     * @param charge the payment, from its ready check to its close.
+     * @return what [charge] returns.
+     */
+    suspend fun <T> runCharge(charge: suspend () -> T): T =
+        region.withLock {
+            try {
+                runHeld(SessionWorkKind.REINITIALIZE, repair())
+            } catch (withdrawn: CancellationException) {
+                // As a repair called on its own lands. Every exit after the repair is the charge's.
+                withContext(NonCancellable) { manager.settle(TapToPaySessionState.Idle) }
+                throw withdrawn
+            }
+            charge()
+        }
 
     /** Decides whether to join or to run, under [claims], and does neither while holding it. */
     private suspend fun runExclusively(
@@ -161,14 +183,7 @@ internal class TapToPaySessionCoordinator(
         try {
             region.withLock {
                 entered = true
-                settledFailure = null
-                try {
-                    if (run.prepare()) reported(claim.kind) { renewingOnce(run.sequence) }
-                } catch (withdrawn: CancellationException) {
-                    throw withdrawn
-                } catch (failure: Exception) {
-                    throw landed(claim.kind, failure)
-                }
+                runHeld(claim.kind, run)
             }
         } catch (withdrawn: CancellationException) {
             // **Only where this caller held the region.** A withdrawal reaching here without having entered
@@ -193,6 +208,26 @@ internal class TapToPaySessionCoordinator(
             throw fatal
         }
         release(claim, null)
+    }
+
+    /**
+     * Runs [run] as [kind], with [region] already held: prepared once, then reported, renewed and landed.
+     *
+     * @param kind the entry point whose events and landing the run takes.
+     * @param run what the entry point does.
+     */
+    private suspend fun runHeld(
+        kind: SessionWorkKind,
+        run: SessionRun,
+    ) {
+        settledFailure = null
+        try {
+            if (run.prepare()) reported(kind) { renewingOnce(run.sequence) }
+        } catch (withdrawn: CancellationException) {
+            throw withdrawn
+        } catch (failure: Exception) {
+            throw landed(kind, failure)
+        }
     }
 
     /**
