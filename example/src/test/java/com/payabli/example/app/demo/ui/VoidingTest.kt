@@ -254,6 +254,36 @@ class VoidingTest {
             assertTrue("the reversal went through a new flow", second.reversals.isEmpty())
         }
 
+    /** A read showing the transaction still captured offers the reversal again, and the key is still held. */
+    @Test
+    fun `a token recheck after a captured read keeps the flow that holds the reversal's key`() =
+        runTest {
+            var status = PayInReadOutcome.Read("initiated", 10, "101-abc")
+            val first = FakePayInFlowHandle(readAnswer = { status }) { _ -> unsettledOutcome() }
+            val second = FakePayInFlowHandle(readAnswer = { status }) { _ -> unsettledOutcome() }
+            val handles = ArrayDeque(listOf<PayInFlowHandle>(first, second))
+            val model =
+                CaptureViewModel(
+                    identity = SampleIdentity.from("Test Device"),
+                    demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
+                    startup =
+                        PayInStartup { PayInStartup.Started("returned a token", true, handles.removeFirst()) },
+                    diagnostics = DiagnosticsStore(),
+                    diagnosticsEnabled = true,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                ).also { it.checkToken() }
+            model.onCompleted(capturedPaymentOutcome())
+            model.voidLastTransaction()
+
+            status = PayInReadOutcome.Read("captured", 1, "101-abc", isCaptured = true)
+            model.readLastTransaction()
+            model.checkToken()
+            model.voidLastTransaction()
+
+            assertEquals(2, first.reversals.size)
+            assertTrue("the reversal went through a new flow", second.reversals.isEmpty())
+        }
+
     private fun captureModel(handle: PayInFlowHandle) =
         CaptureViewModel(
             identity = SampleIdentity.from("Test Device"),
