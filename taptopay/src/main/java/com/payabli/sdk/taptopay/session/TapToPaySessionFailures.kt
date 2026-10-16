@@ -16,6 +16,7 @@ import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_KEY_UNAVAIL
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_SETUP_REQUIRED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SDK_INTERNAL_ERROR
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABLE
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SESSION_ENDED
 
 /**
  * Where a session lands when the work under it fails.
@@ -53,7 +54,8 @@ internal object TapToPaySessionFailures {
     fun landingForActivationRun(failure: Throwable): TapToPaySessionState? =
         when (failure) {
             is DeviceActivationException -> landingForActivation(failure)
-            is DeviceServiceException, is PayabliException -> null
+            is PayabliException -> if (failure.isRetiredTerminal) failed(SESSION_ENDED) else null
+            is DeviceServiceException -> null
             else -> landingFor(failure)
         }
 
@@ -232,9 +234,12 @@ internal object TapToPaySessionFailures {
             PayabliErrorType.INVALID_CONFIGURATION -> failed(CONFIGURATION_REJECTED)
             PayabliErrorType.DECODING_ERROR -> failed(SDK_INTERNAL_ERROR)
             // A terminal whose session was replaced, refused before it armed anything.
-            PayabliErrorType.SESSION_NOT_INITIALIZED -> TapToPaySessionState.Idle
+            PayabliErrorType.SESSION_NOT_INITIALIZED -> failed(SESSION_ENDED)
             else -> failed(SERVICE_UNAVAILABLE)
         }
 
     private fun failed(reason: TapToPayFailureReason): TapToPaySessionState = TapToPaySessionState.Failed(reason)
 }
+
+/** The refusal a terminal raises once the session it was built from is replaced or ended. */
+private val PayabliException.isRetiredTerminal: Boolean get() = type == PayabliErrorType.SESSION_NOT_INITIALIZED

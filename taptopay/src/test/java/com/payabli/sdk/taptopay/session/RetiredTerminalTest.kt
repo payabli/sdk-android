@@ -16,6 +16,8 @@ import org.junit.Test
  * retired terminal re-arming it would make the next charge read under another merchant.
  */
 class RetiredTerminalTest {
+    private val ended = TapToPaySessionState.Failed(TapToPayFailureReason.SESSION_ENDED)
+
     private fun assertRetired(failure: Throwable?) {
         assertTrue(failure.toString(), failure is PayabliException)
         assertEquals(PayabliErrorType.SESSION_NOT_INITIALIZED, (failure as PayabliException).type)
@@ -32,6 +34,7 @@ class RetiredTerminalTest {
             assertEquals(emptyList<String>(), fixture.routes)
             assertEquals(0, fixture.reader.configureCount)
             assertEquals(0, fixture.reader.prepareCount)
+            assertEquals(ended, fixture.state)
         }
 
     @Test
@@ -52,6 +55,7 @@ class RetiredTerminalTest {
             assertEquals(sent, fixture.routes)
             assertEquals(1, fixture.reader.configureCount)
             assertEquals(1, fixture.reader.prepareCount)
+            assertEquals(ended, fixture.state)
         }
 
     @Test
@@ -68,7 +72,8 @@ class RetiredTerminalTest {
             assertRetired(runCatching { fixture.coordinator.activateDevice("123456") }.exceptionOrNull())
 
             assertFalse(RouteScript.ACTIVATE in fixture.routes)
-            assertEquals("an activation moves nothing on a refusal", TapToPaySessionState.Ready, fixture.state)
+            assertEquals("a retired terminal does not stay ready", ended, fixture.state)
+            assertFalse(fixture.manager.isReady.value)
         }
 
     @Test
@@ -82,6 +87,6 @@ class RetiredTerminalTest {
 
             assertTrue("the replacement landed during setup", RouteScript.CHALLENGE in fixture.routes)
             assertEquals(0, fixture.reader.configureCount)
-            assertEquals(TapToPaySessionState.Idle, fixture.state)
+            assertEquals(ended, fixture.state)
         }
 }

@@ -2373,6 +2373,7 @@ class TapToPayChargeRunnerTest {
             assertFalse("a payment was opened", INITIATE in fixture.routes)
             assertNull("the reader was asked for a card", fixture.reader.lastReadRequest)
             assertEquals(1, fixture.reader.prepareCount)
+            assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.SESSION_ENDED), fixture.state)
         }
 
     @Test
