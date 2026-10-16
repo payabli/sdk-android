@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
@@ -51,6 +52,8 @@ internal class TapToPaySessionCoordinator(
     private val manager: TapToPaySessionManager,
     /** Replaces the token a device route last refused, between runs. */
     private val renewToken: suspend () -> Unit,
+    /** Whether the session this terminal was built from is still the installed one. */
+    private val isLive: () -> Boolean,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
     /** Where the session has got to. Safe to collect at any time; reading it takes no lock. */
@@ -60,7 +63,7 @@ internal class TapToPaySessionCoordinator(
     val isReady: StateFlow<Boolean> get() = manager.isReady
 
     /** Serialises the work. Held for a whole run, so no two runs are ever inside the reader together. */
-    private val region = Mutex()
+    private val region: Mutex get() = SETUP_GATE
 
     /** Guards [inFlight] alone. Nothing suspends while it is held. */
     private val claims = Mutex()
@@ -222,6 +225,7 @@ internal class TapToPaySessionCoordinator(
     ) {
         settledFailure = null
         try {
+            requireLive()
             if (run.prepare()) reported(kind) { renewingOnce(run.sequence) }
         } catch (withdrawn: CancellationException) {
             throw withdrawn
@@ -402,6 +406,8 @@ internal class TapToPaySessionCoordinator(
     private suspend fun bringReaderUp() {
         val credentials = manager.advance(TapToPaySessionState.FetchingConfig) { fetchConfig() }
         manager.advance(TapToPaySessionState.InitializingReader) {
+            // Again here, because a replacement can land while the run attests.
+            requireLive()
             reader.configure(credentials)
             reader.prepareReader()
         }
@@ -428,6 +434,13 @@ internal class TapToPaySessionCoordinator(
         }
     }
 
+    /** Refuses to go on for a terminal whose session was replaced or ended, before the reader is touched. */
+    private fun requireLive() {
+        if (!isLive()) {
+            throw PayabliGenericException(PayabliErrorType.SESSION_NOT_INITIALIZED, REASON_RETIRED)
+        }
+    }
+
     /**
      * Spends the code, then puts the session back to the start so it can be built.
      *
@@ -450,6 +463,14 @@ internal class TapToPaySessionCoordinator(
         state.value as? TapToPaySessionState.PendingActivation
             ?: throw DeviceActivationException.DeviceNotPending(null, "")
 }
+
+/**
+ * The setup gate, one per process, because the card reader it protects is the vendor's and process-wide. Every
+ * terminal's runs and charges take it, whichever paypoint they are for.
+ */
+private val SETUP_GATE = Mutex()
+
+private const val REASON_RETIRED = "this terminal belongs to a session that was replaced or ended"
 
 /**
  * What an entry point runs: [prepare] once, then [sequence], which the coordinator runs again after renewing a

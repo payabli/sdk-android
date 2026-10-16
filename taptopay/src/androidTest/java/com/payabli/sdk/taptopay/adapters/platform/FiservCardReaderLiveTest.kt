@@ -62,6 +62,7 @@ class FiservCardReaderLiveTest {
                         reader = CardReaders.fiserv(context),
                         manager = TapToPaySessionManager(),
                         renewToken = session::renewRefusedToken,
+                        isLive = { session.isLive },
                     )
 
                 val owed = runCatching { coordinator.initialize() }.exceptionOrNull()

@@ -231,6 +231,8 @@ internal object TapToPaySessionFailures {
         when (failure.type) {
             PayabliErrorType.INVALID_CONFIGURATION -> failed(CONFIGURATION_REJECTED)
             PayabliErrorType.DECODING_ERROR -> failed(SDK_INTERNAL_ERROR)
+            // A terminal whose session was replaced, refused before it armed anything.
+            PayabliErrorType.SESSION_NOT_INITIALIZED -> TapToPaySessionState.Idle
             else -> failed(SERVICE_UNAVAILABLE)
         }
 

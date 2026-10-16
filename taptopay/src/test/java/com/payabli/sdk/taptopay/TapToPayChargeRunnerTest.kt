@@ -2333,6 +2333,64 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a second terminal's initialize waits for the first terminal's charge, which keeps its session`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val first =
+                SessionFixture(scriptForBuilds(1), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val second = SessionFixture(scriptForBuilds(1))
+            val charge = chargeParkedInTheRead(first, held)
+
+            val setup = launch(UnconfinedTestDispatcher(testScheduler)) { second.coordinator.initialize() }
+
+            assertTrue("the second terminal is waiting for the charge", setup.isActive)
+            assertEquals("the second terminal sent nothing during the read", emptyList<String>(), second.routes)
+            assertEquals(0, second.reader.configureCount)
+
+            held.complete(Unit)
+            val receipt = completing("the charge") { charge.await() }.getOrThrow()
+            completing("the second initialize") { setup.join() }
+
+            assertEquals(TRANS_ID, receipt.paymentTransId)
+            assertEquals("the charge's own session was not expired", TapToPaySessionState.Ready, first.state)
+            assertEquals(TapToPaySessionState.Ready, second.state)
+        }
+
+    @Test
+    fun `a terminal whose session was replaced refuses a charge, opening nothing and leaving the reader alone`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var live = true
+            val fixture = SessionFixture(script(), isLive = { live }).also { it.coordinator.initialize() }
+            live = false
+
+            val failure =
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                    .exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(PayabliErrorType.SESSION_NOT_INITIALIZED, (failure as TapToPayException).type)
+            assertEquals("this terminal belongs to a session that was replaced or ended", failure.reason)
+            assertFalse("a payment was opened", INITIATE in fixture.routes)
+            assertNull("the reader was asked for a card", fixture.reader.lastReadRequest)
+            assertEquals(1, fixture.reader.prepareCount)
+        }
+
+    @Test
+    fun `a read under way when its session is replaced finishes, and its close is sent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var live = true
+            val fixture =
+                SessionFixture(script(), readGate = { live = false }, isLive = { live })
+                    .also { it.coordinator.initialize() }
+
+            val receipt = runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            assertFalse("the replacement landed during the read", live)
+            assertEquals(TRANS_ID, receipt.paymentTransId)
+            assertTrue("the close was not sent", UPDATE in fixture.routes)
+        }
+
+    @Test
     fun `a charge reports entering and leaving, and no move between its activities`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = readyFixture()

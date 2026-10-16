@@ -98,6 +98,7 @@ class ChargeWithoutTapLiveTest {
                         reader = StubReader(),
                         manager = manager,
                         renewToken = session::renewRefusedToken,
+                        isLive = { session.isLive },
                     )
 
                 val owed = runCatching { coordinator.initialize() }.exceptionOrNull()
