@@ -422,6 +422,11 @@ internal class PayInSubmission(
         val key = retry.key
         when {
             key == null -> Unit
+            // A conflict leaves this attempt open with no key, and it is the route's newest, so no older key is
+            // the one a retry of it should send.
+            failure?.type == PayabliErrorType.CONFLICT && !payment.namesATransaction ->
+                unresolved.removeAll { it.payment == payment }
+
             failure == null || failure.answersThePayment() -> forget(payment, key)
             // Ahead of the general case: a refused resend keeps the key without restarting its clock.
             retry.reused && failure.type == PayabliErrorType.RETRY_REFUSED ->

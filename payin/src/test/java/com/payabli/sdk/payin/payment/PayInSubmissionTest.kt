@@ -21,6 +21,7 @@ import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -969,6 +970,34 @@ class PayInSubmissionTest {
             submission.capture(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
 
             assertEquals("$MINTED_KEY-3", sentKey(transport))
+        }
+
+    /** A first send answered with a conflict is the route's newest open attempt, so it drops the older key. */
+    @Test
+    fun `a conflict on a new payment's first send drops the route's older key`() =
+        runTest(timeout = timeout) {
+            for (authorizes in listOf(false, true)) {
+                minted.set(0)
+                val unknown = ScriptedPayInTransport.failingWith(dropped())
+                val transport = ScriptedPayInTransport(listOf(unknown, duplicate(), unknown))
+                val submission = submissionOver(transport)
+                val send: suspend (PayInRequest) -> Unit = {
+                    if (authorizes) {
+                        submission.authorize(
+                            TEST_ENTRY_POINT,
+                            it,
+                        )
+                    } else {
+                        submission.capture(TEST_ENTRY_POINT, it)
+                    }
+                }
+
+                send(cardRequest())
+                send(cardRequest())
+                send(cardRequest(attempt = PayabliAttempt.Retry))
+
+                assertEquals("authorizes=$authorizes", "$MINTED_KEY-3", sentKey(transport))
+            }
         }
 
     /** The same rule on a route that resends its own key: only the plain refusal is a refused retry. */
