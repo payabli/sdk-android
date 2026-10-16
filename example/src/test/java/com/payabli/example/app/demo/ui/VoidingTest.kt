@@ -8,6 +8,7 @@ import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.sdk.FakePayInFlowHandle
 import com.payabli.example.app.sdk.PayInFlowHandle
 import com.payabli.example.app.sdk.PayInReadOutcome
+import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.readyStartup
 import com.payabli.example.app.sdk.refusedOutcome
@@ -221,6 +222,36 @@ class VoidingTest {
                 model.uiState.value.voidableTransactionId,
             )
             gate.complete(Unit)
+        }
+
+    /** A recheck builds a new flow, and the unresolved reversal's key is held by the old one. */
+    @Test
+    fun `a token recheck after a reversal in doubt keeps the flow that holds its key`() =
+        runTest {
+            var status = PayInReadOutcome.Read("initiated", 10, "101-abc")
+            val first = FakePayInFlowHandle(readAnswer = { status }) { _ -> unsettledOutcome() }
+            val second = FakePayInFlowHandle(readAnswer = { status }) { _ -> unsettledOutcome() }
+            val handles = ArrayDeque(listOf<PayInFlowHandle>(first, second))
+            val model =
+                CaptureViewModel(
+                    identity = SampleIdentity.from("Test Device"),
+                    demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
+                    startup =
+                        PayInStartup { PayInStartup.Started("returned a token", true, handles.removeFirst()) },
+                    diagnostics = DiagnosticsStore(),
+                    diagnosticsEnabled = true,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                ).also { it.checkToken() }
+            model.onCompleted(capturedPaymentOutcome())
+            model.voidLastTransaction()
+
+            model.checkToken()
+            status = PayInReadOutcome.Read("captured", 1, "101-abc", isCaptured = true)
+            model.readLastTransaction()
+            model.voidLastTransaction()
+
+            assertEquals(2, first.reversals.size)
+            assertTrue("the reversal went through a new flow", second.reversals.isEmpty())
         }
 
     private fun captureModel(handle: PayInFlowHandle) =

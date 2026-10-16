@@ -203,9 +203,11 @@ class CaptureViewModel(
                     isCheckingToken = false,
                     tokenCheckText = started.text,
                     backendReachable = started.isReady,
-                    // A payment can start, and finish, while the recheck above is suspended. A flow still
-                    // holding either is kept: replacing it loses the request or the outcome.
-                    payments = it.payments?.takeIf { flow -> flow.isBusy() } ?: started.payments,
+                    // A flow holding a payment or its outcome is kept, and so is one holding a reversal that
+                    // is running or unresolved, since the next reversal has to resend that flow's key.
+                    payments =
+                        it.payments?.takeIf { flow -> flow.isBusy() || it.isVoiding || it.voidOutcomeUnknown }
+                            ?: started.payments,
                 )
             }
         }
