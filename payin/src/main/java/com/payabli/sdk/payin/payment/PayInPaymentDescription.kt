@@ -14,6 +14,7 @@ import java.math.BigDecimal
 internal class PayInPaymentDescription private constructor(
     private val total: BigDecimal,
     private val serviceFee: BigDecimal,
+    private val surcharge: BigDecimal,
     private val currency: String?,
     private val rail: Rail,
     private val orderId: String?,
@@ -30,6 +31,7 @@ internal class PayInPaymentDescription private constructor(
     fun matches(retry: PayInPaymentDescription): Boolean =
         total.compareTo(retry.total) == 0 &&
             serviceFee.compareTo(retry.serviceFee) == 0 &&
+            surcharge.compareTo(retry.surcharge) == 0 &&
             currency == retry.currency &&
             rail == retry.rail &&
             (orderId == null || orderId == retry.orderId)
@@ -51,8 +53,9 @@ internal class PayInPaymentDescription private constructor(
         ): PayInPaymentDescription =
             PayInPaymentDescription(
                 total = options.paymentDetails.totalAmount.asCharged(),
-                // The service charges an absent fee as nothing.
+                // The service charges an absent fee or surcharge as nothing.
                 serviceFee = (options.paymentDetails.serviceFee ?: BigDecimal.ZERO).asCharged(),
+                surcharge = (options.paymentDetails.surchargeFee ?: BigDecimal.ZERO).asCharged(),
                 currency =
                     options.paymentDetails.currency
                         ?.trimOrNull()
