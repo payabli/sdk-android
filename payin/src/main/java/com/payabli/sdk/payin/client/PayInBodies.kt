@@ -84,8 +84,6 @@ internal class PayInHeaders {
 
     fun idempotencyKey(value: String?) = put(PayInRoutes.HEADER_IDEMPOTENCY_KEY, value)
 
-    fun validationCode(value: String?) = put(PayInRoutes.HEADER_VALIDATION_CODE, value)
-
     /**
      * Refuses a value that cannot be a header, before the transport is asked to send it: printable
      * ASCII, space and tab, stricter than the platform's check, so the answer does not depend on

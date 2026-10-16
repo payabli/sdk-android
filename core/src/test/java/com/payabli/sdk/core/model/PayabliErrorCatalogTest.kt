@@ -85,6 +85,12 @@ class PayabliErrorCatalogTest {
                 "An earlier attempt at this payment reached the service, so this retry was not sent on. Check that payment before trying again.",
             ),
             Row(
+                "RETRY_NOT_SAME_PAYMENT",
+                1022,
+                PayabliErrorCategory.INVALID_REQUEST,
+                "This retry describes a different payment from the one still unresolved, so it was not sent. Check that payment first; to charge a different payment, send it as a new payment.",
+            ),
+            Row(
                 "DEVICE_KEY_UNAVAILABLE",
                 3001,
                 PayabliErrorCategory.RETRY_LATER,

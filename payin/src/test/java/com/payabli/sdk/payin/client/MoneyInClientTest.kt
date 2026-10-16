@@ -42,11 +42,7 @@ class MoneyInClientTest {
     private fun cardRequest(
         method: PayInPaymentMethod = PayInPaymentMethod.Card(testCard()),
         idempotencyKey: String? = null,
-        validationCode: String? = null,
         achValidation: Boolean? = null,
-        sameDayAch: Boolean? = null,
-        isAsync: Boolean? = null,
-        useCaching: Boolean? = null,
         forceCustomerCreation: Boolean? = null,
     ) = PayInRequest(
         paymentMethod = method,
@@ -54,11 +50,7 @@ class MoneyInClientTest {
             PayInTransactionOptions(
                 paymentDetails = testDetails(),
                 idempotencyKey = idempotencyKey,
-                validationCode = validationCode,
                 achValidation = achValidation,
-                sameDayAch = sameDayAch,
-                isAsync = isAsync,
-                useCaching = useCaching,
                 forceCustomerCreation = forceCustomerCreation,
             ),
     )
@@ -141,18 +133,17 @@ class MoneyInClientTest {
         runCatching { block() }.exceptionOrNull() as? PayInException.InvalidInput
 
     @Test
-    fun `the idempotency key and the validation code are headers, spelled as the service reads them`() =
+    fun `the idempotency key is a header, spelled as the service reads it`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
             MoneyInClient(transport, RecordingSdkLogger())
-                .capture("e", cardRequest(idempotencyKey = "key-1", validationCode = "code-9"))
+                .capture("e", cardRequest(idempotencyKey = "key-1"))
 
             assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
-            assertEquals("code-9", transport.request?.headers?.get("validationCode"))
             // Only the caller's own headers are here. `Authorization` and the JSON content type are chain
             // steps applied inside the transport, so an undecorated request carries neither.
-            assertEquals(setOf("idempotencyKey", "validationCode"), transport.request?.headers?.keys)
+            assertEquals(setOf("idempotencyKey"), transport.request?.headers?.keys)
         }
 
     @Test
@@ -174,17 +165,17 @@ class MoneyInClientTest {
         }
 
     @Test
-    fun `a validation code carrying a control character is refused the same way`() =
+    fun `a header value carrying a control character is refused the same way`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
             val failure =
                 refusal {
                     MoneyInClient(transport, RecordingSdkLogger())
-                        .capture("e", cardRequest(validationCode = "code\u0000nine"))
+                        .capture("e", cardRequest(idempotencyKey = "key\u0000one"))
                 }
 
-            assertEquals("validationCode", failure?.field)
+            assertEquals("idempotencyKey", failure?.field)
         }
 
     @Test
@@ -253,16 +244,10 @@ class MoneyInClientTest {
             val transport = FakePayInTransport.answering(approved)
 
             MoneyInClient(transport, RecordingSdkLogger())
-                .capture("e", cardRequest(achValidation = true, sameDayAch = false, isAsync = true))
+                .capture("e", cardRequest(achValidation = false))
 
-            val query = transport.request?.query.orEmpty()
-            assertEquals(
-                listOf("achValidation" to "true", "sameDayACH" to "false", "isAsync" to "true"),
-                query,
-            )
             // An absent flag is not a false one: the paypoint's own default decides.
-            assertFalse(query.any { it.first == "useCaching" })
-            assertFalse(query.any { it.first == "forceCustomerCreation" })
+            assertEquals(listOf("achValidation" to "false"), transport.request?.query.orEmpty())
         }
 
     @Test

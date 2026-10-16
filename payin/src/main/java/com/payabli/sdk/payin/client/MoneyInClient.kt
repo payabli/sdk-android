@@ -569,9 +569,6 @@ private fun PayInTransactionOptions.query(allowsAchValidation: Boolean): List<Pa
     buildList {
         if (allowsAchValidation) achValidation?.let { add(PayInRoutes.QUERY_ACH_VALIDATION to it.wire()) }
         forceCustomerCreation?.let { add(PayInRoutes.QUERY_FORCE_CUSTOMER_CREATION to it.wire()) }
-        sameDayAch?.let { add(PayInRoutes.QUERY_SAME_DAY_ACH to it.wire()) }
-        isAsync?.let { add(PayInRoutes.QUERY_IS_ASYNC to it.wire()) }
-        useCaching?.let { add(PayInRoutes.QUERY_USE_CACHING to it.wire()) }
     }
 
 /**
@@ -585,5 +582,4 @@ private fun PayInTransactionOptions.query(allowsAchValidation: Boolean): List<Pa
 private fun PayInTransactionOptions.headers(key: String?): Map<String, String> =
     payInHeaders {
         idempotencyKey(key)
-        validationCode(validationCode)
     }
