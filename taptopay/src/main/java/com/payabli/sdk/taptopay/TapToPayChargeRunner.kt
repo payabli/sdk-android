@@ -169,7 +169,8 @@ internal class TapToPayChargeRunner(
                             throw TapToPayCallException.NoDeviceToChargeAs()
                         }
                     // After the checks, so a charge that never reaches the wire holds no key.
-                    val reservation = keys.reserve(entry, environment, attempt)
+                    val reservation =
+                        keys.reserve(entry, environment, attempt, ChargeDescription.of(paymentDetails, invoice))
                     val idempotencyKey = reservation.key
                     reserved = idempotencyKey
                     resentKey = reservation.reused

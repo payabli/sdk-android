@@ -2,6 +2,8 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.model.PayabliAttempt
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -40,13 +42,18 @@ internal class ChargeKeyStore(
      *
      * @param entry the entry point the charge is for.
      * @param environment the environment the charge is sent to.
+     * A declared retry that describes a different sale from the held one is refused before anything is sent,
+     * and the held key stays for the retry that does match.
+     *
      * @param attempt whether the host declared this charge a retry.
+     * @param description the sale this charge describes.
      * @return the key to send, and whether it was already held.
      */
     suspend fun reserve(
         entry: String,
         environment: PayabliEnvironment,
         attempt: PayabliAttempt,
+        description: ChargeDescription? = null,
     ): Reserved =
         lock.withLock {
             val now = elapsedRealtimeNanos()
@@ -54,6 +61,12 @@ internal class ChargeKeyStore(
             val existing =
                 held.takeIf { attempt == PayabliAttempt.Retry }?.firstOrNull { it.matches(entry, environment) }
             if (existing != null) {
+                if (description != null && existing.description?.matches(description) == false) {
+                    throw PayabliGenericException(
+                        PayabliErrorType.RETRY_NOT_SAME_PAYMENT,
+                        PayabliErrorType.RETRY_NOT_SAME_PAYMENT.message,
+                    )
+                }
                 existing.sending++
                 return@withLock Reserved(existing.key, reused = true, reservedAt = now)
             }
@@ -65,7 +78,7 @@ internal class ChargeKeyStore(
                 throw ChargeKeyStoreFullException(entryPoints.size)
             }
             val minted = newKey()
-            held.add(0, ChargeAttempt(entry, environment.name, minted, reservedAt = now).apply { sending++ })
+            held.add(0, ChargeAttempt(entry, environment.name, minted, now, description).apply { sending++ })
             Reserved(minted, reused = false, reservedAt = now)
         }
 
@@ -167,12 +180,15 @@ internal class ChargeKeyStoreFullException(
 /**
  * One entry point's charge under one environment, and the key its repeat carries, chosen at [reservedAt] on a
  * monotonic clock. Not a data class: a generated `toString` would print the merchant's entry point and the key.
+ *
+ * @property description the sale the key was first sent for, which a resend of it keeps.
  */
 internal class ChargeAttempt(
     val entry: String,
     val environment: String,
     val key: String,
     reservedAt: Long,
+    val description: ChargeDescription? = null,
 ) {
     /** Restarted by a resend that may have reached the service and was not refused as a repeat. */
     var reservedAt: Long = reservedAt

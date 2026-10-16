@@ -572,6 +572,31 @@ class TapToPayChargeRunnerTest {
             assertEquals("a send that never left restarted the clock", "$MINTED_KEY-2", fixture.keySent(1))
         }
 
+    /** A declared retry of another sale is refused before it opens anything, and the held sale stays claimable. */
+    @Test
+    fun `a declared retry of a different sale is refused before it is sent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2, opens = 2)
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            runCatching { runnerOver(fixture).charge(details("10.00"), PAYER, TapToPayInvoiceData(), null) }
+
+            val refused =
+                runCatching {
+                    runnerOver(
+                        fixture,
+                    ).charge(details("20.00"), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+                }.exceptionOrNull() as? TapToPayException
+            val openingsAfterRefusal = fixture.requests.count { it.path == INITIATE }
+            runCatching {
+                runnerOver(fixture).charge(details("10.00"), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+
+            assertEquals(PayabliErrorType.RETRY_NOT_SAME_PAYMENT, refused?.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, refused?.capture)
+            assertEquals("the refused retry opened a sale", 1, openingsAfterRefusal)
+            assertEquals("the held sale's key was lost", "$MINTED_KEY-1", fixture.keySent(1))
+        }
+
     /** A sale whose opening failed before the card is not charged, so the open sale before it stays claimable. */
     @Test
     fun `an opening that fails before the card leaves the earlier unknown sale's key claimable`() =

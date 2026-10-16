@@ -2,7 +2,11 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.model.PayabliAttempt
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
+import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
+import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -14,6 +18,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -33,6 +38,84 @@ class ChargeKeyStoreTest {
             newKey = { "key-${minted.incrementAndGet()}" },
             elapsedRealtimeNanos = clock::get,
         )
+
+    /** A sale described by its amount, fee, currency and invoice. */
+    private fun sale(
+        amount: String = "10.00",
+        fee: String = "0",
+        currency: String? = "USD",
+        invoice: String? = null,
+    ) = ChargeDescription.of(
+        TapToPayPaymentDetails(BigDecimal(amount), BigDecimal(fee), currency),
+        TapToPayInvoiceData(invoice),
+    )
+
+    /** Reserves a declared retry of [description], or returns the type it was refused with. */
+    private suspend fun ChargeKeyStore.retry(description: ChargeDescription): Any =
+        try {
+            reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry, description)
+                .also {
+                    supersede(ENTRY, PayabliEnvironment.SANDBOX, it.key)
+                }.key
+        } catch (refused: PayabliException) {
+            refused.type
+        }
+
+    /** A held key goes out only with the sale it was sent for, so a retry of another sale is refused. */
+    @Test
+    fun `a declared retry of a different sale is refused and the held key stays`() =
+        runBlocking {
+            val cases =
+                listOf(
+                    Triple("amount", sale(), sale(amount = "10.01")),
+                    Triple("service fee", sale(), sale(fee = "0.50")),
+                    Triple("currency", sale(), sale(currency = "CAD")),
+                    Triple("invoice", sale(invoice = "inv-1"), sale(invoice = "inv-2")),
+                )
+            for ((field, first, retry) in cases) {
+                ChargeKeyStore.forgetHeld()
+                minted.set(0)
+                val keys = store()
+                val held = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, first)
+                keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, held.key)
+
+                assertEquals(field, PayabliErrorType.RETRY_NOT_SAME_PAYMENT, keys.retry(retry))
+                assertEquals("$field: the held key was lost", "key-1", keys.retry(first))
+            }
+        }
+
+    /** Compared as the service charges it, so a retry of the same sale is never refused for its spelling. */
+    @Test
+    fun `a declared retry the service would charge the same way claims the held key`() =
+        runBlocking {
+            val cases =
+                listOf(
+                    "rounding" to sale(amount = "10.001"),
+                    "currency spelling" to sale(currency = " usd "),
+                    "invoice set only on the retry" to sale(invoice = "inv-9"),
+                )
+            for ((field, retry) in cases) {
+                ChargeKeyStore.forgetHeld()
+                minted.set(0)
+                val keys = store()
+                val held = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale())
+                keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, held.key)
+
+                assertEquals(field, "key-1", keys.retry(retry))
+            }
+        }
+
+    /** A resend keeps the sale the key was minted for, so a later retry cannot rewrite what it is compared with. */
+    @Test
+    fun `a key held again keeps the sale it was first sent for`() =
+        runBlocking {
+            val keys = store()
+            val held = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale())
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, held.key)
+            assertEquals("key-1", keys.retry(sale(invoice = "inv-1")))
+
+            assertEquals("key-1", keys.retry(sale(invoice = "inv-2")))
+        }
 
     /** A sale of its own is not a repeat, so it never takes the key an unsettled charge is holding. */
     @Test
