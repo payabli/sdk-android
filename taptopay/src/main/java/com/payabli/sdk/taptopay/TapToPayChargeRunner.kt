@@ -157,90 +157,97 @@ internal class TapToPayChargeRunner(
             // Never unset: once a card is asked for, no failure releases the key.
             var askedForCard = false
             try {
-                coordinator.reinitializeIfNeeded()
-                manager.charging(notReady = { TapToPayCallException.TerminalNotReady() }) {
-                    // Lands failed: ending ready would send every retry back to this line.
-                    val deviceId =
-                        store.read(entry)?.deviceId ?: run {
-                            manager.failCharge(TapToPayFailureReason.DEVICE_SETUP_REQUIRED)
-                            throw TapToPayCallException.NoDeviceToChargeAs()
-                        }
-                    // After the checks, so a charge that never reaches the wire holds no key.
-                    val reservation = keys.reserve(entry, environment)
-                    val idempotencyKey = reservation.key
-                    reserved = idempotencyKey
-                    resentKey = reservation.reused
-                    if (resentKey) capture = TapToPayCapture.UNKNOWN
-                    val paymentTransId =
-                        client.initiate(
-                            entryPoint = entry,
-                            deviceId = deviceId,
-                            paymentDetails = paymentDetails,
-                            idempotencyKey = idempotencyKey,
-                            customer = customer,
-                            invoice = invoice,
-                            orderDescription = orderDescription,
-                        )
-                    openedAs = paymentTransId
-                    HELD.remove(scope)
-                    logger.debug(
-                        LogField.safe("event", "ttp_charge_opened"),
-                        LogField.safe("phase", "initiate"),
-                    ) { "the payment was opened" }
+                // Inside the session region from the repair to the close, so no setup rebuilds the session
+                // under the read.
+                coordinator.runCharge {
+                    manager.charging(notReady = { TapToPayCallException.TerminalNotReady() }) {
+                        // Lands failed: ending ready would send every retry back to this line.
+                        val deviceId =
+                            store.read(entry)?.deviceId ?: run {
+                                manager.failCharge(TapToPayFailureReason.DEVICE_SETUP_REQUIRED)
+                                throw TapToPayCallException.NoDeviceToChargeAs()
+                            }
+                        // After the checks, so a charge that never reaches the wire holds no key.
+                        val reservation = keys.reserve(entry, environment)
+                        val idempotencyKey = reservation.key
+                        reserved = idempotencyKey
+                        resentKey = reservation.reused
+                        if (resentKey) capture = TapToPayCapture.UNKNOWN
+                        val paymentTransId =
+                            client.initiate(
+                                entryPoint = entry,
+                                deviceId = deviceId,
+                                paymentDetails = paymentDetails,
+                                idempotencyKey = idempotencyKey,
+                                customer = customer,
+                                invoice = invoice,
+                                orderDescription = orderDescription,
+                            )
+                        openedAs = paymentTransId
+                        HELD.remove(scope)
+                        logger.debug(
+                            LogField.safe("event", "ttp_charge_opened"),
+                            LogField.safe("phase", "initiate"),
+                        ) { "the payment was opened" }
 
-                    // Before the read: the processor takes the sale before the answer arrives.
-                    askedForCard = true
-                    capture = TapToPayCapture.UNKNOWN
-                    manager.chargeActivity(TapToPayChargeActivity.WAITING_FOR_CARD)
-                    val result = readCard(paymentTransId, sendable, invoice, idempotencyKey, resentKey)
+                        // Before the read: the processor takes the sale before the answer arrives.
+                        askedForCard = true
+                        capture = TapToPayCapture.UNKNOWN
+                        manager.chargeActivity(TapToPayChargeActivity.WAITING_FOR_CARD)
+                        val result = readCard(paymentTransId, sendable, invoice, idempotencyKey, resentKey)
 
-                    capture = captureOf(result.outcome, resentKey)
-                    HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey, resentKey)
+                        capture = captureOf(result.outcome, resentKey)
+                        HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey, resentKey)
 
-                    // Uncancellable: the card is taken and this close is the only call that tells the service.
-                    // The settle and the held payment's removal are inside for the same reason.
-                    val closeFailure =
-                        withContext(NonCancellable) {
-                            manager.chargeActivity(TapToPayChargeActivity.CLOSING)
-                            val closeStartedAt = System.nanoTime()
-                            TapToPayReports.closeStarted(TelemetryProperties.Origin.CHARGE)
-                            try {
-                                client.update(paymentTransId, result)
-                            } catch (withdrawn: CancellationException) {
-                                throw withdrawn
-                            } catch (failure: Exception) {
-                                TapToPayReports.closeFailed(failure, closeStartedAt, TelemetryProperties.Origin.CHARGE)
-                                if (!resentKey && result.outcome == CardReadOutcome.DECLINED) {
+                        // Uncancellable: the card is taken and this close is the only call that tells the service.
+                        // The settle and the held payment's removal are inside for the same reason.
+                        val closeFailure =
+                            withContext(NonCancellable) {
+                                manager.chargeActivity(TapToPayChargeActivity.CLOSING)
+                                val closeStartedAt = System.nanoTime()
+                                TapToPayReports.closeStarted(TelemetryProperties.Origin.CHARGE)
+                                try {
+                                    client.update(paymentTransId, result)
+                                } catch (withdrawn: CancellationException) {
+                                    throw withdrawn
+                                } catch (failure: Exception) {
+                                    TapToPayReports.closeFailed(
+                                        failure,
+                                        closeStartedAt,
+                                        TelemetryProperties.Origin.CHARGE,
+                                    )
+                                    if (!resentKey && result.outcome == CardReadOutcome.DECLINED) {
+                                        keys.settle(entry, environment, idempotencyKey)
+                                    }
+                                    return@withContext failure
+                                }
+                                TapToPayReports.closeSucceeded(closeStartedAt, TelemetryProperties.Origin.CHARGE)
+                                // A resent key names an earlier opening, so this run's answer never settles it.
+                                if (!resentKey && result.outcome != CardReadOutcome.INDETERMINATE) {
                                     keys.settle(entry, environment, idempotencyKey)
                                 }
-                                return@withContext failure
+                                HELD.remove(scope)
+                                null
                             }
-                            TapToPayReports.closeSucceeded(closeStartedAt, TelemetryProperties.Origin.CHARGE)
-                            // A resent key names an earlier opening, so this run's answer never settles it.
-                            if (!resentKey && result.outcome != CardReadOutcome.INDETERMINATE) {
-                                keys.settle(entry, environment, idempotencyKey)
+
+                        unclosed = closeFailure
+
+                        // A failed close travels suppressed on a refusal, never in its place.
+                        when (result.outcome) {
+                            CardReadOutcome.APPROVED -> {
+                                closeFailure?.let { throw it }
+                                TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
+                                    .also { TapToPayReports.chargeSucceeded(startedAt) }
                             }
-                            HELD.remove(scope)
-                            null
+
+                            CardReadOutcome.DECLINED ->
+                                throw TTPTransactionException.CardRefused(result.providerState).apply {
+                                    closeFailure?.let(::addSuppressed)
+                                }
+
+                            CardReadOutcome.INDETERMINATE ->
+                                throw closeFailure ?: TTPTransactionException.OutcomeUnknown(result.providerState)
                         }
-
-                    unclosed = closeFailure
-
-                    // A failed close travels suppressed on a refusal, never in its place.
-                    when (result.outcome) {
-                        CardReadOutcome.APPROVED -> {
-                            closeFailure?.let { throw it }
-                            TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
-                                .also { TapToPayReports.chargeSucceeded(startedAt) }
-                        }
-
-                        CardReadOutcome.DECLINED ->
-                            throw TTPTransactionException.CardRefused(result.providerState).apply {
-                                closeFailure?.let(::addSuppressed)
-                            }
-
-                        CardReadOutcome.INDETERMINATE ->
-                            throw closeFailure ?: TTPTransactionException.OutcomeUnknown(result.providerState)
                     }
                 }
             } catch (withdrawn: CancellationException) {
@@ -294,9 +301,8 @@ internal class TapToPayChargeRunner(
             throw withdrawn
         } catch (failure: Throwable) {
             closeAfterFailedRead(paymentTransId, failure, idempotencyKey, resentKey)
-            // After the close, which publishes CLOSING only while the charge holds the session. Expires a dead or
-            // denied reader's session unless another caller moved it meanwhile; a denial's repair lands
-            // DEVICE_INELIGIBLE.
+            // After the close, which publishes CLOSING only while the charge holds the session. Expires the session
+            // this read used, since no setup runs during a charge; a denial's repair lands DEVICE_INELIGIBLE.
             if (failure is CardReaderException.SessionUnusable ||
                 failure is CardReaderException.DeviceDenied
             ) {
