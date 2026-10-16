@@ -111,7 +111,7 @@ val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
 - `create`, `initialize`, `activateDevice`, `charge` and `closeCapturedCharge` are `suspend` functions; call
   them from a coroutine.
 - A terminal belongs to the session it was created from. After you initialize a new session, create a new
-  terminal from it: the old one refuses setup and new charges, and its state is `Failed(SESSION_ENDED)`.
+  terminal from it. The old one refuses setup and new charges, and lands `Failed(SESSION_ENDED)` when it does.
 
 ## Take a payment
 
