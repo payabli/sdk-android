@@ -34,6 +34,17 @@ class SimpleCaptureKeyTest {
     }
 
     @Test
+    fun `a retry refused for describing another payment keeps the retry open`() {
+        // Nothing was sent and the earlier payment is still unknown, so the next tap of it must still be a retry.
+        val mismatch =
+            failed(
+                SampleFailure(PayabliErrorType.RETRY_NOT_SAME_PAYMENT, PayabliErrorType.RETRY_NOT_SAME_PAYMENT.message),
+            )
+
+        assertTrue(retryAfter(open = true, FormOperation.Capture, mismatch))
+    }
+
+    @Test
     fun `an answered attempt ends the retry`() {
         // A decline settles the payment, so what the payer sends next is a different request.
         val declined = failed(SampleFailure(PayabliErrorType.PAYMENT_DECLINED, "Insufficient funds"))

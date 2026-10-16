@@ -35,6 +35,7 @@ import com.payabli.example.app.demo.ui.customize.FormSettingsMenu
 import com.payabli.example.app.sdk.FormCustomization
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.sdk.core.model.PayabliAttempt
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -45,7 +46,8 @@ import java.math.BigDecimal
 
 /**
  * Whether the next attempt of [submitted] is a retry once it ended in [outcome], null being success: it is while
- * [PayInException.Unsettled] says a payment may be outstanding, a refused retry included. A store changes nothing.
+ * [PayInException.Unsettled] says a payment may be outstanding, a refused retry included. A store changes nothing,
+ * and neither does a retry refused for describing another payment, since nothing was sent and the payment is open.
  */
 internal fun retryAfter(
     open: Boolean,
@@ -55,6 +57,7 @@ internal fun retryAfter(
     when {
         !submitted.takesAmount -> open
         outcome == null -> false
+        outcome.cause.type == PayabliErrorType.RETRY_NOT_SAME_PAYMENT -> open
         else -> outcome.cause is PayInException.Unsettled
     }
 
