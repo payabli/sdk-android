@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.math.BigDecimal
+import java.math.RoundingMode
 
 /**
  * The Tap to pay screen, driven by the card-present SDK.
@@ -235,14 +236,24 @@ class TapToPayTerminal(
 internal fun PayabliException.forScreen(): TerminalFailure = TerminalFailure("$reason ($code)", this)
 
 /**
- * A charge for the open sale's amount, compared by value so `1.0` and `1.00` are one sale, is its retry.
+ * A charge for the open sale's amount, compared in cents as the SDK charges it, so `1.0`, `1.00` and `1.001`
+ * are one sale, is its retry.
  *
  * @return [PayabliAttempt.Retry] for the open amount, [PayabliAttempt.NewPayment] otherwise.
  */
 internal fun attemptFor(
     amount: BigDecimal,
     open: BigDecimal?,
-): PayabliAttempt = if (open != null && amount.compareTo(open) == 0) PayabliAttempt.Retry else PayabliAttempt.NewPayment
+): PayabliAttempt =
+    if (open != null &&
+        amount.inCents().compareTo(open.inCents()) == 0
+    ) {
+        PayabliAttempt.Retry
+    } else {
+        PayabliAttempt.NewPayment
+    }
+
+private fun BigDecimal.inCents(): BigDecimal = setScale(2, RoundingMode.HALF_UP)
 
 /**
  * The open amount once a charge ends: [capture] null for a success, which settles only its own amount.

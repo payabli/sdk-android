@@ -15,6 +15,9 @@ class TapToPayRetryTest {
     @Test
     fun `the same amount at another scale is the same sale`() {
         assertEquals(PayabliAttempt.Retry, attemptFor(BigDecimal("10.0"), ten))
+        // Charged in cents, so an amount that rounds to the open one is the same sale.
+        assertEquals(PayabliAttempt.Retry, attemptFor(ten, BigDecimal("10.001")))
+        assertEquals(PayabliAttempt.NewPayment, attemptFor(BigDecimal("10.01"), ten))
         assertEquals(PayabliAttempt.NewPayment, attemptFor(twenty, ten))
         assertEquals(PayabliAttempt.NewPayment, attemptFor(ten, null))
     }
