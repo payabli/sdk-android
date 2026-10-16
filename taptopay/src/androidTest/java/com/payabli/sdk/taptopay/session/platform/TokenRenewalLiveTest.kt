@@ -132,6 +132,7 @@ class TokenRenewalLiveTest {
             reader = StubReader(),
             manager = TapToPaySessionManager(),
             renewToken = session::renewRefusedToken,
+            isLive = { session.isLive },
         )
     }
 

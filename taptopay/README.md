@@ -110,6 +110,8 @@ val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
   to drive your UI.
 - `create`, `initialize`, `activateDevice`, `charge` and `closeCapturedCharge` are `suspend` functions; call
   them from a coroutine.
+- A terminal belongs to the session it was created from. After you initialize a new session, create a new
+  terminal from it. The old one refuses setup and new charges, and lands `Failed(SESSION_ENDED)` when it does.
 
 ## Take a payment
 
@@ -297,6 +299,7 @@ lookup.
 | `DEVICE_INELIGIBLE` | This phone can't take Tap to Pay payments: the hardware or Android version is missing something, or the card reader refused the phone. Check developer options and restart the phone. If a phone that meets the requirements still lands here, contact Payabli before replacing it. |
 | `SDK_INTERNAL_ERROR` | Report it to Payabli. |
 | `DEVICE_KEY_UNAVAILABLE` | The phone's key facility or secure storage failed, so the SDK can't tell whether the device's keys still work. Initialize again. If it keeps failing, the phone is the cause. |
+| `SESSION_ENDED` | This `PayabliTTP`'s `PayabliSession` was replaced or ended; create a new one with `PayabliTTP.create(session, context)` from the current session. |
 
 ### Watching the session
 

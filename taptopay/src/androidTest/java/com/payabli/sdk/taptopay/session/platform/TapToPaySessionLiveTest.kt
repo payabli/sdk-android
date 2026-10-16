@@ -98,6 +98,7 @@ class TapToPaySessionLiveTest {
                         reader = reader,
                         manager = TapToPaySessionManager(),
                         renewToken = session::renewRefusedToken,
+                        isLive = { session.isLive },
                     )
 
                 val owed = runCatching { coordinator.initialize() }.exceptionOrNull()

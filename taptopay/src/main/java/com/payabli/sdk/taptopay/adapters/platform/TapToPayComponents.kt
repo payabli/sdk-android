@@ -70,6 +70,9 @@ internal object TapToPayComponents {
                 reader = reader,
                 manager = manager,
                 renewToken = session::renewRefusedToken,
+                // A terminal belongs to the session it was built from, and stops arming the reader once that
+                // session is replaced.
+                isLive = { session.isLive },
             )
         return PayabliTTP.over(
             coordinator = coordinator,
