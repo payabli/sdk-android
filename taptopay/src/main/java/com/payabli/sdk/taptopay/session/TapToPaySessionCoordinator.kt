@@ -128,8 +128,8 @@ internal class TapToPaySessionCoordinator(
     }
 
     /**
-     * Runs [charge] holding the region, so a setup call made meanwhile waits for it, after a repair that does
-     * not wait on the region it runs in.
+     * Repairs a spent reader, then runs [charge], holding the region throughout so a setup call made meanwhile
+     * waits for the charge to end.
      *
      * Called inside the charge's own lock, which comes before this region in the lock order.
      *
