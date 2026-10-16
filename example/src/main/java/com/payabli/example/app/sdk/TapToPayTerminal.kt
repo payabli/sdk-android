@@ -9,6 +9,7 @@ import com.payabli.example.app.demo.terminal.TerminalEventCode
 import com.payabli.example.app.demo.terminal.TerminalFailure
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
+import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.PayabliTTP
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
@@ -18,6 +19,7 @@ import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +58,8 @@ class TapToPayTerminal(
 
     private val lock = Mutex()
     private var terminal: PayabliTTP? = null
+    private var builtFrom: PayabliSession? = null
+    private var collecting: Job? = null
 
     /**
      * A device that owes activation is a handoff, not a failure.
@@ -121,22 +125,22 @@ class TapToPayTerminal(
     override fun activationId(): String? =
         (terminal?.sessionState?.value as? TapToPaySessionState.PendingActivation)?.activationId
 
-    /** The SDK, built once. The state collector starts with it, so the screen sees each phase. */
+    /**
+     * The SDK for the current session, built again whenever the session is a new one: a terminal belongs to
+     * the session it was created from. The state collector starts with it, so the screen sees each phase.
+     */
     private suspend fun terminal(): PayabliTTP =
         lock.withLock {
-            terminal ?: build().also { built ->
-                terminal = built
-                scope.launch { built.sessionState.collect { publish(it) } }
-            }
+            check(entryPoint.isNotBlank()) { "No entry point is configured, so nothing can be sent." }
+            val session = sessionSource.session().getOrThrow()
+            terminal?.takeIf { builtFrom === session }
+                ?: PayabliTTP.create(session, appContext).also { built ->
+                    collecting?.cancel()
+                    terminal = built
+                    builtFrom = session
+                    collecting = scope.launch { built.sessionState.collect { publish(it) } }
+                }
         }
-
-    private suspend fun build(): PayabliTTP {
-        check(entryPoint.isNotBlank()) { "No entry point is configured, so nothing can be sent." }
-        return PayabliTTP.create(
-            session = sessionSource.session().getOrThrow(),
-            context = appContext,
-        )
-    }
 
     override fun currentFailureReason(): TerminalFailureReason? =
         (terminal?.sessionState?.value as? TapToPaySessionState.Failed)?.reason?.asTerminalReason()
