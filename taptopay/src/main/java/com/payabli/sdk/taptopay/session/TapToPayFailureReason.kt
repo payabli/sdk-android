@@ -58,4 +58,10 @@ public enum class TapToPayFailureReason {
      * keys still work. Calling initialize again may succeed; a failure that persists is the device's.
      */
     DEVICE_KEY_UNAVAILABLE,
+
+    /**
+     * This terminal's session was replaced or ended, so the terminal refuses every call that would use the reader.
+     * Create a new terminal from the current session.
+     */
+    SESSION_ENDED,
 }
