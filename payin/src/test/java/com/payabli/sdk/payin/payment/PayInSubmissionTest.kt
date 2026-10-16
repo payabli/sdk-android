@@ -21,7 +21,11 @@ import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.payin.model.PayInPaymentDetails
+import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInStoredMethodType
+import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -36,9 +40,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.math.BigDecimal
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -1000,6 +1007,135 @@ class PayInSubmissionTest {
             }
         }
 
+    /** A held key goes out only with the payment it was sent for, so a retry of another payment is not sent. */
+    @Test
+    fun `a declared retry of a different payment is refused before sending and keeps the held key`() =
+        runTest(timeout = timeout) {
+            val cases =
+                listOf(
+                    Triple("amount", described(), described(total = "10.01")),
+                    Triple("service fee", described(), described(fee = "0.50")),
+                    Triple("currency", described(), described(currency = "CAD")),
+                    Triple("rail", described(), described(method = PayInPaymentMethod.Check("Ada"))),
+                    Triple("order", described(orderId = "order-1"), described(orderId = "order-2")),
+                )
+            for ((field, first, retry) in cases) {
+                minted.set(0)
+                val transport = FakePayInTransport.failingWith(dropped())
+                val submission = submissionOver(transport)
+                submission.capture(TEST_ENTRY_POINT, first.asNewPayment())
+                val sent = transport.request
+
+                val refused = submission.capture(TEST_ENTRY_POINT, retry)
+
+                assertEquals(field, PayabliErrorType.RETRY_NOT_SAME_PAYMENT, failed(requireNotNull(refused)).cause.type)
+                assertSame("$field: the refused retry was sent", sent, transport.request)
+                assertSentUnderTheHeldKey(field, submission, transport, first)
+            }
+        }
+
+    /** The form and a direct authorization describe their payment the same way a direct capture does. */
+    @Test
+    fun `a form capture and a direct authorization refuse a retry of a different payment too`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            submission.submit(
+                TEST_ENTRY_POINT,
+                PayabliPayInOperation.Capture(described().asNewPayment().options),
+                cardForm(),
+            )
+            submission.reset()
+            submission.authorize(TEST_ENTRY_POINT, described().asNewPayment())
+
+            val form =
+                submission.submit(
+                    TEST_ENTRY_POINT,
+                    PayabliPayInOperation.Capture(described(total = "20").options),
+                    cardForm(),
+                )
+            submission.reset()
+            val direct = submission.authorize(TEST_ENTRY_POINT, described(total = "20"))
+
+            assertEquals(PayabliErrorType.RETRY_NOT_SAME_PAYMENT, failed(requireNotNull(form)).cause.type)
+            assertEquals(PayabliErrorType.RETRY_NOT_SAME_PAYMENT, failed(requireNotNull(direct)).cause.type)
+        }
+
+    /** Compared as the service charges it, so a retry the service would charge identically is not refused. */
+    @Test
+    fun `a declared retry the service would charge the same way is sent under the held key`() =
+        runTest(timeout = timeout) {
+            val cases =
+                listOf(
+                    "rounding" to described(total = "10.001"),
+                    "absent fee as zero" to described(fee = "0"),
+                    "currency spelling" to described(currency = " usd "),
+                    "order set only on the retry" to described(orderId = "order-9"),
+                    "stored card" to described(method = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "s-1")),
+                    "cloud device" to described(method = PayInPaymentMethod.CloudDevice("device-1")),
+                )
+            for ((field, retry) in cases) {
+                minted.set(0)
+                val transport = FakePayInTransport.failingWith(dropped())
+                val submission = submissionOver(transport)
+                submission.capture(TEST_ENTRY_POINT, described().asNewPayment())
+
+                assertSentUnderTheHeldKey(field, submission, transport, retry)
+            }
+        }
+
+    /** Only the held payment's own order ID counts, so a later attempt held again cannot change it. */
+    @Test
+    fun `a key held again keeps the description it was first sent with`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            submission.capture(TEST_ENTRY_POINT, described().asNewPayment())
+            assertSentUnderTheHeldKey("first retry", submission, transport, described(orderId = "order-1"))
+
+            assertSentUnderTheHeldKey("second retry", submission, transport, described(orderId = "order-2"))
+        }
+
+    /** A new payment and a caller's own key are never compared: neither claims the held key. */
+    @Test
+    fun `a new payment or a caller's own key is not compared with the held payment`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            submission.capture(TEST_ENTRY_POINT, described().asNewPayment())
+
+            val fresh = submission.capture(TEST_ENTRY_POINT, described(total = "20").asNewPayment())
+            val own = submission.capture(TEST_ENTRY_POINT, described(total = "30", idempotencyKey = "caller-key"))
+
+            assertNotEquals(PayabliErrorType.RETRY_NOT_SAME_PAYMENT, failed(requireNotNull(fresh)).cause.type)
+            assertNotEquals(PayabliErrorType.RETRY_NOT_SAME_PAYMENT, failed(requireNotNull(own)).cause.type)
+            assertEquals("caller-key", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** Sends [retry], and asserts it went out, under the first minted key, rather than being refused. */
+    private suspend fun assertSentUnderTheHeldKey(
+        case: String,
+        submission: PayInSubmission,
+        transport: FakePayInTransport,
+        retry: PayInRequest,
+    ) {
+        val before = transport.request
+        val outcome = submission.capture(TEST_ENTRY_POINT, retry)
+        assertNotEquals(case, PayabliErrorType.RETRY_NOT_SAME_PAYMENT, failed(requireNotNull(outcome)).cause.type)
+        assertNotSame("$case: nothing was sent", before, transport.request)
+        assertEquals(case, "$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+    }
+
+    private fun PayInRequest.asNewPayment() =
+        PayInRequest(
+            paymentMethod,
+            PayInTransactionOptions(
+                paymentDetails = options.paymentDetails,
+                orderId = options.orderId,
+                idempotencyKey = options.idempotencyKey,
+            ),
+        )
+
     /** The same rule on a route that resends its own key: only the plain refusal is a refused retry. */
     @Test
     fun `a capture of an authorization answered with an enveloped conflict stays a conflict and forgets the key`() =
@@ -1679,6 +1815,25 @@ class PayInSubmissionTest {
             ScriptedPayInTransport.failingWith(dropped()),
             ScriptedPayInTransport.answering(409, "Duplicated idempotencyKey"),
         )
+
+    /** A payment described field by field, declared a retry unless [attempt] says otherwise. */
+    private fun described(
+        total: String = "10",
+        fee: String? = null,
+        currency: String? = "USD",
+        orderId: String? = null,
+        method: PayInPaymentMethod = PayInPaymentMethod.Card(testCardData()),
+        idempotencyKey: String? = null,
+        attempt: PayabliAttempt = PayabliAttempt.Retry,
+    ) = PayInRequest(
+        method,
+        PayInTransactionOptions(
+            paymentDetails = PayInPaymentDetails(BigDecimal(total), fee?.let(::BigDecimal), currency = currency),
+            orderId = orderId,
+            idempotencyKey = idempotencyKey,
+            attempt = attempt,
+        ),
+    )
 
     /** Holds as many keys as there is room for, one per authorization, each under a minted key. */
     private suspend fun fillTheHolder(submission: PayInSubmission) =
