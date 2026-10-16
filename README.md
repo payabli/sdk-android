@@ -373,6 +373,11 @@ call is a new payment. If the service refuses the retry because it already has t
 retry fails with `RETRY_REFUSED` and a Tap to Pay one with `CHARGE_NOT_FINISHED`; check that payment before
 trying again.
 
+A retry describes the same payment: the same amount, service fee and currency, on card-not-present the same kind
+of payment method, and the same order ID or invoice number when the first attempt set one. A retry that describes
+a different payment fails with `RETRY_NOT_SAME_PAYMENT` and isn't sent. If you keep more than one card-not-present
+payment open at a time, set your own `idempotencyKey` on each.
+
 Each guide lists its errors in full: [card-not-present](payin/README.md#outcomes-and-errors) and
 [Tap to Pay](taptopay/README.md#outcomes-and-errors).
 

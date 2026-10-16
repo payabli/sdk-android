@@ -145,6 +145,11 @@ set and persist your own `idempotencyKey` if a retry has to survive a restart.
 If the service refuses a declared retry, it arrives as `PayInException.Unsettled` with type `RETRY_REFUSED`: the
 earlier attempt reached the service, and its outcome is still unknown. Check that payment before trying again.
 
+A retry describes the same payment: the same amount, service fee, currency and kind of payment method, and the same
+`orderId` when the first attempt set one. A retry that describes a different payment fails with
+`RETRY_NOT_SAME_PAYMENT` and isn't sent, and the earlier payment's key is kept for the retry that matches. If you
+keep more than one payment open at a time, set your own `idempotencyKey` on each.
+
 ## Outcomes and errors
 
 Every call returns a `Result`, except when it is cancelled: cancellation is rethrown as
