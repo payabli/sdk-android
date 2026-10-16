@@ -3,6 +3,7 @@ package com.payabli.sdk.payin.payment
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.payin.client.TEST_ACCOUNT
@@ -23,6 +24,7 @@ import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.serialization.KSerializer
 
 /** A v2 approval, with the transaction record it carries in `data`. */
@@ -147,6 +149,7 @@ internal class ScriptedPayInTransport(
     private var next = 0
 
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
+        currentCoroutineContext()[PayabliSendMark]?.mark()
         this.request = request
         recordedBody = request.body?.copyOf()
         val step = steps[minOf(next, steps.lastIndex)]
@@ -188,6 +191,7 @@ internal class GatedPayInTransport(
     val arrived: CompletableDeferred<Unit> = CompletableDeferred()
 
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
+        currentCoroutineContext()[PayabliSendMark]?.mark()
         sent += request
         arrived.complete(Unit)
         released.await()

@@ -529,6 +529,56 @@ class TapToPayChargeRunnerTest {
     @Test
     fun `a resend that never left the device keeps its key's earlier time`() =
         runTest(timeout = TEST_TIMEOUT) {
+            // A refused credential, a failure the network would leave unknown, and the caller withdrawing: none of
+            // them reached the hand-off, so none restarts the clock.
+            val failures =
+                listOf(
+                    PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, "no token"),
+                    PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "no token"),
+                    CancellationException("the host withdrew"),
+                )
+            for (failure in failures) {
+                ChargeKeyStore.forgetHeld()
+                val clock =
+                    java.util.concurrent.atomic
+                        .AtomicLong(1_000_000_000L)
+                var openings = 0
+                val fixture =
+                    SessionFixture(
+                        RouteScript(
+                            RouteScript.CHALLENGE to listOf(challengeBody()),
+                            RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                            RouteScript.ATTEST to listOf(attestBody()),
+                            RouteScript.CONFIG to listOf(configBody()),
+                            INITIATE to List(2) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                            UPDATE to List(2) { "{}" },
+                        ),
+                        elapsedRealtimeNanos = clock::get,
+                        unsent = { request -> failure.takeIf { request.path == INITIATE && ++openings == 2 } },
+                    ).also { it.coordinator.initialize() }
+                fixture.reader.answerReadWith(
+                    cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+                )
+                val half = com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
+
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                clock.addAndGet(half)
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+                }
+                clock.addAndGet(half)
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+                }
+
+                assertEquals("$failure restarted the clock", "$MINTED_KEY-2", fixture.keySent(1))
+            }
+        }
+
+    /** A resend lost after the hand-off may have written the marker, so its key's clock restarts from it. */
+    @Test
+    fun `a resend lost after the hand-off restarts its key's clock`() =
+        runTest(timeout = TEST_TIMEOUT) {
             val clock =
                 java.util.concurrent.atomic
                     .AtomicLong(1_000_000_000L)
@@ -540,16 +590,13 @@ class TapToPayChargeRunnerTest {
                         RouteScript.REGISTER to listOf(registerBody(status = "active")),
                         RouteScript.ATTEST to listOf(attestBody()),
                         RouteScript.CONFIG to listOf(configBody()),
-                        INITIATE to List(2) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        INITIATE to List(3) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
                         UPDATE to List(2) { "{}" },
                     ),
                     elapsedRealtimeNanos = clock::get,
-                    unsent = { request ->
-                        if (request.path == INITIATE && ++openings == 2) {
-                            PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, "no token")
-                        } else {
-                            null
-                        }
+                    lost = { request ->
+                        PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "dropped")
+                            .takeIf { request.path == INITIATE && ++openings == 2 }
                     },
                 ).also { it.coordinator.initialize() }
             fixture.reader.answerReadWith(
@@ -559,17 +606,15 @@ class TapToPayChargeRunnerTest {
 
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
             clock.addAndGet(half)
-            val unsentFailure =
-                runCatching {
-                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
-                }.exceptionOrNull()
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
             clock.addAndGet(half)
             runCatching {
                 runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
             }
 
-            assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, (unsentFailure as? TapToPayException)?.type)
-            assertEquals("a send that never left restarted the clock", "$MINTED_KEY-2", fixture.keySent(1))
+            assertEquals("the lost resend did not restart the clock", "$MINTED_KEY-1", fixture.keySent(2))
         }
 
     /** A declared retry of another sale is refused before it opens anything, and the held sale stays claimable. */

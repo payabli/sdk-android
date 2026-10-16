@@ -6,12 +6,15 @@ import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.testutils.network.LoopbackServer
 import com.payabli.sdk.testutils.network.elapsedMillisSince
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -237,6 +240,46 @@ class PayabliServiceTest {
                 assertTrue(logged.contains("statusCode=402"))
                 assertTrue(logged.contains("method=POST"))
                 assertTrue(logged.contains("durationMs="))
+            }
+        }
+
+    @Test
+    fun `a request handed to the HTTP layer raises the send mark`() =
+        runTest {
+            LoopbackServer().use { server ->
+                server.respondWith(200, "")
+                val mark = PayabliSendMark()
+
+                withContext(mark) { service(server).execute(PayabliRequest(HttpMethod.GET, "/api/ping")) }
+
+                assertTrue(mark.mayHaveLeft)
+            }
+        }
+
+    /** A token read that fails stops the request before the hand-off, so nothing may have left. */
+    @Test
+    fun `a decoration that fails before the hand-off leaves the send mark unset`() =
+        runTest {
+            LoopbackServer().use { server ->
+                server.respondWith(200, "")
+                val transport =
+                    PayabliService.createWithDecorations(
+                        baseUrl = server.baseUrl,
+                        decorations =
+                            listOf(
+                                PayabliRequestDecoration {
+                                    throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "no token")
+                                },
+                            ),
+                        dispatcher = Dispatchers.IO,
+                        logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
+                    )
+                val mark = PayabliSendMark()
+
+                runCatching { withContext(mark) { transport.execute(PayabliRequest(HttpMethod.GET, "/api/ping")) } }
+
+                assertFalse(mark.mayHaveLeft)
+                assertTrue("a request reached the server", server.recorded.isEmpty())
             }
         }
 

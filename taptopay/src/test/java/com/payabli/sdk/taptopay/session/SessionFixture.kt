@@ -77,6 +77,7 @@ internal class SessionFixture(
     deviceKey: FakeDeviceKey = FakeDeviceKey(),
     renewToken: suspend () -> Unit = {},
     unsent: (PayabliRequest) -> Exception? = { null },
+    lost: (PayabliRequest) -> Exception? = { null },
 ) {
     val enrollment =
         EnrollmentFixture(
@@ -85,6 +86,7 @@ internal class SessionFixture(
             storeFailure = storeFailure,
             firstReadGate = firstReadGate,
             unsent = unsent,
+            lost = lost,
         )
 
     val reader = FakeTapToPayProvider(enrollment.trace, readerGate, eligibilityFailure, readGate = readGate)

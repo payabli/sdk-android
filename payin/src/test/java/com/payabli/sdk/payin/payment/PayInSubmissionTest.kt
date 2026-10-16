@@ -6,8 +6,11 @@ import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
+import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TEST_ACCOUNT
@@ -32,10 +35,14 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.KSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -360,6 +367,63 @@ class PayInSubmissionTest {
 
             clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** A resend that failed before the hand-off wrote nothing at the service, so its key's clock stands. */
+    @Test
+    fun `a resend that fails before the hand-off keeps its key's earlier time`() =
+        runTest(timeout = timeout) {
+            val transport = HandOffTransport()
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+            val half = IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            clock.addAndGet(half)
+            transport.handsOff = false
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            transport.handsOff = true
+            clock.addAndGet(half)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** The ruled case: withdrawn after the key is reserved and before the hand-off, the key ages out as before. */
+    @Test
+    fun `a resend cancelled before the hand-off keeps its key's earlier time`() =
+        runTest(timeout = timeout) {
+            val transport = HandOffTransport()
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+            val half = IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            clock.addAndGet(half)
+            transport.handsOff = false
+            transport.holdsBeforeHandOff = true
+            val resend = launch { submission.captureAuthorized(TEST_ENTRY_POINT, request) }
+            transport.waiting.await()
+            resend.cancelAndJoin()
+            transport.handsOff = true
+            clock.addAndGet(half)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** A payment that never left took nothing, so a declared retry after it is a payment of its own. */
+    @Test
+    fun `a new payment that fails before the hand-off holds no key`() =
+        runTest(timeout = timeout) {
+            val transport = HandOffTransport(handsOff = false)
+            val submission = submissionOver(transport)
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
+            transport.handsOff = true
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
 
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
         }
@@ -1834,6 +1898,37 @@ class PayInSubmissionTest {
             attempt = attempt,
         ),
     )
+
+    /**
+     * A transport whose send either is handed over and dropped, or stops before the hand-off: failing as a token
+     * fetch on the network does, or waiting to be cancelled.
+     */
+    private class HandOffTransport(
+        var handsOff: Boolean = true,
+    ) : PayabliTransport {
+        var holdsBeforeHandOff = false
+        val waiting = CompletableDeferred<Unit>()
+        var request: PayabliRequest? = null
+            private set
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            if (!handsOff) {
+                if (holdsBeforeHandOff) {
+                    waiting.complete(Unit)
+                    awaitCancellation()
+                }
+                throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "no token")
+            }
+            currentCoroutineContext()[PayabliSendMark]?.mark()
+            this.request = request
+            throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the link dropped")
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("the PayIn clients decode their own envelopes")
+    }
 
     /** Holds as many keys as there is room for, one per authorization, each under a minted key. */
     private suspend fun fillTheHolder(submission: PayInSubmission) =

@@ -13,6 +13,7 @@ import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -391,10 +392,12 @@ internal class PayInSubmission(
         onReserved(true)
         val startedAt = elapsedRealtimeNanos()
         val retry = RetryKey(payment, claimsHeldKey)
+        // Set by the transport as it hands the request over, so a failure before that is known not to have left.
+        val sendMark = PayabliSendMark()
         if (publishes) sink.value = PayInSubmissionState.Submitting
         var outcome: PayInSubmissionState? = null
         try {
-            outcome = withContext(dispatcher) { call(retry) }
+            outcome = withContext(dispatcher + sendMark) { call(retry) }
         } catch (cancellation: CancellationException) {
             // Rethrown: a coroutine that swallows its own cancellation stops being cancellable. The state still
             // records it, because the charge may have landed and the retry key is what a second attempt needs.
@@ -414,6 +417,7 @@ internal class PayInSubmission(
             // what makes an abandoned payment countable: it is the one outcome nobody is left to report.
             val finished = outcome
             if (finished != null) {
+                retry.mayHaveLeft = sendMark.mayHaveLeft
                 if (payment != null) settle(payment, finished, retry)
                 if (publishes) sink.value = finished
                 report(event, outcomeOf(finished), codeOf(finished), startedAt, entryPoint, publishes)
@@ -451,7 +455,9 @@ internal class PayInSubmission(
             retry.reused && failure.type == PayabliErrorType.RETRY_REFUSED ->
                 hold(HeldKey(payment, key, retry.reservedAt, retry.description))
 
-            failure.type.leavesOutcomeUnknown -> hold(HeldKey(payment, key, retry.sentAt, retry.description))
+            // A send that never left starts no new key's clock and restarts no held one's.
+            failure.type.leavesOutcomeUnknown && retry.mayHaveLeft ->
+                hold(HeldKey(payment, key, retry.sentAt, retry.description))
             else -> Unit
         }
     }
@@ -726,6 +732,9 @@ internal class PayInSubmission(
         /** Whether the key sent is the one held for this payment rather than the caller's or a new one. */
         var reused: Boolean = false
             private set
+
+        /** Whether this attempt's request may have reached the service, read once the attempt has ended. */
+        var mayHaveLeft: Boolean = true
 
         /** The payment this attempt describes, or null on a route that names a transaction. */
         var description: PayInPaymentDescription? = null

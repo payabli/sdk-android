@@ -12,6 +12,7 @@ import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
@@ -155,6 +156,8 @@ internal class TapToPayChargeRunner(
             TapToPayReports.chargeStarted()
 
             var reserved: String? = null
+            // Set by the transport as it hands the opening over, so a failure before that is known not to have left.
+            val sendMark = PayabliSendMark()
             var resentKey = false
             var arrivedAt: Long? = null
             // Never unset: once a card is asked for, no failure releases the key.
@@ -177,15 +180,17 @@ internal class TapToPayChargeRunner(
                     if (resentKey) capture = TapToPayCapture.UNKNOWN
                     arrivedAt = reservation.reservedAt
                     val paymentTransId =
-                        client.initiate(
-                            entryPoint = entry,
-                            deviceId = deviceId,
-                            paymentDetails = paymentDetails,
-                            idempotencyKey = idempotencyKey,
-                            customer = customer,
-                            invoice = invoice,
-                            orderDescription = orderDescription,
-                        )
+                        withContext(sendMark) {
+                            client.initiate(
+                                entryPoint = entry,
+                                deviceId = deviceId,
+                                paymentDetails = paymentDetails,
+                                idempotencyKey = idempotencyKey,
+                                customer = customer,
+                                invoice = invoice,
+                                orderDescription = orderDescription,
+                            )
+                        }
                     openedAs = paymentTransId
                     HELD.remove(scope)
                     logger.debug(
@@ -254,10 +259,12 @@ internal class TapToPayChargeRunner(
                 if (!askedForCard && capture == TapToPayCapture.NOT_CHARGED) {
                     reserved?.let { withContext(NonCancellable) { keys.settle(entry, environment, it) } }
                 }
+                // Withdrawn before the opening was handed over, a resend wrote nothing, so its key's clock stands.
+                if (!askedForCard && !sendMark.mayHaveLeft) arrivedAt = null
                 throw withdrawn
             } catch (failure: Throwable) {
                 // A 409 does not extend the marker an earlier send wrote, and a send that never left starts none.
-                val unsent = !TapToPayErrorCodes.typeFor(failure).leavesOutcomeUnknown
+                val unsent = !sendMark.mayHaveLeft || !TapToPayErrorCodes.typeFor(failure).leavesOutcomeUnknown
                 if (!askedForCard && (isConflict(failure) || unsent)) arrivedAt = null
                 // Only before the read: after it, no failure proves the money did not move.
                 if (!askedForCard) {

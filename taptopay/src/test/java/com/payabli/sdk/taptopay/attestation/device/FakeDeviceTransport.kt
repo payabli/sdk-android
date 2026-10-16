@@ -2,8 +2,10 @@ package com.payabli.sdk.taptopay.attestation.device
 
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.yield
 import kotlinx.serialization.KSerializer
 
@@ -21,6 +23,8 @@ import kotlinx.serialization.KSerializer
  * not testing.
  */
 internal class FakeDeviceTransport(
+    /** A failure raised before the request is handed over, as one that never left the device is. */
+    private val unsent: (PayabliRequest) -> Exception? = { null },
     private val respond: (PayabliRequest) -> PayabliResponse,
 ) : PayabliTransport {
     val requests: MutableList<PayabliRequest> = mutableListOf()
@@ -39,6 +43,8 @@ internal class FakeDeviceTransport(
      * not be shown to fail here, so the test asserting it passed either way.
      */
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
+        unsent(request)?.let { throw it }
+        currentCoroutineContext()[PayabliSendMark]?.mark()
         requests += request
         yield()
         return respond(request)
