@@ -82,6 +82,13 @@ jobs:
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
           :payabli-bom:ktlintCheck :testutils:ktlintCheck
 
+      # Dependency verification trusts sources and javadoc jars unchecked, for an IDE's downloads. This fails
+      # if the build itself resolves one, root included because its build script holds the plugins.
+      - name: Trusted artifact names
+        run: ./gradlew :verifyTrustedArtifactNames :core:verifyTrustedArtifactNames
+          :payin:verifyTrustedArtifactNames :telemetry:verifyTrustedArtifactNames
+          :payabli-bom:verifyTrustedArtifactNames :testutils:verifyTrustedArtifactNames
+
       - name: Android Lint
         run: ./gradlew :core:lint :payin:lint :telemetry:lint :testutils:lint
 
@@ -334,6 +341,10 @@ jobs:
 
       - name: Format
         run: ./gradlew :taptopay:ktlintCheck :payabli-android:ktlintCheck :example:ktlintCheck
+
+      - name: Trusted artifact names
+        run: ./gradlew :taptopay:verifyTrustedArtifactNames :payabli-android:verifyTrustedArtifactNames
+          :example:verifyTrustedArtifactNames
 
       - name: Android Lint
         run: ./gradlew :taptopay:lint :payabli-android:lint :example:lint
