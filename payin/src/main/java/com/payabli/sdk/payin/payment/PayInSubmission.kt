@@ -777,6 +777,8 @@ internal class PayInSubmission(
                     held != null && supplied == null -> {
                         reservedAt = held.reservedAt
                         reused = true
+                        // Carried with the key, so the payment it was minted for outlives a sweep of its record.
+                        this.description = held.description ?: description
                         held.key
                     }
 

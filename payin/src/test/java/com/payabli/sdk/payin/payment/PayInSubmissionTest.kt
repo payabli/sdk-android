@@ -1160,6 +1160,27 @@ class PayInSubmissionTest {
             assertSentUnderTheHeldKey("second retry", submission, transport, described(orderId = "order-2"))
         }
 
+    /** A resend that ends after the first record expired is held again with the first payment's description. */
+    @Test
+    fun `a resend that crosses the window keeps the description it was first sent with`() =
+        runTest(timeout = timeout) {
+            val second = TimeUnit.SECONDS.toNanos(1)
+            var sends = 0
+            // Only the resend is slow: it starts inside the first record's window and ends past it.
+            val transport = SlowDroppingTransport { if (++sends == 2) clock.addAndGet(2 * second) }
+            val submission = submissionOver(transport)
+            submission.capture(TEST_ENTRY_POINT, described().asNewPayment())
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds - second)
+
+            submission.capture(TEST_ENTRY_POINT, described(orderId = "order-1"))
+            val before = transport.request
+            val outcome = submission.capture(TEST_ENTRY_POINT, described())
+
+            assertNotEquals(PayabliErrorType.RETRY_NOT_SAME_PAYMENT, failed(requireNotNull(outcome)).cause.type)
+            assertNotSame("nothing was sent", before, transport.request)
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+        }
+
     /** A new payment and a caller's own key are never compared: neither claims the held key. */
     @Test
     fun `a new payment or a caller's own key is not compared with the held payment`() =
@@ -1921,6 +1942,26 @@ class PayInSubmissionTest {
             }
             currentCoroutineContext()[PayabliSendMark]?.mark()
             this.request = request
+            throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the link dropped")
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("the PayIn clients decode their own envelopes")
+    }
+
+    /** Hands every request over, spends [whileSending] on it, then drops the answer. */
+    private class SlowDroppingTransport(
+        private val whileSending: () -> Unit,
+    ) : PayabliTransport {
+        var request: PayabliRequest? = null
+            private set
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            currentCoroutineContext()[PayabliSendMark]?.mark()
+            this.request = request
+            whileSending()
             throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the link dropped")
         }
 
