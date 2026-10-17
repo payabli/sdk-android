@@ -22,6 +22,10 @@ class PayInOperation internal constructor(
                 is PayabliPayInOperation.StoreMethod -> null
             }
 
+    /** Whether this attempt is declared a retry of the payment it names. */
+    internal val declaresRetry: Boolean
+        get() = (operation as? PayabliPayInOperation.Capture)?.options?.attempt == PayabliAttempt.Retry
+
     /** This attempt declared a retry of the payment it names, every other field unchanged. A store is returned as is. */
     internal fun asRetry(): PayInOperation =
         when (val it = operation) {

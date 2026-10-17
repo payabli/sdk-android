@@ -174,7 +174,12 @@ class CaptureViewModel(
             // Not while a submission is in flight: replacing the operation then loses the reference its retry needs.
             demoCustomer.suppliesDemoCustomer.collect {
                 _uiState.update { state ->
-                    if (state.payments.isBusy()) state else state.copy(operation = attempt(state.amount).operation)
+                    // Nor while a retry is open: the retry is the same payment, and a new one would abandon it.
+                    if (state.payments.isBusy() || state.operation.declaresRetry) {
+                        state
+                    } else {
+                        state.copy(operation = attempt(state.amount).operation)
+                    }
                 }
             }
         }

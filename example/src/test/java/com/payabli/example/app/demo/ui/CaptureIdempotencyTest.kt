@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -37,15 +38,16 @@ class CaptureIdempotencyTest {
     @After
     fun removeMainDispatcher() = Dispatchers.resetMain()
 
-    private fun captureModel() =
-        CaptureViewModel(
-            identity = SampleIdentity.from("Test Device"),
-            demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
-            startup = readyStartup(),
-            diagnostics = DiagnosticsStore(),
-            diagnosticsEnabled = true,
-            configuration = DemoConfiguration.fromBuildConfig(),
-        )
+    private fun captureModel(
+        demoCustomer: DemoCustomerSetting = DemoCustomerSetting(SampleIdentity.from("Test Device")),
+    ) = CaptureViewModel(
+        identity = SampleIdentity.from("Test Device"),
+        demoCustomer = demoCustomer,
+        startup = readyStartup(),
+        diagnostics = DiagnosticsStore(),
+        diagnosticsEnabled = true,
+        configuration = DemoConfiguration.fromBuildConfig(),
+    )
 
     private fun refusal(
         keepsItsPaymentReference: Boolean,
@@ -144,5 +146,42 @@ class CaptureIdempotencyTest {
         model.onFailed(refusal(keepsItsPaymentReference = false))
 
         assertEquals(PayabliAttempt.NewPayment, attemptOf(model))
+    }
+
+    @Test
+    fun `a retry refused for describing another payment stays the retry`() {
+        val model = captureModel()
+        model.onFailed(refusal(keepsItsPaymentReference = true, isOutcomeUnknown = true))
+        val retry = model.uiState.value.operation
+
+        model.onFailed(refusal(keepsItsPaymentReference = true))
+
+        assertSame(retry, model.uiState.value.operation)
+        assertEquals(PayabliAttempt.Retry, attemptOf(model))
+    }
+
+    @Test
+    fun `the demo customer switch does not replace an open retry`() {
+        // The retry is the same payment, so it keeps what it was first sent with.
+        val demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device"))
+        val model = captureModel(demoCustomer)
+        model.onFailed(refusal(keepsItsPaymentReference = true, isOutcomeUnknown = true))
+        val retry = model.uiState.value.operation
+
+        demoCustomer.setSuppliesDemoCustomer(!demoCustomer.suppliesDemoCustomer.value)
+
+        assertSame(retry, model.uiState.value.operation)
+        assertEquals(PayabliAttempt.Retry, attemptOf(model))
+    }
+
+    @Test
+    fun `the demo customer switch rebuilds a payment that is not a retry`() {
+        val demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device"))
+        val model = captureModel(demoCustomer)
+        val before = model.uiState.value.operation
+
+        demoCustomer.setSuppliesDemoCustomer(!demoCustomer.suppliesDemoCustomer.value)
+
+        assertNotSame(before, model.uiState.value.operation)
     }
 }
