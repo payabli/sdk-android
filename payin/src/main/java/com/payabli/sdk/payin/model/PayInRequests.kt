@@ -125,8 +125,8 @@ public class PayInValidationOptions(
  *
  * @property idempotencyKey identifies this attempt, so a retry sending the same key is the same request
  *   rather than a second one. Sent as the `idempotencyKey` header; one is minted per attempt when it is
- *   absent, and a minted one is not held for a later call on these routes, so a retry that has to be
- *   recognized as one sets this itself — [PayabliPayIn.capture] says why.
+ *   absent, and a minted one is resent only to a retry declared with [attempt] — [PayabliPayIn.capture]
+ *   says when.
  * @property achValidation checks a bank account before it is debited, on top of any check the merchant's own
  *   settings already run. `false` does not turn that check off.
  * @property forceCustomerCreation applies only when the payer cannot be matched to an existing customer: `true`

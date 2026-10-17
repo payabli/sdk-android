@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
@@ -409,7 +410,7 @@ class PayInPaymentFlowTest {
 
     /** What the SDK keeps and what it reports agree, so a host is not told to start a new payment. */
     @Test
-    fun `a refused repeat of this SDK's own key answers that the outcome is still open`() =
+    fun `a refused repeat of this SDK's own key answers that the retry was refused, the outcome still open`() =
         runTest(timeout = timeout) {
             val transport =
                 ScriptedPayInTransport(
@@ -425,7 +426,7 @@ class PayInPaymentFlowTest {
             val cause = flow.captureAuthorizedTransaction(request).exceptionOrNull()
 
             assertTrue("$cause", cause is PayInException.Unsettled)
-            assertEquals(PayabliErrorType.CONFLICT, (cause as PayInException.Unsettled).type)
+            assertEquals(PayabliErrorType.RETRY_REFUSED, (cause as PayInException.Unsettled).type)
         }
 
     /** The SDK is still holding the key, so a refusal of the send cannot be reported as an answer. */
@@ -563,22 +564,39 @@ class PayInPaymentFlowTest {
             assertFalse("${cause.cause}", cause.cause?.message?.contains(TEST_PAN) == true)
         }
 
-    /**
-     * The two facts are separable, so the form reads each from its own place: whether the outcome is
-     * unknown from the cause, and whether there is a key to resend from `retryKey`.
-     */
+    /** The form reads the unknown outcome from the cause, and a declared retry resends the open attempt's key. */
     @Test
-    fun `the state a form reads carries both the unknown outcome and the key`() =
+    fun `the state a form reads carries the unknown outcome, and a declared retry resends its key`() =
         runTest(timeout = timeout) {
-            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+            val transport = FakePayInTransport.failingWith(dropped())
+            val flow = flowOver(transport)
 
             val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull()
             val published = flow.state.value as PayInSubmissionState.Failed
+            val first = transport.request?.headers?.get("idempotencyKey")
+            flow.consume()
+            flow.capture(testOptions(attempt = PayabliAttempt.Retry), cardForm())
 
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertTrue("${published.cause}", published.cause is PayInException.Unsettled)
             assertEquals(PayabliErrorType.NETWORK_ERROR, published.cause.type)
-            assertNotNull("the form's own channel still carries the key", published.retryKey)
+            assertNotNull(first)
+            assertEquals(first, transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** A host taking payments without the form declares a retry the same way, on the request's options. */
+    @Test
+    fun `a declared retry of a direct capture resends the open attempt's key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val flow = flowOver(transport)
+
+            flow.capture(cardRequest())
+            val first = transport.request?.headers?.get("idempotencyKey")
+            flow.capture(cardRequest(attempt = PayabliAttempt.Retry))
+
+            assertNotNull(first)
+            assertEquals(first, transport.request?.headers?.get("idempotencyKey"))
         }
 
     /**
@@ -586,7 +604,7 @@ class PayInPaymentFlowTest {
      * the payment was taken. Rotating on it starts a new payment for one that may already have been made.
      */
     @Test
-    fun `a conflict on a form submission answers that the outcome is unknown, carrying no key`() =
+    fun `a conflict on a form submission answers that the outcome is unknown`() =
         runTest(timeout = timeout) {
             val flow = flowOver(FakePayInTransport.answering("Duplicated idempotencyKey", statusCode = 409))
 
@@ -596,7 +614,6 @@ class PayInPaymentFlowTest {
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertEquals(PayabliErrorType.CONFLICT, (cause as PayInException.Unsettled).type)
             assertTrue("${published.cause}", published.cause is PayInException.Unsettled)
-            assertNull("a host following the contract would resubmit this key", published.retryKey)
         }
 
     /** Whoever chose the key, the service's answer says the same thing about the payment. */

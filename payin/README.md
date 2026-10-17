@@ -135,8 +135,20 @@ authorization later, and `voidTransaction` releases it or voids a transaction th
 ### Retry safely
 
 A charge always sends an idempotency key. The SDK mints one per call when you don't set
-`PayInTransactionOptions.idempotencyKey`, so calling again without your own key is a second payment, not a
-retry. Don't resend a charge whose outcome is unknown. Find the transaction first.
+`PayInTransactionOptions.idempotencyKey`, so calling again is a second payment unless you say it's a retry.
+When a charge's outcome is unknown, find the transaction first where you can. To try it again, set
+`PayInTransactionOptions.attempt` to `PayabliAttempt.Retry`: the SDK sends it under the key of the most recent
+charge whose outcome is unknown, so the service recognizes the repeat. If the SDK holds no such key, or the
+service would no longer recognize it, the retry goes out as a new payment. The held key lives in memory only, so
+set and persist your own `idempotencyKey` if a retry has to survive a restart.
+
+If the service refuses a declared retry, it arrives as `PayInException.Unsettled` with type `RETRY_REFUSED`: the
+earlier attempt reached the service, and its outcome is still unknown. Check that payment before trying again.
+
+A retry describes the same payment: the same amount, service fee, surcharge, currency and kind of payment method,
+and the same `orderId` when the first attempt set one. A retry that describes a different payment fails with
+`RETRY_NOT_SAME_PAYMENT` and isn't sent, and the earlier payment's key is kept for the retry that matches. If you
+keep more than one payment open at a time, set your own `idempotencyKey` on each.
 
 ## Outcomes and errors
 
@@ -173,10 +185,6 @@ or "voided":
 When a form submission fails, `PayInSubmissionState.Failed` carries:
 
 - `cause`, which says whether a payment may be outstanding. Read it before anything else.
-- `retryKey`, the key available to send again, for `PayInTransactionOptions.idempotencyKey`. Find the
-  transaction before resending it. It's `null` where the outcome is known, where nothing was sent, when storing a
-  payment method, and after a conflict refuses a key you supplied yourself. When it's `null` and `cause` says a
-  payment may be outstanding, find the transaction before charging again.
 - `fieldErrors`, what the refusal blamed, per field. It's empty when it blamed none.
 
 `PayInException.Refused` and `PayInException.ServiceError` carry `failure`, a `PayInFailure` with the service's

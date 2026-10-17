@@ -64,12 +64,19 @@ public sealed class PayabliPayIn {
      * **This call moves money, so it always carries an idempotency key**, minted for the attempt when
      * [PayInTransactionOptions.idempotencyKey] is unset.
      *
-     * **A minted one is not reused, so set your own to retry safely.** A read timeout, a cancellation or a
+     * **A retry is declared, because only the caller knows it is one.** A read timeout, a cancellation or a
      * response that could not be decoded all leave it unknown whether the payment was taken, and only a repeat
      * carrying the same key is the same attempt. Nothing here can tell a retry of this payment from a second
-     * payment of equal value — unlike [captureAuthorizedTransaction], which has a transaction to name — so a
-     * key this SDK minted is not held for a later call, and calling again without your own is a second payment
-     * rather than a retry.
+     * payment of equal value, so calling again is a new payment unless
+     * [PayInTransactionOptions.attempt] is [PayabliAttempt.Retry]. A declared retry is sent under the key of
+     * the most recent payment on this route whose outcome is not known, while the service would still
+     * recognise it; with no such payment held, it goes out under a new key. An ordinary call never takes
+     * that key. What is held is in memory: it does not reach a second instance or survive a restart, so set
+     * and persist [PayInTransactionOptions.idempotencyKey] where a retry has to.
+     *
+     * **A declared retry the service refuses arrives as [PayInException.Unsettled] over
+     * [PayabliErrorType.RETRY_REFUSED].** It says the earlier attempt reached the service, and nothing about
+     * whether the payment was taken. Check that payment before trying again.
      *
      * @param request the payment to take, its buffers the caller's to close.
      * @return the outcome, or the failure.
@@ -123,8 +130,9 @@ public sealed class PayabliPayIn {
      * rather than a second one, from any instance and after a restart.
      *
      * **A repeat the service refuses outright is the end of what repeating can tell you.** It arrives as
-     * [PayInException.Unsettled] over [PayabliErrorType.CONFLICT], which says a request under that key got
-     * past the service's check and nothing about whether the capture was applied. Repeating again is
+     * [PayInException.Unsettled] over [PayabliErrorType.RETRY_REFUSED] when the SDK resent the key it held, and
+     * over [PayabliErrorType.CONFLICT] when the key was yours. Either says a request under that key got past
+     * the service's check and nothing about whether the capture was applied. Repeating again is
      * refused the same way, and a fresh key applies a second capture. Read the transaction back with
      * [readTransaction] instead.
      *

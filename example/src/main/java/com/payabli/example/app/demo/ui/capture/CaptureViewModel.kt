@@ -36,6 +36,8 @@ import kotlin.coroutines.cancellation.CancellationException
  *
  * @property voidOutcomeUnknown whether a void of the current transaction ended with its outcome unknown. The
  *   control is withheld until a read shows the transaction voided or still captured.
+ * @property voidKeyHeld whether the flow may still hold a void key for the current transaction, which a read
+ *   showing it still captured does not release, so a token check keeps that flow.
  */
 data class CaptureUiState(
     override val setup: PayInFormSetup,
@@ -79,6 +81,7 @@ data class CaptureUiState(
     /** The transaction this screen has already reversed, so the control cannot offer it twice. */
     val voidedTransactionId: String? = null,
     val voidOutcomeUnknown: Boolean = false,
+    val voidKeyHeld: Boolean = false,
     override val isReading: Boolean = false,
 ) : PaymentFlowUiState {
     /**
@@ -203,9 +206,11 @@ class CaptureViewModel(
                     isCheckingToken = false,
                     tokenCheckText = started.text,
                     backendReachable = started.isReady,
-                    // A payment can start, and finish, while the recheck above is suspended. A flow still
-                    // holding either is kept: replacing it loses the request or the outcome.
-                    payments = it.payments?.takeIf { flow -> flow.isBusy() } ?: started.payments,
+                    // A flow holding a payment or its outcome is kept, and so is one holding a reversal that
+                    // is running or unresolved, since the next reversal has to resend that flow's key.
+                    payments =
+                        it.payments?.takeIf { flow -> flow.isBusy() || it.isVoiding || it.voidKeyHeld }
+                            ?: started.payments,
                 )
             }
         }
@@ -288,24 +293,23 @@ class CaptureViewModel(
     }
 
     /**
-     * Voids the transaction on screen under a new key. A void whose outcome is unknown is never repeated: the
-     * control stays withheld until a read settles it.
+     * Voids the transaction on screen. A void whose outcome is unknown is not repeated until a read shows the
+     * transaction still captured; the SDK then sends the same void again, so the service recognises it.
      */
     fun voidLastTransaction() {
         // A read in flight writes the result panel when it returns, and would overwrite this void's outcome.
         if (_uiState.value.isVoiding || _uiState.value.isReading) return
         val payments = _uiState.value.payments ?: return
         val transId = _uiState.value.voidableTransactionId ?: return
-        val key = newIdempotencyKey()
         _uiState.update { it.copy(isVoiding = true) }
         viewModelScope.launch {
             val outcome =
                 try {
-                    payments.voidTransaction(transId, key)
+                    payments.voidTransaction(transId)
                 } catch (cancellation: CancellationException) {
                     // The flag is cleared on the way out, or the controls never come back. The void may have gone
                     // out, so it is withheld as an unknown outcome is.
-                    _uiState.update { it.copy(isVoiding = false, voidOutcomeUnknown = true) }
+                    _uiState.update { it.copy(isVoiding = false, voidOutcomeUnknown = true, voidKeyHeld = true) }
                     throw cancellation
                 }
             record(
@@ -357,6 +361,7 @@ class CaptureViewModel(
             isReading = false,
             voidedTransactionId = if (outcome.isVoidOf()) transId else voidedTransactionId,
             voidOutcomeUnknown = voidOutcomeUnknown && !outcome.settlesAVoid(),
+            voidKeyHeld = voidKeyHeld && !outcome.isVoidOf(),
             resultText =
                 when (outcome) {
                     is PayInReadOutcome.Read ->
@@ -390,6 +395,7 @@ class CaptureViewModel(
                 copy(
                     isVoiding = false,
                     voidedTransactionId = transId,
+                    voidKeyHeld = false,
                     resultText =
                         listOfNotNull(
                             "✓ Voided: ${outcome.result.code}",
@@ -402,11 +408,16 @@ class CaptureViewModel(
                 copy(
                     isVoiding = false,
                     voidOutcomeUnknown = outcome.isOutcomeUnknown,
+                    voidKeyHeld = outcome.isOutcomeUnknown,
                     resultText =
                         listOfNotNull(
                             "✗ ${outcome.error.displayMessage}",
-                            "Check this transaction's status to see whether it was voided.".takeIf {
-                                outcome.isOutcomeUnknown
+                            when {
+                                outcome.isRetryRefused ->
+                                    "The earlier reversal may still be running. Read this transaction again shortly."
+                                outcome.isOutcomeUnknown ->
+                                    "Check this transaction's status to see whether it was voided."
+                                else -> null
                             },
                         ).joinToString("\n"),
                 )
@@ -447,6 +458,7 @@ class CaptureViewModel(
                 // The next payment is a different transaction, so nothing about voiding this one carries over.
                 voidedTransactionId = null,
                 voidOutcomeUnknown = false,
+                voidKeyHeld = false,
             )
         }
     }

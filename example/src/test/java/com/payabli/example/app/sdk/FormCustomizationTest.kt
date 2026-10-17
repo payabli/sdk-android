@@ -6,6 +6,7 @@ import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.example.app.demo.ui.customize.FormPreset
 import com.payabli.example.app.demo.ui.customize.FormSettings
 import com.payabli.example.app.demo.ui.customize.FormStart
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInLabelLayout
@@ -123,12 +124,12 @@ class FormCustomizationTest {
                 FormSettings(),
                 FormOperation.Authorize,
                 BigDecimal("12.34"),
-                "key-1",
+                PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             ) as PayabliPayInOperation.Authorize
 
         assertEquals(BigDecimal("12.64"), authorize.options.paymentDetails.totalAmount)
-        assertEquals("key-1", authorize.options.idempotencyKey)
+        assertEquals(PayabliAttempt.NewPayment, authorize.options.attempt)
     }
 
     @Test
@@ -209,10 +210,17 @@ class FormCustomizationTest {
                 off,
                 FormOperation.Capture,
                 BigDecimal.ONE,
-                null,
+                PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             )
-        val store = FormCustomization.operation(off, FormOperation.Tokenize, BigDecimal.ONE, null, PayInMethodType.Card)
+        val store =
+            FormCustomization.operation(
+                off,
+                FormOperation.Tokenize,
+                BigDecimal.ONE,
+                PayabliAttempt.NewPayment,
+                PayInMethodType.Card,
+            )
 
         assertNotNull((capture as PayabliPayInOperation.Capture).options.customerData)
         assertNotNull((store as PayabliPayInOperation.StoreMethod).options.customerData?.customerNumber)
@@ -223,31 +231,38 @@ class FormCustomizationTest {
                 FormSettings(customerSection = true),
                 FormOperation.Capture,
                 BigDecimal.ONE,
-                null,
+                PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             )
         assertNull((on as PayabliPayInOperation.Capture).options.customerData)
     }
 
     @Test
-    fun `a capture carries the amount and the held retry key`() {
+    fun `a capture carries the amount and the declared retry`() {
         val capture =
             FormCustomization.operation(
                 FormSettings(),
                 FormOperation.Capture,
                 BigDecimal("5.00"),
-                "held-key",
+                PayabliAttempt.Retry,
                 PayInMethodType.Card,
             )
                 as PayabliPayInOperation.Capture
         assertEquals(BigDecimal("5.30"), capture.options.paymentDetails.totalAmount)
-        assertEquals("held-key", capture.options.idempotencyKey)
+        assertEquals(PayabliAttempt.Retry, capture.options.attempt)
+        assertNull("a declared retry sets no key of the app's own", capture.options.idempotencyKey)
     }
 
     @Test
     fun `the fee follows the instrument on screen and rides inside the total`() {
         fun capture(method: PayInMethodType): PayabliPayInOperation.Capture =
-            FormCustomization.operation(FormSettings(), FormOperation.Capture, BigDecimal("5.00"), null, method)
+            FormCustomization.operation(
+                FormSettings(),
+                FormOperation.Capture,
+                BigDecimal("5.00"),
+                PayabliAttempt.NewPayment,
+                method,
+            )
                 as PayabliPayInOperation.Capture
 
         assertEquals(BigDecimal("0.30"), capture(PayInMethodType.Card).options.paymentDetails.serviceFee)

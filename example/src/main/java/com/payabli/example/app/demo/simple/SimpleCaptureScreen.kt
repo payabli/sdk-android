@@ -34,6 +34,8 @@ import com.payabli.example.app.demo.ui.customize.FormSettings
 import com.payabli.example.app.demo.ui.customize.FormSettingsMenu
 import com.payabli.example.app.sdk.FormCustomization
 import com.payabli.example.app.sdk.PayInSessionSource
+import com.payabli.sdk.core.model.PayabliAttempt
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -43,49 +45,27 @@ import kotlinx.coroutines.launch
 import java.math.BigDecimal
 
 /**
- * The key the next attempt sends, from what this failure published and what is already held.
- *
- * **Whether a payment may still be outstanding is [PayInException.Unsettled]'s to say, and a key is the
- * narrower question of whether the SDK has one to offer.** They come apart on a refused repeat: a `409`
- * says the service has seen this key and nothing about whether the payment was taken, so it publishes no
- * key while the payment is still unresolved. Reading the published key as the answer drops the one held
- * here, and the next attempt mints a fresh one and starts a second payment for one that may already exist.
- *
- * Holding the refused key instead means the next attempt is refused too, which is the honest outcome: the
- * payer's next move is to read the transaction back rather than to pay again.
- *
- * **There is always a key to hold by the time a refusal arrives here.** A form submission names no payment,
- * so `RetryKey.reserve` never reuses a held key and sends either the one passed in or a fresh one; a `409`
- * means the service has seen the key before, which on this screen only a key it already held can be. So an
- * unresolved outcome that publishes no key cannot be the first thing this screen sees, and the branch that
- * would return null for one is unreachable rather than a gap left open.
+ * Whether the next attempt of [submitted] is a retry once it ended in [outcome], null being success: it is while
+ * [PayInException.Unsettled] says a payment may be outstanding, a refused retry included. A store changes nothing,
+ * and neither does a retry refused for describing another payment, since nothing was sent and the payment is open.
  */
-internal fun keyForNextAttempt(
-    held: String?,
-    outcome: PayInSubmissionState.Failed,
-): String? = outcome.retryKey ?: held.takeIf { outcome.cause is PayInException.Unsettled }
-
-/**
- * The key held once [submitted] has ended in [outcome], or in success when [outcome] is null.
- *
- * A store sends no key, so its outcome leaves a capture's held key in place.
- */
-internal fun keyAfter(
-    held: String?,
+internal fun retryAfter(
+    open: Boolean,
     submitted: FormOperation,
     outcome: PayInSubmissionState.Failed?,
-): String? =
+): Boolean =
     when {
-        !submitted.takesAmount -> held
-        outcome == null -> null
-        else -> keyForNextAttempt(held, outcome)
+        !submitted.takesAmount -> open
+        outcome == null -> false
+        outcome.cause.type == PayabliErrorType.RETRY_NOT_SAME_PAYMENT -> open
+        else -> outcome.cause is PayInException.Unsettled
     }
 
 /**
  * The operation after [requested] is chosen, which stays [current] while a submission is in flight: its outcome
  * is read against the operation on screen when it arrives.
  *
- * While a key is held for [heldFor], no other operation that sends a key is chosen, since it would send that one.
+ * While a retry is open for [heldFor], no other operation that moves money is chosen, since the retry is that one's.
  */
 internal fun operationAfter(
     current: FormOperation,
@@ -101,7 +81,7 @@ internal fun operationAfter(
 
 /**
  * The operations the screen offers: those [settings] turns on, plus [current] and [heldFor] whatever the
- * settings say, so a held key can always be settled by the operation it belongs to.
+ * settings say, so an open retry can always be settled by the operation it belongs to.
  */
 internal fun offeredOperations(
     settings: FormSettings,
@@ -109,25 +89,26 @@ internal fun offeredOperations(
     heldFor: FormOperation?,
 ): List<FormOperation> = FormOperation.entries.filter { it in settings.operations || it == current || it == heldFor }
 
-/** The operation [heldKey] belongs to once [submitted] has ended. A store sends no key, so it leaves the owner. */
-internal fun keyOwnerAfter(
+/** The operation an open retry belongs to once [submitted] has ended. A store sends no key, so it leaves the owner. */
+internal fun retryOwnerAfter(
     owner: FormOperation?,
     submitted: FormOperation,
-    heldKey: String?,
+    retryOpen: Boolean,
 ): FormOperation? =
     when {
-        heldKey == null -> null
+        !retryOpen -> null
         submitted.takesAmount -> submitted
         else -> owner
     }
 
 /**
- * The amount can change only between payments: not mid-flight, and not while a held key still names one.
+ * The amount can change only between payments: not mid-flight, and not while a retry of one is open, since a
+ * retry is the same payment.
  */
 internal fun amountEditable(
     submission: PayInSubmissionState,
-    retryKey: String?,
-): Boolean = submission !is PayInSubmissionState.Submitting && retryKey == null
+    retryOpen: Boolean,
+): Boolean = submission !is PayInSubmissionState.Submitting && !retryOpen
 
 /** What the screen says when [operation] ends, for either instrument. */
 internal fun outcomeMessage(
@@ -141,15 +122,8 @@ internal fun outcomeMessage(
     }
 
 /**
- * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed.
- *
- * `PayabliPayInForm` states that retention is the flow's owner's: held in the composition, the form empties
- * whenever it leaves it, and the key that makes a retry safe goes with it.
- *
- * A view model survives rotation and backgrounding, not the process ending, so [retryKey] is gone after a
- * kill and this screen cannot recover a payment interrupted that way. A host that needs to survive it sets
- * `idempotencyKey` on the transaction options itself and persists it before submitting;
- * `payin/src/androidTest/PROCESS-DEATH.md` covers what is and is not recoverable.
+ * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed. It does not
+ * outlive the process, and nor does the key a retry needs: `payin/src/androidTest/PROCESS-DEATH.md` says more.
  */
 class SimpleCaptureViewModel(
     sessionSource: PayInSessionSource,
@@ -161,17 +135,11 @@ class SimpleCaptureViewModel(
     var failure by mutableStateOf<String?>(null)
         private set
 
-    /**
-     * The key the next attempt sends, so a retry after an unknown outcome settles the first charge instead
-     * of making a second one.
-     *
-     * Null until a failure leaves the outcome unknown, and null again once one is settled: the SDK mints a
-     * fresh key per attempt when none is given, which is what a new payment needs.
-     */
-    var retryKey by mutableStateOf<String?>(null)
+    /** Whether the next attempt is declared a retry: true while the last payment's outcome is unknown. */
+    var retryOpen by mutableStateOf(false)
         private set
 
-    /** The operation [retryKey] was left by, and the only one that may send it. */
+    /** The operation [retryOpen] was left by, and the only one that may retry. */
     var heldFor by mutableStateOf<FormOperation?>(null)
         private set
 
@@ -201,13 +169,13 @@ class SimpleCaptureViewModel(
         submitted: FormOperation,
         outcome: PayInSubmissionState.Failed,
     ) {
-        retryKey = keyAfter(retryKey, submitted, outcome)
-        heldFor = keyOwnerAfter(heldFor, submitted, retryKey)
+        retryOpen = retryAfter(retryOpen, submitted, outcome)
+        heldFor = retryOwnerAfter(heldFor, submitted, retryOpen)
     }
 
     fun succeeded(submitted: FormOperation) {
-        retryKey = keyAfter(retryKey, submitted, outcome = null)
-        heldFor = keyOwnerAfter(heldFor, submitted, retryKey)
+        retryOpen = retryAfter(retryOpen, submitted, outcome = null)
+        heldFor = retryOwnerAfter(heldFor, submitted, retryOpen)
     }
 
     init {
@@ -291,16 +259,16 @@ fun SimpleCaptureScreen(
             if (operation.takesAmount) {
                 OutlinedTextField(
                     value = viewModel.amountText,
-                    enabled = !submitting && viewModel.retryKey == null,
+                    enabled = !submitting && !viewModel.retryOpen,
                     onValueChange = {
                         val submission = payInFlow?.state?.value ?: PayInSubmissionState.Idle
-                        if (amountEditable(submission, viewModel.retryKey)) viewModel.amountText = it
+                        if (amountEditable(submission, viewModel.retryOpen)) viewModel.amountText = it
                     },
                     label = { Text("Amount") },
                     isError = amount == null,
                     supportingText = {
                         when {
-                            viewModel.retryKey != null -> Text("Locked until the previous payment is settled.")
+                            viewModel.retryOpen -> Text("Locked until the previous payment is settled.")
                             amount == null -> Text("A positive amount, up to two decimals.")
                         }
                     },
@@ -349,7 +317,7 @@ fun SimpleCaptureScreen(
                                     settings,
                                     operation,
                                     amount ?: BigDecimal.ZERO,
-                                    viewModel.retryKey,
+                                    if (viewModel.retryOpen) PayabliAttempt.Retry else PayabliAttempt.NewPayment,
                                     method,
                                 ),
                             configuration = form,

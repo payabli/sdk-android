@@ -8,9 +8,11 @@ import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.sdk.FakePayInFlowHandle
 import com.payabli.example.app.sdk.PayInFlowHandle
 import com.payabli.example.app.sdk.PayInReadOutcome
+import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.readyStartup
 import com.payabli.example.app.sdk.refusedOutcome
+import com.payabli.example.app.sdk.retryRefusedOutcome
 import com.payabli.example.app.sdk.unsettledOutcome
 import com.payabli.example.app.sdk.voidedOutcome
 import kotlinx.coroutines.CompletableDeferred
@@ -23,7 +25,6 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -46,24 +47,23 @@ class VoidingTest {
     fun tearDown() = Dispatchers.resetMain()
 
     @Test
-    fun `each tap sends the transaction on screen under a new key`() =
+    fun `each tap reverses the transaction on screen`() =
         runTest {
-            val handle = FakePayInFlowHandle { _, _ -> refusedOutcome() }
+            val handle = FakePayInFlowHandle { _ -> refusedOutcome() }
             val model = captureModel(handle)
             model.onCompleted(capturedPaymentOutcome())
 
             model.voidLastTransaction()
             model.voidLastTransaction()
 
-            assertEquals(listOf("101-abc", "101-abc"), handle.reversals.map { it.first })
-            assertNotEquals(handle.reversals[0].second, handle.reversals[1].second)
+            assertEquals(listOf("101-abc", "101-abc"), handle.reversals)
         }
 
     @Test
     fun `after a void in doubt nothing is resent until a read shows the transaction still captured`() =
         runTest {
             var status = PayInReadOutcome.Read("initiated", 10, "101-abc")
-            val handle = FakePayInFlowHandle(readAnswer = { status }) { _, _ -> unsettledOutcome() }
+            val handle = FakePayInFlowHandle(readAnswer = { status }) { _ -> unsettledOutcome() }
             val model = captureModel(handle)
             model.onCompleted(capturedPaymentOutcome())
             model.voidLastTransaction()
@@ -77,14 +77,37 @@ class VoidingTest {
             model.readLastTransaction()
             model.voidLastTransaction()
             assertEquals(2, handle.reversals.size)
-            assertNotEquals(handle.reversals[0].second, handle.reversals[1].second)
+        }
+
+    @Test
+    fun `a repeated reversal the service refused says the earlier one may still be running and offers the read`() =
+        runTest {
+            val handle =
+                FakePayInFlowHandle(readAnswer = { PayInReadOutcome.Read("captured", 1, it, isCaptured = true) }) { _ ->
+                    retryRefusedOutcome()
+                }
+            val model = captureModel(handle)
+            model.onCompleted(capturedPaymentOutcome())
+
+            model.voidLastTransaction()
+            val after = model.uiState.value
+            assertTrue(after.resultText, after.resultText.contains("The earlier reversal may still be running"))
+            assertFalse(after.resultText, after.resultText.contains("Check this transaction's status"))
+            assertEquals("101-abc", after.readableTransactionId)
+
+            model.readLastTransaction()
+            assertEquals(
+                "a read showing it captured did not offer the reversal",
+                "101-abc",
+                model.uiState.value.voidableTransactionId,
+            )
         }
 
     @Test
     fun `a read showing the void settles it`() =
         runTest {
             val handle =
-                FakePayInFlowHandle(readAnswer = { PayInReadOutcome.Read("voided", 5, it, isVoided = true) }) { _, _ ->
+                FakePayInFlowHandle(readAnswer = { PayInReadOutcome.Read("voided", 5, it, isVoided = true) }) { _ ->
                     unsettledOutcome()
                 }
             val model = captureModel(handle)
@@ -100,7 +123,7 @@ class VoidingTest {
     @Test
     fun `taking another payment clears a void in doubt`() =
         runTest {
-            val model = captureModel(FakePayInFlowHandle { _, _ -> unsettledOutcome() })
+            val model = captureModel(FakePayInFlowHandle { _ -> unsettledOutcome() })
             model.onCompleted(capturedPaymentOutcome())
             model.voidLastTransaction()
 
@@ -112,7 +135,7 @@ class VoidingTest {
     @Test
     fun `an approved reversal names the outcome and withdraws the control`() =
         runTest {
-            val model = captureModel(FakePayInFlowHandle { _, _ -> voidedOutcome() })
+            val model = captureModel(FakePayInFlowHandle { _ -> voidedOutcome() })
             model.onCompleted(capturedPaymentOutcome())
 
             model.voidLastTransaction()
@@ -127,7 +150,7 @@ class VoidingTest {
     @Test
     fun `a refused reversal reports it and leaves the transaction standing`() =
         runTest {
-            val model = captureModel(FakePayInFlowHandle { _, _ -> refusedOutcome() })
+            val model = captureModel(FakePayInFlowHandle { _ -> refusedOutcome() })
             model.onCompleted(capturedPaymentOutcome())
 
             model.voidLastTransaction()
@@ -144,7 +167,7 @@ class VoidingTest {
     fun `the screen reports a reversal in flight, and only one goes out`() =
         runTest {
             val gate = CompletableDeferred<Unit>()
-            val handle = FakePayInFlowHandle(released = gate) { _, _ -> voidedOutcome() }
+            val handle = FakePayInFlowHandle(released = gate) { _ -> voidedOutcome() }
             val model = captureModel(handle)
             model.onCompleted(capturedPaymentOutcome())
 
@@ -170,7 +193,7 @@ class VoidingTest {
         runTest {
             val model =
                 captureModel(
-                    FakePayInFlowHandle { _, _ -> throw CancellationException("the screen went away") },
+                    FakePayInFlowHandle { _ -> throw CancellationException("the screen went away") },
                 )
             model.onCompleted(capturedPaymentOutcome())
 
@@ -187,7 +210,7 @@ class VoidingTest {
     fun `starting over is refused while a reversal is in flight`() =
         runTest {
             val gate = CompletableDeferred<Unit>()
-            val model = captureModel(FakePayInFlowHandle(released = gate) { _, _ -> voidedOutcome() })
+            val model = captureModel(FakePayInFlowHandle(released = gate) { _ -> voidedOutcome() })
             model.onCompleted(capturedPaymentOutcome())
             model.voidLastTransaction()
 
@@ -199,6 +222,66 @@ class VoidingTest {
                 model.uiState.value.voidableTransactionId,
             )
             gate.complete(Unit)
+        }
+
+    /** A recheck builds a new flow, and the unresolved reversal's key is held by the old one. */
+    @Test
+    fun `a token recheck after a reversal in doubt keeps the flow that holds its key`() =
+        runTest {
+            var status = PayInReadOutcome.Read("initiated", 10, "101-abc")
+            val first = FakePayInFlowHandle(readAnswer = { status }) { _ -> unsettledOutcome() }
+            val second = FakePayInFlowHandle(readAnswer = { status }) { _ -> unsettledOutcome() }
+            val handles = ArrayDeque(listOf<PayInFlowHandle>(first, second))
+            val model =
+                CaptureViewModel(
+                    identity = SampleIdentity.from("Test Device"),
+                    demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
+                    startup =
+                        PayInStartup { PayInStartup.Started("returned a token", true, handles.removeFirst()) },
+                    diagnostics = DiagnosticsStore(),
+                    diagnosticsEnabled = true,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                ).also { it.checkToken() }
+            model.onCompleted(capturedPaymentOutcome())
+            model.voidLastTransaction()
+
+            model.checkToken()
+            status = PayInReadOutcome.Read("captured", 1, "101-abc", isCaptured = true)
+            model.readLastTransaction()
+            model.voidLastTransaction()
+
+            assertEquals(2, first.reversals.size)
+            assertTrue("the reversal went through a new flow", second.reversals.isEmpty())
+        }
+
+    /** A read showing the transaction still captured offers the reversal again, and the key is still held. */
+    @Test
+    fun `a token recheck after a captured read keeps the flow that holds the reversal's key`() =
+        runTest {
+            var status = PayInReadOutcome.Read("initiated", 10, "101-abc")
+            val first = FakePayInFlowHandle(readAnswer = { status }) { _ -> unsettledOutcome() }
+            val second = FakePayInFlowHandle(readAnswer = { status }) { _ -> unsettledOutcome() }
+            val handles = ArrayDeque(listOf<PayInFlowHandle>(first, second))
+            val model =
+                CaptureViewModel(
+                    identity = SampleIdentity.from("Test Device"),
+                    demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
+                    startup =
+                        PayInStartup { PayInStartup.Started("returned a token", true, handles.removeFirst()) },
+                    diagnostics = DiagnosticsStore(),
+                    diagnosticsEnabled = true,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                ).also { it.checkToken() }
+            model.onCompleted(capturedPaymentOutcome())
+            model.voidLastTransaction()
+
+            status = PayInReadOutcome.Read("captured", 1, "101-abc", isCaptured = true)
+            model.readLastTransaction()
+            model.checkToken()
+            model.voidLastTransaction()
+
+            assertEquals(2, first.reversals.size)
+            assertTrue("the reversal went through a new flow", second.reversals.isEmpty())
         }
 
     private fun captureModel(handle: PayInFlowHandle) =

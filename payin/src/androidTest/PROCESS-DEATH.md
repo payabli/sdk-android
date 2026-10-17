@@ -5,8 +5,8 @@ confirms is that the loss is clean and that nothing was written to disk to make 
 
 A submission survives a rotation and a trip to the background, and `PayInSubmissionRetentionInstrumentedTest`
 asserts both. It does not survive the process ending, and neither does the key that would make a retry safe:
-`PayInSubmissionState.Failed.retryKey` is part of the state this path loses, so an app coming back from a kill
-holds no record of the attempt at all.
+the key the SDK holds for a declared retry is in memory, so an app coming back from a kill holds no record of the
+attempt at all, and a retry it declares goes out under a new key.
 
 **So a payment interrupted by process death is not recoverable from inside the app.** Whether the service took
 it is answered by reconciling outside it. A host that needs to survive this sets `idempotencyKey` on the

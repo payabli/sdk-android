@@ -13,6 +13,7 @@ import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import kotlinx.coroutines.CancellableContinuation
@@ -112,6 +113,8 @@ internal class PayabliService private constructor(
      * @return the response the request answered with.
      */
     private suspend fun exchange(decorated: PayabliRequest): PayabliResponse {
+        // Before the platform call, so a late mark can only err towards a send that may have left.
+        currentCoroutineContext()[PayabliSendMark]?.mark()
         val connection = openConnection(decorated)
 
         // Exactly once, not idempotently. The cancellation handler runs on the canceller's thread and the

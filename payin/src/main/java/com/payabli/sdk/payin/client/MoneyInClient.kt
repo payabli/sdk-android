@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
@@ -320,8 +321,11 @@ internal class MoneyInClient(
                 LogField.safe("statusCode", response.statusCode),
                 LogField.safe("errorCode", failure.type),
             ) { "the transaction call failed at the transport" }
-            // An open outcome keeps the transaction its body names, which the status mapping cannot carry.
-            throw if (failure.type.leavesThePaymentOpen && said.paymentTransId != null) {
+            // A 409 whose body is not a JSON object is the idempotency check refusing the key. Any other open
+            // outcome keeps the transaction its body names, which the status mapping cannot carry.
+            throw if (failure.type == PayabliErrorType.CONFLICT && !text.isJsonObject()) {
+                PayInKeyRefusal()
+            } else if (failure.type.leavesThePaymentOpen && said.paymentTransId != null) {
                 PayInException.ServiceError(said.failure(response.statusCode), failure.type)
             } else {
                 failure
@@ -471,6 +475,26 @@ private class AnswerFields(
         private fun JsonObject?.identifier(key: String): String? = string(key)?.trim()?.takeIf { it.isNotEmpty() }
     }
 }
+
+/**
+ * The service refused the request's idempotency key because it had already seen it.
+ *
+ * A conflict like any other until the flow reads it, which tells a resent held key from a caller's own.
+ */
+internal class PayInKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)")
+
+/**
+ * Whether this body is a JSON object, which the idempotency check's refusal never is. No field is read, so
+ * an envelope in any spelling keeps its own mapping, and text that is not an object keeps the key.
+ *
+ * @return true when the body parses as a JSON object.
+ */
+private fun String.isJsonObject(): Boolean =
+    try {
+        PayabliJson.format.parseToJsonElement(this) is JsonObject
+    } catch (unreadable: SerializationException) {
+        false
+    }
 
 /**
  * The wire body for a transaction, without `paymentMethod`, which the writer adds.

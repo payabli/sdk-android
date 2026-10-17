@@ -364,6 +364,20 @@ look up when there is one. When there isn't, find the transaction in the Payabli
 again. On card-not-present, setting `orderId` on each request lets you find it by your own reference.
 Store the transaction ID with your order every time you get one.
 
+If you then try the same payment again, say so: pass `attempt = PayabliAttempt.Retry`, in
+`PayInTransactionOptions` or to `charge`. The SDK sends it under the key of the most recent payment whose
+outcome is unknown: on card-not-present, the most recent capture or authorization, whichever you're retrying,
+taken through the same `PayabliPayIn`; on Tap to Pay, the most recent charge for that entry point. The service
+then recognizes the repeat rather than taking the money twice. Without it, every
+call is a new payment. If the service refuses the retry because it already has that payment, a card-not-present
+retry fails with `RETRY_REFUSED` and a Tap to Pay one with `CHARGE_NOT_FINISHED`; check that payment before
+trying again.
+
+A retry describes the same payment: the same amount, service fee and currency, on card-not-present the same
+surcharge and kind of payment method, and the same order ID or invoice number when the first attempt set one. A
+retry that describes a different payment fails with `RETRY_NOT_SAME_PAYMENT` and isn't sent. If you keep more than
+one card-not-present payment open at a time, set your own `idempotencyKey` on each.
+
 Each guide lists its errors in full: [card-not-present](payin/README.md#outcomes-and-errors) and
 [Tap to Pay](taptopay/README.md#outcomes-and-errors).
 

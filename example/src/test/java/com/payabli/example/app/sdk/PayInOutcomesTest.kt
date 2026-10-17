@@ -180,18 +180,6 @@ class PayInOutcomesTest {
         }
     }
 
-    @Test
-    fun `no rendered outcome carries an idempotency key`() {
-        // It is a credential for repeating a payment. The state holds one so a host can retry with it; the
-        // screens show text and a card, and neither is a place for it.
-        val error =
-            PayInSubmissionState
-                .Failed(PayInException.Interrupted(), retryKey = "key-1")
-                .toPaymentError()
-
-        assertFalse(error.displayMessage.contains("key-1"))
-    }
-
     private fun payment(
         totalAmount: BigDecimal?,
         netAmount: BigDecimal?,

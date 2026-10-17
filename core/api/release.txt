@@ -588,6 +588,17 @@ package com.payabli.sdk.core.network {
     property public int statusCode;
   }
 
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class PayabliSendMark extends kotlin.coroutines.AbstractCoroutineContextElement {
+    ctor public PayabliSendMark();
+    method @InaccessibleFromKotlin public boolean getMayHaveLeft();
+    method public void mark();
+    property public boolean mayHaveLeft;
+    field @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final com.payabli.sdk.core.network.PayabliSendMark.Key Key;
+  }
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class PayabliSendMark.Key implements kotlin.coroutines.CoroutineContext.Key<com.payabli.sdk.core.network.PayabliSendMark> {
+  }
+
   @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public interface PayabliTransport {
     method public suspend Object? execute(com.payabli.sdk.core.network.PayabliRequest request, kotlin.coroutines.Continuation<? super com.payabli.sdk.core.network.PayabliResponse>);
     method public suspend <T> Object? execute(com.payabli.sdk.core.network.PayabliRequest request, kotlinx.serialization.KSerializer<T> payloadSerializer, kotlin.coroutines.Continuation<? super com.payabli.sdk.core.network.PayabliV2Envelope<T>>);

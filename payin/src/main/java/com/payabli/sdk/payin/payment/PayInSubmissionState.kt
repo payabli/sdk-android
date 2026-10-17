@@ -51,41 +51,25 @@ public sealed class PayInSubmissionState {
     /**
      * It did not go through.
      *
-     * **[cause] is where the payment's outcome is reported, and [retryKey] is not.** Where a money-moving
-     * attempt may have been carried out, [cause] is a [PayInException.Unsettled]; anywhere else it is the
-     * exception a client raised, directly. [PayabliException.type] is the raised one's either way, so a
-     * decline, a validation failure and a network failure stay tellable apart without unwrapping.
-     * [fieldErrors] is what the refusal blamed, per field, and is empty when it blamed none.
+     * **[cause] is where the payment's outcome is reported.** Where a money-moving attempt may have been
+     * carried out, [cause] is a [PayInException.Unsettled]; anywhere else it is the exception a client
+     * raised, directly. [PayabliException.type] is the raised one's either way, so a decline, a validation
+     * failure and a network failure stay tellable apart without unwrapping. [fieldErrors] is what the refusal
+     * blamed, per field, and is empty when it blamed none.
      *
      * **A [PayInException.Unsettled] does not hand back the exception it wrapped.** Its own cause names the
      * failing type and withholds the message, which can quote what was submitted, so it is safe to log and
      * cannot be unwrapped or type-checked back to the original. Branch on [PayabliException.type], and read
      * [PayInException.Unsettled.paymentTransId] for the payment to reconcile.
      *
-     * [retryKey] answers a narrower question: whether there is a key worth sending again. It is set on the
-     * two operations a form submits that move money, where the outcome is unknown and the key can still be
-     * resent — a cancellation after the key was reserved, a network failure, a 5xx, a response that could
-     * not be decoded, and an unexpected error. A retry carrying it is recognized as the repeat rather than
-     * acting twice.
-     *
-     * It is null where the outcome is known, as a decline, a local refusal or a rejected credential is; for
-     * a cancellation arriving before the key was reserved, nothing having been sent; and for storing a
-     * payment method whatever the failure, a repeat not being recognizable there. A store whose outcome is
-     * unknown is settled by reading the entry point's stored methods back.
-     *
-     * **And it is null for a conflict the caller's own key was refused under, where the outcome is not
-     * known.** That is the one case the two disagree, and it is why they are separate: the service has just
-     * refused the only value there would be to send, so there is no key to offer, while [cause] still
-     * reports the payment as unresolved. Read [cause] to decide whether a payment may be outstanding.
-     *
-     * **This state describes what a form submitted, and the calls on `PayabliPayIn` do not appear in it.**
-     * Reversing a transaction and capturing an earlier authorization answer with their own results and keep
-     * their own keys, for the bounded time those contracts describe.
+     * **To try a payment whose outcome is unknown again, submit it with `attempt` set to
+     * `PayabliAttempt.Retry`.** The SDK sends it under the key the most recent open attempt carried, while
+     * the service would still recognise that key, so the repeat is not taken as a second payment. Later than
+     * that, it goes out as a new payment. The key itself is not handed out.
      */
     public class Failed(
         public val cause: PayabliException,
         fieldErrors: Map<PayInField, PayInFieldError> = emptyMap(),
-        public val retryKey: String? = null,
     ) : PayInSubmissionState() {
         public val fieldErrors: Map<PayInField, PayInFieldError> =
             Collections.unmodifiableMap(fieldErrors.toMap())
@@ -93,9 +77,8 @@ public sealed class PayInSubmissionState {
         /**
          * The cause renders as its own classification, which carries no server text.
          *
-         * @return the cause's classification, the rejected field names, and whether a retry key is held.
+         * @return the cause's classification and the rejected field names.
          */
-        override fun toString(): String =
-            "PayInSubmissionState.Failed(cause=$cause, fields=${fieldErrors.keys}, hasRetryKey=${retryKey != null})"
+        override fun toString(): String = "PayInSubmissionState.Failed(cause=$cause, fields=${fieldErrors.keys})"
     }
 }

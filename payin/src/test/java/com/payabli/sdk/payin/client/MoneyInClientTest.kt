@@ -634,7 +634,8 @@ class MoneyInClientTest {
         runTest(timeout = timeout) {
             val failure = failureOf("Duplicated idempotencyKey", 409)
 
-            assertTrue("$failure", failure is com.payabli.sdk.core.model.PayabliGenericException)
+            // The idempotency check's plain-text refusal, which the flow tells apart from a payment's conflict.
+            assertTrue("$failure", failure is PayInKeyRefusal)
             assertEquals(PayabliErrorType.CONFLICT, (failure as com.payabli.sdk.core.model.PayabliException).type)
         }
 
@@ -705,6 +706,39 @@ class MoneyInClientTest {
                 PayabliErrorType.TOKEN_EXPIRED,
                 (failure as? com.payabli.sdk.core.model.PayabliException)?.type,
             )
+        }
+
+    /** Plain text, an empty body and JSON that is not an object are the idempotency check refusing the key. */
+    @Test
+    fun `a 409 whose body is not a JSON object is the key refused`() =
+        runTest(timeout = timeout) {
+            for (body in listOf("Duplicated idempotencyKey: key-1", "", "[]", "\"Duplicated\"")) {
+                val transport = FakePayInTransport.answering(body, statusCode = 409)
+
+                val failure =
+                    runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                        .exceptionOrNull()
+
+                assertTrue("$failure", failure is PayInKeyRefusal)
+            }
+        }
+
+    /** Any JSON object passed the idempotency check, so it keeps the conflict's own mapping in any spelling. */
+    @Test
+    fun `a 409 carrying a JSON object stays a conflict`() =
+        runTest(timeout = timeout) {
+            for (field in listOf("isSuccess", "IsSuccess", "issuccess", "message")) {
+                val duplicate =
+                    """{"$field":false,"responseText":"Duplicated","responseData":{"referenceId":"101-abc"}}"""
+                val transport = FakePayInTransport.answering(duplicate, statusCode = 409)
+
+                val failure =
+                    runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                        .exceptionOrNull()
+
+                assertFalse("$field: $failure", failure is PayInKeyRefusal)
+                assertEquals(PayabliErrorType.CONFLICT, (failure as com.payabli.sdk.core.model.PayabliException).type)
+            }
         }
 
     @Test

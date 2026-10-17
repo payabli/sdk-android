@@ -134,7 +134,10 @@ public enum class PayabliErrorType(
         "No transaction is visible under this identifier yet. A transaction can take a short while to appear, so this is not proof no payment was made. Read again later rather than charging again.",
     ),
 
-    /** A retry the host declared was refused because the service had already received that payment. */
+    /**
+     * A card-not-present retry the SDK sent under a key it held was refused, because the service had already
+     * received that payment: a retry the host declared, or a repeated capture of an authorization or void.
+     */
     RETRY_REFUSED(
         1021,
         "RETRY_REFUSED",
@@ -349,7 +352,7 @@ public enum class PayabliErrorType(
         3034,
         "CHARGE_NOT_FINISHED",
         PayabliErrorCategory.OUTCOME_UNKNOWN,
-        "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait three minutes.",
+        "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes.",
     ),
 }
 
