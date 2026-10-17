@@ -58,4 +58,10 @@ public enum class TapToPayFailureReason {
      * keys still work. Calling initialize again may succeed; a failure that persists is the device's.
      */
     DEVICE_KEY_UNAVAILABLE,
+
+    /**
+     * This [com.payabli.sdk.taptopay.PayabliTTP]'s [com.payabli.sdk.core.PayabliSession] was replaced or ended; create
+     * a new one with `PayabliTTP.create(session, context)` from the current session.
+     */
+    SESSION_ENDED,
 }
