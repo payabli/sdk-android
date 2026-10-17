@@ -14,6 +14,7 @@ import com.payabli.example.app.demo.ui.customize.FormMethods
 import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.example.app.demo.ui.customize.FormSettings
 import com.payabli.example.app.demo.ui.customize.FormStart
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
@@ -108,12 +109,16 @@ object FormCustomization {
     /**
      * The operation the form submits. With the customer section off, the app supplies the customer, and a
      * capture's or an authorization's fee is the one for [method], included in its `totalAmount`.
+     *
+     * @param paymentReference the payment this submission names.
+     * @param attempt [PayabliAttempt.Retry] while the payment [paymentReference] names has an unknown outcome.
      */
     fun operation(
         settings: FormSettings,
         operation: FormOperation,
         amount: BigDecimal,
         paymentReference: String?,
+        attempt: PayabliAttempt,
         method: PayInMethodType,
     ): PayabliPayInOperation {
         val supplied = DEMO_CUSTOMER.takeUnless { settings.customerSection }
@@ -124,6 +129,7 @@ object FormCustomization {
                     serviceFee = serviceFee(method),
                 ),
                 customerData = supplied,
+                attempt = attempt,
                 paymentReference = paymentReference,
             )
         return when (operation) {

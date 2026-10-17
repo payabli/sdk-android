@@ -35,6 +35,7 @@ import com.payabli.example.app.demo.ui.customize.FormSettingsMenu
 import com.payabli.example.app.sdk.FormCustomization
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.example.app.sdk.newPaymentReference
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -57,6 +58,10 @@ internal fun retryAfter(
         outcome == null -> false
         else -> outcome.cause is PayInException.Unsettled
     }
+
+/** What the next attempt declares: a retry of the same payment while one is open, otherwise a new payment. */
+internal fun attemptFor(retryOpen: Boolean): PayabliAttempt =
+    if (retryOpen) PayabliAttempt.Retry else PayabliAttempt.NewPayment
 
 /** The payment the next attempt names: the same one while a retry is open, a new one once it was answered. */
 internal fun referenceAfter(
@@ -330,6 +335,7 @@ fun SimpleCaptureScreen(
                                     operation,
                                     amount ?: BigDecimal.ZERO,
                                     viewModel.paymentReference,
+                                    attemptFor(viewModel.retryOpen),
                                     method,
                                 ),
                             configuration = form,
