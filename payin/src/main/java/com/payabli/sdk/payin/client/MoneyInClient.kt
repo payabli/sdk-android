@@ -459,7 +459,7 @@ private class AnswerFields(
 /**
  * The service refused the request's idempotency key because it had already seen it.
  *
- * A conflict like any other until the flow reads it, which tells a resent held key from a caller's own.
+ * A conflict like any other until the flow reads it, which tells a resent held key from a new one.
  */
 internal class PayInKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)")
 

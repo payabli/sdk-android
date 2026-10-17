@@ -231,9 +231,9 @@ public sealed class PayInException(
      * reports, and it is true wherever it is raised.
      *
      * **Whether repeating the call is recognised as the same attempt is the member's to say, not this
-     * type's.** Only a call naming a transaction has an identity to hold a key against, so only those
-     * members promise a repeat is recognised, and each states its own bound. Elsewhere a repeat is
-     * recognised under a key the caller supplied and not otherwise.
+     * type's.** A call naming a transaction resends its key when repeated; a capture or an authorization
+     * resends its key to a retry declared with `PayabliAttempt.Retry` naming the same [paymentReference]. Each
+     * member states its own bound.
      *
      * Acting on this promptly is what matters either way, because no bound is this SDK's to extend: a key
      * the service no longer recognises is carried out as a new payment whoever chose it. What came back the
