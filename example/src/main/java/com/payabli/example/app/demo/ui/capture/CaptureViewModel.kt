@@ -444,12 +444,16 @@ class CaptureViewModel(
 
     /**
      * Names a new payment once the service has answered this one, and keeps the name while its outcome is
-     * unknown, so a retry names the same payment instead of starting a second. `AlreadySubmitting` keeps it too:
-     * nothing was sent. An approval does not come through here; [startOver] names its own.
+     * unknown, declaring the next submission its retry so it repeats the payment instead of starting a second.
+     * `AlreadySubmitting` changes nothing: that request is still running. An approval does not come through
+     * here; [startOver] names its own.
      */
     private fun rotatePaymentReference(outcome: PayInOutcome.Refused) {
-        if (outcome.keepsItsPaymentReference) return
-        _uiState.update { it.copy(operation = attempt(it.amount).operation) }
+        when {
+            outcome.isOutcomeUnknown -> _uiState.update { it.copy(operation = it.operation.asRetry()) }
+            outcome.keepsItsPaymentReference -> return
+            else -> _uiState.update { it.copy(operation = attempt(it.amount).operation) }
+        }
     }
 
     companion object {

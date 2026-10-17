@@ -9,6 +9,8 @@ import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.sdk.PayInOutcome
 import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.readyStartup
+import com.payabli.sdk.core.model.PayabliAttempt
+import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -16,6 +18,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -44,12 +47,18 @@ class CaptureIdempotencyTest {
             configuration = DemoConfiguration.fromBuildConfig(),
         )
 
-    private fun refusal(keepsItsPaymentReference: Boolean) =
-        PayInOutcome.Refused(
-            error = PaymentError.Payabli("Refused", null),
-            diagnostic = "PayInException.Refused(code=D0001)",
-            keepsItsPaymentReference = keepsItsPaymentReference,
-        )
+    private fun refusal(
+        keepsItsPaymentReference: Boolean,
+        isOutcomeUnknown: Boolean = false,
+    ) = PayInOutcome.Refused(
+        error = PaymentError.Payabli("Refused", null),
+        diagnostic = "PayInException.Refused(code=D0001)",
+        keepsItsPaymentReference = keepsItsPaymentReference,
+        isOutcomeUnknown = isOutcomeUnknown,
+    )
+
+    private fun attemptOf(model: CaptureViewModel) =
+        (model.uiState.value.operation.operation as PayabliPayInOperation.Capture).options.attempt
 
     private fun referenceOf(model: CaptureViewModel) = model.uiState.value.operation.paymentReference
 
@@ -102,5 +111,38 @@ class CaptureIdempotencyTest {
         model.startOver()
 
         assertTrue("the next payment went out under the kept reference", kept != referenceOf(model))
+    }
+
+    @Test
+    fun `an unknown outcome makes the next submission its retry`() {
+        val model = captureModel()
+        val first = referenceOf(model)
+
+        model.onFailed(refusal(keepsItsPaymentReference = true, isOutcomeUnknown = true))
+
+        assertEquals(first, referenceOf(model))
+        assertEquals(PayabliAttempt.Retry, attemptOf(model))
+    }
+
+    @Test
+    fun `a submission refused while another is in flight leaves the operation as it was`() {
+        // That request is still running, so nothing is known about the payment yet.
+        val model = captureModel()
+        val before = model.uiState.value.operation
+
+        model.onFailed(refusal(keepsItsPaymentReference = true))
+
+        assertSame(before, model.uiState.value.operation)
+        assertEquals(PayabliAttempt.NewPayment, attemptOf(model))
+    }
+
+    @Test
+    fun `an answer after a retry starts a new payment`() {
+        val model = captureModel()
+        model.onFailed(refusal(keepsItsPaymentReference = true, isOutcomeUnknown = true))
+
+        model.onFailed(refusal(keepsItsPaymentReference = false))
+
+        assertEquals(PayabliAttempt.NewPayment, attemptOf(model))
     }
 }

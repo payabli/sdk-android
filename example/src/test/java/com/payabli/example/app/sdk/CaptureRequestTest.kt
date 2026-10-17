@@ -2,7 +2,11 @@ package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.sample.SampleAmount
 import com.payabli.example.app.demo.sample.SampleIdentity
+import com.payabli.sdk.core.model.PayabliAttempt
+import com.payabli.sdk.payin.model.PayInCustomerData
+import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.model.PayInValidationOptions
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -85,5 +89,69 @@ class CaptureRequestTest {
     private companion object {
         /** Any fixed moment. The order identifier is built from it, so the assertion needs the same one. */
         const val AT_MILLIS = 1_776_000_000_000L
+    }
+
+    @Test
+    fun `a retry repeats every field and declares the retry`() {
+        // A field that changed between the two would make the retry a different payment from the one it repeats.
+        val customer = PayInCustomerData(customerNumber = "c-1")
+        val validation = PayInValidationOptions(checksCardNumber = false)
+        val original =
+            PayInTransactionOptions(
+                paymentDetails = PayInPaymentDetails(totalAmount = BigDecimal("2.50")),
+                customerData = customer,
+                accountId = "a",
+                ipAddress = "ip",
+                orderId = "o",
+                orderDescription = "d",
+                source = "s",
+                subdomain = "sub",
+                subscriptionId = 7L,
+                achValidation = true,
+                forceCustomerCreation = false,
+                validation = validation,
+                paymentReference = "ref-1",
+            )
+
+        val retry =
+            (
+                PayInOperation(
+                    PayabliPayInOperation.Capture(original),
+                ).asRetry().operation as PayabliPayInOperation.Capture
+            ).options
+
+        assertEquals(PayabliAttempt.Retry, retry.attempt)
+        assertEquals(
+            listOf<Any?>(
+                original.paymentDetails,
+                customer,
+                "a",
+                "ip",
+                "o",
+                "d",
+                "s",
+                "sub",
+                7L,
+                true,
+                false,
+                validation,
+                "ref-1",
+            ),
+            listOf<Any?>(
+                retry.paymentDetails,
+                retry.customerData,
+                retry.accountId,
+                retry.ipAddress,
+                retry.orderId,
+                retry.orderDescription,
+                retry.source,
+                retry.subdomain,
+                retry.subscriptionId,
+                retry.achValidation,
+                retry.forceCustomerCreation,
+                retry.validation,
+                retry.paymentReference,
+            ),
+        )
     }
 }

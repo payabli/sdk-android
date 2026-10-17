@@ -1,6 +1,7 @@
 package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.sample.SampleIdentity
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInStoreOptions
@@ -20,7 +21,33 @@ class PayInOperation internal constructor(
                 is PayabliPayInOperation.Authorize -> it.options.paymentReference
                 is PayabliPayInOperation.StoreMethod -> null
             }
+
+    /** This attempt declared a retry of the payment it names, every other field unchanged. A store is returned as is. */
+    internal fun asRetry(): PayInOperation =
+        when (val it = operation) {
+            is PayabliPayInOperation.Capture -> PayInOperation(PayabliPayInOperation.Capture(it.options.asRetry()))
+            is PayabliPayInOperation.Authorize -> PayInOperation(PayabliPayInOperation.Authorize(it.options.asRetry()))
+            is PayabliPayInOperation.StoreMethod -> this
+        }
 }
+
+private fun PayInTransactionOptions.asRetry(): PayInTransactionOptions =
+    PayInTransactionOptions(
+        paymentDetails = paymentDetails,
+        customerData = customerData,
+        accountId = accountId,
+        ipAddress = ipAddress,
+        orderId = orderId,
+        orderDescription = orderDescription,
+        source = source,
+        subdomain = subdomain,
+        subscriptionId = subscriptionId,
+        achValidation = achValidation,
+        forceCustomerCreation = forceCustomerCreation,
+        validation = validation,
+        attempt = PayabliAttempt.Retry,
+        paymentReference = paymentReference,
+    )
 
 /** The fee this app puts on a payment. `totalAmount` includes it. */
 internal val DEMO_SERVICE_FEE: BigDecimal = BigDecimal("0.10")
