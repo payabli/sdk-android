@@ -34,7 +34,8 @@ sealed class PayInOutcome {
         val diagnostic: String,
         /**
          * Whether the payment reference this attempt named still names the payment to retry: true when the outcome
-         * is unknown or nothing was sent because another attempt is in flight, false once the service answered.
+         * is unknown, or nothing was sent because another attempt is in flight or the retry described another
+         * payment; false once the service answered.
          */
         val keepsItsPaymentReference: Boolean,
         val isOutcomeUnknown: Boolean = false,
@@ -59,8 +60,7 @@ internal fun Result<PayInResult>.toOutcome(): PayInOutcome =
             PayInOutcome.Refused(
                 error = failure.toPaymentError(),
                 diagnostic = failure.toString(),
-                keepsItsPaymentReference =
-                    failure is PayInException.Unsettled || failure is PayInException.AlreadySubmitting,
+                keepsItsPaymentReference = failure.keepsThePaymentOpen(),
                 isOutcomeUnknown = failure is PayInException.Unsettled,
                 isRetryRefused = (failure as? PayabliException)?.type == PayabliErrorType.RETRY_REFUSED,
             )
@@ -71,7 +71,12 @@ internal fun PayInSubmissionState.Failed.toOutcome(): PayInOutcome.Refused =
     PayInOutcome.Refused(
         error = toPaymentError(),
         diagnostic = cause.toString(),
-        keepsItsPaymentReference =
-            cause is PayInException.Unsettled || cause is PayInException.AlreadySubmitting,
+        keepsItsPaymentReference = cause.keepsThePaymentOpen(),
         isOutcomeUnknown = cause is PayInException.Unsettled,
     )
+
+/** Whether the payment this failure belongs to is still the one to retry. */
+private fun Throwable.keepsThePaymentOpen(): Boolean =
+    this is PayInException.Unsettled ||
+        this is PayInException.AlreadySubmitting ||
+        (this as? PayabliException)?.type == PayabliErrorType.RETRY_NOT_SAME_PAYMENT

@@ -2,9 +2,11 @@ package com.payabli.example.app.sdk
 
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
+import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -69,6 +71,19 @@ class PayInOutcomeTest {
         val outcome = PayInSubmissionState.Failed(PayInException.AlreadySubmitting()).toOutcome()
 
         assertTrue("the key the in-flight attempt holds was reported as spent", outcome.keepsItsPaymentReference)
+    }
+
+    @Test
+    fun `a retry refused for describing another payment keeps the payment's reference`() {
+        // Nothing was sent and the earlier payment is still unknown, so its reference still names the retry.
+        val mismatch =
+            PayabliGenericException(
+                PayabliErrorType.RETRY_NOT_SAME_PAYMENT,
+                PayabliErrorType.RETRY_NOT_SAME_PAYMENT.message,
+            )
+
+        assertTrue(PayInSubmissionState.Failed(mismatch).toOutcome().keepsItsPaymentReference)
+        assertTrue((Result.failure<PayInResult>(mismatch).toOutcome() as PayInOutcome.Refused).keepsItsPaymentReference)
     }
 
     @Test
