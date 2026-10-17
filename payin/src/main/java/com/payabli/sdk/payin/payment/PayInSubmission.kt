@@ -173,7 +173,7 @@ internal class PayInSubmission(
         request: PayInRequest,
     ): PayInSubmissionState? =
         // No payment named, for the reason `submit` gives: two captures of equal value are two payments, and
-        // nothing here tells one from a resend of the other. A caller that knows better sets its own key.
+        // nothing here tells one from a resend of the other.
         perform(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, entryPoint, publishes = false, payment = null) { retry ->
             val key = retry.reserve(supplied = null)
             PayInSubmissionState.Succeeded.Payment(
