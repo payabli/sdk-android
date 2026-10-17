@@ -279,7 +279,8 @@ class PayInLiveFlowsInstrumentedTest {
 
             val lost = lossy.capture(options, card()).exceptionOrNull() as? PayabliException
             assertTrue(lossy.consume())
-            val retried = lossy.capture(options.asRetry(), card())
+            // No reference was named, so the retry names the one the SDK minted and returned with the unknown outcome.
+            val retried = lossy.capture(options.asRetry((lost as? PayInException.Unsettled)?.paymentReference), card())
 
             assertTrue("the lost answer was not reported as unknown: $lost", lost is PayInException.Unsettled)
             val original = transport.lostTransId
@@ -306,8 +307,13 @@ class PayInLiveFlowsInstrumentedTest {
             )
         }
 
-    private fun PayInTransactionOptions.asRetry() =
-        PayInTransactionOptions(paymentDetails, orderDescription = orderDescription, attempt = PayabliAttempt.Retry)
+    private fun PayInTransactionOptions.asRetry(reference: String?) =
+        PayInTransactionOptions(
+            paymentDetails,
+            orderDescription = orderDescription,
+            attempt = PayabliAttempt.Retry,
+            paymentReference = reference,
+        )
 
     /** Hands every request to [inner], and discards the answer to the first payment once the service has given it. */
     private class LosesFirstAnswer(
