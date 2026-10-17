@@ -21,7 +21,7 @@ import com.payabli.example.app.sdk.PayInReadOutcome
 import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.capturePayment
 import com.payabli.example.app.sdk.isBusy
-import com.payabli.example.app.sdk.newIdempotencyKey
+import com.payabli.example.app.sdk.newPaymentReference
 import com.payabli.example.app.sdk.payInStartup
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,7 +43,7 @@ data class CaptureUiState(
      * What this attempt charges, fee included.
      *
      * Kept beside [setup] and [operation] because all three describe one figure: the request sends it, the
-     * form reads it back, and a retry has to charge the same thing under a different key.
+     * form reads it back, and a retry has to charge the same thing as the payment it names.
      */
     val amount: BigDecimal,
     override val sampleIdentity: SampleIdentity,
@@ -67,7 +67,7 @@ data class CaptureUiState(
     override val isCheckingToken: Boolean = false,
     /** What this screen submits through, once the session behind it exists. */
     val payments: PayInFlowHandle? = null,
-    /** A capture of [amount], carrying the key that makes a repeat safe. */
+    /** A capture of [amount], naming the payment so a repeat of it is safe. */
     val operation: PayInOperation,
     /**
      * A void is in flight.
@@ -82,7 +82,7 @@ data class CaptureUiState(
     override val isReading: Boolean = false,
 ) : PaymentFlowUiState {
     /**
-     * Its own, because `data class` would synthesize one over the transaction identifier and the capture's key.
+     * Its own, because `data class` would synthesize one over the transaction identifier and the payment's reference.
      *
      * The readout types this holds each declare theirs for the same reason, and a state that carries them
      * would put back what those took out: this reaches an assertion failure or a crash report whole.
@@ -152,7 +152,7 @@ class CaptureViewModel(
             setup = PayInForms.capture(),
             operation =
                 capturePayment(
-                    idempotencyKey = newIdempotencyKey(),
+                    paymentReference = newPaymentReference(),
                     amount = amount,
                     identity = identity,
                     atMillis = System.currentTimeMillis(),
@@ -167,10 +167,8 @@ class CaptureViewModel(
             }
         }
         viewModelScope.launch {
-            // The request is built when the screen opens and the switch is on another screen, so a flip after
-            // that would otherwise apply to the payment after this one. Rebuilt at the same amount, since the
-            // figure on screen is the one the payer was shown. Not while a submission is in flight: replacing
-            // the operation then loses the key that makes its retry safe.
+            // Rebuilt at the same amount when the switch flips, so it applies to this payment, not the next.
+            // Not while a submission is in flight: replacing the operation then loses the reference its retry needs.
             demoCustomer.suppliesDemoCustomer.collect {
                 _uiState.update { state ->
                     if (state.payments.isBusy()) state else state.copy(operation = attempt(state.amount).operation)
@@ -228,7 +226,7 @@ class CaptureViewModel(
      * screen and gets copied into bug reports.
      */
     fun onFailed(outcome: PayInOutcome.Refused) {
-        rotateIdempotencyKey(outcome)
+        rotatePaymentReference(outcome)
         record("ERROR paymentTransaction\n${outcome.diagnostic}")
         onError(outcome.error)
     }
@@ -288,20 +286,19 @@ class CaptureViewModel(
     }
 
     /**
-     * Voids the transaction on screen under a new key. A void whose outcome is unknown is never repeated: the
-     * control stays withheld until a read settles it.
+     * Voids the transaction on screen. A void whose outcome is unknown is not repeated until a read shows the
+     * transaction still captured; the SDK then sends the same void again, so the service recognises it.
      */
     fun voidLastTransaction() {
         // A read in flight writes the result panel when it returns, and would overwrite this void's outcome.
         if (_uiState.value.isVoiding || _uiState.value.isReading) return
         val payments = _uiState.value.payments ?: return
         val transId = _uiState.value.voidableTransactionId ?: return
-        val key = newIdempotencyKey()
         _uiState.update { it.copy(isVoiding = true) }
         viewModelScope.launch {
             val outcome =
                 try {
-                    payments.voidTransaction(transId, key)
+                    payments.voidTransaction(transId)
                 } catch (cancellation: CancellationException) {
                     // The flag is cleared on the way out, or the controls never come back. The void may have gone
                     // out, so it is withheld as an unknown outcome is.
@@ -421,14 +418,8 @@ class CaptureViewModel(
     fun outcomeShown() = _uiState.update { it.copy(outcomeReady = false) }
 
     /**
-     * Back to the form step, for a second payment.
-     *
-     * A finished step draws no controls, so the form leaves the screen once a payment completes and this is the
-     * only way back to it. The key goes with the result: the payer is asking for another payment, and the
-     * service refuses a second one that arrives under the first one's key.
-     *
-     * A second payment draws its own amount. The draw has no memory, so it can land on the previous figure
-     * again: what tells two rows from one device apart is the order identifier, which carries the second.
+     * Back to the form step for a second payment, which needs its own reference. The amount is drawn again, and
+     * the order identifier is what tells two payments of one figure apart.
      */
     fun startOver() {
         // Checked before anything is replaced: a void or read in flight would write its outcome over the next
@@ -452,25 +443,12 @@ class CaptureViewModel(
     }
 
     /**
-     * A new key for the next attempt, once this one has an answer.
-     *
-     * `PayInException.Unsettled` is the SDK's own statement that a failure left the attempt's fate unknown —
-     * a read that timed out, a 5xx, a 2xx that would not decode, a cancellation once the key had gone out, a
-     * conflict. Those keep the key, because a retry carrying it is recognized as the repeat it is instead of
-     * charging the payer twice, and the conflict keeps it though the SDK offers none to resend.
-     *
-     * Everything else was answered: no payment is outstanding, the form stays on screen, and what the payer
-     * sends next is a different request. A decline and a rejected field are both in that group, and a rejected
-     * field is the one that matters, because correcting it is the whole point of the form staying up.
-     *
-     * `AlreadySubmitting` is the exception: nothing was sent, and the submission still in flight is holding
-     * the key.
-     *
-     * An approval does not come through here. The form leaves the screen when a payment completes, so the way
-     * to a second one is [startOver], which mints its own key.
+     * Names a new payment once the service has answered this one, and keeps the name while its outcome is
+     * unknown, so a retry names the same payment instead of starting a second. `AlreadySubmitting` keeps it too:
+     * nothing was sent. An approval does not come through here; [startOver] names its own.
      */
-    private fun rotateIdempotencyKey(outcome: PayInOutcome.Refused) {
-        if (outcome.keepsItsIdempotencyKey) return
+    private fun rotatePaymentReference(outcome: PayInOutcome.Refused) {
+        if (outcome.keepsItsPaymentReference) return
         _uiState.update { it.copy(operation = attempt(it.amount).operation) }
     }
 

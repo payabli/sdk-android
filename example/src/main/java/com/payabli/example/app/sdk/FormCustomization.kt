@@ -113,7 +113,7 @@ object FormCustomization {
         settings: FormSettings,
         operation: FormOperation,
         amount: BigDecimal,
-        idempotencyKey: String?,
+        paymentReference: String?,
         method: PayInMethodType,
     ): PayabliPayInOperation {
         val supplied = DEMO_CUSTOMER.takeUnless { settings.customerSection }
@@ -124,7 +124,7 @@ object FormCustomization {
                     serviceFee = serviceFee(method),
                 ),
                 customerData = supplied,
-                idempotencyKey = idempotencyKey,
+                paymentReference = paymentReference,
             )
         return when (operation) {
             FormOperation.Capture -> PayabliPayInOperation.Capture(transaction)

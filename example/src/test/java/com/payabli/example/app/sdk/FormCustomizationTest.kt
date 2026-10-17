@@ -128,7 +128,7 @@ class FormCustomizationTest {
             ) as PayabliPayInOperation.Authorize
 
         assertEquals(BigDecimal("12.64"), authorize.options.paymentDetails.totalAmount)
-        assertEquals("key-1", authorize.options.idempotencyKey)
+        assertEquals("key-1", authorize.options.paymentReference)
     }
 
     @Test
@@ -241,7 +241,7 @@ class FormCustomizationTest {
             )
                 as PayabliPayInOperation.Capture
         assertEquals(BigDecimal("5.30"), capture.options.paymentDetails.totalAmount)
-        assertEquals("held-key", capture.options.idempotencyKey)
+        assertEquals("held-key", capture.options.paymentReference)
     }
 
     @Test

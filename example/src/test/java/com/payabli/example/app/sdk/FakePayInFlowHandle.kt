@@ -18,23 +18,20 @@ internal class FakePayInFlowHandle(
     /** Held open to keep a reversal in flight, so a test can look at the screen while one is running. */
     private val released: CompletableDeferred<Unit> = CompletableDeferred(Unit),
     private val readAnswer: (String) -> PayInReadOutcome = { error("this test reads nothing") },
-    private val answer: (String, String) -> PayInOutcome,
+    private val answer: (String) -> PayInOutcome,
 ) : PayInFlowHandle {
-    /** Every reversal asked for, so a test can assert what was sent and under which key. */
-    val reversals: MutableList<Pair<String, String>> = mutableListOf()
+    /** Every reversal asked for, so a test can assert what was sent. */
+    val reversals: MutableList<String> = mutableListOf()
 
     override val formTarget: PayabliPayIn? get() = null
 
     @Composable
     override fun isSubmitting(): Boolean = false
 
-    override suspend fun voidTransaction(
-        transId: String,
-        idempotencyKey: String,
-    ): PayInOutcome {
-        reversals += transId to idempotencyKey
+    override suspend fun voidTransaction(transId: String): PayInOutcome {
+        reversals += transId
         released.await()
-        return answer(transId, idempotencyKey)
+        return answer(transId)
     }
 
     /** Waits on the same gate as a reversal, so a test can hold a read in flight. */

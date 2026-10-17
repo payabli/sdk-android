@@ -74,7 +74,7 @@ class CaptureRequestTest {
     ): PayInTransactionOptions =
         (
             capturePayment(
-                idempotencyKey = "key",
+                paymentReference = "ref",
                 amount = total,
                 identity = identity,
                 atMillis = AT_MILLIS,

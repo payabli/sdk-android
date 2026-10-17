@@ -134,9 +134,11 @@ authorization later, and `voidTransaction` releases it or voids a transaction th
 
 ### Retry safely
 
-A charge always sends an idempotency key. The SDK mints one per call when you don't set
-`PayInTransactionOptions.idempotencyKey`, so calling again without your own key is a second payment, not a
-retry. Don't resend a charge whose outcome is unknown. Find the transaction first.
+A charge always sends an idempotency key, which the SDK mints and holds; you don't set one. Name each payment
+with `PayInTransactionOptions.paymentReference`, or let the SDK name it. A charge whose outcome is unknown fails
+with `PayInException.Unsettled`, which carries that reference. Find the transaction first where you can. To try
+the same payment again, submit it with the same `paymentReference` and `attempt = PayabliAttempt.Retry`. Calling
+again without declaring a retry is a new payment.
 
 ## Outcomes and errors
 
@@ -173,10 +175,9 @@ or "voided":
 When a form submission fails, `PayInSubmissionState.Failed` carries:
 
 - `cause`, which says whether a payment may be outstanding. Read it before anything else.
-- `retryKey`, the key available to send again, for `PayInTransactionOptions.idempotencyKey`. Find the
-  transaction before resending it. It's `null` where the outcome is known, where nothing was sent, when storing a
-  payment method, and after a conflict refuses a key you supplied yourself. When it's `null` and `cause` says a
-  payment may be outstanding, find the transaction before charging again.
+- `retryKey`, the key the SDK holds for a payment whose outcome is unknown. You can't send it: a retry names the
+  payment with `paymentReference` instead. It's `null` where the outcome is known, where nothing was sent, and when
+  storing a payment method.
 - `fieldErrors`, what the refusal blamed, per field. It's empty when it blamed none.
 
 `PayInException.Refused` and `PayInException.ServiceError` carry `failure`, a `PayInFailure` with the service's

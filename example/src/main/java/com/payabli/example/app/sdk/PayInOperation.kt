@@ -1,6 +1,5 @@
 package com.payabli.example.app.sdk
 
-import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInPaymentDetails
@@ -13,12 +12,12 @@ import java.math.BigDecimal
 class PayInOperation internal constructor(
     internal val operation: PayabliPayInOperation,
 ) {
-    /** The key this attempt carries, for the screen that decides when to mint another. */
-    internal val idempotencyKey: String?
+    /** The payment this attempt names, for the screen that decides when to name another. */
+    internal val paymentReference: String?
         get() =
             when (val it = operation) {
-                is PayabliPayInOperation.Capture -> it.options.idempotencyKey
-                is PayabliPayInOperation.Authorize -> it.options.idempotencyKey
+                is PayabliPayInOperation.Capture -> it.options.paymentReference
+                is PayabliPayInOperation.Authorize -> it.options.paymentReference
                 is PayabliPayInOperation.StoreMethod -> null
             }
 }
@@ -27,22 +26,11 @@ class PayInOperation internal constructor(
 internal val DEMO_SERVICE_FEE: BigDecimal = BigDecimal("0.10")
 
 /**
- * A capture of [amount] under [idempotencyKey], ordered and described as [identity]'s at [atMillis].
- *
- * Without a key the service cannot recognise a repeat, so a submission whose outcome is unknown cannot be
- * retried. One key per attempt, kept while that attempt's outcome is unknown and replaced once the service
- * has answered, which is the screen's rule and lives with the screen.
- *
- * The amount is the caller's because the form this configures collects none: a real integration takes it from
- * the order it is charging for. The order identifier and the description name the device and the moment, which
- * is what keeps a run over several devices at once attributable in a transaction list.
- *
- * @param suppliesDemoCustomer whether the request carries the customer number, which
- *   [DemoCustomerSetting] decides. The payer is named either way: the form's first name, last name and
- *   billing email are written over whatever this configures.
+ * A capture of [amount] named [paymentReference], described as [identity]'s at [atMillis] so runs from several
+ * devices stay attributable. [suppliesDemoCustomer] says whether it carries the customer number.
  */
 fun capturePayment(
-    idempotencyKey: String,
+    paymentReference: String,
     amount: BigDecimal,
     identity: SampleIdentity,
     atMillis: Long,
@@ -60,7 +48,7 @@ fun capturePayment(
                         .takeIf { suppliesDemoCustomer },
                 orderId = identity.orderId(atMillis),
                 orderDescription = identity.note("capture"),
-                idempotencyKey = idempotencyKey,
+                paymentReference = paymentReference,
                 // A paypoint can refuse a payment that names no customer it can identify, and answers before
                 // the payer's own fields are read, so the request does not depend on which of them they filled.
                 forceCustomerCreation = true,

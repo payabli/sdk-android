@@ -123,16 +123,13 @@ public class PayInValidationOptions(
  *
  * The flags and headers below are wire parameters, and this type only carries them.
  *
- * @property idempotencyKey identifies this attempt, so a retry sending the same key is the same request
- *   rather than a second one. Sent as the `idempotencyKey` header; one is minted per attempt when it is
- *   absent, and a minted one is not held for a later call on these routes, so a retry that has to be
- *   recognized as one sets this itself — [PayabliPayIn.capture] says why.
  * @property achValidation checks a bank account before it is debited, on top of any check the merchant's own
  *   settings already run. `false` does not turn that check off.
  * @property forceCustomerCreation applies only when the payer cannot be matched to an existing customer: `true`
  *   creates a new customer record, a new one on each such payment.
- * @property attempt whether this is a new payment or a retry of the most recent payment whose outcome is not
- *   known. [idempotencyKey], when set, is sent whatever this says.
+ * @property attempt whether this is a new payment or a retry of the payment [paymentReference] names.
+ * @property paymentReference the caller's own name for this payment, never sent. A retry naming it resends
+ *   the key held for it; when unset, the SDK mints one and returns it with an unknown outcome. Blank is refused.
  */
 public class PayInTransactionOptions(
     public val paymentDetails: PayInPaymentDetails,
@@ -144,11 +141,11 @@ public class PayInTransactionOptions(
     public val source: String? = null,
     public val subdomain: String? = null,
     public val subscriptionId: Long? = null,
-    public val idempotencyKey: String? = null,
     public val achValidation: Boolean? = null,
     public val forceCustomerCreation: Boolean? = null,
     public val validation: PayInValidationOptions = PayInValidationOptions(),
     public val attempt: PayabliAttempt = PayabliAttempt.NewPayment,
+    public val paymentReference: String? = null,
 )
 
 /**
@@ -176,14 +173,11 @@ public class PayInStoreRequest(
  * [transId] identifies the authorization and goes in the path, so the resolved path differs from the route
  * template this call is recorded under. Reversing a transaction is the other one shaped that way.
  *
- * [idempotencyKey] identifies the attempt, so a retry sending the same key is the same capture rather than
- * a second one. One is minted when it is absent and kept for this [transId], and how long it is kept is not
- * published. None is kept for a payment past the point where too many are unresolved at once, and one the
- * flow minted is held in memory and does not outlive the process. Set this and persist it where a retry
- * has to survive either.
+ * The SDK mints the capture's idempotency key and holds it for [transId] while the outcome is unknown, so
+ * calling again with the same [transId] is the same capture rather than a second one. It is held in memory
+ * and does not outlive the process.
  */
 public class PayInAuthorizedRequest(
     public val transId: String,
     public val paymentDetails: PayInPaymentDetails,
-    public val idempotencyKey: String? = null,
 )

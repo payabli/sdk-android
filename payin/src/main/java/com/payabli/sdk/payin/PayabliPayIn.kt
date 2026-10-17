@@ -61,15 +61,13 @@ public sealed class PayabliPayIn {
      * The form's own path builds the instrument per submission and closes it, which is why a form caller has
      * nothing to do.
      *
-     * **This call moves money, so it always carries an idempotency key**, minted for the attempt when
-     * [PayInTransactionOptions.idempotencyKey] is unset.
-     *
-     * **A minted one is not reused, so set your own to retry safely.** A read timeout, a cancellation or a
-     * response that could not be decoded all leave it unknown whether the payment was taken, and only a repeat
-     * carrying the same key is the same attempt. Nothing here can tell a retry of this payment from a second
-     * payment of equal value — unlike [captureAuthorizedTransaction], which has a transaction to name — so a
-     * key this SDK minted is not held for a later call, and calling again without your own is a second payment
-     * rather than a retry.
+     * **This call moves money, so it always carries an idempotency key, which the SDK mints and holds.** The
+     * payment is named by [PayInTransactionOptions.paymentReference], or by one the SDK mints when that is unset.
+     * A read timeout, a cancellation or an answer that could not be decoded leaves it unknown whether the
+     * payment was taken; the failure is [PayInException.Unsettled], carrying that reference. Submitting the same
+     * reference with `attempt` set to `PayabliAttempt.Retry` resends its key, so the service recognises the
+     * repeat. A new payment naming a reference whose outcome is still unknown is refused as
+     * [PayabliErrorType.PAYMENT_REFERENCE_OPEN] and not sent.
      *
      * @param request the payment to take, its buffers the caller's to close.
      * @return the outcome, or the failure.
@@ -114,28 +112,18 @@ public sealed class PayabliPayIn {
      * that leaves the outcome open is [PayInException.Unsettled] instead of the type it wraps, so branch on
      * [PayabliException.type], which is the underlying classification either way and covers both.
      *
-     * **This call moves money, so it always carries an idempotency key.** Set
-     * [PayInAuthorizedRequest.idempotencyKey] to choose it; left unset, one is minted for the attempt. A
-     * failure that leaves it unknown whether the capture was applied arrives as [PayInException.Unsettled],
-     * and what repeating the call is worth then depends on who chose the key.
-     *
-     * **A key you set is the one sent, every time.** So repeating the call with it is the same attempt
-     * rather than a second one, from any instance and after a restart.
+     * **This call moves money, so it always carries an idempotency key, which the SDK mints and holds for the
+     * transaction.** A failure that leaves it unknown whether the capture was applied arrives as
+     * [PayInException.Unsettled], and calling again with the same transaction resends the held key.
      *
      * **A repeat the service refuses outright is the end of what repeating can tell you.** It arrives as
      * [PayInException.Unsettled] over [PayabliErrorType.CONFLICT], which says a request under that key got
      * past the service's check and nothing about whether the capture was applied. Repeating again is
-     * refused the same way, and a fresh key applies a second capture. Read the transaction back with
-     * [readTransaction] instead.
+     * refused the same way. Read the transaction back with [readTransaction] instead.
      *
-     * **A key the SDK minted is resent only while it still holds one** for this transaction, and how long
-     * that is is not published. It holds none past the point where too many payments are unresolved at
-     * once, none in a second instance and none after a restart. Where it holds none, repeating the call is
-     * a new capture under a new key, so set and persist a key of your own where that matters.
-     *
-     * **Whether a repeat is recognised at all is the service's.** Persisting a key lets you send it again;
-     * it does not make the service remember it. Past the point where it has stopped, the same key is
-     * carried out as a new request.
+     * **The key is resent only while the SDK still holds one** for this transaction. It holds none past the
+     * point where too many payments are unresolved at once, none in a second instance and none after a
+     * restart, and the service stops recognising a key after a while; read the transaction back there.
      *
      * @param request the authorization to capture, in full or in part.
      * @return the outcome, or the failure.
@@ -153,13 +141,9 @@ public sealed class PayabliPayIn {
      * there is the contract for both.
      *
      * @param transId the transaction to reverse.
-     * @param idempotencyKey the attempt's key, or null for the held one to be resent, or one minted.
      * @return the outcome, or the failure.
      */
-    public abstract suspend fun voidTransaction(
-        transId: String,
-        idempotencyKey: String? = null,
-    ): Result<PayInResult>
+    public abstract suspend fun voidTransaction(transId: String): Result<PayInResult>
 
     /**
      * Reads a transaction back by its identifier, to learn what became of it.

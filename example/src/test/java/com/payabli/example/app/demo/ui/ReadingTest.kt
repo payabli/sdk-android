@@ -58,7 +58,7 @@ class ReadingTest {
     fun `a void is not sent while a read is out`() =
         runTest {
             val gate = CompletableDeferred<Unit>()
-            val handle = FakePayInFlowHandle(released = gate, readAnswer = { read() }) { _, _ -> voidedOutcome() }
+            val handle = FakePayInFlowHandle(released = gate, readAnswer = { read() }) { _ -> voidedOutcome() }
             val model = captureModel(handle)
             model.onCompleted(capturedPaymentOutcome())
 
@@ -72,7 +72,7 @@ class ReadingTest {
     private fun read() = PayInReadOutcome.Read("captured", 1, "101-abc")
 
     private fun captureModel(gate: CompletableDeferred<Unit>) =
-        captureModel(FakePayInFlowHandle(released = gate, readAnswer = { read() }) { _, _ -> voidedOutcome() })
+        captureModel(FakePayInFlowHandle(released = gate, readAnswer = { read() }) { _ -> voidedOutcome() })
 
     private fun captureModel(handle: FakePayInFlowHandle) =
         CaptureViewModel(
