@@ -62,10 +62,11 @@ public sealed class PayInSubmissionState {
      * cannot be unwrapped or type-checked back to the original. Branch on [PayabliException.type], and read
      * [PayInException.Unsettled.paymentTransId] for the payment to reconcile.
      *
-     * **To try a payment whose outcome is unknown again, submit it with `attempt` set to
-     * `PayabliAttempt.Retry`.** The SDK sends it under the key the most recent open attempt carried, while
-     * the service would still recognise that key, so the repeat is not taken as a second payment. Later than
-     * that, it goes out as a new payment. The key itself is not handed out.
+     * **To try a payment whose outcome is unknown again, submit the same `paymentReference` with `attempt` set
+     * to `PayabliAttempt.Retry`.** [PayInException.Unsettled.paymentReference] names it, and is the SDK's own
+     * when none was set. The SDK sends the key held for that payment while the service would still recognise
+     * it, so the repeat is not taken as a second payment; later than that, it goes out under a new key. The key
+     * itself is not handed out.
      */
     public class Failed(
         public val cause: PayabliException,
