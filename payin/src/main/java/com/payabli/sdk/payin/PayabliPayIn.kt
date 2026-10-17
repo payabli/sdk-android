@@ -68,7 +68,8 @@ public sealed class PayabliPayIn {
      * reference with `attempt` set to `PayabliAttempt.Retry` resends its key, so the service recognises the
      * repeat. A new payment naming a reference whose outcome is still unknown is refused as
      * [PayabliErrorType.PAYMENT_REFERENCE_OPEN] and not sent. The key is held in memory, while the service would
-     * still recognise it; after a restart, read the transaction back instead.
+     * still recognise it, and for at most 16 unresolved payments at once; past that, after a restart, or in a
+     * second instance, a retry goes out under a new key, so read the transaction back instead.
      *
      * **A declared retry describes the same payment.** One that describes a different payment is refused as
      * [PayabliErrorType.RETRY_NOT_SAME_PAYMENT] and not sent, and the earlier payment's key stays held.
