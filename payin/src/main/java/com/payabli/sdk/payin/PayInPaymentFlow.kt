@@ -193,10 +193,8 @@ internal class PayInPaymentFlow private constructor(
     override suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult> =
         submission.captureAuthorized(entryPoint, request).asPayment()
 
-    override suspend fun voidTransaction(
-        transId: String,
-        idempotencyKey: String?,
-    ): Result<PayInResult> = submission.void(entryPoint, transId, idempotencyKey).asPayment()
+    override suspend fun voidTransaction(transId: String): Result<PayInResult> =
+        submission.void(entryPoint, transId).asPayment()
 
     override suspend fun readTransaction(transId: String): Result<PayInTransaction> =
         submission.readTransaction(entryPoint, transId)

@@ -141,7 +141,7 @@ private fun CaptureScreenPreview() {
                     sampleIdentity = identity,
                     operation =
                         capturePayment(
-                            idempotencyKey = "preview",
+                            paymentReference = "preview",
                             amount = amount,
                             identity = identity,
                             atMillis = 0,

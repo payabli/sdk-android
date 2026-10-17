@@ -9,9 +9,8 @@ asserts both. It does not survive the process ending, and neither does the key t
 holds no record of the attempt at all.
 
 **So a payment interrupted by process death is not recoverable from inside the app.** Whether the service took
-it is answered by reconciling outside it. A host that needs to survive this sets `idempotencyKey` on the
-transaction options itself and persists it before submitting, which is what that field is for; the key the
-flow mints when none is given lives only as long as the flow does.
+it is answered by reading the transaction back. The key the SDK holds for a payment lives only as long as the
+process does.
 
 Persisting the state instead would mean writing a payment's progress where the system can put it on disk, so
 the loss is the design rather than a gap in it.

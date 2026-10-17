@@ -220,15 +220,12 @@ internal const val READ_RECORD: String = """{"PaymentTransId":"101-abc","TransSt
 internal const val TEST_ENTRY_POINT: String = "merchant-entry"
 
 /** A capture of the test amount. */
-internal fun captureOf(idempotencyKey: String? = null): PayabliPayInOperation.Capture =
-    PayabliPayInOperation.Capture(testOptions(idempotencyKey))
+internal fun captureOf(): PayabliPayInOperation.Capture = PayabliPayInOperation.Capture(testOptions())
 
 /** An authorization, which the service takes for entered card data only. */
-internal fun authorizeOf(idempotencyKey: String? = null): PayabliPayInOperation.Authorize =
-    PayabliPayInOperation.Authorize(testOptions(idempotencyKey))
+internal fun authorizeOf(): PayabliPayInOperation.Authorize = PayabliPayInOperation.Authorize(testOptions())
 
-internal fun testOptions(idempotencyKey: String? = null): PayInTransactionOptions =
-    PayInTransactionOptions(paymentDetails = testDetails(), idempotencyKey = idempotencyKey)
+internal fun testOptions(): PayInTransactionOptions = PayInTransactionOptions(paymentDetails = testDetails())
 
 /**
  * A card request as a host that collected the instrument itself would build it.
@@ -236,10 +233,8 @@ internal fun testOptions(idempotencyKey: String? = null): PayInTransactionOption
  * The counterpart of [cardForm] for the calls that take no form. The caller owns the buffers, so a test
  * asserting they survive the call reads them back from the value this returns.
  */
-internal fun cardRequest(
-    idempotencyKey: String? = null,
-    cardData: PayInCardData = testCardData(),
-): PayInRequest = PayInRequest(PayInPaymentMethod.Card(cardData), testOptions(idempotencyKey))
+internal fun cardRequest(cardData: PayInCardData = testCardData()): PayInRequest =
+    PayInRequest(PayInPaymentMethod.Card(cardData), testOptions())
 
 /** A store request as a host that collected the card itself would build it; the caller owns the buffers. */
 internal fun cardStoreRequest(cardData: PayInCardData = testCardData()): PayInStoreRequest =

@@ -1,11 +1,13 @@
 package com.payabli.example.app.sdk
 
+import com.payabli.example.app.demo.simple.attemptFor
 import com.payabli.example.app.demo.simple.parseAmount
 import com.payabli.example.app.demo.ui.customize.FormMethods
 import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.example.app.demo.ui.customize.FormPreset
 import com.payabli.example.app.demo.ui.customize.FormSettings
 import com.payabli.example.app.demo.ui.customize.FormStart
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInLabelLayout
@@ -124,11 +126,12 @@ class FormCustomizationTest {
                 FormOperation.Authorize,
                 BigDecimal("12.34"),
                 "key-1",
+                PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             ) as PayabliPayInOperation.Authorize
 
         assertEquals(BigDecimal("12.64"), authorize.options.paymentDetails.totalAmount)
-        assertEquals("key-1", authorize.options.idempotencyKey)
+        assertEquals("key-1", authorize.options.paymentReference)
     }
 
     @Test
@@ -210,9 +213,18 @@ class FormCustomizationTest {
                 FormOperation.Capture,
                 BigDecimal.ONE,
                 null,
+                PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             )
-        val store = FormCustomization.operation(off, FormOperation.Tokenize, BigDecimal.ONE, null, PayInMethodType.Card)
+        val store =
+            FormCustomization.operation(
+                off,
+                FormOperation.Tokenize,
+                BigDecimal.ONE,
+                null,
+                PayabliAttempt.NewPayment,
+                PayInMethodType.Card,
+            )
 
         assertNotNull((capture as PayabliPayInOperation.Capture).options.customerData)
         assertNotNull((store as PayabliPayInOperation.StoreMethod).options.customerData?.customerNumber)
@@ -224,6 +236,7 @@ class FormCustomizationTest {
                 FormOperation.Capture,
                 BigDecimal.ONE,
                 null,
+                PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             )
         assertNull((on as PayabliPayInOperation.Capture).options.customerData)
@@ -237,17 +250,43 @@ class FormCustomizationTest {
                 FormOperation.Capture,
                 BigDecimal("5.00"),
                 "held-key",
+                PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             )
                 as PayabliPayInOperation.Capture
         assertEquals(BigDecimal("5.30"), capture.options.paymentDetails.totalAmount)
-        assertEquals("held-key", capture.options.idempotencyKey)
+        assertEquals("held-key", capture.options.paymentReference)
+    }
+
+    @Test
+    fun `a submission while a retry is open declares the retry`() {
+        // The same reference declared a new payment is refused while its key is held, and is a second payment
+        // once it is not.
+        val capture =
+            FormCustomization.operation(
+                FormSettings(),
+                FormOperation.Capture,
+                BigDecimal("5.00"),
+                "held-key",
+                attemptFor(retryOpen = true),
+                PayInMethodType.Card,
+            ) as PayabliPayInOperation.Capture
+
+        assertEquals(PayabliAttempt.Retry, capture.options.attempt)
+        assertEquals(PayabliAttempt.NewPayment, attemptFor(retryOpen = false))
     }
 
     @Test
     fun `the fee follows the instrument on screen and rides inside the total`() {
         fun capture(method: PayInMethodType): PayabliPayInOperation.Capture =
-            FormCustomization.operation(FormSettings(), FormOperation.Capture, BigDecimal("5.00"), null, method)
+            FormCustomization.operation(
+                FormSettings(),
+                FormOperation.Capture,
+                BigDecimal("5.00"),
+                null,
+                PayabliAttempt.NewPayment,
+                method,
+            )
                 as PayabliPayInOperation.Capture
 
         assertEquals(BigDecimal("0.30"), capture(PayInMethodType.Card).options.paymentDetails.serviceFee)

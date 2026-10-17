@@ -41,18 +41,10 @@ interface PayInFlowHandle {
     fun isSubmitting(): Boolean
 
     /**
-     * Reverses [transId], under [idempotencyKey].
-     *
-     * Not visible in [isSubmitting] or [isBusy]: the SDK publishes this to no state, because nothing is
-     * drawing it. A screen that offers it tracks its own in-flight flag.
-     *
-     * Required here because this screen names the attempt itself. `PayabliPayIn` takes it as optional and
-     * mints one when a caller does not.
+     * Reverses [transId] under the key the SDK holds for it, so a repeated reversal is recognised. Not in
+     * [isSubmitting] or [isBusy]: the SDK publishes a void to no state, so a screen tracks its own flag.
      */
-    suspend fun voidTransaction(
-        transId: String,
-        idempotencyKey: String,
-    ): PayInOutcome
+    suspend fun voidTransaction(transId: String): PayInOutcome
 
     /**
      * Reads [transId] back.
@@ -77,10 +69,7 @@ internal class SdkPayInFlowHandle(
         return submission is PayInSubmissionState.Submitting
     }
 
-    override suspend fun voidTransaction(
-        transId: String,
-        idempotencyKey: String,
-    ): PayInOutcome = payIn.voidTransaction(transId, idempotencyKey).toOutcome()
+    override suspend fun voidTransaction(transId: String): PayInOutcome = payIn.voidTransaction(transId).toOutcome()
 
     override suspend fun readTransaction(transId: String): PayInReadOutcome =
         payIn.readTransaction(transId).toReadOutcome()

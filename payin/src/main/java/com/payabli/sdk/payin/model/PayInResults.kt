@@ -248,6 +248,8 @@ public sealed class PayInException(
      */
     public class Unsettled(
         cause: PayabliException,
+        /** The name of the payment to retry: the caller's own reference, or the one the SDK minted for it. */
+        public val paymentReference: String? = null,
     ) : PayInException(
             cause.type,
             DEFAULT_UNSETTLED_REASON,

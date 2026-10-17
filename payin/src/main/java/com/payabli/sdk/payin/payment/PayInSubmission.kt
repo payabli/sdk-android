@@ -142,7 +142,7 @@ internal class PayInSubmission(
 
                 is PayabliPayInOperation.Capture ->
                     PayInFormInstrument.usePaymentMethod(values) { method ->
-                        val key = retry.reserve(operation.options.idempotencyKey)
+                        val key = retry.reserve(supplied = null)
                         PayInSubmissionState.Succeeded.Payment(
                             moneyIn.capture(entryPoint, PayInRequest(method, operation.options), entered, key),
                         )
@@ -150,7 +150,7 @@ internal class PayInSubmission(
 
                 is PayabliPayInOperation.Authorize ->
                     PayInFormInstrument.usePaymentMethod(values) { method ->
-                        val key = retry.reserve(operation.options.idempotencyKey)
+                        val key = retry.reserve(supplied = null)
                         PayInSubmissionState.Succeeded.Payment(
                             moneyIn.authorize(entryPoint, PayInRequest(method, operation.options), entered, key),
                         )
@@ -173,9 +173,9 @@ internal class PayInSubmission(
         request: PayInRequest,
     ): PayInSubmissionState? =
         // No payment named, for the reason `submit` gives: two captures of equal value are two payments, and
-        // nothing here tells one from a resend of the other. A caller that knows better sets its own key.
+        // nothing here tells one from a resend of the other.
         perform(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, entryPoint, publishes = false, payment = null) { retry ->
-            val key = retry.reserve(request.options.idempotencyKey)
+            val key = retry.reserve(supplied = null)
             PayInSubmissionState.Succeeded.Payment(
                 moneyIn.capture(entryPoint, request, PayInEnteredDetails.NONE, key),
             )
@@ -193,7 +193,7 @@ internal class PayInSubmission(
         request: PayInRequest,
     ): PayInSubmissionState? =
         perform(TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED, entryPoint, publishes = false, payment = null) { retry ->
-            val key = retry.reserve(request.options.idempotencyKey)
+            val key = retry.reserve(supplied = null)
             PayInSubmissionState.Succeeded.Payment(
                 moneyIn.authorize(entryPoint, request, PayInEnteredDetails.NONE, key),
             )
@@ -238,7 +238,7 @@ internal class PayInSubmission(
             publishes = false,
             payment = "${PayInRoutes.CAPTURE_AUTHORIZED}:${request.transId.trim()}",
         ) { retry ->
-            val key = retry.reserve(request.idempotencyKey)
+            val key = retry.reserve(supplied = null)
             PayInSubmissionState.Succeeded.Payment(moneyIn.captureAuthorized(request, key))
         }
 
@@ -247,13 +247,11 @@ internal class PayInSubmission(
      *
      * @param entryPoint the partner integration point the reversal is attributed to.
      * @param transId the transaction to reverse.
-     * @param idempotencyKey the attempt's key, or null for the held one to be resent, or one minted.
      * @return the terminal state, or null when a submission was already in flight.
      */
     suspend fun void(
         entryPoint: String,
         transId: String,
-        idempotencyKey: String?,
     ): PayInSubmissionState? =
         perform(
             TelemetryEvents.PAYIN_VOID_COMPLETED,
@@ -261,7 +259,7 @@ internal class PayInSubmission(
             publishes = false,
             payment = "${PayInRoutes.VOID}:${transId.trim()}",
         ) { retry ->
-            val key = retry.reserve(idempotencyKey)
+            val key = retry.reserve(supplied = null)
             PayInSubmissionState.Succeeded.Payment(moneyIn.void(transId, key))
         }
 

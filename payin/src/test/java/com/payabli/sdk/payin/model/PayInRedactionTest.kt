@@ -201,20 +201,20 @@ class PayInRedactionTest {
     }
 
     @Test
-    fun `a request and its options carry no key, address or nested instrument`() {
+    fun `a request and its options carry no reference, address or nested instrument`() {
         val options =
             PayInTransactionOptions(
                 paymentDetails = PayInPaymentDetails(BigDecimal("10.00")),
                 customerData = PayInCustomerData(firstName = "Ada", billingEmail = "ada@example.test"),
                 accountId = "acct-77",
                 ipAddress = "203.0.113.9",
-                idempotencyKey = "key-1",
+                paymentReference = "ref-1",
             )
         // Both halves, because either can reach a log line on its own: a host holds the options while it
         // configures a screen, and only the SDK ever holds the request.
         val rendered = PayInRequest(PayInPaymentMethod.Card(card()), options).toString() + " " + options
 
-        listOf(pan, securityCode, "Ada", "ada@example.test", "acct-77", "203.0.113.9", "key-1")
+        listOf(pan, securityCode, "Ada", "ada@example.test", "acct-77", "203.0.113.9", "ref-1")
             .forEach { assertFalse("$it was rendered", rendered.contains(it)) }
     }
 
@@ -241,15 +241,14 @@ class PayInRedactionTest {
     }
 
     @Test
-    fun `an authorized capture carries neither its transaction nor its key`() {
+    fun `an authorized capture carries neither its transaction nor its amount`() {
         val rendered =
             PayInAuthorizedRequest(
                 transId = "101-abc",
                 paymentDetails = PayInPaymentDetails(BigDecimal("4.50")),
-                idempotencyKey = "key-2",
             ).toString()
 
-        listOf("101-abc", "key-2", "4.50").forEach { assertFalse("$it was rendered", rendered.contains(it)) }
+        listOf("101-abc", "4.50").forEach { assertFalse("$it was rendered", rendered.contains(it)) }
     }
 
     @Test

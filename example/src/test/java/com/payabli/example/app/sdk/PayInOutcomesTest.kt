@@ -296,7 +296,7 @@ class PayInOutcomesTest {
         val error = refused.error as PaymentError.Payabli
         assertEquals("Invalid transaction status", error.reason)
         // A returned failure carries no key: the caller's own is the only one, and it already holds it.
-        assertFalse(refused.keepsItsIdempotencyKey)
+        assertFalse(refused.keepsItsPaymentReference)
     }
 
     @Test
@@ -311,8 +311,8 @@ class PayInOutcomesTest {
         val inFlight =
             Result.failure<PayInResult>(PayInException.AlreadySubmitting()).toOutcome() as PayInOutcome.Refused
 
-        assertTrue(open.keepsItsIdempotencyKey)
-        assertTrue(inFlight.keepsItsIdempotencyKey)
+        assertTrue(open.keepsItsPaymentReference)
+        assertTrue(inFlight.keepsItsPaymentReference)
     }
 
     /** Anything that is not a `PayabliException` cannot come from the SDK's own paths. */

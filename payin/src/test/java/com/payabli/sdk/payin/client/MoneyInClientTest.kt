@@ -41,7 +41,6 @@ class MoneyInClientTest {
 
     private fun cardRequest(
         method: PayInPaymentMethod = PayInPaymentMethod.Card(testCard()),
-        idempotencyKey: String? = null,
         achValidation: Boolean? = null,
         forceCustomerCreation: Boolean? = null,
     ) = PayInRequest(
@@ -49,7 +48,6 @@ class MoneyInClientTest {
         options =
             PayInTransactionOptions(
                 paymentDetails = testDetails(),
-                idempotencyKey = idempotencyKey,
                 achValidation = achValidation,
                 forceCustomerCreation = forceCustomerCreation,
             ),
@@ -138,7 +136,7 @@ class MoneyInClientTest {
             val transport = FakePayInTransport.answering(approved)
 
             MoneyInClient(transport, RecordingSdkLogger())
-                .capture("e", cardRequest(idempotencyKey = "key-1"))
+                .capture("e", cardRequest(), idempotencyKey = "key-1")
 
             assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
             // Only the caller's own headers are here. `Authorization` and the JSON content type are chain
@@ -156,7 +154,7 @@ class MoneyInClientTest {
             val failure =
                 refusal {
                     MoneyInClient(transport, RecordingSdkLogger())
-                        .capture("e", cardRequest(idempotencyKey = "key-1\r\nX-Injected: v"))
+                        .capture("e", cardRequest(), idempotencyKey = "key-1\r\nX-Injected: v")
                 }
 
             assertEquals("idempotencyKey", failure?.field)
@@ -172,7 +170,7 @@ class MoneyInClientTest {
             val failure =
                 refusal {
                     MoneyInClient(transport, RecordingSdkLogger())
-                        .capture("e", cardRequest(idempotencyKey = "key\u0000one"))
+                        .capture("e", cardRequest(), idempotencyKey = "key\u0000one")
                 }
 
             assertEquals("idempotencyKey", failure?.field)
@@ -184,7 +182,7 @@ class MoneyInClientTest {
             // The check looks at what trimming leaves, so an ordinary padded value keeps working.
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest(idempotencyKey = "  key-1  "))
+            MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest(), idempotencyKey = "  key-1  ")
 
             assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
         }
@@ -198,7 +196,7 @@ class MoneyInClientTest {
 
             val failure =
                 refusal {
-                    MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest(idempotencyKey = " "))
+                    MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest(), idempotencyKey = " ")
                 }
 
             assertEquals("idempotencyKey", failure?.field)
@@ -211,7 +209,7 @@ class MoneyInClientTest {
             // null is how a caller says it did not set one, and stays the only way to say it.
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest(idempotencyKey = null))
+            MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest(), idempotencyKey = null)
 
             assertNull(transport.request?.headers?.get("idempotencyKey"))
         }
@@ -233,7 +231,7 @@ class MoneyInClientTest {
             // second hold on the payer's funds.
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingSdkLogger()).authorize("e", cardRequest(idempotencyKey = "key-1"))
+            MoneyInClient(transport, RecordingSdkLogger()).authorize("e", cardRequest(), idempotencyKey = "key-1")
 
             assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
         }
@@ -343,7 +341,7 @@ class MoneyInClientTest {
             val transport = FakePayInTransport.answering(approved)
 
             MoneyInClient(transport, RecordingSdkLogger())
-                .captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails("4.50"), idempotencyKey = "key-2"))
+                .captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails("4.50")), "key-2")
 
             assertEquals("key-2", transport.request?.headers?.get("idempotencyKey"))
         }
