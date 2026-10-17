@@ -10,6 +10,7 @@ import com.payabli.sdk.payin.model.PayInValidationOptions
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.lang.reflect.Modifier
 import java.math.BigDecimal
 import kotlin.random.Random
 
@@ -121,37 +122,12 @@ class CaptureRequestTest {
             ).options
 
         assertEquals(PayabliAttempt.Retry, retry.attempt)
-        assertEquals(
-            listOf<Any?>(
-                original.paymentDetails,
-                customer,
-                "a",
-                "ip",
-                "o",
-                "d",
-                "s",
-                "sub",
-                7L,
-                true,
-                false,
-                validation,
-                "ref-1",
-            ),
-            listOf<Any?>(
-                retry.paymentDetails,
-                retry.customerData,
-                retry.accountId,
-                retry.ipAddress,
-                retry.orderId,
-                retry.orderDescription,
-                retry.source,
-                retry.subdomain,
-                retry.subscriptionId,
-                retry.achValidation,
-                retry.forceCustomerCreation,
-                retry.validation,
-                retry.paymentReference,
-            ),
-        )
+        val fields = PayInTransactionOptions::class.java.declaredFields.filterNot { Modifier.isStatic(it.modifiers) }
+        // A field added to the options and not to `asRetry` would come back as its default.
+        assertEquals("a new option is not copied by asRetry", 14, fields.size)
+        fields.filterNot { it.name == "attempt" }.forEach { field ->
+            field.isAccessible = true
+            assertEquals(field.name, field.get(original), field.get(retry))
+        }
     }
 }
