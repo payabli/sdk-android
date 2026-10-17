@@ -677,7 +677,9 @@ internal class PayInSubmission(
             cause.type == PayabliErrorType.PAYMENT_DECLINED -> TelemetryProperties.Outcome.DECLINED
             cause.type == PayabliErrorType.USER_CANCELLED -> TelemetryProperties.Outcome.INTERRUPTED
             cause.type == PayabliErrorType.VALIDATION_ERROR ||
-                cause.type == PayabliErrorType.INVALID_CONFIGURATION
+                cause.type == PayabliErrorType.INVALID_CONFIGURATION ||
+                cause.type == PayabliErrorType.RETRY_NOT_SAME_PAYMENT ||
+                cause.type == PayabliErrorType.PAYMENT_REFERENCE_OPEN
             -> TelemetryProperties.Outcome.REFUSED_LOCALLY
             else -> TelemetryProperties.Outcome.FAILED
         }
