@@ -113,10 +113,10 @@ internal fun retryOwnerAfter(
     }
 
 /**
- * The amount can change only between payments: not mid-flight, and not while a retry of one is open, since a
- * retry is the same payment.
+ * The amount and the form's settings change only between payments: not mid-flight, and not while a retry of one
+ * is open, since a retry is the same payment.
  */
-internal fun amountEditable(
+internal fun betweenPayments(
     submission: PayInSubmissionState,
     retryOpen: Boolean,
 ): Boolean = submission !is PayInSubmissionState.Submitting && !retryOpen
@@ -245,8 +245,8 @@ fun SimpleCaptureScreen(
     val settings = viewModel.settings
     val operation = viewModel.operation
     val amount = parseAmount(viewModel.amountText)
-    val submitting =
-        payInFlow?.let { it.state.collectAsStateWithLifecycle().value is PayInSubmissionState.Submitting } ?: false
+    val flowState = payInFlow?.let { it.state.collectAsStateWithLifecycle().value } ?: PayInSubmissionState.Idle
+    val submitting = flowState is PayInSubmissionState.Submitting
 
     DemoScreen(
         title = "Simple Capture",
@@ -255,7 +255,7 @@ fun SimpleCaptureScreen(
             FormSettingsMenu(
                 settings,
                 onSettingsChange = viewModel::changeSettings,
-                enabled = !submitting,
+                enabled = betweenPayments(flowState, viewModel.retryOpen),
             )
         },
     ) {
@@ -282,7 +282,7 @@ fun SimpleCaptureScreen(
                     enabled = !submitting && !viewModel.retryOpen,
                     onValueChange = {
                         val submission = payInFlow?.state?.value ?: PayInSubmissionState.Idle
-                        if (amountEditable(submission, viewModel.retryOpen)) viewModel.amountText = it
+                        if (betweenPayments(submission, viewModel.retryOpen)) viewModel.amountText = it
                     },
                     label = { Text("Amount") },
                     isError = amount == null,

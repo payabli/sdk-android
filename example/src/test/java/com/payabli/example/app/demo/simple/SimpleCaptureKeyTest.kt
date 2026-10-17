@@ -155,9 +155,9 @@ class SimpleCaptureKeyTest {
     @Test
     fun `the amount is locked while a retry is open or a submission is in flight`() {
         // An open retry is one payment. Retrying it with a different amount would describe another payment.
-        assertFalse(amountEditable(PayInSubmissionState.Idle, retryOpen = true))
-        assertFalse(amountEditable(PayInSubmissionState.Submitting, retryOpen = false))
-        assertTrue(amountEditable(PayInSubmissionState.Idle, retryOpen = false))
+        assertFalse(betweenPayments(PayInSubmissionState.Idle, retryOpen = true))
+        assertFalse(betweenPayments(PayInSubmissionState.Submitting, retryOpen = false))
+        assertTrue(betweenPayments(PayInSubmissionState.Idle, retryOpen = false))
     }
 
     @Test
