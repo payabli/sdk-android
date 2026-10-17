@@ -414,18 +414,57 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
         }
 
-    /** A payment that never left took nothing, so a declared retry after it is a payment of its own. */
+    /** A payment that never left ran nowhere: its error is reported as it is, and a retry after it is new. */
     @Test
-    fun `a new payment that fails before the hand-off holds no key`() =
+    fun `a new payment that fails before the hand-off reports the plain error and holds no key`() =
         runTest(timeout = timeout) {
             val transport = HandOffTransport(handsOff = false)
             val submission = submissionOver(transport)
-            submission.capture(TEST_ENTRY_POINT, cardRequest("order-1"))
+            val first = submission.capture(TEST_ENTRY_POINT, cardRequest("order-1"))
             transport.handsOff = true
 
             submission.capture(TEST_ENTRY_POINT, cardRequest("order-1", attempt = PayabliAttempt.Retry))
 
+            val cause = failed(requireNotNull(first)).cause
+            assertFalse("$cause", cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorType.NETWORK_ERROR, cause.type)
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** Cancelled before its first send left, a new payment took nothing, so it is interrupted, not unknown. */
+    @Test
+    fun `a new payment cancelled before the hand-off is interrupted and holds no key`() =
+        runTest(timeout = timeout) {
+            val transport = HandOffTransport(handsOff = false)
+            transport.holdsBeforeHandOff = true
+            val submission = submissionOver(transport)
+
+            val first = launch { submission.submit(TEST_ENTRY_POINT, captureOf("order-1"), cardForm()) }
+            transport.waiting.await()
+            first.cancelAndJoin()
+            val cause = failed(submission.state.value).cause
+            submission.reset()
+            transport.handsOff = true
+            submission.submit(TEST_ENTRY_POINT, captureOf("order-1", PayabliAttempt.Retry), cardForm())
+
+            assertTrue("$cause", cause is PayInException.Interrupted)
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** A resend's earlier send may have run, so a resend ending before the hand-off is still unknown. */
+    @Test
+    fun `a resend that fails before the hand-off is still unknown`() =
+        runTest(timeout = timeout) {
+            val transport = HandOffTransport()
+            val submission = submissionOver(transport)
+            submission.capture(TEST_ENTRY_POINT, cardRequest("order-1"))
+            transport.handsOff = false
+
+            val resend = submission.capture(TEST_ENTRY_POINT, cardRequest("order-1", attempt = PayabliAttempt.Retry))
+
+            val cause = failed(requireNotNull(resend)).cause
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorType.NETWORK_ERROR, cause.type)
         }
 
     @Test

@@ -398,19 +398,17 @@ internal class PayInSubmission(
             // Rethrown: a coroutine that swallows its own cancellation stops being cancellable. The state still
             // records it, because the charge may have landed and the retry key is what a second attempt needs.
             //
-            // The key is what says how far this got. Reserved, and the request may have been carried out, so
-            // it reports the open outcome every other interrupted attempt does. Not reserved, and nothing was
-            // sent. Gated on movesMoney as every other classification here is, so an operation that reserves
-            // a key without moving money would not start reporting an open payment.
+            // Open when a send of this payment may have run: a resent key's earlier send, or this one past the
+            // hand-off. Gated on movesMoney, so an operation that reserves a key without moving money never is.
             val interrupted = PayInException.Interrupted()
-            val unknown = movesMoney && retry.key != null
+            val unknown = movesMoney && retry.key != null && (retry.reused || sendMark.mayHaveLeft)
             outcome =
                 PayInSubmissionState.Failed(
                     if (unknown) PayInException.Unsettled(interrupted, retry.reference) else interrupted,
                 )
             throw cancellation
         } catch (failure: Exception) {
-            outcome = failure.asFailed(retry, movesMoney)
+            outcome = failure.asFailed(retry, movesMoney, sendMark.mayHaveLeft)
         } finally {
             // Nothing here suspends, so all of it runs on the canceled path as it does on any other. That is
             // what makes an abandoned payment countable: it is the one outcome nobody is left to report.
@@ -556,11 +554,13 @@ internal class PayInSubmission(
      *
      * @param retry the key this attempt carried.
      * @param movesMoney whether the operation can take a payment.
+     * @param mayHaveLeft whether this attempt's request passed the hand-off.
      * @return the failed state, with the field it blamed.
      */
     private fun Exception.asFailed(
         retry: RetryKey,
         movesMoney: Boolean,
+        mayHaveLeft: Boolean,
     ): PayInSubmissionState.Failed {
         val cause =
             when {
@@ -576,7 +576,8 @@ internal class PayInSubmission(
 
                 else -> this
             }
-        val unknown = movesMoney && cause.leavesTheOutcomeUnknown(retry.reused)
+        // A fresh key's send that ended before the hand-off ran nowhere, so its failure is reported as it is.
+        val unknown = movesMoney && (retry.reused || mayHaveLeft) && cause.leavesTheOutcomeUnknown(retry.reused)
         return PayInSubmissionState.Failed(
             cause = if (unknown) PayInException.Unsettled(cause, retry.reference) else cause,
             fieldErrors = PayInRejectedFields.of(this),
