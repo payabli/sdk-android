@@ -8,26 +8,28 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Whether the simple sample's next attempt is declared a retry, which decides whether the next tap is the same
- * payment or another. The screen keeps its own copy of the rule so it reads end to end.
+ * Whether the simple sample's next attempt is a retry, which decides whether the next tap names the same payment
+ * or a new one. The screen keeps its own copy of the rule so it reads end to end.
  */
 class SimpleCaptureKeyTest {
     @Test
-    fun `an unresolved attempt makes the next one a retry`() {
+    fun `an unresolved attempt makes the next one a retry of the same payment`() {
         val dropped = failed(PayInException.Unsettled(network()))
 
         assertTrue(retryAfter(open = false, FormOperation.Capture, dropped))
+        assertEquals("ref-1", referenceAfter("ref-1", retryOpen = true))
     }
 
     @Test
-    fun `a refused retry leaves the next one a retry`() {
-        // The service has seen the payment and the outcome is still unknown, so a fresh payment is the one
-        // thing the next tap must not be.
+    fun `a refused retry keeps the payment open`() {
+        // The service has seen the payment and the outcome is still unknown, so a new payment is the one thing the
+        // next tap must not be.
         val refused = failed(PayInException.Unsettled(refusedRetry()))
 
         assertTrue(retryAfter(open = true, FormOperation.Capture, refused))
@@ -45,11 +47,12 @@ class SimpleCaptureKeyTest {
     }
 
     @Test
-    fun `an answered attempt ends the retry`() {
-        // A decline settles the payment, so what the payer sends next is a different request.
+    fun `an answered attempt names a new payment next`() {
+        // A decline settles the payment, so what the payer sends next is a different payment.
         val declined = failed(SampleFailure(PayabliErrorType.PAYMENT_DECLINED, "Insufficient funds"))
 
         assertFalse(retryAfter(open = true, FormOperation.Capture, declined))
+        assertNotEquals("ref-1", referenceAfter("ref-1", retryOpen = false))
     }
 
     @Test
@@ -61,12 +64,12 @@ class SimpleCaptureKeyTest {
     }
 
     @Test
-    fun `a capture that succeeds ends the retry`() {
+    fun `a capture that succeeds closes the retry`() {
         assertFalse(retryAfter(open = true, FormOperation.Capture, outcome = null))
     }
 
     @Test
-    fun `an authorization opens and ends a retry as a capture does`() {
+    fun `an authorization opens and closes a retry as a capture does`() {
         val dropped = failed(PayInException.Unsettled(network()))
 
         assertTrue(retryAfter(open = false, FormOperation.Authorize, dropped))
@@ -151,8 +154,7 @@ class SimpleCaptureKeyTest {
 
     @Test
     fun `the amount is locked while a retry is open or a submission is in flight`() {
-        // A retry is of one payment. Sending it with a different amount would retry that payment while the
-        // screen shows another.
+        // An open retry is one payment. Retrying it with a different amount would describe another payment.
         assertFalse(amountEditable(PayInSubmissionState.Idle, retryOpen = true))
         assertFalse(amountEditable(PayInSubmissionState.Submitting, retryOpen = false))
         assertTrue(amountEditable(PayInSubmissionState.Idle, retryOpen = false))

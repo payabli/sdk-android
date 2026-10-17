@@ -36,7 +36,7 @@ class PayInOutcomeTest {
                     .Failed(PayInException.Unsettled(cause))
                     .toOutcome()
 
-            assertTrue("$what said its key was spent", outcome.keepsItsIdempotencyKey)
+            assertTrue("$what said its key was spent", outcome.keepsItsPaymentReference)
         }
     }
 
@@ -49,7 +49,7 @@ class PayInOutcomeTest {
 
         val outcome = PayInSubmissionState.Failed(conflict).toOutcome()
 
-        assertTrue("a refused repeat rotated the key", outcome.keepsItsIdempotencyKey)
+        assertTrue("a refused repeat rotated the key", outcome.keepsItsPaymentReference)
     }
 
     @Test
@@ -60,7 +60,7 @@ class PayInOutcomeTest {
 
         val outcome = PayInSubmissionState.Failed(canceled).toOutcome()
 
-        assertTrue("a canceled attempt rotated the key", outcome.keepsItsIdempotencyKey)
+        assertTrue("a canceled attempt rotated the key", outcome.keepsItsPaymentReference)
     }
 
     @Test
@@ -68,7 +68,7 @@ class PayInOutcomeTest {
         // Nothing was sent, so no key is owed a retry, but the attempt still running is carrying this one.
         val outcome = PayInSubmissionState.Failed(PayInException.AlreadySubmitting()).toOutcome()
 
-        assertTrue("the key the in-flight attempt holds was reported as spent", outcome.keepsItsIdempotencyKey)
+        assertTrue("the key the in-flight attempt holds was reported as spent", outcome.keepsItsPaymentReference)
     }
 
     @Test
@@ -85,7 +85,7 @@ class PayInOutcomeTest {
         answered.forEach { (what, cause) ->
             val outcome = PayInSubmissionState.Failed(cause).toOutcome()
 
-            assertFalse("$what kept a key the service has already answered", outcome.keepsItsIdempotencyKey)
+            assertFalse("$what kept a key the service has already answered", outcome.keepsItsPaymentReference)
         }
     }
 

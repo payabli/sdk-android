@@ -107,14 +107,17 @@ object FormCustomization {
         )
 
     /**
-     * The operation the form submits, declared a retry by [attempt]. With the customer section off, the app
-     * supplies the customer, and a capture's or an authorization's fee is the one for [method], included in its
-     * `totalAmount`.
+     * The operation the form submits. With the customer section off, the app supplies the customer, and a
+     * capture's or an authorization's fee is the one for [method], included in its `totalAmount`.
+     *
+     * @param paymentReference the payment this submission names.
+     * @param attempt [PayabliAttempt.Retry] while the payment [paymentReference] names has an unknown outcome.
      */
     fun operation(
         settings: FormSettings,
         operation: FormOperation,
         amount: BigDecimal,
+        paymentReference: String?,
         attempt: PayabliAttempt,
         method: PayInMethodType,
     ): PayabliPayInOperation {
@@ -127,6 +130,7 @@ object FormCustomization {
                 ),
                 customerData = supplied,
                 attempt = attempt,
+                paymentReference = paymentReference,
             )
         return when (operation) {
             FormOperation.Capture -> PayabliPayInOperation.Capture(transaction)

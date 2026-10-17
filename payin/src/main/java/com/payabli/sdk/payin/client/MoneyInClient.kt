@@ -71,7 +71,7 @@ internal class MoneyInClient(
         entryPoint: String,
         request: PayInRequest,
         entered: PayInEnteredDetails = PayInEnteredDetails.NONE,
-        idempotencyKey: String? = request.options.idempotencyKey,
+        idempotencyKey: String? = null,
     ): PayInResult {
         validate(entryPoint, request)
         return send(
@@ -100,7 +100,7 @@ internal class MoneyInClient(
         entryPoint: String,
         request: PayInRequest,
         entered: PayInEnteredDetails = PayInEnteredDetails.NONE,
-        idempotencyKey: String? = request.options.idempotencyKey,
+        idempotencyKey: String? = null,
     ): PayInResult {
         if (!request.paymentMethod.isAuthorizable) {
             throw PayInException.InvalidInput("paymentMethod", "This payment method cannot be authorized")
@@ -130,7 +130,7 @@ internal class MoneyInClient(
      */
     suspend fun captureAuthorized(
         request: PayInAuthorizedRequest,
-        idempotencyKey: String? = request.idempotencyKey,
+        idempotencyKey: String? = null,
     ): PayInResult {
         PayInValidation.transId(request.transId)
         PayInValidation.paymentDetails(request.paymentDetails)

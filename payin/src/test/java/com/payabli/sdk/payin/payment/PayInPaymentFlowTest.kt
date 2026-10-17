@@ -258,16 +258,6 @@ class PayInPaymentFlowTest {
             assertNotNull("an authorization went out under no key", authorized.sentKey())
         }
 
-    @Test
-    fun `a direct call sends the caller's own key unchanged`() =
-        runTest(timeout = timeout) {
-            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
-
-            flowOver(transport).capture(cardRequest(idempotencyKey = "key-9"))
-
-            assertEquals("key-9", transport.sentKey())
-        }
-
     /**
      * The buffers came from the caller, so the call does not close them.
      *
@@ -575,7 +565,8 @@ class PayInPaymentFlowTest {
             val published = flow.state.value as PayInSubmissionState.Failed
             val first = transport.request?.headers?.get("idempotencyKey")
             flow.consume()
-            flow.capture(testOptions(attempt = PayabliAttempt.Retry), cardForm())
+            val reference = (cause as PayInException.Unsettled).paymentReference
+            flow.capture(testOptions(reference, PayabliAttempt.Retry), cardForm())
 
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertTrue("${published.cause}", published.cause is PayInException.Unsettled)
@@ -591,9 +582,9 @@ class PayInPaymentFlowTest {
             val transport = FakePayInTransport.failingWith(dropped())
             val flow = flowOver(transport)
 
-            flow.capture(cardRequest())
+            val unknown = flow.capture(cardRequest()).exceptionOrNull() as PayInException.Unsettled
             val first = transport.request?.headers?.get("idempotencyKey")
-            flow.capture(cardRequest(attempt = PayabliAttempt.Retry))
+            flow.capture(cardRequest(unknown.paymentReference, attempt = PayabliAttempt.Retry))
 
             assertNotNull(first)
             assertEquals(first, transport.request?.headers?.get("idempotencyKey"))
@@ -614,22 +605,6 @@ class PayInPaymentFlowTest {
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertEquals(PayabliErrorType.CONFLICT, (cause as PayInException.Unsettled).type)
             assertTrue("${published.cause}", published.cause is PayInException.Unsettled)
-        }
-
-    /** Whoever chose the key, the service's answer says the same thing about the payment. */
-    @Test
-    fun `a conflict on the caller's own key answers that the outcome is unknown`() =
-        runTest(timeout = timeout) {
-            val flow = flowOver(FakePayInTransport.answering("Duplicated idempotencyKey", statusCode = 409))
-
-            val cause =
-                flow
-                    .captureAuthorizedTransaction(
-                        PayInAuthorizedRequest("101-abc", testDetails(), idempotencyKey = "caller-chose-this"),
-                    ).exceptionOrNull()
-
-            assertTrue("$cause", cause is PayInException.Unsettled)
-            assertEquals(PayabliErrorType.CONFLICT, (cause as PayInException.Unsettled).type)
         }
 
     @Test

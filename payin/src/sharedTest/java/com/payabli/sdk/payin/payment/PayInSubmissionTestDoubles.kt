@@ -226,21 +226,21 @@ internal const val TEST_ENTRY_POINT: String = "merchant-entry"
 
 /** A capture of the test amount. */
 internal fun captureOf(
-    idempotencyKey: String? = null,
+    paymentReference: String? = null,
     attempt: PayabliAttempt = PayabliAttempt.NewPayment,
-): PayabliPayInOperation.Capture = PayabliPayInOperation.Capture(testOptions(idempotencyKey, attempt))
+): PayabliPayInOperation.Capture = PayabliPayInOperation.Capture(testOptions(paymentReference, attempt))
 
 /** An authorization, which the service takes for entered card data only. */
 internal fun authorizeOf(
-    idempotencyKey: String? = null,
+    paymentReference: String? = null,
     attempt: PayabliAttempt = PayabliAttempt.NewPayment,
-): PayabliPayInOperation.Authorize = PayabliPayInOperation.Authorize(testOptions(idempotencyKey, attempt))
+): PayabliPayInOperation.Authorize = PayabliPayInOperation.Authorize(testOptions(paymentReference, attempt))
 
 internal fun testOptions(
-    idempotencyKey: String? = null,
+    paymentReference: String? = null,
     attempt: PayabliAttempt = PayabliAttempt.NewPayment,
 ): PayInTransactionOptions =
-    PayInTransactionOptions(paymentDetails = testDetails(), idempotencyKey = idempotencyKey, attempt = attempt)
+    PayInTransactionOptions(paymentDetails = testDetails(), paymentReference = paymentReference, attempt = attempt)
 
 /**
  * A card request as a host that collected the instrument itself would build it.
@@ -249,10 +249,10 @@ internal fun testOptions(
  * asserting they survive the call reads them back from the value this returns.
  */
 internal fun cardRequest(
-    idempotencyKey: String? = null,
+    paymentReference: String? = null,
     cardData: PayInCardData = testCardData(),
     attempt: PayabliAttempt = PayabliAttempt.NewPayment,
-): PayInRequest = PayInRequest(PayInPaymentMethod.Card(cardData), testOptions(idempotencyKey, attempt))
+): PayInRequest = PayInRequest(PayInPaymentMethod.Card(cardData), testOptions(paymentReference, attempt))
 
 /** A store request as a host that collected the card itself would build it; the caller owns the buffers. */
 internal fun cardStoreRequest(cardData: PayInCardData = testCardData()): PayInStoreRequest =

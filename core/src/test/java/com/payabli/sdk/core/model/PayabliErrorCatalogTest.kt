@@ -91,6 +91,12 @@ class PayabliErrorCatalogTest {
                 "This retry describes a different payment from the one still unresolved, so it was not sent. Check that payment first; to charge a different payment, send it as a new payment.",
             ),
             Row(
+                "PAYMENT_REFERENCE_OPEN",
+                1023,
+                PayabliErrorCategory.INVALID_REQUEST,
+                "A payment with this reference is still unresolved, so this one was not sent. Check that payment first, or retry it.",
+            ),
+            Row(
                 "DEVICE_KEY_UNAVAILABLE",
                 3001,
                 PayabliErrorCategory.RETRY_LATER,

@@ -118,7 +118,7 @@ class PayInSubmissionTelemetryTest {
                 .storeMethod(TEST_ENTRY_POINT, cardStoreRequest())
             submissionOver(FakePayInTransport.answering(APPROVED_TRANSACTION)).capture(TEST_ENTRY_POINT, cardRequest())
             submissionOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
-                .void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+                .void(TEST_ENTRY_POINT, "101-abc")
 
             assertEquals(3, recorded.size)
             recorded.forEach { (event, properties) ->
@@ -132,7 +132,7 @@ class PayInSubmissionTelemetryTest {
         runTest(timeout = TEST_TIMEOUT) {
             val submission = submissionOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
 
-            submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+            submission.void(TEST_ENTRY_POINT, "101-abc")
 
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_VOID_COMPLETED, event)
@@ -175,7 +175,7 @@ class PayInSubmissionTelemetryTest {
         runTest(timeout = TEST_TIMEOUT) {
             val submission = submissionOver(FakePayInTransport.answering(DECLINED_TRANSACTION))
 
-            submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+            submission.void(TEST_ENTRY_POINT, "101-abc")
 
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_VOID_COMPLETED, event)

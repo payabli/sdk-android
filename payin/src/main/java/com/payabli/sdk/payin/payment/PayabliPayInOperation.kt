@@ -87,9 +87,18 @@ internal val PayabliPayInOperation.movesMoney: Boolean
             is PayabliPayInOperation.Capture, is PayabliPayInOperation.Authorize -> true
         }
 
+/** The options of an operation that takes a payment, or null for storing a method. */
+internal val PayabliPayInOperation.transactionOptions: PayInTransactionOptions?
+    get() =
+        when (this) {
+            is PayabliPayInOperation.StoreMethod -> null
+            is PayabliPayInOperation.Capture -> options
+            is PayabliPayInOperation.Authorize -> options
+        }
+
 /**
- * The route an open attempt at this operation is held against, or null where none is held. Storing a method
- * moves no money, so nothing is held for it.
+ * The route an open attempt at this operation is held against, with its payment reference, or null where none
+ * is held. Storing a method moves no money, so nothing is held for it.
  */
 internal val PayabliPayInOperation.holding: String?
     get() =
@@ -99,7 +108,7 @@ internal val PayabliPayInOperation.holding: String?
             is PayabliPayInOperation.Authorize -> PayInRoutes.AUTHORIZE
         }
 
-/** Whether the host declared this operation a retry of the most recent payment whose outcome is not known. */
+/** Whether the host declared this operation a retry of the payment its reference names. */
 internal val PayabliPayInOperation.declaresRetry: Boolean
     get() =
         when (this) {

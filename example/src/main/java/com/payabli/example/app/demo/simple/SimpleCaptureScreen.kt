@@ -34,6 +34,7 @@ import com.payabli.example.app.demo.ui.customize.FormSettings
 import com.payabli.example.app.demo.ui.customize.FormSettingsMenu
 import com.payabli.example.app.sdk.FormCustomization
 import com.payabli.example.app.sdk.PayInSessionSource
+import com.payabli.example.app.sdk.newPaymentReference
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.payin.PayabliPayIn
@@ -60,6 +61,16 @@ internal fun retryAfter(
         outcome.cause.type == PayabliErrorType.RETRY_NOT_SAME_PAYMENT -> open
         else -> outcome.cause is PayInException.Unsettled
     }
+
+/** What the next attempt declares: a retry of the same payment while one is open, otherwise a new payment. */
+internal fun attemptFor(retryOpen: Boolean): PayabliAttempt =
+    if (retryOpen) PayabliAttempt.Retry else PayabliAttempt.NewPayment
+
+/** The payment the next attempt names: the same one while a retry is open, a new one once it was answered. */
+internal fun referenceAfter(
+    reference: String,
+    retryOpen: Boolean,
+): String = if (retryOpen) reference else newPaymentReference()
 
 /**
  * The operation after [requested] is chosen, which stays [current] while a submission is in flight: its outcome
@@ -89,7 +100,7 @@ internal fun offeredOperations(
     heldFor: FormOperation?,
 ): List<FormOperation> = FormOperation.entries.filter { it in settings.operations || it == current || it == heldFor }
 
-/** The operation an open retry belongs to once [submitted] has ended. A store sends no key, so it leaves the owner. */
+/** The operation an open retry belongs to once [submitted] has ended. A store moves no money, so it leaves the owner. */
 internal fun retryOwnerAfter(
     owner: FormOperation?,
     submitted: FormOperation,
@@ -122,8 +133,8 @@ internal fun outcomeMessage(
     }
 
 /**
- * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed. It does not
- * outlive the process, and nor does the key a retry needs: `payin/src/androidTest/PROCESS-DEATH.md` says more.
+ * Holds the flow, so a rotation keeps the submission in flight and what the payer typed. Neither survives the
+ * process ending, nor does the SDK's key for [paymentReference]: a payment a kill interrupted is read back.
  */
 class SimpleCaptureViewModel(
     sessionSource: PayInSessionSource,
@@ -135,11 +146,18 @@ class SimpleCaptureViewModel(
     var failure by mutableStateOf<String?>(null)
         private set
 
-    /** Whether the next attempt is declared a retry: true while the last payment's outcome is unknown. */
+    /**
+     * The payment the next attempt names. The same one while a retry is open, so a retry after an unknown outcome
+     * settles the first charge instead of making a second one; a new one once the service has answered.
+     */
+    var paymentReference by mutableStateOf(newPaymentReference())
+        private set
+
+    /** Whether the last payment's outcome is unknown, so the next attempt is its retry. */
     var retryOpen by mutableStateOf(false)
         private set
 
-    /** The operation [retryOpen] was left by, and the only one that may retry. */
+    /** The operation the open retry belongs to, and the only one that may send it. */
     var heldFor by mutableStateOf<FormOperation?>(null)
         private set
 
@@ -170,11 +188,13 @@ class SimpleCaptureViewModel(
         outcome: PayInSubmissionState.Failed,
     ) {
         retryOpen = retryAfter(retryOpen, submitted, outcome)
+        paymentReference = referenceAfter(paymentReference, retryOpen)
         heldFor = retryOwnerAfter(heldFor, submitted, retryOpen)
     }
 
     fun succeeded(submitted: FormOperation) {
         retryOpen = retryAfter(retryOpen, submitted, outcome = null)
+        paymentReference = referenceAfter(paymentReference, retryOpen)
         heldFor = retryOwnerAfter(heldFor, submitted, retryOpen)
     }
 
@@ -317,7 +337,8 @@ fun SimpleCaptureScreen(
                                     settings,
                                     operation,
                                     amount ?: BigDecimal.ZERO,
-                                    if (viewModel.retryOpen) PayabliAttempt.Retry else PayabliAttempt.NewPayment,
+                                    viewModel.paymentReference,
+                                    attemptFor(viewModel.retryOpen),
                                     method,
                                 ),
                             configuration = form,

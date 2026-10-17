@@ -33,13 +33,10 @@ sealed class PayInOutcome {
         val error: PaymentError,
         val diagnostic: String,
         /**
-         * Whether the idempotency key this attempt used is still the right one to send.
-         *
-         * True when the outcome is unknown, so a retry has to carry the same key for the service to recognise
-         * the repeat, and true when nothing was sent because another attempt is in flight holding it. False
-         * when the service answered: what the payer sends next is a different request.
+         * Whether the payment reference this attempt named still names the payment to retry: true when the outcome
+         * is unknown or nothing was sent because another attempt is in flight, false once the service answered.
          */
-        val keepsItsIdempotencyKey: Boolean,
+        val keepsItsPaymentReference: Boolean,
         val isOutcomeUnknown: Boolean = false,
         val isRetryRefused: Boolean = false,
     ) : PayInOutcome()
@@ -62,7 +59,7 @@ internal fun Result<PayInResult>.toOutcome(): PayInOutcome =
             PayInOutcome.Refused(
                 error = failure.toPaymentError(),
                 diagnostic = failure.toString(),
-                keepsItsIdempotencyKey =
+                keepsItsPaymentReference =
                     failure is PayInException.Unsettled || failure is PayInException.AlreadySubmitting,
                 isOutcomeUnknown = failure is PayInException.Unsettled,
                 isRetryRefused = (failure as? PayabliException)?.type == PayabliErrorType.RETRY_REFUSED,
@@ -74,7 +71,7 @@ internal fun PayInSubmissionState.Failed.toOutcome(): PayInOutcome.Refused =
     PayInOutcome.Refused(
         error = toPaymentError(),
         diagnostic = cause.toString(),
-        keepsItsIdempotencyKey =
+        keepsItsPaymentReference =
             cause is PayInException.Unsettled || cause is PayInException.AlreadySubmitting,
         isOutcomeUnknown = cause is PayInException.Unsettled,
     )

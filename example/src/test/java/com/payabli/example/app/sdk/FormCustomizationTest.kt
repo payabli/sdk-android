@@ -1,5 +1,6 @@
 package com.payabli.example.app.sdk
 
+import com.payabli.example.app.demo.simple.attemptFor
 import com.payabli.example.app.demo.simple.parseAmount
 import com.payabli.example.app.demo.ui.customize.FormMethods
 import com.payabli.example.app.demo.ui.customize.FormOperation
@@ -124,12 +125,14 @@ class FormCustomizationTest {
                 FormSettings(),
                 FormOperation.Authorize,
                 BigDecimal("12.34"),
+                "key-1",
                 PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             ) as PayabliPayInOperation.Authorize
 
         assertEquals(BigDecimal("12.64"), authorize.options.paymentDetails.totalAmount)
         assertEquals(PayabliAttempt.NewPayment, authorize.options.attempt)
+        assertEquals("key-1", authorize.options.paymentReference)
     }
 
     @Test
@@ -210,6 +213,7 @@ class FormCustomizationTest {
                 off,
                 FormOperation.Capture,
                 BigDecimal.ONE,
+                null,
                 PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             )
@@ -218,6 +222,7 @@ class FormCustomizationTest {
                 off,
                 FormOperation.Tokenize,
                 BigDecimal.ONE,
+                null,
                 PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             )
@@ -231,6 +236,7 @@ class FormCustomizationTest {
                 FormSettings(customerSection = true),
                 FormOperation.Capture,
                 BigDecimal.ONE,
+                null,
                 PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             )
@@ -244,13 +250,31 @@ class FormCustomizationTest {
                 FormSettings(),
                 FormOperation.Capture,
                 BigDecimal("5.00"),
-                PayabliAttempt.Retry,
+                "held-key",
+                PayabliAttempt.NewPayment,
                 PayInMethodType.Card,
             )
                 as PayabliPayInOperation.Capture
         assertEquals(BigDecimal("5.30"), capture.options.paymentDetails.totalAmount)
+        assertEquals("held-key", capture.options.paymentReference)
+    }
+
+    @Test
+    fun `a submission while a retry is open declares the retry`() {
+        // The same reference declared a new payment is refused while its key is held, and is a second payment
+        // once it is not.
+        val capture =
+            FormCustomization.operation(
+                FormSettings(),
+                FormOperation.Capture,
+                BigDecimal("5.00"),
+                "held-key",
+                attemptFor(retryOpen = true),
+                PayInMethodType.Card,
+            ) as PayabliPayInOperation.Capture
+
         assertEquals(PayabliAttempt.Retry, capture.options.attempt)
-        assertNull("a declared retry sets no key of the app's own", capture.options.idempotencyKey)
+        assertEquals(PayabliAttempt.NewPayment, attemptFor(retryOpen = false))
     }
 
     @Test
@@ -260,6 +284,7 @@ class FormCustomizationTest {
                 FormSettings(),
                 FormOperation.Capture,
                 BigDecimal("5.00"),
+                null,
                 PayabliAttempt.NewPayment,
                 method,
             )

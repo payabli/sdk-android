@@ -56,7 +56,6 @@ import java.math.BigDecimal
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
-import java.util.UUID
 
 /**
  * Every flow this module supports, against a real environment.
@@ -202,7 +201,6 @@ class PayInLiveFlowsInstrumentedTest {
                         PayInAuthorizedRequest(
                             transId = transId!!,
                             paymentDetails = PayInPaymentDetails(totalAmount = AMOUNT),
-                            idempotencyKey = UUID.randomUUID().toString(),
                         ),
                     ).orFail("capturing an authorization")
 
@@ -374,7 +372,6 @@ class PayInLiveFlowsInstrumentedTest {
                         PayInAuthorizedRequest(
                             transId = transId!!,
                             paymentDetails = PayInPaymentDetails(totalAmount = AMOUNT),
-                            idempotencyKey = UUID.randomUUID().toString(),
                         ),
                     ).orFail("capturing an authorization")
             assertApproved(captured.code)
@@ -479,12 +476,11 @@ class PayInLiveFlowsInstrumentedTest {
                 ),
         )
 
-    /** A key per attempt, so a rerun is a second payment rather than a replay of the first. */
+    /** A new payment per call, so a rerun is a second payment rather than a replay of the first. */
     private fun transaction() =
         PayInTransactionOptions(
             paymentDetails = PayInPaymentDetails(totalAmount = AMOUNT),
             orderDescription = "android live flows",
-            idempotencyKey = UUID.randomUUID().toString(),
         )
 
     private suspend fun session(): PayabliSession =

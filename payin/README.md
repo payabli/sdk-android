@@ -134,21 +134,21 @@ authorization later, and `voidTransaction` releases it or voids a transaction th
 
 ### Retry safely
 
-A charge always sends an idempotency key. The SDK mints one per call when you don't set
-`PayInTransactionOptions.idempotencyKey`, so calling again is a second payment unless you say it's a retry.
-When a charge's outcome is unknown, find the transaction first where you can. To try it again, set
-`PayInTransactionOptions.attempt` to `PayabliAttempt.Retry`: the SDK sends it under the key of the most recent
-charge whose outcome is unknown, so the service recognizes the repeat. If the SDK holds no such key, or the
-service would no longer recognize it, the retry goes out as a new payment. The held key lives in memory only, so
-set and persist your own `idempotencyKey` if a retry has to survive a restart.
+A charge always sends an idempotency key, which the SDK mints and holds; you don't set one. Name each payment
+with `PayInTransactionOptions.paymentReference`, or let the SDK name it. A charge whose outcome is unknown fails
+with `PayInException.Unsettled`, which carries that reference. Find the transaction first where you can. To try
+the same payment again, submit it with the same `paymentReference` and `attempt = PayabliAttempt.Retry`: the SDK
+resends that payment's key, so the service recognizes the repeat. If the SDK holds no key for that reference, or
+the service would no longer recognize it, the retry goes out under a new key. Calling again without declaring a
+retry is a new payment, and naming a reference whose outcome is still unknown fails with `PAYMENT_REFERENCE_OPEN`
+and isn't sent. The held key lives in memory only, so after a restart read the transaction back.
 
 If the service refuses a declared retry, it arrives as `PayInException.Unsettled` with type `RETRY_REFUSED`: the
 earlier attempt reached the service, and its outcome is still unknown. Check that payment before trying again.
 
 A retry describes the same payment: the same amount, service fee, surcharge, currency and kind of payment method,
 and the same `orderId` when the first attempt set one. A retry that describes a different payment fails with
-`RETRY_NOT_SAME_PAYMENT` and isn't sent, and the earlier payment's key is kept for the retry that matches. If you
-keep more than one payment open at a time, set your own `idempotencyKey` on each.
+`RETRY_NOT_SAME_PAYMENT` and isn't sent, and the earlier payment's key is kept for the retry that matches.
 
 ## Outcomes and errors
 
