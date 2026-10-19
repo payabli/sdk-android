@@ -49,6 +49,20 @@ class TrustedArtifactNamesTest {
     }
 
     @Test
+    fun `the guard runs no other project's tasks before it checks`() {
+        writeProject(dependency = "probe:lib:1.0:sources")
+        projectDir.root.resolve("settings.gradle.kts").appendText("\ninclude(\":producer\")\n")
+        projectDir.newFolder("producer")
+        projectDir.root.resolve("producer/build.gradle.kts").writeText("plugins { `java-library` }")
+        projectDir.root.resolve("build.gradle.kts").appendText("\ndependencies { implementation(project(\":producer\")) }\n")
+
+        val result = runner("verifyTrustedArtifactNames").buildAndFail()
+
+        assertTrue(result.output, result.output.contains("lib-1.0-sources.jar"))
+        assertTrue(result.output, result.tasks.none { it.path.startsWith(":producer:") })
+    }
+
+    @Test
     fun `a build script classpath holding a sources jar fails before any task runs`() {
         writeBuildScriptProject(dependency = "probe:lib:1.0:sources")
 
