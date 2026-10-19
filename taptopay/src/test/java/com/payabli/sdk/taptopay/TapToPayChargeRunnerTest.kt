@@ -2751,7 +2751,7 @@ class TapToPayChargeRunnerTest {
 
             assertTrue(failure.toString(), failure is TapToPayException)
             assertEquals(PayabliErrorType.SESSION_NOT_INITIALIZED, (failure as TapToPayException).type)
-            assertEquals("this terminal belongs to a session that was replaced or ended", failure.reason)
+            assertEquals("this PayabliTTP belongs to a PayabliSession that was replaced or ended", failure.reason)
             assertFalse("a payment was opened", INITIATE in fixture.routes)
             assertNull("the reader was asked for a card", fixture.reader.lastReadRequest)
             assertEquals(1, fixture.reader.prepareCount)

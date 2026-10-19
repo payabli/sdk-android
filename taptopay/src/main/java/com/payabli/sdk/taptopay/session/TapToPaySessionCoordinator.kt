@@ -470,7 +470,7 @@ internal class TapToPaySessionCoordinator(
  */
 private val SETUP_GATE = Mutex()
 
-private const val REASON_RETIRED = "this terminal belongs to a session that was replaced or ended"
+private const val REASON_RETIRED = "this PayabliTTP belongs to a PayabliSession that was replaced or ended"
 
 /**
  * What an entry point runs: [prepare] once, then [sequence], which the coordinator runs again after renewing a

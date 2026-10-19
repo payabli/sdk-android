@@ -21,7 +21,7 @@ class RetiredTerminalTest {
     private fun assertRetired(failure: Throwable?) {
         assertTrue(failure.toString(), failure is PayabliException)
         assertEquals(PayabliErrorType.SESSION_NOT_INITIALIZED, (failure as PayabliException).type)
-        assertEquals("this terminal belongs to a session that was replaced or ended", failure.reason)
+        assertEquals("this PayabliTTP belongs to a PayabliSession that was replaced or ended", failure.reason)
     }
 
     @Test
