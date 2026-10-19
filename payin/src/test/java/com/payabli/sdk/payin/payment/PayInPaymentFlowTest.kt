@@ -572,6 +572,7 @@ class PayInPaymentFlowTest {
             assertTrue("${published.cause}", published.cause is PayInException.Unsettled)
             assertEquals(PayabliErrorType.NETWORK_ERROR, published.cause.type)
             assertNotNull(first)
+            assertEquals("the retry was not sent", 2, transport.count)
             assertEquals(first, transport.request?.headers?.get("idempotencyKey"))
         }
 
@@ -587,6 +588,7 @@ class PayInPaymentFlowTest {
             flow.capture(cardRequest(unknown.paymentReference, attempt = PayabliAttempt.Retry))
 
             assertNotNull(first)
+            assertEquals("the retry was not sent", 2, transport.count)
             assertEquals(first, transport.request?.headers?.get("idempotencyKey"))
         }
 
