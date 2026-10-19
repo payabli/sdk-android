@@ -137,8 +137,18 @@ authorization later, and `voidTransaction` releases it or voids a transaction th
 A charge always sends an idempotency key, which the SDK mints and holds; you don't set one. Name each payment
 with `PayInTransactionOptions.paymentReference`, or let the SDK name it. A charge whose outcome is unknown fails
 with `PayInException.Unsettled`, which carries that reference. Find the transaction first where you can. To try
-the same payment again, submit it with the same `paymentReference` and `attempt = PayabliAttempt.Retry`. Calling
-again without declaring a retry is a new payment.
+the same payment again, submit it with the same `paymentReference` and `attempt = PayabliAttempt.Retry`: the SDK
+resends that payment's key, so the service recognizes the repeat. If the SDK holds no key for that reference, or
+the service would no longer recognize it, the retry goes out under a new key. Calling again without declaring a
+retry is a new payment, and naming a reference whose outcome is still unknown fails with `PAYMENT_REFERENCE_OPEN`
+and isn't sent. The held key lives in memory only, so after a restart read the transaction back.
+
+If the service refuses a declared retry, it arrives as `PayInException.Unsettled` with type `RETRY_REFUSED`: the
+earlier attempt reached the service, and its outcome is still unknown. Check that payment before trying again.
+
+A retry describes the same payment: the same amount, service fee, surcharge, currency and kind of payment method,
+and the same `orderId` when the first attempt set one. A retry that describes a different payment fails with
+`RETRY_NOT_SAME_PAYMENT` and isn't sent, and the earlier payment's key is kept for the retry that matches.
 
 ## Outcomes and errors
 
@@ -175,9 +185,6 @@ or "voided":
 When a form submission fails, `PayInSubmissionState.Failed` carries:
 
 - `cause`, which says whether a payment may be outstanding. Read it before anything else.
-- `retryKey`, the key the SDK holds for a payment whose outcome is unknown. You can't send it: a retry names the
-  payment with `paymentReference` instead. It's `null` where the outcome is known, where nothing was sent, and when
-  storing a payment method.
 - `fieldErrors`, what the refusal blamed, per field. It's empty when it blamed none.
 
 `PayInException.Refused` and `PayInException.ServiceError` carry `failure`, a `PayInFailure` with the service's

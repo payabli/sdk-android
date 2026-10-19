@@ -130,4 +130,13 @@ class CaptureRequestTest {
             assertEquals(field.name, field.get(original), field.get(retry))
         }
     }
+
+    @Test
+    fun `an authorization declared a retry says so`() {
+        val options = PayInTransactionOptions(PayInPaymentDetails(BigDecimal("2.50")), paymentReference = "ref-1")
+        val authorization = PayInOperation(PayabliPayInOperation.Authorize(options))
+
+        assertEquals(false, authorization.declaresRetry)
+        assertEquals(true, authorization.asRetry().declaresRetry)
+    }
 }

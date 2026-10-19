@@ -60,6 +60,13 @@ public class PayabliTTP private constructor(
      * holding only the identifier the service already knows does not have to invent a name to go with it.
      * What a given paypoint then requires is its own rule and is answered by the service.
      *
+     * **A charge is a new sale unless [attempt] says it is a retry.** A charge whose outcome is unknown keeps
+     * its idempotency key for this entry point under this environment, and only a charge declared
+     * [PayabliAttempt.Retry] is sent the most recent of those keys, so the service recognises the repeat
+     * rather than opening a second sale. With none held, or one the service would no longer recognise, it is
+     * sent under a new key. A retry the service refuses because the earlier sale reached it fails as
+     * [com.payabli.sdk.core.model.PayabliErrorType.CHARGE_NOT_FINISHED].
+     *
      * @param attempt whether this is a new sale or a retry of the most recent sale whose outcome is not known.
      */
     public suspend fun charge(
@@ -68,7 +75,7 @@ public class PayabliTTP private constructor(
         invoice: TapToPayInvoiceData = TapToPayInvoiceData(),
         orderDescription: String? = null,
         attempt: PayabliAttempt = PayabliAttempt.NewPayment,
-    ): TapToPayResult = wrapping { runner.charge(paymentDetails, customer, invoice, orderDescription) }
+    ): TapToPayResult = wrapping { runner.charge(paymentDetails, customer, invoice, orderDescription, attempt) }
 
     /**
      * Retries the unconfirmed close of the payment named by [paymentTransId].

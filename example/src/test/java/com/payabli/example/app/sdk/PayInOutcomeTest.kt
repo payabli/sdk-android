@@ -2,9 +2,11 @@ package com.payabli.example.app.sdk
 
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
+import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,7 +35,7 @@ class PayInOutcomeTest {
         unanswered.forEach { (what, cause) ->
             val outcome =
                 PayInSubmissionState
-                    .Failed(PayInException.Unsettled(cause), retryKey = "the-attempt-key")
+                    .Failed(PayInException.Unsettled(cause))
                     .toOutcome()
 
             assertTrue("$what said its key was spent", outcome.keepsItsPaymentReference)
@@ -41,13 +43,13 @@ class PayInOutcomeTest {
     }
 
     @Test
-    fun `a refused repeat keeps its key, though there is none to resend`() {
+    fun `a refused repeat keeps its key`() {
         // A 409 says a request under that key got past the service's check and nothing about whether the
         // payment was taken. Rotating would start a new payment for one that may already have been made, so
         // the screen holds what it has and the payer's next move is to reconcile rather than to pay again.
         val conflict = PayInException.Unsettled(PayabliConflictException())
 
-        val outcome = PayInSubmissionState.Failed(conflict, retryKey = null).toOutcome()
+        val outcome = PayInSubmissionState.Failed(conflict).toOutcome()
 
         assertTrue("a refused repeat rotated the key", outcome.keepsItsPaymentReference)
     }
@@ -58,7 +60,7 @@ class PayInOutcomeTest {
         // one fact rather than naming a second type beside it.
         val canceled = PayInException.Unsettled(PayInException.Interrupted())
 
-        val outcome = PayInSubmissionState.Failed(canceled, retryKey = "the-attempt-key").toOutcome()
+        val outcome = PayInSubmissionState.Failed(canceled).toOutcome()
 
         assertTrue("a canceled attempt rotated the key", outcome.keepsItsPaymentReference)
     }
@@ -69,6 +71,19 @@ class PayInOutcomeTest {
         val outcome = PayInSubmissionState.Failed(PayInException.AlreadySubmitting()).toOutcome()
 
         assertTrue("the key the in-flight attempt holds was reported as spent", outcome.keepsItsPaymentReference)
+    }
+
+    @Test
+    fun `a retry refused for describing another payment keeps the payment's reference`() {
+        // Nothing was sent and the earlier payment is still unknown, so its reference still names the retry.
+        val mismatch =
+            PayabliGenericException(
+                PayabliErrorType.RETRY_NOT_SAME_PAYMENT,
+                PayabliErrorType.RETRY_NOT_SAME_PAYMENT.message,
+            )
+
+        assertTrue(PayInSubmissionState.Failed(mismatch).toOutcome().keepsItsPaymentReference)
+        assertTrue((Result.failure<PayInResult>(mismatch).toOutcome() as PayInOutcome.Refused).keepsItsPaymentReference)
     }
 
     @Test

@@ -1,14 +1,21 @@
 package com.payabli.sdk.payin.payment
 
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.HostBindings
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliServerException
+import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.payin.ManualDeviceTest
 import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.form.PayInField
@@ -34,6 +41,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -251,6 +259,96 @@ class PayInLiveFlowsInstrumentedTest {
 
             assertEquals(PayInTransactionStatus.Captured, read.status)
         }
+
+    /**
+     * The first answer is discarded once the service has taken the payment, as a dropped connection loses it, and
+     * the declared retry goes out under the same key, so the service answers it as that payment, not a second one.
+     */
+    @Test
+    fun aDeclaredRetryAfterALostAnswerIsTheSamePayment() =
+        runBlocking {
+            val transport = LosesFirstAnswer(installedSession().transport)
+            val lossy =
+                PayInPaymentFlow.over(
+                    transport,
+                    entryPoint,
+                    CoroutineScope(SupervisorJob() + Dispatchers.IO),
+                    Dispatchers.IO,
+                )
+            val options = PayInTransactionOptions(PayInPaymentDetails(AMOUNT), orderDescription = "android lost answer")
+
+            val lost = lossy.capture(options, card()).exceptionOrNull() as? PayabliException
+            assertTrue(lossy.consume())
+            // No reference was named, so the retry names the one the SDK minted and returned with the unknown outcome.
+            val retried = lossy.capture(options.asRetry((lost as? PayInException.Unsettled)?.paymentReference), card())
+
+            assertTrue("the lost answer was not reported as unknown: $lost", lost is PayInException.Unsettled)
+            val original = transport.lostTransId
+            assertNotNull("the service took no payment the first time", original)
+            assertEquals("the retry did not resend the held key", transport.keys[0], transport.keys[1])
+            val refused = retried.exceptionOrNull() as? PayabliException
+            val repeated =
+                refused?.type == PayabliErrorType.RETRY_REFUSED ||
+                    retried.getOrNull()?.transaction?.paymentTransId == original
+            // The run's evidence, on one line: a transaction identifier and a type carry no payer data.
+            Log.i(
+                "PayInLiveFlows",
+                "lost answer: transaction=$original keys=${transport.keys.distinct().size} " +
+                    "retry=${refused?.type ?: retried.getOrNull()?.transaction?.paymentTransId}",
+            )
+            assertTrue(
+                "the retry was taken as a second payment: ${retried.exceptionOrNull() ?: retried.getOrNull()?.code}",
+                repeated,
+            )
+            assertTrue(lossy.consume())
+            assertEquals(
+                PayInTransactionStatus.Captured,
+                lossy.readTransaction(original!!).orFail("reading the original payment back").status,
+            )
+        }
+
+    private fun PayInTransactionOptions.asRetry(reference: String?) =
+        PayInTransactionOptions(
+            paymentDetails,
+            orderDescription = orderDescription,
+            attempt = PayabliAttempt.Retry,
+            paymentReference = reference,
+        )
+
+    /** Hands every request to [inner], and discards the answer to the first payment once the service has given it. */
+    private class LosesFirstAnswer(
+        private val inner: PayabliTransport,
+    ) : PayabliTransport {
+        /** The key each payment was sent under, in order. */
+        val keys: MutableList<String?> = mutableListOf()
+
+        /** The transaction the discarded answer named. */
+        var lostTransId: String? = null
+            private set
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            val key = request.headers["idempotencyKey"] ?: return inner.execute(request)
+            keys += key
+            val response = inner.execute(request)
+            if (keys.size > 1) return response
+            lostTransId =
+                runCatching {
+                    Json
+                        .parseToJsonElement(response.bodyAsText())
+                        .jsonObject["data"]
+                        ?.jsonObject
+                        ?.get("paymentTransId")
+                        ?.jsonPrimitive
+                        ?.content
+                }.getOrNull()
+            throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the answer was lost")
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = inner.execute(request, payloadSerializer)
+    }
 
     @Test
     fun readingAnIdentifierWithNothingVisibleUnderIt() =

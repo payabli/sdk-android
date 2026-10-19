@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
 import com.payabli.sdk.taptopay.ChargeKeyStore
 import com.payabli.sdk.taptopay.adapters.platform.TapToPayComponents
@@ -54,9 +55,9 @@ class ChargeKeyStoreInstrumentedTest {
     @Test
     fun aReservationSurvivesAFreshStoreInstance() =
         runTest(timeout = TEST_TIMEOUT) {
-            assertFalse(storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX).reused)
+            assertFalse(storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
 
-            val second = storeOver("minted-2").reserve(ENTRY, PayabliEnvironment.SANDBOX)
+            val second = storeOver("minted-2").reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
 
             assertEquals("minted-1", second.key)
             assertTrue(second.reused)
@@ -66,25 +67,34 @@ class ChargeKeyStoreInstrumentedTest {
     fun aSettledKeyIsGoneFromTheProcessMap() =
         runTest(timeout = TEST_TIMEOUT) {
             val store = storeOver("minted-1")
-            store.reserve(ENTRY, PayabliEnvironment.SANDBOX)
+            store.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
 
             store.settle(ENTRY, PayabliEnvironment.SANDBOX, "minted-1")
 
-            assertEquals("minted-2", storeOver("minted-2").reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
+            assertEquals(
+                "minted-2",
+                storeOver("minted-2").reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key,
+            )
         }
 
     @Test
     fun anExpiredKeyIsNotResent() =
         runTest(timeout = TEST_TIMEOUT) {
-            storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX)
+            val store = storeOver("minted-1")
+            val sent = store.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+            // The send ends first: a key still being sent is not aged out.
+            store.supersede(ENTRY, PayabliEnvironment.SANDBOX, sent.key)
             clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
-            assertEquals("minted-2", storeOver("minted-2").reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
+            assertEquals(
+                "minted-2",
+                storeOver("minted-2").reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key,
+            )
         }
 
     @Test
     fun theStoreWritesNoChargeKeyEntryToTheEncryptedFile() =
         runTest(timeout = TEST_TIMEOUT) {
-            storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX)
+            storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
 
             assertTrue("the encrypted store file was never created", storeFile.exists())
             val contents = storeFile.readText()
@@ -104,7 +114,7 @@ class ChargeKeyStoreInstrumentedTest {
             )
             trust.store.set(ChargeKeyStore.LEGACY_PREVIOUS_ENTRY, byteArrayOf(1))
 
-            val reserved = storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX)
+            val reserved = storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
             assertEquals("minted-1", reserved.key)
             assertFalse(reserved.reused)
 

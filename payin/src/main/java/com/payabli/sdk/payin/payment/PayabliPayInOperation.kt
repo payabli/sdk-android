@@ -1,6 +1,8 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.payin.client.PayInRoutes
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -83,6 +85,36 @@ internal val PayabliPayInOperation.movesMoney: Boolean
         when (this) {
             is PayabliPayInOperation.StoreMethod -> false
             is PayabliPayInOperation.Capture, is PayabliPayInOperation.Authorize -> true
+        }
+
+/** The options of an operation that takes a payment, or null for storing a method. */
+internal val PayabliPayInOperation.transactionOptions: PayInTransactionOptions?
+    get() =
+        when (this) {
+            is PayabliPayInOperation.StoreMethod -> null
+            is PayabliPayInOperation.Capture -> options
+            is PayabliPayInOperation.Authorize -> options
+        }
+
+/**
+ * The route an open attempt at this operation is held against, with its payment reference, or null where none
+ * is held. Storing a method moves no money, so nothing is held for it.
+ */
+internal val PayabliPayInOperation.holding: String?
+    get() =
+        when (this) {
+            is PayabliPayInOperation.StoreMethod -> null
+            is PayabliPayInOperation.Capture -> PayInRoutes.CAPTURE
+            is PayabliPayInOperation.Authorize -> PayInRoutes.AUTHORIZE
+        }
+
+/** Whether the host declared this operation a retry of the payment its reference names. */
+internal val PayabliPayInOperation.declaresRetry: Boolean
+    get() =
+        when (this) {
+            is PayabliPayInOperation.StoreMethod -> false
+            is PayabliPayInOperation.Capture -> options.attempt == PayabliAttempt.Retry
+            is PayabliPayInOperation.Authorize -> options.attempt == PayabliAttempt.Retry
         }
 
 /** The operation as a fixed word, for the form events. Closed, as [event] is. */

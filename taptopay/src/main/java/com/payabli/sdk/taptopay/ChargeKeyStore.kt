@@ -1,6 +1,9 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliAttempt
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -8,26 +11,8 @@ import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 /**
- * The idempotency key of a charge that has not settled, one per entry point under one environment.
- *
- * A charge opens a transaction, waits on a card, then closes it. Every step after the open can fail
- * leaving the caller unsure whether money moved, and the recovery a host reaches for is to charge
- * again. Reusing the key of the unsettled attempt is what names that repeat as one attempt and not
- * two sales, and the service refuses such a repeat instead of opening a second transaction. Past
- * [IDEMPOTENCY_KEY_MAX_AGE] a resend opens a transaction exactly as a first send would, so nothing is
- * resent past that bound — except a key the service was seen to recognise, which never ages out.
- *
- * **In this process, not on disk.** A terminal is built per call and holds no cache, so two terminals
- * for one entry point are two objects, and the retry usually comes from the second one because the
- * screen that held the first has been rebuilt. A companion-scoped map survives that rebuild. A
- * process death does not: the token, the session and the pending-close handle all die with it, and
- * a key that outlived them belonged to a session that no longer exists.
- *
- * The key is all that is kept. It is an opaque random value naming an attempt, so holding it
- * discloses nothing about an instrument or a payer.
- *
- * [elapsedRealtimeNanos] is a monotonic clock: a wall clock moved inside a live process must not make
- * a live key look old and forfeit the refusal.
+ * The idempotency keys of unsettled charges, in this process only, newest first per entry point and environment.
+ * A declared retry is handed the newest; every key ages out on [IDEMPOTENCY_KEY_MAX_AGE], as the service forgets it.
  */
 internal class ChargeKeyStore(
     private val newKey: () -> String = { UUID.randomUUID().toString() },
@@ -44,73 +29,68 @@ internal class ChargeKeyStore(
     /**
      * The key [entry]'s next opening sends under [environment], and whether it is one already held.
      *
+     * A [PayabliAttempt.Retry] is handed the newest key held for [entry] under [environment], and mints
+     * only when none is held. A [PayabliAttempt.NewPayment] always mints, and leaves every held key where
+     * it is: a sale of its own is not a repeat of one whose outcome is unknown.
+     *
      * [Reserved.reused] is what tells a caller a refusal answers the send rather than the charge: an
      * opening refused as a repeat of a key this SDK already sent says the earlier attempt reached the
      * service, and says nothing about how it ended.
      *
      * Reading and reserving are one operation, under one lock. Split in two they leave a window where
      * two charges both find nothing held and mint separately.
+     *
+     * @param entry the entry point the charge is for.
+     * @param environment the environment the charge is sent to.
+     * A declared retry that describes a different sale from the held one is refused before anything is sent,
+     * and the held key stays for the retry that does match.
+     *
+     * @param attempt whether the host declared this charge a retry.
+     * @param description the sale this charge describes.
+     * @return the key to send, and whether it was already held.
      */
     suspend fun reserve(
         entry: String,
         environment: PayabliEnvironment,
+        attempt: PayabliAttempt,
+        description: ChargeDescription? = null,
     ): Reserved =
         lock.withLock {
             val now = elapsedRealtimeNanos()
             sweep(now)
-            val existing = held.firstOrNull { it.matches(entry, environment) }
+            val existing =
+                held.takeIf { attempt == PayabliAttempt.Retry }?.firstOrNull { it.matches(entry, environment) }
             if (existing != null) {
-                return@withLock Reserved(existing.key, reused = true)
+                if (description != null && existing.description?.matches(description) == false) {
+                    throw PayabliGenericException(
+                        PayabliErrorType.RETRY_NOT_SAME_PAYMENT,
+                        PayabliErrorType.RETRY_NOT_SAME_PAYMENT.message,
+                    )
+                }
+                existing.sending++
+                return@withLock Reserved(existing.key, reused = true, reservedAt = now)
             }
             // Nothing live is evicted to make room. Every remaining record names a charge whose outcome
             // is still in doubt, so dropping the coldest to admit a new one loses the only thing that
             // would recognise its repeat. Refusing is the recoverable direction.
-            if (held.size >= MAX) throw ChargeKeyStoreFullException(held.size)
+            val entryPoints = held.distinctBy { it.entry to it.environment }
+            if (entryPoints.none { it.matches(entry, environment) } && entryPoints.size >= MAX) {
+                throw ChargeKeyStoreFullException(entryPoints.size)
+            }
             val minted = newKey()
-            held.add(0, ChargeAttempt(entry, environment.name, minted, reservedAt = now, arrived = false))
-            Reserved(minted, reused = false)
+            held.add(0, ChargeAttempt(entry, environment.name, minted, now, description).apply { sending++ })
+            Reserved(minted, reused = false, reservedAt = now)
         }
 
     /**
-     * A reserved key, and whether it was already held for this entry point under this environment.
-     *
-     * Not a `data class`: the synthesized `toString` would put the key into anything that renders one.
-     *
-     * `internal` is a public name-mangled member on the JVM, so the key's getter is reachable from Java
-     * without it. `@get:JvmSynthetic` is what removes it; [reused] is a flag and carries nothing.
+     * A reserved key, whether it was already held, and when this send reserved it. Not a `data class`, and the
+     * key's getter is `@get:JvmSynthetic`, so neither a `toString` nor Java reaches the key.
      */
     internal class Reserved(
         @get:JvmSynthetic val key: String,
         val reused: Boolean,
+        val reservedAt: Long,
     )
-
-    /**
-     * Records that the service was seen to hold [key] for [entry] under [environment], so the sweep
-     * never drops it. A `409` on a resent opening is the proof.
-     *
-     * Merges rather than replaces: once seen, nothing afterwards un-sees it.
-     */
-    suspend fun markArrived(
-        entry: String,
-        environment: PayabliEnvironment,
-        key: String,
-    ) {
-        lock.withLock {
-            val index = held.indexOfFirst { it.matches(entry, environment) && it.key == key }
-            if (index < 0) return@withLock
-            val current = held[index]
-            if (!current.arrived) {
-                held[index] =
-                    ChargeAttempt(
-                        current.entry,
-                        current.environment,
-                        current.key,
-                        current.reservedAt,
-                        arrived = true,
-                    )
-            }
-        }
-    }
 
     /**
      * Forgets [entry]'s key under [environment] when it is still [key], because that charge reached an
@@ -135,19 +115,37 @@ internal class ChargeKeyStore(
         }
     }
 
-    /** Drops every non-arrived attempt past [IDEMPOTENCY_KEY_MAX_AGE]. Called with [lock] held. */
+    /**
+     * Ends a send of [key]. Once it ended unknown, drops [entry]'s other keys under [environment] and restarts
+     * [key]'s clock at [arrivedAt], the send that may have reached the service. A settled [key] supersedes nothing.
+     */
+    suspend fun supersede(
+        entry: String,
+        environment: PayabliEnvironment,
+        key: String,
+        arrivedAt: Long? = null,
+    ) {
+        lock.withLock {
+            val kept = held.firstOrNull { it.matches(entry, environment) && it.key == key } ?: return@withLock
+            kept.sending = maxOf(0, kept.sending - 1)
+            held.removeAll { it.matches(entry, environment) && it.key != key }
+            if (arrivedAt != null) kept.reservedAt = maxOf(kept.reservedAt, arrivedAt)
+        }
+    }
+
+    /**
+     * Drops every attempt past [IDEMPOTENCY_KEY_MAX_AGE] that no send is using: the service forgets a key on that
+     * bound, whether or not it refused a repeat of it. Called with [lock] held.
+     */
     private fun sweep(now: Long) {
         val bound = IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds
-        held.removeAll { !it.arrived && now - it.reservedAt >= bound }
+        held.removeAll { it.sending == 0 && now - it.reservedAt >= bound }
     }
 
     internal companion object {
         /**
-         * How many unresolved charges can be held at once.
-         *
-         * A ceiling on how many entry points may be mid-charge, not a retention policy: nothing here is
-         * evicted, because every record is the only thing that would recognise its charge's repeat.
-         * Above the deployment that exists, which is one entry point at a time.
+         * How many entry points may hold unsettled charges at once. Nothing is evicted to make room: each key is
+         * the only thing that would recognise its charge's repeat, and every key ages out on its own.
          */
         const val MAX: Int = 4
 
@@ -180,21 +178,26 @@ internal class ChargeKeyStoreFullException(
 ) : IllegalStateException("$held unresolved charges are held, so another cannot be named")
 
 /**
- * One entry point's charge under one environment, and the key its repeat has to carry.
+ * One entry point's charge under one environment, and the key its repeat carries, chosen at [reservedAt] on a
+ * monotonic clock. Not a data class: a generated `toString` would print the merchant's entry point and the key.
  *
- * Not a data class: a generated `toString` would print the entry point, which names a merchant, and
- * the key, which names an attempt at moving their money.
- *
- * [reservedAt] is when the key was chosen, on a monotonic clock. [arrived] is whether the service was
- * seen to recognise the key; once true it stays true.
+ * @property description the sale the key was first sent for, which a resend of it keeps.
  */
 internal class ChargeAttempt(
     val entry: String,
     val environment: String,
     val key: String,
-    val reservedAt: Long,
-    val arrived: Boolean,
+    reservedAt: Long,
+    val description: ChargeDescription? = null,
 ) {
+    /** Restarted by a resend that may have reached the service and was not refused as a repeat. */
+    var reservedAt: Long = reservedAt
+        internal set
+
+    /** Sends of this key not yet ended, which may still reach the service, so no sweep drops it meanwhile. */
+    var sending: Int = 0
+        internal set
+
     fun matches(
         entry: String,
         environment: PayabliEnvironment,
