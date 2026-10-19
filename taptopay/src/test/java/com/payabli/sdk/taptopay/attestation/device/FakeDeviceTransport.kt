@@ -25,6 +25,8 @@ import kotlinx.serialization.KSerializer
 internal class FakeDeviceTransport(
     /** A failure raised before the request is handed over, as one that never left the device is. */
     private val unsent: (PayabliRequest) -> Exception? = { null },
+    /** A failure raised after the hand-off is taken back, as a send answered 401 whose refresh failed is. */
+    private val refused: (PayabliRequest) -> Exception? = { null },
     private val respond: (PayabliRequest) -> PayabliResponse,
 ) : PayabliTransport {
     val requests: MutableList<PayabliRequest> = mutableListOf()
@@ -45,6 +47,10 @@ internal class FakeDeviceTransport(
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
         unsent(request)?.let { throw it }
         currentCoroutineContext()[PayabliSendMark]?.mark()
+        refused(request)?.let {
+            currentCoroutineContext()[PayabliSendMark]?.lower()
+            throw it
+        }
         requests += request
         yield()
         return respond(request)

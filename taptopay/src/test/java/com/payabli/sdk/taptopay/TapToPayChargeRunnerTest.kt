@@ -575,6 +575,46 @@ class TapToPayChargeRunnerTest {
             }
         }
 
+    /** A resend answered 401 whose refresh then fails never left, so its key keeps its earlier time. */
+    @Test
+    fun `a resend refused 401 then failing its refresh keeps its key's earlier time`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val clock =
+                java.util.concurrent.atomic
+                    .AtomicLong(1_000_000_000L)
+            var openings = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(2) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to List(2) { "{}" },
+                    ),
+                    elapsedRealtimeNanos = clock::get,
+                    refused = { request ->
+                        PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the refresh did not reach the broker")
+                            .takeIf { request.path == INITIATE && ++openings == 2 }
+                    },
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            val half = com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            clock.addAndGet(half)
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+            clock.addAndGet(half)
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+
+            assertEquals("the refused resend restarted the clock", "$MINTED_KEY-2", fixture.keySent(1))
+        }
+
     /** A resend lost after the hand-off may have written the marker, so its key's clock restarts from it. */
     @Test
     fun `a resend lost after the hand-off restarts its key's clock`() =
