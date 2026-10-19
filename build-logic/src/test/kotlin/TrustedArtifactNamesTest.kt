@@ -40,12 +40,13 @@ class TrustedArtifactNamesTest {
     }
 
     @Test
-    fun `check runs the guard`() {
+    fun `any other task waits for the guard, and does not run when it fails`() {
         writeProject(dependency = "probe:lib:1.0:sources")
 
-        val result = runner("check").buildAndFail()
+        val result = runner("compileJava").buildAndFail()
 
         assertTrue(result.output, result.output.contains("lib-1.0-sources.jar"))
+        assertTrue(result.output, result.tasks.none { it.path == ":compileJava" })
     }
 
     @Test

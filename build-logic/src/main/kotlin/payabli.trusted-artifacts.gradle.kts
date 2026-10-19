@@ -19,6 +19,7 @@ val verifyTrustedArtifactNames = tasks.register<VerifyTrustedArtifactNames>("ver
         }
 }
 
-plugins.withId("base") {
-    tasks.named("check") { dependsOn(verifyTrustedArtifactNames) }
+// Every other task waits for it, so no workflow or local command runs a tool or a test classpath unchecked.
+tasks.configureEach {
+    if (name != "verifyTrustedArtifactNames") dependsOn(verifyTrustedArtifactNames)
 }
