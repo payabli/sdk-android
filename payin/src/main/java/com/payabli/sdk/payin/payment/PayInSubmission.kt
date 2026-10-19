@@ -395,11 +395,8 @@ internal class PayInSubmission(
         try {
             outcome = withContext(dispatcher + sendMark) { call(retry) }
         } catch (cancellation: CancellationException) {
-            // Rethrown: a coroutine that swallows its own cancellation stops being cancellable. The state still
-            // records it, because the charge may have landed and the retry key is what a second attempt needs.
-            //
-            // Open when a send of this payment may have run: a resent key's earlier send, or this one past the
-            // hand-off. Gated on movesMoney, so an operation that reserves a key without moving money never is.
+            // Rethrown, or the coroutine stops being cancellable. Open only when a send of this payment may have run:
+            // a resent key's earlier send, or this one past the hand-off; never for an operation moving no money.
             val interrupted = PayInException.Interrupted()
             val unknown = movesMoney && retry.key != null && (retry.reused || sendMark.mayHaveLeft)
             outcome =
