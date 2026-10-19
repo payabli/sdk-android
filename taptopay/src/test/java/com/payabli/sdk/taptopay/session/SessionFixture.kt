@@ -76,6 +76,7 @@ internal class SessionFixture(
     storeFailure: (operation: String, key: String) -> SecureStorageException? = { _, _ -> null },
     deviceKey: FakeDeviceKey = FakeDeviceKey(),
     renewToken: suspend () -> Unit = {},
+    isLive: () -> Boolean = { true },
     unsent: (PayabliRequest) -> Exception? = { null },
     lost: (PayabliRequest) -> Exception? = { null },
 ) {
@@ -115,6 +116,7 @@ internal class SessionFixture(
             reader = reader,
             manager = manager,
             renewToken = renewToken,
+            isLive = isLive,
             logger = enrollment.logger,
         )
 

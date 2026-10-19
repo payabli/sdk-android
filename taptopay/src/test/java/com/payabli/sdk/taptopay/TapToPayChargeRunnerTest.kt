@@ -17,6 +17,7 @@ import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
 import com.payabli.sdk.taptopay.adapters.ReaderFailureKind
+import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.attestBody
@@ -39,6 +40,7 @@ import com.payabli.sdk.taptopay.session.SessionFixture
 import com.payabli.sdk.taptopay.session.TapToPayChargeActivity
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
+import com.payabli.sdk.taptopay.session.completing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
@@ -2543,7 +2545,8 @@ class TapToPayChargeRunnerTest {
     @Test
     fun `a session started over during a read keeps its new state, and the charge keeps its outcome`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // A host's initialize resets the session under the charge.
+            // The manager is moved directly: a setup call made during the read waits for the charge, so this
+            // holds the exit's own rule, that it writes ready only over a charging state.
             lateinit var fixture: SessionFixture
             fixture =
                 SessionFixture(script(), readGate = { fixture.manager.reset() }).also { it.coordinator.initialize() }
@@ -2552,6 +2555,236 @@ class TapToPayChargeRunnerTest {
 
             assertEquals(TRANS_ID, receipt.paymentTransId)
             assertEquals(TapToPaySessionState.Idle, fixture.state)
+        }
+
+    /** Enough device answers for [builds] session builds, a payment, and its close. */
+    private fun scriptForBuilds(builds: Int) =
+        RouteScript(
+            RouteScript.CHALLENGE to List(builds) { challengeBody() },
+            RouteScript.REGISTER to List(builds) { registerBody(status = "active") },
+            RouteScript.ATTEST to List(builds) { attestBody() },
+            RouteScript.CONFIG to List(builds) { configBody() },
+            INITIATE to listOf(approved("""{"paymentTransId":"$TRANS_ID"}""")),
+            UPDATE to listOf("{}"),
+        )
+
+    /**
+     * Starts a charge and returns it parked in the read, where it stays until [held] completes.
+     *
+     * @param fixture the ready session the charge runs over.
+     * @param held completed by the test to let the read answer.
+     * @return the running charge, holding its outcome rather than failing the test's scope with it.
+     */
+    private fun TestScope.chargeParkedInTheRead(
+        fixture: SessionFixture,
+        held: CompletableDeferred<Unit>,
+    ) = async(UnconfinedTestDispatcher(testScheduler)) {
+        runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+    }.also {
+        assertEquals("the charge is waiting for a card", waiting, fixture.state)
+        assertFalse(held.isCompleted)
+    }
+
+    @Test
+    fun `an initialize made during a read sends nothing until the charge ends`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture =
+                SessionFixture(scriptForBuilds(2), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val charge = chargeParkedInTheRead(fixture, held)
+            val sentDuringTheRead = fixture.routes.toList()
+
+            val setup = launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.initialize() }
+
+            assertTrue("the initialize is waiting for the charge", setup.isActive)
+            assertEquals("the initialize sent nothing during the read", sentDuringTheRead, fixture.routes)
+            assertEquals(waiting, fixture.state)
+            assertFalse(fixture.manager.isReady.value)
+
+            held.complete(Unit)
+            val receipt = completing("the charge") { charge.await() }.getOrThrow()
+            completing("the initialize") { setup.join() }
+
+            assertEquals(TRANS_ID, receipt.paymentTransId)
+            val afterTheClose = fixture.routes.drop(fixture.routes.lastIndexOf(UPDATE) + 1)
+            assertEquals("the initialize ran once the charge ended", RouteScript.CONFIG, afterTheClose.lastOrNull())
+            assertEquals(TapToPaySessionState.Ready, fixture.state)
+        }
+
+    @Test
+    fun `an activation made during a read waits for the charge to end`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture =
+                SessionFixture(scriptForBuilds(1), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val charge = chargeParkedInTheRead(fixture, held)
+
+            val activation =
+                async(UnconfinedTestDispatcher(testScheduler)) {
+                    runCatching { fixture.coordinator.activateDevice("123456") }.exceptionOrNull()
+                }
+
+            assertTrue("the activation is waiting for the charge", activation.isActive)
+
+            held.complete(Unit)
+            completing("the charge") { charge.await() }.getOrThrow()
+            val refused = completing("the activation") { activation.await() }
+
+            // Read at its turn, after the charge, so it is refused from ready rather than from charging.
+            assertTrue(refused.toString(), refused is DeviceActivationException.DeviceNotPending)
+            assertFalse("an activation was sent", RouteScript.ACTIVATE in fixture.routes)
+            assertEquals(TapToPaySessionState.Ready, fixture.state)
+        }
+
+    @Test
+    fun `a repair made during a read waits for the charge to end`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture =
+                SessionFixture(scriptForBuilds(1), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val charge = chargeParkedInTheRead(fixture, held)
+
+            val repair =
+                async(UnconfinedTestDispatcher(testScheduler)) {
+                    runCatching { fixture.coordinator.reinitializeIfNeeded() }
+                }
+
+            assertTrue("the repair is waiting for the charge", repair.isActive)
+
+            held.complete(Unit)
+            completing("the charge") { charge.await() }.getOrThrow()
+
+            // At its turn the session is ready, which is the one state a repair leaves alone.
+            completing("the repair") { repair.await() }.getOrThrow()
+            assertEquals(TapToPaySessionState.Ready, fixture.state)
+            assertEquals(1, fixture.reader.prepareCount)
+        }
+
+    @Test
+    fun `a dead reader during a charge expires that session, and an initialize queued behind it rebuilds a live one`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture =
+                SessionFixture(scriptForBuilds(2), readGate = {
+                    held.await()
+                    throw CardReaderException.SessionUnusable(null)
+                }).also { it.coordinator.initialize() }
+            val seen = statesOf(fixture)
+            val charge = chargeParkedInTheRead(fixture, held)
+            val setup = launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.initialize() }
+
+            held.complete(Unit)
+            val failed = completing("the charge") { charge.await() }.exceptionOrNull()
+            completing("the initialize") { setup.join() }
+
+            assertTrue(failed.toString(), failed is TapToPayException)
+            val expired = seen.indexOf(TapToPaySessionState.SessionExpired)
+            assertEquals(
+                "the dead reader expired the charge's own session",
+                listOf(waiting, closing, TapToPaySessionState.SessionExpired),
+                seen.subList(expired - 2, expired + 1),
+            )
+            assertTrue("the rebuild ran after the expiry", TapToPaySessionState.AttestingDevice in seen.drop(expired))
+            assertEquals(TapToPaySessionState.Ready, fixture.state)
+        }
+
+    @Test
+    fun `a charge withdrawn during its repair leaves the session for the next setup`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var armed = false
+            val held = CompletableDeferred<Unit>()
+            val fixture =
+                SessionFixture(scriptForBuilds(3), readerGate = { if (armed) held.await() })
+                    .also { it.coordinator.initialize() }
+            fixture.manager.invalidate()
+            armed = true
+
+            val charge =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }
+            assertEquals("the repair is bringing the reader up", TapToPaySessionState.InitializingReader, fixture.state)
+
+            charge.cancel()
+            completing("the withdrawn charge") { charge.join() }
+            armed = false
+
+            assertEquals(TapToPaySessionState.Idle, fixture.state)
+            completing("the initialize after it") { fixture.coordinator.initialize() }
+            assertEquals(TapToPaySessionState.Ready, fixture.state)
+        }
+
+    @Test
+    fun `a second terminal's initialize waits for the first terminal's charge, which keeps its session`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val first =
+                SessionFixture(scriptForBuilds(1), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val second = SessionFixture(scriptForBuilds(1))
+            val charge = chargeParkedInTheRead(first, held)
+
+            val setup = launch(UnconfinedTestDispatcher(testScheduler)) { second.coordinator.initialize() }
+
+            assertTrue("the second terminal is waiting for the charge", setup.isActive)
+            assertEquals("the second terminal sent nothing during the read", emptyList<String>(), second.routes)
+            assertEquals(0, second.reader.configureCount)
+
+            held.complete(Unit)
+            val receipt = completing("the charge") { charge.await() }.getOrThrow()
+            completing("the second initialize") { setup.join() }
+
+            assertEquals(TRANS_ID, receipt.paymentTransId)
+            assertEquals("the charge's own session was not expired", TapToPaySessionState.Ready, first.state)
+            assertEquals(TapToPaySessionState.Ready, second.state)
+        }
+
+    @Test
+    fun `a terminal whose session was replaced refuses a charge, opening nothing and leaving the reader alone`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var live = true
+            val fixture = SessionFixture(script(), isLive = { live }).also { it.coordinator.initialize() }
+            live = false
+
+            val failure =
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                    .exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(PayabliErrorType.SESSION_NOT_INITIALIZED, (failure as TapToPayException).type)
+            assertEquals("this terminal belongs to a session that was replaced or ended", failure.reason)
+            assertFalse("a payment was opened", INITIATE in fixture.routes)
+            assertNull("the reader was asked for a card", fixture.reader.lastReadRequest)
+            assertEquals(1, fixture.reader.prepareCount)
+            assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.SESSION_ENDED), fixture.state)
+        }
+
+    @Test
+    fun `a read under way when its session is replaced finishes, stays held, and a new terminal closes it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A session is replaced only once it has finished, and a finished session's transport refuses every
+            // request before sending it, so the close this charge attempts never leaves the device.
+            var live = true
+            val old =
+                SessionFixture(script(updates = 0), readGate = { live = false }, isLive = { live })
+                    .also { it.coordinator.initialize() }
+            val oldRunner =
+                runnerGatedOnClose(old) {
+                    if (!live) throw PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "the session finished")
+                }
+
+            val failure =
+                runCatching { oldRunner.charge(details(), PAYER, TapToPayInvoiceData(), null) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, (failure as TapToPayException).type)
+            assertEquals("the read answered, so the card was charged", TapToPayCapture.CHARGED, failure.capture)
+            assertEquals(TRANS_ID, failure.paymentTransId)
+            assertFalse("the old session sent a close", UPDATE in old.routes)
+
+            val current = SessionFixture(script())
+            runnerOver(current).closeCaptured(TRANS_ID)
+
+            assertEquals("the new terminal closed the held payment", listOf(UPDATE), current.routes)
         }
 
     @Test

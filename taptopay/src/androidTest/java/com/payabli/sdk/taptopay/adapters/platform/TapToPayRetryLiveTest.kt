@@ -94,6 +94,7 @@ class TapToPayRetryLiveTest {
                         reader = reader,
                         manager = manager,
                         renewToken = session::renewRefusedToken,
+                        isLive = { session.isLive },
                     )
                 val owed = runCatching { coordinator.initialize() }.exceptionOrNull()
                 if (owed is TapToPaySessionException.PendingActivation) {

@@ -132,6 +132,7 @@ class TokenRenewalLiveTest {
             reader = StubReader(),
             manager = TapToPaySessionManager(),
             renewToken = session::renewRefusedToken,
+            isLive = { session.isLive },
         )
     }
 
@@ -147,11 +148,19 @@ class TokenRenewalLiveTest {
     }
 }
 
-/** The token with one character of its signature changed, so the service refuses it. */
-private fun altered(token: String): String {
+/**
+ * The token with one character of its signature changed, so the service refuses it. A different [variant]
+ * changes a different character, because the token server can answer the same token twice.
+ */
+internal fun altered(
+    token: String,
+    variant: Int = 0,
+): String {
     val signatureStart = token.lastIndexOf('.') + 1
-    check(signatureStart > 0 && token.length - signatureStart > 8) { "the token server answered no signed token" }
-    val at = signatureStart + (token.length - signatureStart) / 2
+    val signatureLength = token.length - signatureStart
+    check(signatureStart > 0 && signatureLength > 8) { "the token server answered no signed token" }
+    check(variant in 0 until signatureLength / 2) { "variant $variant is outside the signature" }
+    val at = signatureStart + signatureLength / 2 + variant
     val replacement = if (token[at] == 'A') 'B' else 'A'
     return token.substring(0, at) + replacement + token.substring(at + 1)
 }
