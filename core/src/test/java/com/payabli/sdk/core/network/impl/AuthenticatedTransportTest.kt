@@ -608,9 +608,9 @@ class AuthenticatedTransportTest {
             }
         }
 
-    /** The first send was handed over, so a replay that never leaves does not take that back. */
+    /** A send answered 401 ran nothing, so a refresh that fails after it leaves the payment unsent. */
     @Test
-    fun `a replay whose token fetch fails keeps the send mark the first send raised`() =
+    fun `a 401 lowers the send mark, so a failed refresh after it leaves it down`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 server.respondInOrder(UNAUTHORIZED to "")
@@ -620,6 +620,36 @@ class AuthenticatedTransportTest {
                 runCatching { withContext(mark) { stack(server, auth).execute(ping()) } }
 
                 assertEquals(1, server.recorded.size)
+                assertFalse(mark.mayHaveLeft)
+            }
+        }
+
+    /** The replay is a send of its own, so it raises the mark again at its hand-off. */
+    @Test
+    fun `a replay after a 401 raises the send mark again`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "", OK to "{}")
+                val mark = PayabliSendMark()
+
+                withContext(mark) { stack(server, testAuth(tokenProvider = { "a-fresh-token" })).execute(ping()) }
+
+                assertEquals(2, server.recorded.size)
+                assertTrue(mark.mayHaveLeft)
+            }
+        }
+
+    /** Only a 401 is refused before the service acts; a widened rejection keeps the mark the send raised. */
+    @Test
+    fun `a widened rejection keeps the send mark`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(WIDENED to "")
+                val auth = testAuth(tokenProvider = { throw IOException("no token") })
+                val mark = PayabliSendMark()
+
+                runCatching { withContext(mark) { stack(server, auth, recovery = widenedTo419()).execute(ping()) } }
+
                 assertTrue(mark.mayHaveLeft)
             }
         }

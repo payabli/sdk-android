@@ -21,6 +21,11 @@ public class PayabliSendMark : AbstractCoroutineContextElement(Key) {
         marked.set(true)
     }
 
+    /** Takes the hand-off back for a send the service refused before acting on it. */
+    public fun lower() {
+        marked.set(false)
+    }
+
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public companion object Key : CoroutineContext.Key<PayabliSendMark>
 }

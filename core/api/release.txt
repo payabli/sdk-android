@@ -592,6 +592,7 @@ package com.payabli.sdk.core.network {
   @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class PayabliSendMark extends kotlin.coroutines.AbstractCoroutineContextElement {
     ctor public PayabliSendMark();
     method @InaccessibleFromKotlin public boolean getMayHaveLeft();
+    method public void lower();
     method public void mark();
     property public boolean mayHaveLeft;
     field @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final com.payabli.sdk.core.network.PayabliSendMark.Key Key;

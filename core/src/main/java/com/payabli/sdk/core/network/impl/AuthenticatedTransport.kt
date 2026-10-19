@@ -13,8 +13,10 @@ import com.payabli.sdk.core.network.AuthRecoveryPolicy
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
@@ -66,6 +68,9 @@ internal class AuthenticatedTransport(
             ) { "recovery declined: the route refused this caller rather than its credential" }
             return first
         }
+
+        // A 401 is refused before the service acts on a request, so that send ran nothing; the replay marks again.
+        if (first.statusCode == HTTP_UNAUTHORIZED) currentCoroutineContext()[PayabliSendMark]?.lower()
 
         // The token the chain stamped, not one this class read earlier: a rotation between the two reads would
         // make them disagree, and reporting the earlier one replays the credential just refused.
