@@ -21,12 +21,6 @@ ktlint {
     }
 }
 
-// ktlint's configuration asks for no category, so it also took four libraries' published sources jars,
-// which dependency verification trusts unchecked. Asking for a library leaves only their classes.
-configurations.matching { it.name == "ktlint" }.configureEach {
-    attributes { attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category.LIBRARY)) }
-}
-
 // A module's consumer keep rules are an input to its unit tests.
 //
 // Two tests read `src/main/keepRules/rules.keep` from the source tree, because the rule is packaged into the
