@@ -6,12 +6,14 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -19,15 +21,16 @@ import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.PayInEnteredDetails
+import com.payabli.sdk.payin.client.PayInKeyRefusal
 import com.payabli.sdk.payin.client.PayInRoutes
 import com.payabli.sdk.payin.client.TokenStorageClient
-import com.payabli.sdk.payin.client.trimOrNull
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransaction
+import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.model.RedactedCause
 import com.payabli.sdk.payin.model.leavesThePaymentOpen
 import kotlinx.coroutines.CoroutineDispatcher
@@ -38,6 +41,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * One payment form's submission: what state it is in, and the one call that changes it.
@@ -60,6 +65,7 @@ internal class PayInSubmission(
     private val elapsedRealtimeNanos: () -> Long,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
     private val session: TelemetrySessionContext? = null,
+    private val newPaymentReference: () -> String = ::mintedPaymentReference,
 ) {
     /**
      * The single flight, held for the whole call.
@@ -70,15 +76,11 @@ internal class PayInSubmission(
     private val inFlight = Mutex()
 
     /**
-     * The key of an attempt whose outcome nobody knows, against the payment it was for.
-     *
-     * A resend carries the same key, so the service recognizes the repeat instead of taking the money a
-     * second time. Only a call naming the transaction it acts on has an entry: two form submissions of
-     * equal value are two payments.
-     *
-     * Read and written under [inFlight].
+     * Keys of attempts whose outcome nobody knows, newest first, at most one per payment. A payment is a call's
+     * route and its transaction, or for a capture or an authorization its route and payment reference. Read and
+     * written under [inFlight].
      */
-    private val unresolved = mutableMapOf<String, HeldKey>()
+    private val unresolved = mutableListOf<HeldKey>()
 
     /**
      * Whether the holder has already said it is full, so it says so once rather than once per payment.
@@ -90,13 +92,14 @@ internal class PayInSubmission(
      * A key held for a payment, and when it was reserved. Not a `data class`: the synthesized `toString`
      * would put the key into any assertion failure or crash report that renders one.
      *
-     * @property arrived whether the service has been seen to hold this key. A repeat it refused is proof
-     *   the attempt arrived, so the entry never ages out.
+     * @property payment what names the payment: its route, and its transaction or payment reference.
+     * @property description the payment the key was first sent for, or null on a route that names a transaction.
      */
     private class HeldKey(
+        val payment: String,
         val key: String,
         val reservedAt: Long,
-        val arrived: Boolean = false,
+        val description: PayInPaymentDescription? = null,
     )
 
     private val sink = MutableStateFlow<PayInSubmissionState>(PayInSubmissionState.Idle)
@@ -120,14 +123,14 @@ internal class PayInSubmission(
         operation: PayabliPayInOperation,
         values: PayInFormValues,
         onReserved: (Boolean) -> Unit = {},
-    ): PayInSubmissionState? =
-        // No payment named: two submissions of equal value are two payments, not a resend of one.
-        perform(
+    ): PayInSubmissionState? {
+        val reference = operation.transactionOptions?.let(::referenceOf)
+        return perform(
             operation.event,
             entryPoint,
             onReserved,
             movesMoney = operation.movesMoney,
-            payment = null,
+            retry = RetryKey(operation.holding?.let { paymentOf(it, reference) }, reference, operation.declaresRetry),
         ) { retry ->
             // The customer and the description the payer typed, which are not part of the instrument. Read
             // once here, so all three operations carry what the same form collected.
@@ -142,7 +145,7 @@ internal class PayInSubmission(
 
                 is PayabliPayInOperation.Capture ->
                     PayInFormInstrument.usePaymentMethod(values) { method ->
-                        val key = retry.reserve(supplied = null)
+                        val key = retry.reserve(PayInPaymentDescription.of(method, operation.options))
                         PayInSubmissionState.Succeeded.Payment(
                             moneyIn.capture(entryPoint, PayInRequest(method, operation.options), entered, key),
                         )
@@ -150,13 +153,14 @@ internal class PayInSubmission(
 
                 is PayabliPayInOperation.Authorize ->
                     PayInFormInstrument.usePaymentMethod(values) { method ->
-                        val key = retry.reserve(supplied = null)
+                        val key = retry.reserve(PayInPaymentDescription.of(method, operation.options))
                         PayInSubmissionState.Succeeded.Payment(
                             moneyIn.authorize(entryPoint, PayInRequest(method, operation.options), entered, key),
                         )
                     }
             }
         }
+    }
 
     /**
      * Takes a payment from a request a caller built, rather than from a form. Reads no form.
@@ -171,15 +175,25 @@ internal class PayInSubmission(
     suspend fun capture(
         entryPoint: String,
         request: PayInRequest,
-    ): PayInSubmissionState? =
-        // No payment named, for the reason `submit` gives: two captures of equal value are two payments, and
-        // nothing here tells one from a resend of the other.
-        perform(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, entryPoint, publishes = false, payment = null) { retry ->
-            val key = retry.reserve(supplied = null)
+    ): PayInSubmissionState? {
+        val reference = referenceOf(request.options)
+        return perform(
+            TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+            entryPoint,
+            publishes = false,
+            retry =
+                RetryKey(
+                    paymentOf(PayInRoutes.CAPTURE, reference),
+                    reference,
+                    claimsHeldKey = request.options.attempt == PayabliAttempt.Retry,
+                ),
+        ) { retry ->
+            val key = retry.reserve(PayInPaymentDescription.of(request.paymentMethod, request.options))
             PayInSubmissionState.Succeeded.Payment(
                 moneyIn.capture(entryPoint, request, PayInEnteredDetails.NONE, key),
             )
         }
+    }
 
     /**
      * Places a hold from a request a caller built, on the same terms as [capture]. Reads no form.
@@ -191,13 +205,25 @@ internal class PayInSubmission(
     suspend fun authorize(
         entryPoint: String,
         request: PayInRequest,
-    ): PayInSubmissionState? =
-        perform(TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED, entryPoint, publishes = false, payment = null) { retry ->
-            val key = retry.reserve(supplied = null)
+    ): PayInSubmissionState? {
+        val reference = referenceOf(request.options)
+        return perform(
+            TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED,
+            entryPoint,
+            publishes = false,
+            retry =
+                RetryKey(
+                    paymentOf(PayInRoutes.AUTHORIZE, reference),
+                    reference,
+                    claimsHeldKey = request.options.attempt == PayabliAttempt.Retry,
+                ),
+        ) { retry ->
+            val key = retry.reserve(PayInPaymentDescription.of(request.paymentMethod, request.options))
             PayInSubmissionState.Succeeded.Payment(
                 moneyIn.authorize(entryPoint, request, PayInEnteredDetails.NONE, key),
             )
         }
+    }
 
     /**
      * Stores the instrument in a request a caller built, on the same terms as [capture] for the buffers.
@@ -216,7 +242,7 @@ internal class PayInSubmission(
             entryPoint,
             publishes = false,
             movesMoney = false,
-            payment = null,
+            retry = RetryKey(payment = null),
         ) {
             PayInSubmissionState.Succeeded.Method(storage.storeMethod(entryPoint, request.instrument, request.options))
         }
@@ -225,7 +251,7 @@ internal class PayInSubmission(
      * Captures a transaction authorized earlier, in full or in part. Reads no form.
      *
      * @param entryPoint the partner integration point the payment is attributed to.
-     * @param request the authorization to capture, carrying the attempt's key or one to mint.
+     * @param request the authorization to capture, in full or in part.
      * @return the terminal state, or null when a submission was already in flight.
      */
     suspend fun captureAuthorized(
@@ -236,9 +262,9 @@ internal class PayInSubmission(
             TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
             entryPoint,
             publishes = false,
-            payment = "${PayInRoutes.CAPTURE_AUTHORIZED}:${request.transId.trim()}",
+            retry = RetryKey("${PayInRoutes.CAPTURE_AUTHORIZED}:${request.transId.trim()}"),
         ) { retry ->
-            val key = retry.reserve(supplied = null)
+            val key = retry.reserve()
             PayInSubmissionState.Succeeded.Payment(moneyIn.captureAuthorized(request, key))
         }
 
@@ -257,9 +283,9 @@ internal class PayInSubmission(
             TelemetryEvents.PAYIN_VOID_COMPLETED,
             entryPoint,
             publishes = false,
-            payment = "${PayInRoutes.VOID}:${transId.trim()}",
+            retry = RetryKey("${PayInRoutes.VOID}:${transId.trim()}"),
         ) { retry ->
-            val key = retry.reserve(supplied = null)
+            val key = retry.reserve()
             PayInSubmissionState.Succeeded.Payment(moneyIn.void(transId, key))
         }
 
@@ -323,7 +349,7 @@ internal class PayInSubmission(
      * @param onReserved told whether this submission took the single flight.
      * @param publishes whether the outcome is published to [state] as the form's.
      * @param movesMoney whether the operation can take a payment, which decides an interruption's class.
-     * @param payment what names the payment a retry key is held against, or null for none.
+     * @param retry the payment a key is held against, and whether this call may claim the held one.
      * @param call the operation itself, handed its retry key.
      * @return the terminal state, or null when a submission was already in flight.
      */
@@ -333,7 +359,7 @@ internal class PayInSubmission(
         onReserved: (Boolean) -> Unit = {},
         publishes: Boolean = true,
         movesMoney: Boolean = true,
-        payment: String?,
+        retry: RetryKey,
         call: suspend (RetryKey) -> PayInSubmissionState,
     ): PayInSubmissionState? {
         // Answered before the first suspension, so a caller starting this undispatched learns whether the single
@@ -361,38 +387,33 @@ internal class PayInSubmission(
         }
         onReserved(true)
         val startedAt = elapsedRealtimeNanos()
-        val retry = RetryKey(payment)
+        // Set by the transport as it hands the request over, so a failure before that is known not to have left.
+        val sendMark = PayabliSendMark()
         if (publishes) sink.value = PayInSubmissionState.Submitting
         var outcome: PayInSubmissionState? = null
         try {
-            outcome = withContext(dispatcher) { call(retry) }
+            outcome = withContext(dispatcher + sendMark) { call(retry) }
         } catch (cancellation: CancellationException) {
-            // Rethrown: a coroutine that swallows its own cancellation stops being cancellable. The state still
-            // records it, because the charge may have landed and the retry key is what a second attempt needs.
-            //
-            // The key is what says how far this got. Reserved, and the request may have been carried out, so
-            // it reports the open outcome every other interrupted attempt does. Not reserved, and nothing was
-            // sent. Gated on movesMoney as every other classification here is, so an operation that reserves
-            // a key without moving money would not start reporting an open payment.
+            // Rethrown, or the coroutine stops being cancellable. Open only when a send of this payment may have run:
+            // a resent key's earlier send, or this one past the hand-off; never for an operation moving no money.
             val interrupted = PayInException.Interrupted()
-            val unknown = movesMoney && retry.key != null
+            val unknown = movesMoney && retry.key != null && (retry.reused || sendMark.mayHaveLeft)
             outcome =
                 PayInSubmissionState.Failed(
-                    cause = if (unknown) PayInException.Unsettled(interrupted) else interrupted,
-                    retryKey = retry.key,
+                    if (unknown) PayInException.Unsettled(interrupted, retry.reference) else interrupted,
                 )
             throw cancellation
         } catch (failure: Exception) {
-            outcome = failure.asFailed(retry, movesMoney)
+            outcome = failure.asFailed(retry, movesMoney, sendMark.mayHaveLeft)
         } finally {
             // Nothing here suspends, so all of it runs on the canceled path as it does on any other. That is
             // what makes an abandoned payment countable: it is the one outcome nobody is left to report.
             val finished = outcome
             if (finished != null) {
-                val settled = if (payment != null) settle(payment, finished, retry) else finished
-                outcome = settled
-                if (publishes) sink.value = settled
-                report(event, outcomeOf(settled), codeOf(settled), startedAt, entryPoint, publishes)
+                retry.mayHaveLeft = sendMark.mayHaveLeft
+                retry.payment?.let { settle(it, finished, retry) }
+                if (publishes) sink.value = finished
+                report(event, outcomeOf(finished), codeOf(finished), startedAt, entryPoint, publishes)
             }
             inFlight.unlock()
         }
@@ -400,81 +421,76 @@ internal class PayInSubmission(
     }
 
     /**
-     * Keeps [payment]'s key where the outcome is unknown, forgets it where the service answered, and
-     * answers with the outcome to report. An answer of any kind ends the attempt, so carrying this key
-     * into the next request would claim a repeat that it is not.
+     * Keeps [payment]'s key where the outcome is unknown, and forgets it where the service answered. An
+     * answer of any kind ends the attempt, so carrying this key into the next request would claim a repeat
+     * that it is not.
      *
      * @param payment what names the payment.
      * @param outcome the state the call ended in.
      * @param retry the key this attempt carried.
-     * @return the outcome to report, its retryKey named only where the request may have been carried out.
      */
     private fun settle(
         payment: String,
         outcome: PayInSubmissionState,
         retry: RetryKey,
-    ): PayInSubmissionState {
+    ) {
         val failure = (outcome as? PayInSubmissionState.Failed)?.cause
         val key = retry.key
         when {
             key == null -> Unit
-            failure == null || failure.answersThePayment(retry.reused) -> forget(payment, key)
-            failure.type.leavesOutcomeUnknown -> hold(payment, HeldKey(key, retry.reservedAt))
-            retry.reused && failure.type == PayabliErrorType.CONFLICT ->
-                hold(payment, HeldKey(key, retry.reservedAt, arrived = true))
+            failure == null || failure.answersThePayment() -> forget(payment, key)
+            // Ahead of the general case: a refused resend keeps the key without restarting its clock.
+            retry.reused && failure.type == PayabliErrorType.RETRY_REFUSED ->
+                hold(HeldKey(payment, key, retry.reservedAt, retry.description))
 
+            // A send that never left starts no new key's clock and restarts no held one's.
+            failure.type.leavesOutcomeUnknown && retry.mayHaveLeft ->
+                hold(HeldKey(payment, key, retry.sentAt, retry.description))
             else -> Unit
-        }
-        return when {
-            outcome !is PayInSubmissionState.Failed -> outcome
-            outcome.retryKey == null || !retry.minted -> outcome
-            unresolved[payment]?.key == outcome.retryKey -> outcome
-            else -> PayInSubmissionState.Failed(outcome.cause, outcome.fieldErrors, retryKey = null)
         }
     }
 
     /**
-     * Keeps [held] for [payment], without displacing a record that is protecting something else: a
-     * different key is not written, and the same key merges, so the earliest reservation stands and a
-     * conflict already seen is not forgotten.
+     * Keeps [held] without displacing what protects another payment: the same key merges, keeping the latest
+     * reservation, and a payment gets no second key.
      *
-     * @param payment what names the payment.
-     * @param held the key and its reservation to keep.
+     * @param held the payment, its key and the reservation to keep.
      */
-    private fun hold(
-        payment: String,
-        held: HeldKey,
-    ) {
-        val existing = unresolved[payment]
+    private fun hold(held: HeldKey) {
+        sweep(elapsedRealtimeNanos())
+        val same = unresolved.indexOfFirst { it.payment == held.payment && it.key == held.key }
         when {
-            existing == null && unresolved.size >= HELD_KEYS_MAX ->
+            same >= 0 -> {
+                val existing = unresolved[same]
+                unresolved[same] =
+                    // The first description stays: it is the payment the key was minted for.
+                    HeldKey(
+                        held.payment,
+                        held.key,
+                        maxOf(existing.reservedAt, held.reservedAt),
+                        existing.description ?: held.description,
+                    )
+            }
+
+            unresolved.any { it.payment == held.payment } -> Unit
+            unresolved.size >= HELD_KEYS_MAX -> {
                 if (!reportedFull) {
                     reportedFull = true
                     logger.warn(LogField.safe("event", "payin_retry_keys_full")) {
                         "a payment's key was not held, because too many are unresolved at once"
                     }
                 }
-
-            existing == null -> {
-                reportedFull = false
-                unresolved[payment] = held
             }
-            existing.key != held.key -> Unit
-            else ->
-                unresolved[payment] =
-                    HeldKey(
-                        held.key,
-                        minOf(existing.reservedAt, held.reservedAt),
-                        arrived = existing.arrived || held.arrived,
-                    )
+
+            else -> {
+                reportedFull = false
+                unresolved.add(0, held)
+            }
         }
     }
 
     /**
-     * Forgets [payment]'s key when it is still [key].
-     *
-     * A caller answering under its own key while a held key is in flight would otherwise drop the attempt
-     * nobody has an answer for.
+     * Forgets [payment]'s key [key], and no other.
      *
      * @param payment what names the payment.
      * @param key the key an answer arrived under.
@@ -483,29 +499,27 @@ internal class PayInSubmission(
         payment: String,
         key: String,
     ) {
-        if (unresolved[payment]?.key == key) unresolved.remove(payment)
+        unresolved.removeAll { it.payment == payment && it.key == key }
     }
 
     /**
-     * Whether this failure answers the payment rather than the attempt that carried it. A decline and a
-     * refusal the service made about the request are answers; a rejected credential, a refusal to act at
-     * all and anything that never left the device are not. A conflict answers only a key the caller named.
+     * Whether this failure answers the payment rather than the attempt that carried it: a decline, a conflict
+     * and a refusal of the request are; a rejected credential, a refusal to act at all, a refused held key
+     * ([PayabliErrorType.RETRY_REFUSED]) and anything that never left the device are not.
      *
-     * @param reused whether the key sent was the one held for this payment.
      * @return true when the failure answers the payment; false otherwise.
      */
-    private fun PayabliException.answersThePayment(reused: Boolean): Boolean =
+    private fun PayabliException.answersThePayment(): Boolean =
         when (type) {
             PayabliErrorType.PAYMENT_DECLINED -> true
             PayabliErrorType.VALIDATION_ERROR -> this is PayabliValidationException
-            PayabliErrorType.CONFLICT -> !reused
+            PayabliErrorType.CONFLICT -> true
             else -> false
         }
 
     /**
-     * The key held for [payment], or null once it is too old to send: a key the service no longer
-     * recognizes is executed as a new payment, so sending one reads as protection and takes the money
-     * twice. An entry the service was seen to hold is exempt.
+     * The key held for [payment], or null when none is worth sending: past the window the service runs a key
+     * as a new payment.
      *
      * @param payment what names the payment.
      * @param now the clock, read as the key is chosen.
@@ -515,57 +529,70 @@ internal class PayInSubmission(
         payment: String,
         now: Long,
     ): HeldKey? {
-        // Every entry, not just this payment's: a flow meets many transactions and revisits few.
-        unresolved.values.removeAll {
-            !it.arrived && now - it.reservedAt >= IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds
-        }
-        return unresolved[payment]
+        sweep(now)
+        return unresolved.firstOrNull { it.payment == payment }
     }
 
     /**
-     * The failure, with the field it blamed: anything not a [PayabliException] is a defect in this
-     * SDK, arriving as [PayabliErrorType.UNKNOWN] with its type and frames but not its message.
-     * Whether the outcome is unknown rides the cause; whether a key is worth sending rides `retryKey`.
+     * Drops every key too old to send. Every entry, not just one payment's: a flow meets many transactions
+     * and revisits few, and an entry left in place takes room a later payment needs.
+     *
+     * @param now the clock.
+     */
+    private fun sweep(now: Long) {
+        unresolved.removeAll { now - it.reservedAt >= IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds }
+    }
+
+    /**
+     * The failure, with the field it blamed. A non-[PayabliException] arrives as [PayabliErrorType.UNKNOWN],
+     * keeping its type and frames but not its message; the service refusing a key this holder resent is
+     * [PayabliErrorType.RETRY_REFUSED], which proves only that the earlier attempt arrived.
      *
      * @param retry the key this attempt carried.
      * @param movesMoney whether the operation can take a payment.
+     * @param mayHaveLeft whether this attempt's request passed the hand-off.
      * @return the failed state, with the field it blamed.
      */
     private fun Exception.asFailed(
         retry: RetryKey,
         movesMoney: Boolean,
+        mayHaveLeft: Boolean,
     ): PayInSubmissionState.Failed {
         val cause =
-            this as? PayabliException
-                ?: PayabliGenericException(
-                    PayabliErrorType.UNKNOWN,
-                    REASON_UNEXPECTED,
-                    cause = RedactedCause(this),
-                )
-        val unknown = movesMoney && cause.leavesTheOutcomeUnknown(retry.reused)
+            when {
+                this !is PayabliException ->
+                    PayabliGenericException(PayabliErrorType.UNKNOWN, REASON_UNEXPECTED, cause = RedactedCause(this))
+
+                this is PayInKeyRefusal ->
+                    if (retry.reused) {
+                        PayabliGenericException(PayabliErrorType.RETRY_REFUSED, REASON_RETRY_REFUSED)
+                    } else {
+                        PayabliGenericException(PayabliErrorType.CONFLICT, reason)
+                    }
+
+                else -> this
+            }
+        // A fresh key's send that ended before the hand-off ran nowhere, so its failure is reported as it is.
+        val unknown = movesMoney && (retry.reused || mayHaveLeft) && cause.leavesTheOutcomeUnknown(retry.reused)
         return PayInSubmissionState.Failed(
-            cause = if (unknown) PayInException.Unsettled(cause) else cause,
+            cause = if (unknown) PayInException.Unsettled(cause, retry.reference) else cause,
             fieldErrors = PayInRejectedFields.of(this),
-            retryKey =
-                retry.key.takeIf {
-                    unknown && (retry.reused || cause.type != PayabliErrorType.CONFLICT)
-                },
         )
     }
 
     /**
      * Whether the payment's outcome is unknown once this failure has arrived. A key this holder resent
      * names an attempt nobody has an answer for, so anything short of an answer leaves it unresolved.
-     * A conflict is decided here, not on the property, which decides which attempt is kept alive.
+     * A conflict answers the key and leaves the payment open, so it is decided here, not on the property.
      *
      * @param reused whether the key sent was the one held for this payment.
      * @return true when the failure leaves the payment's outcome unknown; false otherwise.
      */
     private fun PayabliException.leavesTheOutcomeUnknown(reused: Boolean): Boolean =
-        if (reused) {
-            !answersThePayment(true)
-        } else {
-            type.leavesThePaymentOpen
+        when {
+            type == PayabliErrorType.CONFLICT -> true
+            reused -> !answersThePayment()
+            else -> type.leavesThePaymentOpen
         }
 
     /**
@@ -646,7 +673,9 @@ internal class PayInSubmission(
             cause.type == PayabliErrorType.PAYMENT_DECLINED -> TelemetryProperties.Outcome.DECLINED
             cause.type == PayabliErrorType.USER_CANCELLED -> TelemetryProperties.Outcome.INTERRUPTED
             cause.type == PayabliErrorType.VALIDATION_ERROR ||
-                cause.type == PayabliErrorType.INVALID_CONFIGURATION
+                cause.type == PayabliErrorType.INVALID_CONFIGURATION ||
+                cause.type == PayabliErrorType.RETRY_NOT_SAME_PAYMENT ||
+                cause.type == PayabliErrorType.PAYMENT_REFERENCE_OPEN
             -> TelemetryProperties.Outcome.REFUSED_LOCALLY
             else -> TelemetryProperties.Outcome.FAILED
         }
@@ -661,7 +690,9 @@ internal class PayInSubmission(
      * request carries the key, so it is known only once that has been built.
      */
     private inner class RetryKey(
-        private val payment: String?,
+        val payment: String?,
+        val reference: String? = null,
+        private val claimsHeldKey: Boolean = true,
     ) {
         var key: String? = null
             private set
@@ -670,59 +701,94 @@ internal class PayInSubmission(
          * When the key this attempt sends was reserved, read as the key is chosen rather than as the call
          * began: encoding and dispatch sit between the two and would spend part of the window.
          *
-         * A reused key keeps the reservation it already had, so a resend does not start the window again.
+         * A reused key keeps the reservation it already had; [sentAt] is this send's, which restarts the clock
+         * when the send may have reached the service and was not refused as a repeat.
          */
         var reservedAt: Long = 0
             private set
 
-        /** Whether the key sent was minted here rather than chosen by the caller or already held. */
-        var minted: Boolean = false
+        /** When this send reserved its key, whether or not the key was already held. */
+        var sentAt: Long = 0
             private set
 
-        /** Whether the key sent is the one held for this payment rather than the caller's or a new one. */
+        /** Whether the key sent is the one held for this payment rather than a new one. */
         var reused: Boolean = false
             private set
 
+        /** Whether this attempt's request may have reached the service, read once the attempt has ended. */
+        var mayHaveLeft: Boolean = true
+
+        /** The payment this attempt describes, or null on a route that names a transaction. */
+        var description: PayInPaymentDescription? = null
+            private set
+
         /**
-         * The key this attempt sends: [supplied] first, then the key held for this payment, otherwise
-         * a new one. The held key's age is read here, where the key is sent, not where the call began:
-         * this clock counts device sleep, so a check taken earlier can be arbitrarily stale by the
-         * time the request leaves.
+         * The key this attempt sends: the key held for this payment, otherwise a new one. The held key's age
+         * is read here, where the key is sent, not where the call began: this clock counts device sleep, so a
+         * check taken earlier can be arbitrarily stale by the time the request leaves.
          *
-         * @param supplied the caller's own key, or null for one to be chosen.
+         * Refused before anything is sent: a blank payment reference, a new payment naming one whose key is
+         * still held, and a declared retry describing a different payment from the held one. The held key stays.
+         *
+         * @param description the payment this attempt describes, or null on a route that names a transaction.
          * @return the key this attempt sends.
          */
-        fun reserve(supplied: String?): String {
+        fun reserve(description: PayInPaymentDescription? = null): String {
+            if (description != null && payment == null) {
+                throw PayInException.InvalidInput(FIELD_PAYMENT_REFERENCE, REASON_BLANK_REFERENCE)
+            }
             val now = elapsedRealtimeNanos()
+            sentAt = now
+            this.description = description
             val held = payment?.let { stillWorthSending(it, now) }
+            if (held != null && !claimsHeldKey) {
+                throw PayabliGenericException(
+                    PayabliErrorType.PAYMENT_REFERENCE_OPEN,
+                    PayabliErrorType.PAYMENT_REFERENCE_OPEN.message,
+                )
+            }
+            if (held != null && description != null && held.description?.matches(description) == false) {
+                throw PayabliGenericException(
+                    PayabliErrorType.RETRY_NOT_SAME_PAYMENT,
+                    PayabliErrorType.RETRY_NOT_SAME_PAYMENT.message,
+                )
+            }
             val chosen =
-                when {
-                    held != null && supplied == null -> {
-                        reservedAt = held.reservedAt
-                        reused = true
-                        held.key
-                    }
-
-                    supplied == null -> {
-                        reservedAt = now
-                        minted = true
-                        newIdempotencyKey()
-                    }
-
-                    else -> {
-                        reservedAt = now
-                        // Held as the header carries it, so the key that answers matches the one kept.
-                        // Blank stays blank: the header check is what refuses it.
-                        supplied.trimOrNull() ?: supplied
-                    }
+                if (held != null) {
+                    reservedAt = held.reservedAt
+                    reused = true
+                    // Carried with the key, so the payment it was minted for outlives a sweep of its record.
+                    this.description = held.description ?: description
+                    held.key
+                } else {
+                    reservedAt = now
+                    newIdempotencyKey()
                 }
             key = chosen
             return chosen
         }
     }
 
+    /**
+     * The payment reference [options] names, trimmed, or a new one when it names none. Null for a blank one,
+     * which names no payment and is refused before anything is sent.
+     */
+    private fun referenceOf(options: PayInTransactionOptions): String? {
+        val given = options.paymentReference ?: return newPaymentReference()
+        return given.trim().ifEmpty { null }
+    }
+
+    /** What names a capture or an authorization: its route and its reference, or nothing for a blank reference. */
+    private fun paymentOf(
+        route: String,
+        reference: String?,
+    ): String? = reference?.let { "$route:$it" }
+
     internal companion object {
         const val REASON_UNEXPECTED = "The payment could not be submitted"
+        const val REASON_RETRY_REFUSED = "Retry refused (409)"
+        const val FIELD_PAYMENT_REFERENCE = "paymentReference"
+        const val REASON_BLANK_REFERENCE = "The paymentReference cannot be blank"
 
         /**
          * How many payments may hold a key at once.
@@ -734,3 +800,7 @@ internal class PayInSubmission(
         const val HELD_KEYS_MAX: Int = 16
     }
 }
+
+/** A new payment reference: a random UUID, lowercase. */
+@OptIn(ExperimentalUuidApi::class)
+internal fun mintedPaymentReference(): String = Uuid.random().toString()

@@ -6,9 +6,13 @@ import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
+import com.payabli.example.app.sdk.FakePayInFlowHandle
+import com.payabli.example.app.sdk.PayInFlowHandle
 import com.payabli.example.app.sdk.PayInOutcome
+import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.readyStartup
+import com.payabli.example.app.sdk.unsettledOutcome
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +22,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -37,15 +42,16 @@ class CaptureIdempotencyTest {
     @After
     fun removeMainDispatcher() = Dispatchers.resetMain()
 
-    private fun captureModel() =
-        CaptureViewModel(
-            identity = SampleIdentity.from("Test Device"),
-            demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
-            startup = readyStartup(),
-            diagnostics = DiagnosticsStore(),
-            diagnosticsEnabled = true,
-            configuration = DemoConfiguration.fromBuildConfig(),
-        )
+    private fun captureModel(
+        demoCustomer: DemoCustomerSetting = DemoCustomerSetting(SampleIdentity.from("Test Device")),
+    ) = CaptureViewModel(
+        identity = SampleIdentity.from("Test Device"),
+        demoCustomer = demoCustomer,
+        startup = readyStartup(),
+        diagnostics = DiagnosticsStore(),
+        diagnosticsEnabled = true,
+        configuration = DemoConfiguration.fromBuildConfig(),
+    )
 
     private fun refusal(
         keepsItsPaymentReference: Boolean,
@@ -144,5 +150,64 @@ class CaptureIdempotencyTest {
         model.onFailed(refusal(keepsItsPaymentReference = false))
 
         assertEquals(PayabliAttempt.NewPayment, attemptOf(model))
+    }
+
+    @Test
+    fun `a retry refused for describing another payment stays the retry`() {
+        val model = captureModel()
+        model.onFailed(refusal(keepsItsPaymentReference = true, isOutcomeUnknown = true))
+        val retry = model.uiState.value.operation
+
+        model.onFailed(refusal(keepsItsPaymentReference = true))
+
+        assertSame(retry, model.uiState.value.operation)
+        assertEquals(PayabliAttempt.Retry, attemptOf(model))
+    }
+
+    @Test
+    fun `the demo customer switch does not replace an open retry`() {
+        // The retry is the same payment, so it keeps what it was first sent with.
+        val demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device"))
+        val model = captureModel(demoCustomer)
+        model.onFailed(refusal(keepsItsPaymentReference = true, isOutcomeUnknown = true))
+        val retry = model.uiState.value.operation
+
+        demoCustomer.setSuppliesDemoCustomer(!demoCustomer.suppliesDemoCustomer.value)
+
+        assertSame(retry, model.uiState.value.operation)
+        assertEquals(PayabliAttempt.Retry, attemptOf(model))
+    }
+
+    @Test
+    fun `the demo customer switch rebuilds a payment that is not a retry`() {
+        val demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device"))
+        val model = captureModel(demoCustomer)
+        val before = model.uiState.value.operation
+
+        demoCustomer.setSuppliesDemoCustomer(!demoCustomer.suppliesDemoCustomer.value)
+
+        assertNotSame(before, model.uiState.value.operation)
+    }
+
+    /** A recheck builds a new flow, and the open retry's key is held by the old one. */
+    @Test
+    fun `a token recheck while a retry is open keeps the flow that holds its key`() {
+        val first = FakePayInFlowHandle { _ -> unsettledOutcome() }
+        val second = FakePayInFlowHandle { _ -> unsettledOutcome() }
+        val handles = ArrayDeque(listOf<PayInFlowHandle>(first, second))
+        val model =
+            CaptureViewModel(
+                identity = SampleIdentity.from("Test Device"),
+                demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
+                startup = PayInStartup { PayInStartup.Started("returned a token", true, handles.removeFirst()) },
+                diagnostics = DiagnosticsStore(),
+                diagnosticsEnabled = true,
+                configuration = DemoConfiguration.fromBuildConfig(),
+            ).also { it.checkToken() }
+        model.onFailed(refusal(keepsItsPaymentReference = true, isOutcomeUnknown = true))
+
+        model.checkToken()
+
+        assertSame(first, model.uiState.value.payments)
     }
 }

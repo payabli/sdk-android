@@ -248,6 +248,7 @@ These Tap to Pay causes are ones your app handles, with their codes:
 
 | `type` | `code` | `category` | `message` |
 |---|---|---|---|
+| `RETRY_NOT_SAME_PAYMENT` | 1022 | `INVALID_REQUEST` | This retry describes a different payment from the one still unresolved, so it was not sent. Check that payment first; to charge a different payment, send it as a new payment. |
 | `ACTIVATION_CODE_MALFORMED` | 3023 | `INVALID_REQUEST` | The activation code must be six digits. |
 | `ACTIVATION_CODE_INCORRECT` | 3024 | `INVALID_REQUEST` | The activation code is incorrect. |
 | `ACTIVATION_CODE_EXPIRED` | 3025 | `CONFIGURATION` | The activation code has expired. |
@@ -257,14 +258,14 @@ These Tap to Pay causes are ones your app handles, with their codes:
 | `TERMINAL_NOT_READY` | 3029 | `INVALID_REQUEST` | The terminal is not ready for this call. |
 | `TOO_MANY_OPEN_CHARGES` | 3030 | `INVALID_REQUEST` | Too many charges are waiting to be resolved. |
 | `PAYMENT_NOT_HELD` | 3031 | `INVALID_REQUEST` | No captured payment is held under that identifier. |
-| `CHARGE_NOT_FINISHED` | 3034 | `OUTCOME_UNKNOWN` | An earlier charge on this device hasn't finished. Check that payment before charging again, or wait three minutes. |
+| `CHARGE_NOT_FINISHED` | 3034 | `OUTCOME_UNKNOWN` | An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes. |
 
 It also carries `capture` and `paymentTransId`:
 
 | `capture` | Meaning | What to do |
 |---|---|---|
 | `NOT_CHARGED` | The card wasn't charged. | You can retry. |
-| `UNKNOWN` | The outcome isn't known. | Look up `paymentTransId` with [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction) before charging again. When there's no ID, find the transaction in the Payabli portal. |
+| `UNKNOWN` | The outcome isn't known. | Look up `paymentTransId` with [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction) before charging again. When there's no ID, find the transaction in the Payabli portal. To charge for the same sale again, pass `attempt = PayabliAttempt.Retry` to `charge` with the same amount, service fee, currency and invoice number, so it's sent as a repeat of that sale rather than a second one. |
 | `CHARGED` | The card was charged, but the step that confirms it didn't complete. | Don't charge again. Call `closeCapturedCharge(paymentTransId)`, which confirms it without reading the card again. |
 
 Call `closeCapturedCharge` again only while the close is unconfirmed. Once one succeeds, the SDK no longer

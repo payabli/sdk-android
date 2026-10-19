@@ -10,8 +10,11 @@ import com.payabli.example.app.demo.terminal.TerminalFailure
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import com.payabli.sdk.core.PayabliSession
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.PayabliTTP
+import com.payabli.sdk.taptopay.TapToPayCapture
+import com.payabli.sdk.taptopay.TapToPayException
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.session.TapToPayChargeActivity
@@ -30,6 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.math.BigDecimal
+import java.math.RoundingMode
 
 /**
  * The Tap to pay screen, driven by the card-present SDK.
@@ -55,6 +59,9 @@ class TapToPayTerminal(
 
     private val _failureReason = MutableStateFlow<TerminalFailureReason?>(null)
     override val failureReason: StateFlow<TerminalFailureReason?> = _failureReason.asStateFlow()
+
+    /** The amount of the last sale that may have moved money unconfirmed; a charge for it is declared a retry. */
+    private var openAmount: BigDecimal? = null
 
     private val lock = Mutex()
     private var terminal: PayabliTTP? = null
@@ -89,14 +96,24 @@ class TapToPayTerminal(
             // tap taken without this cannot be opened at all. It also names the device in a dashboard,
             // which is why the card-not-present side has always sent it.
             val receipt =
-                ttp.charge(
-                    TapToPayPaymentDetails(amount),
-                    TapToPayCustomerData(
-                        firstName = identity.firstName,
-                        lastName = identity.lastName,
-                        customerNumber = identity.customerNumber,
-                    ),
-                )
+                try {
+                    ttp.charge(
+                        TapToPayPaymentDetails(amount),
+                        TapToPayCustomerData(
+                            firstName = identity.firstName,
+                            lastName = identity.lastName,
+                            customerNumber = identity.customerNumber,
+                        ),
+                        attempt = attemptFor(amount, openAmount),
+                    )
+                } catch (withdrawn: CancellationException) {
+                    openAmount = openAmountAfter(openAmount, amount, TapToPayCapture.UNKNOWN)
+                    throw withdrawn
+                } catch (failure: TapToPayException) {
+                    openAmount = openAmountAfter(openAmount, amount, failure.capture)
+                    throw failure
+                }
+            openAmount = openAmountAfter(openAmount, amount, capture = null)
             emit(TerminalEventCode.UpdateCompleted, receipt.cardNetwork.orEmpty())
             ChargeReceipt(receipt.paymentTransId)
         }
@@ -222,3 +239,39 @@ class TapToPayTerminal(
  * catalog number support looks up.
  */
 internal fun PayabliException.forScreen(): TerminalFailure = TerminalFailure("$reason ($code)", this)
+
+/**
+ * A charge for the open sale's amount, compared in cents as the SDK charges it, so `1.0`, `1.00` and `1.001`
+ * are one sale, is its retry.
+ *
+ * @return [PayabliAttempt.Retry] for the open amount, [PayabliAttempt.NewPayment] otherwise.
+ */
+internal fun attemptFor(
+    amount: BigDecimal,
+    open: BigDecimal?,
+): PayabliAttempt =
+    if (open != null &&
+        amount.inCents().compareTo(open.inCents()) == 0
+    ) {
+        PayabliAttempt.Retry
+    } else {
+        PayabliAttempt.NewPayment
+    }
+
+private fun BigDecimal.inCents(): BigDecimal = setScale(2, RoundingMode.HALF_UP)
+
+/**
+ * The open amount once a charge ends: [capture] null for a success, which settles only its own amount.
+ *
+ * @return [amount] when money may have moved unconfirmed, null once that sale succeeded, [open] otherwise.
+ */
+internal fun openAmountAfter(
+    open: BigDecimal?,
+    amount: BigDecimal,
+    capture: TapToPayCapture?,
+): BigDecimal? =
+    when (capture) {
+        TapToPayCapture.UNKNOWN, TapToPayCapture.CHARGED -> amount
+        TapToPayCapture.NOT_CHARGED -> open
+        null -> open.takeUnless { attemptFor(amount, it) == PayabliAttempt.Retry }
+    }

@@ -1,8 +1,10 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliFieldError
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.SessionScopedRecorder
@@ -18,6 +20,10 @@ import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TokenStorageClient
 import com.payabli.sdk.payin.client.testDetails
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
+import com.payabli.sdk.payin.model.PayInPaymentDetails
+import com.payabli.sdk.payin.model.PayInPaymentMethod
+import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -29,6 +35,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
@@ -211,6 +218,39 @@ class PayInSubmissionTelemetryTest {
             assertEquals(TelemetryProperties.Outcome.REFUSED_LOCALLY, properties[TelemetryProperty.OUTCOME.key])
             assertTrue(properties[TelemetryProperty.DURATION_MS.key] == null)
             assertEquals(TelemetryProperties.Origin.FORM, properties[TelemetryProperty.ORIGIN.key])
+        }
+
+    /** A payment the held key refuses before sending, either way, never reached the service. */
+    @Test
+    fun `a payment refused against a held key is reported as refused locally`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission =
+                submissionOver(
+                    FakePayInTransport.failingWith(PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "dropped")),
+                )
+            submission.capture(TEST_ENTRY_POINT, cardRequest("order-1"))
+            recorded.clear()
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest("order-1"))
+            val otherPayment =
+                PayInTransactionOptions(
+                    PayInPaymentDetails(BigDecimal("99")),
+                    paymentReference = "order-1",
+                    attempt = PayabliAttempt.Retry,
+                )
+            submission.capture(TEST_ENTRY_POINT, PayInRequest(PayInPaymentMethod.Card(testCardData()), otherPayment))
+
+            assertEquals(
+                listOf(TelemetryProperties.Outcome.REFUSED_LOCALLY, TelemetryProperties.Outcome.REFUSED_LOCALLY),
+                recorded.map { it.second[TelemetryProperty.OUTCOME.key] },
+            )
+            assertEquals(
+                listOf(
+                    PayabliErrorType.PAYMENT_REFERENCE_OPEN.wireName,
+                    PayabliErrorType.RETRY_NOT_SAME_PAYMENT.wireName,
+                ),
+                recorded.map { it.second[TelemetryProperty.CODE.key] },
+            )
         }
 
     /**

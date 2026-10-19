@@ -1,7 +1,9 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.payin.client.TEST_ACCOUNT
@@ -22,6 +24,7 @@ import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.serialization.KSerializer
 
 /** A v2 approval, with the transaction record it carries in `data`. */
@@ -146,6 +149,7 @@ internal class ScriptedPayInTransport(
     private var next = 0
 
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
+        currentCoroutineContext()[PayabliSendMark]?.mark()
         this.request = request
         recordedBody = request.body?.copyOf()
         val step = steps[minOf(next, steps.lastIndex)]
@@ -187,6 +191,7 @@ internal class GatedPayInTransport(
     val arrived: CompletableDeferred<Unit> = CompletableDeferred()
 
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
+        currentCoroutineContext()[PayabliSendMark]?.mark()
         sent += request
         arrived.complete(Unit)
         released.await()
@@ -220,12 +225,22 @@ internal const val READ_RECORD: String = """{"PaymentTransId":"101-abc","TransSt
 internal const val TEST_ENTRY_POINT: String = "merchant-entry"
 
 /** A capture of the test amount. */
-internal fun captureOf(): PayabliPayInOperation.Capture = PayabliPayInOperation.Capture(testOptions())
+internal fun captureOf(
+    paymentReference: String? = null,
+    attempt: PayabliAttempt = PayabliAttempt.NewPayment,
+): PayabliPayInOperation.Capture = PayabliPayInOperation.Capture(testOptions(paymentReference, attempt))
 
 /** An authorization, which the service takes for entered card data only. */
-internal fun authorizeOf(): PayabliPayInOperation.Authorize = PayabliPayInOperation.Authorize(testOptions())
+internal fun authorizeOf(
+    paymentReference: String? = null,
+    attempt: PayabliAttempt = PayabliAttempt.NewPayment,
+): PayabliPayInOperation.Authorize = PayabliPayInOperation.Authorize(testOptions(paymentReference, attempt))
 
-internal fun testOptions(): PayInTransactionOptions = PayInTransactionOptions(paymentDetails = testDetails())
+internal fun testOptions(
+    paymentReference: String? = null,
+    attempt: PayabliAttempt = PayabliAttempt.NewPayment,
+): PayInTransactionOptions =
+    PayInTransactionOptions(paymentDetails = testDetails(), paymentReference = paymentReference, attempt = attempt)
 
 /**
  * A card request as a host that collected the instrument itself would build it.
@@ -233,8 +248,11 @@ internal fun testOptions(): PayInTransactionOptions = PayInTransactionOptions(pa
  * The counterpart of [cardForm] for the calls that take no form. The caller owns the buffers, so a test
  * asserting they survive the call reads them back from the value this returns.
  */
-internal fun cardRequest(cardData: PayInCardData = testCardData()): PayInRequest =
-    PayInRequest(PayInPaymentMethod.Card(cardData), testOptions())
+internal fun cardRequest(
+    paymentReference: String? = null,
+    cardData: PayInCardData = testCardData(),
+    attempt: PayabliAttempt = PayabliAttempt.NewPayment,
+): PayInRequest = PayInRequest(PayInPaymentMethod.Card(cardData), testOptions(paymentReference, attempt))
 
 /** A store request as a host that collected the card itself would build it; the caller owns the buffers. */
 internal fun cardStoreRequest(cardData: PayInCardData = testCardData()): PayInStoreRequest =

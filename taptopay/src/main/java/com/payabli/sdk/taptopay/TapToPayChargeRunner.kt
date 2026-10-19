@@ -7,10 +7,12 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
@@ -139,6 +141,7 @@ internal class TapToPayChargeRunner(
         customer: TapToPayCustomerData,
         invoice: TapToPayInvoiceData,
         orderDescription: String?,
+        attempt: PayabliAttempt = PayabliAttempt.NewPayment,
     ): TapToPayResult =
         region.withLock {
             val sendable = sendableAmountOf(paymentDetails)
@@ -153,7 +156,10 @@ internal class TapToPayChargeRunner(
             TapToPayReports.chargeStarted()
 
             var reserved: String? = null
+            // Set by the transport as it hands the opening over, so a failure before that is known not to have left.
+            val sendMark = PayabliSendMark()
             var resentKey = false
+            var arrivedAt: Long? = null
             // Never unset: once a card is asked for, no failure releases the key.
             var askedForCard = false
             try {
@@ -168,21 +174,25 @@ internal class TapToPayChargeRunner(
                                 throw TapToPayCallException.NoDeviceToChargeAs()
                             }
                         // After the checks, so a charge that never reaches the wire holds no key.
-                        val reservation = keys.reserve(entry, environment)
+                        val reservation =
+                            keys.reserve(entry, environment, attempt, ChargeDescription.of(paymentDetails, invoice))
                         val idempotencyKey = reservation.key
                         reserved = idempotencyKey
                         resentKey = reservation.reused
                         if (resentKey) capture = TapToPayCapture.UNKNOWN
+                        arrivedAt = reservation.reservedAt
                         val paymentTransId =
-                            client.initiate(
-                                entryPoint = entry,
-                                deviceId = deviceId,
-                                paymentDetails = paymentDetails,
-                                idempotencyKey = idempotencyKey,
-                                customer = customer,
-                                invoice = invoice,
-                                orderDescription = orderDescription,
-                            )
+                            withContext(sendMark) {
+                                client.initiate(
+                                    entryPoint = entry,
+                                    deviceId = deviceId,
+                                    paymentDetails = paymentDetails,
+                                    idempotencyKey = idempotencyKey,
+                                    customer = customer,
+                                    invoice = invoice,
+                                    orderDescription = orderDescription,
+                                )
+                            }
                         openedAs = paymentTransId
                         HELD.remove(scope)
                         logger.debug(
@@ -251,18 +261,25 @@ internal class TapToPayChargeRunner(
                     }
                 }
             } catch (withdrawn: CancellationException) {
-                // Ahead of the `Throwable` branch: a withdrawn caller is not a failure.
+                // Ahead of the `Throwable` branch: a withdrawn caller is not a failure. Withdrawn before the card, a
+                // fresh key protects no sale, so it is released and the earlier unknown sale's key stays claimable.
+                if (!askedForCard && capture == TapToPayCapture.NOT_CHARGED) {
+                    reserved?.let { withContext(NonCancellable) { keys.settle(entry, environment, it) } }
+                }
+                // Withdrawn before the opening was handed over, a resend wrote nothing, so its key's clock stands.
+                if (!askedForCard && !sendMark.mayHaveLeft) arrivedAt = null
                 throw withdrawn
             } catch (failure: Throwable) {
+                // A 409 does not extend the marker an earlier send wrote, and a send that never left starts none.
+                val unsent = !sendMark.mayHaveLeft || !TapToPayErrorCodes.typeFor(failure).leavesOutcomeUnknown
+                if (!askedForCard && (isConflict(failure) || unsent)) arrivedAt = null
                 // Only before the read: after it, no failure proves the money did not move.
                 if (!askedForCard) {
                     val key = reserved
-                    // Uncancellable, so a withdrawal cannot skip the arrival mark or the settle.
+                    // Uncancellable, so a withdrawal cannot skip the settle.
                     withContext(NonCancellable) {
-                        if (key != null && resentKey && isConflict(failure)) {
-                            keys.markArrived(entry, environment, key)
-                        }
-                        if (isAnswered(failure, resentKey)) {
+                        // The host is told this opening was not charged, so its key protects no sale.
+                        if (capture == TapToPayCapture.NOT_CHARGED || isAnswered(failure, resentKey)) {
                             key?.let { keys.settle(entry, environment, it) }
                         }
                     }
@@ -272,6 +289,9 @@ internal class TapToPayChargeRunner(
                 TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard, type = type)
                 // A JVM Error passes through unwrapped, as the facade promises.
                 throw if (failure is Exception) failed(failure, type, openedAs, capture) else failure
+            } finally {
+                // A key still held names the newest unsettled charge, the only one a retry can claim.
+                reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it, arrivedAt) } }
             }
         }
 

@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
@@ -29,29 +30,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import java.net.HttpURLConnection
 
 /**
- * The MoneyIn transaction calls: capture, authorize, capture an authorization, and void.
- *
- * Takes a transport, so the bearer, the one 401 recovery and the replay rule all belong to the session's
- * authenticated transport. No access-token callback: one token path, and one place for a credential to be
- * wrong.
- *
- * **Stateless.** It holds no entry point, caches nothing and sequences nothing. Whoever owns the flow owns
- * the order of calls.
- *
- * **Nothing here is wrapped in `Retry`, and that is per route.** A capture is not repeatable: sending it twice
- * charges twice unless the repeat can be recognized as one, which is what
- * [PayInTransactionOptions.idempotencyKey] is for. Every route here is reached through the flow, which
- * reserves a key per attempt, so one is always sent.
- *
- * And the transport can send one of these a second time on its own. Credential recovery replays a request
- * whose rejection was an exact 401, which on these routes cannot take a second payment, so it costs a wasted
- * refresh and nothing else. "Not wrapped in `Retry`" is not a promise that a request reaches the service once.
- *
- * **An input problem can reach a caller as an expired token.** The status on a v2 error is not always the one
- * the input deserves, and the call site has no say in it, so a bad request can arrive as a 401. The
- * authenticated transport treats any 401 as a credential rejection: it refreshes, replays, and on the second
- * 401 throws rather than returning the response, so this class never sees the body and cannot reclassify it.
- * Telling the two apart has to happen in the layer that decides what a credential rejection is.
+ * The MoneyIn calls: capture, authorize, capture an authorization, and void. Stateless and never wrapped in `Retry`;
+ * the flow reserves an idempotency key per attempt, and the transport replays a request refused with an exact 401.
+ * A refused input can arrive as a 401, which the transport treats as a rejected credential before this class sees it.
  */
 internal class MoneyInClient(
     private val transport: PayabliTransport,
@@ -320,8 +301,11 @@ internal class MoneyInClient(
                 LogField.safe("statusCode", response.statusCode),
                 LogField.safe("errorCode", failure.type),
             ) { "the transaction call failed at the transport" }
-            // An open outcome keeps the transaction its body names, which the status mapping cannot carry.
-            throw if (failure.type.leavesThePaymentOpen && said.paymentTransId != null) {
+            // A 409 whose body is not a JSON object is the idempotency check refusing the key. Any other open
+            // outcome keeps the transaction its body names, which the status mapping cannot carry.
+            throw if (failure.type == PayabliErrorType.CONFLICT && !text.isJsonObject()) {
+                PayInKeyRefusal()
+            } else if (failure.type.leavesThePaymentOpen && said.paymentTransId != null) {
                 PayInException.ServiceError(said.failure(response.statusCode), failure.type)
             } else {
                 failure
@@ -471,6 +455,26 @@ private class AnswerFields(
         private fun JsonObject?.identifier(key: String): String? = string(key)?.trim()?.takeIf { it.isNotEmpty() }
     }
 }
+
+/**
+ * The service refused the request's idempotency key because it had already seen it.
+ *
+ * A conflict like any other until the flow reads it, which tells a resent held key from a new one.
+ */
+internal class PayInKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)")
+
+/**
+ * Whether this body is a JSON object, which the idempotency check's refusal never is. No field is read, so
+ * an envelope in any spelling keeps its own mapping, and text that is not an object keeps the key.
+ *
+ * @return true when the body parses as a JSON object.
+ */
+private fun String.isJsonObject(): Boolean =
+    try {
+        PayabliJson.format.parseToJsonElement(this) is JsonObject
+    } catch (unreadable: SerializationException) {
+        false
+    }
 
 /**
  * The wire body for a transaction, without `paymentMethod`, which the writer adds.

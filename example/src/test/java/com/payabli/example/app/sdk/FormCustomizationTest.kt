@@ -131,6 +131,7 @@ class FormCustomizationTest {
             ) as PayabliPayInOperation.Authorize
 
         assertEquals(BigDecimal("12.64"), authorize.options.paymentDetails.totalAmount)
+        assertEquals(PayabliAttempt.NewPayment, authorize.options.attempt)
         assertEquals("key-1", authorize.options.paymentReference)
     }
 
@@ -243,7 +244,7 @@ class FormCustomizationTest {
     }
 
     @Test
-    fun `a capture carries the amount and the held retry key`() {
+    fun `a capture carries the amount and the declared retry`() {
         val capture =
             FormCustomization.operation(
                 FormSettings(),

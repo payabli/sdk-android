@@ -67,7 +67,16 @@ public sealed class PayabliPayIn {
      * payment was taken; the failure is [PayInException.Unsettled], carrying that reference. Submitting the same
      * reference with `attempt` set to `PayabliAttempt.Retry` resends its key, so the service recognises the
      * repeat. A new payment naming a reference whose outcome is still unknown is refused as
-     * [PayabliErrorType.PAYMENT_REFERENCE_OPEN] and not sent.
+     * [PayabliErrorType.PAYMENT_REFERENCE_OPEN] and not sent. The key is held in memory, while the service would
+     * still recognise it, and for at most 16 unresolved payments at once; past that, after a restart, or in a
+     * second instance, a retry goes out under a new key, so read the transaction back instead.
+     *
+     * **A declared retry describes the same payment.** One that describes a different payment is refused as
+     * [PayabliErrorType.RETRY_NOT_SAME_PAYMENT] and not sent, and the earlier payment's key stays held.
+     *
+     * **A declared retry the service refuses arrives as [PayInException.Unsettled] over
+     * [PayabliErrorType.RETRY_REFUSED].** It says the earlier attempt reached the service, and nothing about
+     * whether the payment was taken. Check that payment before trying again.
      *
      * @param request the payment to take, its buffers the caller's to close.
      * @return the outcome, or the failure.
@@ -117,8 +126,8 @@ public sealed class PayabliPayIn {
      * [PayInException.Unsettled], and calling again with the same transaction resends the held key.
      *
      * **A repeat the service refuses outright is the end of what repeating can tell you.** It arrives as
-     * [PayInException.Unsettled] over [PayabliErrorType.CONFLICT], which says a request under that key got
-     * past the service's check and nothing about whether the capture was applied. Repeating again is
+     * [PayInException.Unsettled] over [PayabliErrorType.RETRY_REFUSED], which says a request under the held key
+     * got past the service's check and nothing about whether the capture was applied. Repeating again is
      * refused the same way. Read the transaction back with [readTransaction] instead.
      *
      * **The key is resent only while the SDK still holds one** for this transaction. It holds none past the

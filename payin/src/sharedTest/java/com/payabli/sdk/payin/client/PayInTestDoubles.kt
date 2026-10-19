@@ -2,6 +2,7 @@ package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.payin.model.ExpiryValue
@@ -10,6 +11,7 @@ import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.SensitiveDigits
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.serialization.KSerializer
 import java.math.BigDecimal
 
@@ -41,6 +43,7 @@ internal class FakePayInTransport(
         private set
 
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
+        currentCoroutineContext()[PayabliSendMark]?.mark()
         count++
         this.request = request
         bodyReference = request.body

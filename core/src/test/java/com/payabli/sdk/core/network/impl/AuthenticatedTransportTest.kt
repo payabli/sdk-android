@@ -15,6 +15,7 @@ import com.payabli.sdk.core.network.AuthRecoveryPolicy
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.network.Retry
@@ -602,6 +603,22 @@ class AuthenticatedTransportTest {
                 assertEquals(2, server.recorded.size)
                 assertEquals("the first attempt sent the body", payload, server.recorded[0].body)
                 assertEquals("the retry sent the same body", payload, server.recorded[1].body)
+            }
+        }
+
+    /** The first send was handed over, so a replay that never leaves does not take that back. */
+    @Test
+    fun `a replay whose token fetch fails keeps the send mark the first send raised`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "")
+                val auth = testAuth(tokenProvider = { throw IOException("no token") })
+                val mark = PayabliSendMark()
+
+                runCatching { withContext(mark) { stack(server, auth).execute(ping()) } }
+
+                assertEquals(1, server.recorded.size)
+                assertTrue(mark.mayHaveLeft)
             }
         }
 
