@@ -209,11 +209,12 @@ class CaptureViewModel(
                     isCheckingToken = false,
                     tokenCheckText = started.text,
                     backendReachable = started.isReady,
-                    // A flow holding a payment or its outcome is kept, and so is one holding a reversal that
-                    // is running or unresolved, since the next reversal has to resend that flow's key.
+                    // A flow holding a payment, its outcome, an open retry or an unresolved reversal is kept, since
+                    // the retry or the next reversal has to resend that flow's key.
                     payments =
-                        it.payments?.takeIf { flow -> flow.isBusy() || it.isVoiding || it.voidKeyHeld }
-                            ?: started.payments,
+                        it.payments?.takeIf { flow ->
+                            flow.isBusy() || it.operation.declaresRetry || it.isVoiding || it.voidKeyHeld
+                        } ?: started.payments,
                 )
             }
         }

@@ -6,9 +6,13 @@ import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
+import com.payabli.example.app.sdk.FakePayInFlowHandle
+import com.payabli.example.app.sdk.PayInFlowHandle
 import com.payabli.example.app.sdk.PayInOutcome
+import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.readyStartup
+import com.payabli.example.app.sdk.unsettledOutcome
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import kotlinx.coroutines.Dispatchers
@@ -183,5 +187,27 @@ class CaptureIdempotencyTest {
         demoCustomer.setSuppliesDemoCustomer(!demoCustomer.suppliesDemoCustomer.value)
 
         assertNotSame(before, model.uiState.value.operation)
+    }
+
+    /** A recheck builds a new flow, and the open retry's key is held by the old one. */
+    @Test
+    fun `a token recheck while a retry is open keeps the flow that holds its key`() {
+        val first = FakePayInFlowHandle { _ -> unsettledOutcome() }
+        val second = FakePayInFlowHandle { _ -> unsettledOutcome() }
+        val handles = ArrayDeque(listOf<PayInFlowHandle>(first, second))
+        val model =
+            CaptureViewModel(
+                identity = SampleIdentity.from("Test Device"),
+                demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
+                startup = PayInStartup { PayInStartup.Started("returned a token", true, handles.removeFirst()) },
+                diagnostics = DiagnosticsStore(),
+                diagnosticsEnabled = true,
+                configuration = DemoConfiguration.fromBuildConfig(),
+            ).also { it.checkToken() }
+        model.onFailed(refusal(keepsItsPaymentReference = true, isOutcomeUnknown = true))
+
+        model.checkToken()
+
+        assertSame(first, model.uiState.value.payments)
     }
 }
