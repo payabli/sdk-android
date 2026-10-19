@@ -81,7 +81,7 @@ public class PayabliSession private constructor(
 
     /**
      * Whether this is still the installed session, requiring re-initialization included. A capability built
-     * from a session that was replaced reads false here and must stop using the session's reader.
+     * from a session that was replaced reads false here and must stop acting for it.
      */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val isLive: Boolean get() = installed === this
