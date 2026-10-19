@@ -130,9 +130,7 @@ internal class PayInSubmission(
             entryPoint,
             onReserved,
             movesMoney = operation.movesMoney,
-            payment = operation.holding?.let { paymentOf(it, reference) },
-            reference = reference,
-            claimsHeldKey = operation.declaresRetry,
+            retry = RetryKey(operation.holding?.let { paymentOf(it, reference) }, reference, operation.declaresRetry),
         ) { retry ->
             // The customer and the description the payer typed, which are not part of the instrument. Read
             // once here, so all three operations carry what the same form collected.
@@ -183,9 +181,12 @@ internal class PayInSubmission(
             TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
             entryPoint,
             publishes = false,
-            payment = paymentOf(PayInRoutes.CAPTURE, reference),
-            reference = reference,
-            claimsHeldKey = request.options.attempt == PayabliAttempt.Retry,
+            retry =
+                RetryKey(
+                    paymentOf(PayInRoutes.CAPTURE, reference),
+                    reference,
+                    claimsHeldKey = request.options.attempt == PayabliAttempt.Retry,
+                ),
         ) { retry ->
             val key = retry.reserve(PayInPaymentDescription.of(request.paymentMethod, request.options))
             PayInSubmissionState.Succeeded.Payment(
@@ -210,9 +211,12 @@ internal class PayInSubmission(
             TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED,
             entryPoint,
             publishes = false,
-            payment = paymentOf(PayInRoutes.AUTHORIZE, reference),
-            reference = reference,
-            claimsHeldKey = request.options.attempt == PayabliAttempt.Retry,
+            retry =
+                RetryKey(
+                    paymentOf(PayInRoutes.AUTHORIZE, reference),
+                    reference,
+                    claimsHeldKey = request.options.attempt == PayabliAttempt.Retry,
+                ),
         ) { retry ->
             val key = retry.reserve(PayInPaymentDescription.of(request.paymentMethod, request.options))
             PayInSubmissionState.Succeeded.Payment(
@@ -238,7 +242,7 @@ internal class PayInSubmission(
             entryPoint,
             publishes = false,
             movesMoney = false,
-            payment = null,
+            retry = RetryKey(payment = null),
         ) {
             PayInSubmissionState.Succeeded.Method(storage.storeMethod(entryPoint, request.instrument, request.options))
         }
@@ -258,7 +262,7 @@ internal class PayInSubmission(
             TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
             entryPoint,
             publishes = false,
-            payment = "${PayInRoutes.CAPTURE_AUTHORIZED}:${request.transId.trim()}",
+            retry = RetryKey("${PayInRoutes.CAPTURE_AUTHORIZED}:${request.transId.trim()}"),
         ) { retry ->
             val key = retry.reserve()
             PayInSubmissionState.Succeeded.Payment(moneyIn.captureAuthorized(request, key))
@@ -279,7 +283,7 @@ internal class PayInSubmission(
             TelemetryEvents.PAYIN_VOID_COMPLETED,
             entryPoint,
             publishes = false,
-            payment = "${PayInRoutes.VOID}:${transId.trim()}",
+            retry = RetryKey("${PayInRoutes.VOID}:${transId.trim()}"),
         ) { retry ->
             val key = retry.reserve()
             PayInSubmissionState.Succeeded.Payment(moneyIn.void(transId, key))
@@ -345,9 +349,7 @@ internal class PayInSubmission(
      * @param onReserved told whether this submission took the single flight.
      * @param publishes whether the outcome is published to [state] as the form's.
      * @param movesMoney whether the operation can take a payment, which decides an interruption's class.
-     * @param payment what names the payment a retry key is held against, or null for none.
-     * @param reference the payment reference an unknown outcome is reported with, or null for none.
-     * @param claimsHeldKey whether a key held for [payment] is sent; when false, one held refuses the call.
+     * @param retry the payment a key is held against, and whether this call may claim the held one.
      * @param call the operation itself, handed its retry key.
      * @return the terminal state, or null when a submission was already in flight.
      */
@@ -357,9 +359,7 @@ internal class PayInSubmission(
         onReserved: (Boolean) -> Unit = {},
         publishes: Boolean = true,
         movesMoney: Boolean = true,
-        payment: String?,
-        reference: String? = null,
-        claimsHeldKey: Boolean = true,
+        retry: RetryKey,
         call: suspend (RetryKey) -> PayInSubmissionState,
     ): PayInSubmissionState? {
         // Answered before the first suspension, so a caller starting this undispatched learns whether the single
@@ -387,7 +387,6 @@ internal class PayInSubmission(
         }
         onReserved(true)
         val startedAt = elapsedRealtimeNanos()
-        val retry = RetryKey(payment, reference, claimsHeldKey)
         // Set by the transport as it hands the request over, so a failure before that is known not to have left.
         val sendMark = PayabliSendMark()
         if (publishes) sink.value = PayInSubmissionState.Submitting
@@ -412,7 +411,7 @@ internal class PayInSubmission(
             val finished = outcome
             if (finished != null) {
                 retry.mayHaveLeft = sendMark.mayHaveLeft
-                if (payment != null) settle(payment, finished, retry)
+                retry.payment?.let { settle(it, finished, retry) }
                 if (publishes) sink.value = finished
                 report(event, outcomeOf(finished), codeOf(finished), startedAt, entryPoint, publishes)
             }
@@ -691,9 +690,9 @@ internal class PayInSubmission(
      * request carries the key, so it is known only once that has been built.
      */
     private inner class RetryKey(
-        private val payment: String?,
-        val reference: String?,
-        private val claimsHeldKey: Boolean,
+        val payment: String?,
+        val reference: String? = null,
+        private val claimsHeldKey: Boolean = true,
     ) {
         var key: String? = null
             private set
