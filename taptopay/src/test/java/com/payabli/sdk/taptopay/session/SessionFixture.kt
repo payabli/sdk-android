@@ -79,6 +79,7 @@ internal class SessionFixture(
     isLive: () -> Boolean = { true },
     unsent: (PayabliRequest) -> Exception? = { null },
     lost: (PayabliRequest) -> Exception? = { null },
+    refused: (PayabliRequest) -> Exception? = { null },
 ) {
     val enrollment =
         EnrollmentFixture(
@@ -88,6 +89,7 @@ internal class SessionFixture(
             firstReadGate = firstReadGate,
             unsent = unsent,
             lost = lost,
+            refused = refused,
         )
 
     val reader = FakeTapToPayProvider(enrollment.trace, readerGate, eligibilityFailure, readGate = readGate)

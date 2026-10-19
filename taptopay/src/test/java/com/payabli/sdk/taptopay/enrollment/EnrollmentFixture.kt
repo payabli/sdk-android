@@ -156,6 +156,8 @@ internal class EnrollmentFixture(
     unsent: (PayabliRequest) -> Exception? = { null },
     /** Thrown for a request once it is recorded, as a send that left and lost its answer would be. */
     lost: (PayabliRequest) -> Exception? = { null },
+    /** Thrown for a request answered 401 whose refresh then failed, with the hand-off taken back. */
+    refused: (PayabliRequest) -> Exception? = { null },
 ) {
     val trace: MutableList<String> = mutableListOf()
     val logger = RecordingSdkLogger()
@@ -169,7 +171,7 @@ internal class EnrollmentFixture(
     val requests: MutableList<PayabliRequest> = mutableListOf()
 
     val transport =
-        FakeDeviceTransport(unsent) { request ->
+        FakeDeviceTransport(unsent, refused) { request ->
             trace += request.path
             requests += request
             lost(request)?.let { throw it }

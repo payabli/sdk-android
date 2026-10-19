@@ -12,6 +12,7 @@ import com.payabli.sdk.core.logging.info
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.impl.RedactedCause
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -274,7 +275,9 @@ internal class PayabliAuth(
         val minted: String? =
             try {
                 withTimeoutOrNull(providerTimeoutMillis.milliseconds) {
-                    withContext(RefreshInProgress(marks)) { provider.freshToken() }
+                    // A fresh send mark nobody reads: a request the provider makes through the SDK is not the
+                    // payment's send, so it must not raise the payment's mark.
+                    withContext(RefreshInProgress(marks) + PayabliSendMark()) { provider.freshToken() }
                 }
             } catch (cancellation: CancellationException) {
                 // A provider can raise cancellation of its own, from a nested timeout for instance, while

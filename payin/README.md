@@ -169,7 +169,9 @@ A success means what the call did, which depends on the call:
 
 The outcomes are the ones in the root README's [Handle the outcome](../README.md#handle-the-outcome). For
 `authorize`, `captureAuthorizedTransaction` and `voidTransaction`, read "charged" as "held", "captured"
-or "voided":
+or "voided". Check for `PayInException.Unsettled` before you branch on `type` or `category`: an unsettled failure
+keeps its cause's type and category, such as `TOKEN_EXPIRED`, so the category alone never says the payment may
+have gone through.
 
 | Result | Outcome | What to do |
 |---|---|---|

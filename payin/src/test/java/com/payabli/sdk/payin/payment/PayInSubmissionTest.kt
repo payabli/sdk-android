@@ -467,6 +467,54 @@ class PayInSubmissionTest {
             assertEquals(PayabliErrorType.NETWORK_ERROR, cause.type)
         }
 
+    /** A send answered 401 ran nothing, so cancelling the refresh after it leaves a new payment unsent. */
+    @Test
+    fun `a new payment cancelled while its token is refreshed after a 401 is interrupted and holds no key`() =
+        runTest(timeout = timeout) {
+            val transport = RefusedThenRefreshing()
+            val submission = submissionOver(transport)
+
+            val first = launch { submission.submit(TEST_ENTRY_POINT, captureOf("order-1"), cardForm()) }
+            transport.refreshing.await()
+            first.cancelAndJoin()
+            val cause = failed(submission.state.value).cause
+            submission.reset()
+            transport.refuses = false
+            val next = submission.capture(TEST_ENTRY_POINT, cardRequest("order-1"))
+
+            assertTrue("$cause", cause is PayInException.Interrupted)
+            assertNotEquals(PayabliErrorType.PAYMENT_REFERENCE_OPEN, failed(requireNotNull(next)).cause.type)
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** A resent key's earlier send may have run, so the same case on a retry stays unknown on its earlier time. */
+    @Test
+    fun `a retry cancelled while its token is refreshed after a 401 is unknown and keeps its earlier time`() =
+        runTest(timeout = timeout) {
+            val transport = RefusedThenRefreshing(refuses = false)
+            val submission = submissionOver(transport)
+            val half = IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
+            submission.capture(TEST_ENTRY_POINT, cardRequest("order-1"))
+            clock.addAndGet(half)
+
+            transport.refuses = true
+            val retry =
+                launch { submission.submit(TEST_ENTRY_POINT, captureOf("order-1", PayabliAttempt.Retry), cardForm()) }
+            transport.refreshing.await()
+            retry.cancelAndJoin()
+            val cause = failed(submission.state.value).cause
+            transport.refuses = false
+            clock.addAndGet(half)
+            submission.capture(TEST_ENTRY_POINT, cardRequest("order-1", attempt = PayabliAttempt.Retry))
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(
+                "the key outlived its earlier time",
+                "$MINTED_KEY-2",
+                transport.request?.headers?.get("idempotencyKey"),
+            )
+        }
+
     @Test
     fun `a held key is still sent while it is young enough`() =
         runTest(timeout = timeout) {
@@ -1992,6 +2040,35 @@ class PayInSubmissionTest {
                 throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "no token")
             }
             currentCoroutineContext()[PayabliSendMark]?.mark()
+            this.request = request
+            throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the link dropped")
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("the PayIn clients decode their own envelopes")
+    }
+
+    /**
+     * While [refuses], hands the request over, is answered 401, takes the hand-off back as the authenticated
+     * transport does, and waits in the refresh to be cancelled. Otherwise hands it over and drops the answer.
+     */
+    private class RefusedThenRefreshing(
+        var refuses: Boolean = true,
+    ) : PayabliTransport {
+        val refreshing = CompletableDeferred<Unit>()
+        var request: PayabliRequest? = null
+            private set
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            val mark = currentCoroutineContext()[PayabliSendMark]
+            mark?.mark()
+            if (refuses) {
+                mark?.lower()
+                refreshing.complete(Unit)
+                awaitCancellation()
+            }
             this.request = request
             throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the link dropped")
         }

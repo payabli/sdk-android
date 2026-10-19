@@ -6,6 +6,7 @@ import com.payabli.sdk.core.auth.mintingThen
 import com.payabli.sdk.core.auth.testAuth
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
@@ -20,6 +21,7 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.network.Retry
 import com.payabli.sdk.core.network.RetryPolicy
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -606,9 +608,9 @@ class AuthenticatedTransportTest {
             }
         }
 
-    /** The first send was handed over, so a replay that never leaves does not take that back. */
+    /** A send answered 401 ran nothing, so a refresh that fails after it leaves the payment unsent. */
     @Test
-    fun `a replay whose token fetch fails keeps the send mark the first send raised`() =
+    fun `a 401 lowers the send mark, so a failed refresh after it leaves it down`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 server.respondInOrder(UNAUTHORIZED to "")
@@ -618,7 +620,64 @@ class AuthenticatedTransportTest {
                 runCatching { withContext(mark) { stack(server, auth).execute(ping()) } }
 
                 assertEquals(1, server.recorded.size)
+                assertFalse(mark.mayHaveLeft)
+            }
+        }
+
+    /** The replay is a send of its own, so it raises the mark again at its hand-off. */
+    @Test
+    fun `a replay after a 401 raises the send mark again`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "", OK to "{}")
+                val mark = PayabliSendMark()
+
+                withContext(mark) { stack(server, testAuth(tokenProvider = { "a-fresh-token" })).execute(ping()) }
+
+                assertEquals(2, server.recorded.size)
                 assertTrue(mark.mayHaveLeft)
+            }
+        }
+
+    /** Only a 401 is refused before the service acts; a widened rejection keeps the mark the send raised. */
+    @Test
+    fun `a widened rejection keeps the send mark`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(WIDENED to "")
+                val auth = testAuth(tokenProvider = { throw IOException("no token") })
+                val mark = PayabliSendMark()
+
+                runCatching { withContext(mark) { stack(server, auth, recovery = widenedTo419()).execute(ping()) } }
+
+                assertTrue(mark.mayHaveLeft)
+            }
+        }
+
+    /** A request the provider makes through the SDK is not the payment's send, so it raises no mark for it. */
+    @Test
+    fun `a request the token provider makes leaves the payment's send mark down`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(OK to "{}")
+                val other = stack(server, testAuth())
+                val provider =
+                    PayabliTokenProvider {
+                        other.execute(ping())
+                        throw IOException("no token")
+                    }
+                val auth =
+                    PayabliAuth(
+                        PayabliConfig("entry", PayabliEnvironment.SANDBOX, tokenProvider = provider),
+                        RecordingSdkLogger(),
+                    )
+                val mark = PayabliSendMark()
+
+                val failure = failureFrom { withContext(mark) { stack(server, auth).execute(ping()) } }
+
+                assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, failure.type)
+                assertEquals("only the provider's own request reached the server", 1, server.recorded.size)
+                assertFalse("the provider's request raised the payment's mark", mark.mayHaveLeft)
             }
         }
 
