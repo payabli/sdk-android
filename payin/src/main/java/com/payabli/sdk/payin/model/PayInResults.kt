@@ -240,11 +240,12 @@ public sealed class PayInException(
      * first time is not repeated, so a caller that needs the outcome reads the transaction back with
      * [com.payabli.sdk.payin.PayabliPayIn.readTransaction].
      *
-     * [PayabliException.type] is [cause]'s own, so a caller branching on it reads what went wrong as well
-     * as that it is unresolved. It is taken from [cause] rather than accepted beside it, because two
-     * sources for one classification can disagree and a caller cannot tell which it is holding. [cause]
-     * names the failing type and withholds its message, and it names the type that failed rather than this
-     * SDK's stand-in for it: a failure already carrying a redaction keeps the one it has.
+     * [PayabliException.type] is [cause]'s own, and so is its category, so a caller reads what went wrong from
+     * either; that the payment is unresolved is this type's to say. **Check for this type before branching on
+     * the category**, which can be `CREDENTIAL` or `RETRY_LATER` here. It is taken from [cause] rather than
+     * accepted beside it, because two sources for one classification can disagree and a caller cannot tell
+     * which it is holding. [cause] names the failing type and withholds its message, and it names the type that
+     * failed rather than this SDK's stand-in for it: a failure already carrying a redaction keeps the one it has.
      */
     public class Unsettled(
         cause: PayabliException,
