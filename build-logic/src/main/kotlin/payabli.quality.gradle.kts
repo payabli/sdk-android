@@ -7,7 +7,6 @@ import org.jlleitschuh.gradle.ktlint.reporter.ReporterType
 
 plugins {
     id("org.jlleitschuh.gradle.ktlint")
-    id("payabli.trusted-artifacts")
 }
 
 ktlint {

@@ -25,10 +25,3 @@ dependencies {
     // Keep in sync with `junit` in ../gradle/libs.versions.toml.
     testImplementation("junit:junit:4.13.2")
 }
-
-// TrustedArtifactNamesTest runs the settings script the root build applies, which lives outside this build.
-tasks.withType<Test>().configureEach {
-    inputs.file("../gradle/trusted-artifact-names.settings.gradle.kts")
-        .withPropertyName("trustedArtifactNamesHook")
-        .withPathSensitivity(PathSensitivity.NONE)
-}
