@@ -62,6 +62,8 @@ if (payabliMavenUser.isNullOrBlank() || payabliMavenPassword.isNullOrBlank()) {
 }
 
 rootProject.name = "PayabliSDK"
+apply(from = "gradle/trusted-artifact-names.settings.gradle.kts")
+
 include(":example")
 include(":core")
 include(":payin")

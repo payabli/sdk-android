@@ -60,6 +60,14 @@ jobs:
           # a licensing decision rather than a build one.
           cache-provider: basic
 
+      # Dependency verification trusts sources and javadoc jars unchecked, for an IDE's downloads. This fails
+      # if a module or the root build script resolves one. It runs first because the steps after it execute
+      # tool classpaths; the build script classpath is checked as it resolves, in the settings script.
+      - name: Trusted artifact names
+        run: ./gradlew :verifyTrustedArtifactNames :core:verifyTrustedArtifactNames
+          :payin:verifyTrustedArtifactNames :telemetry:verifyTrustedArtifactNames
+          :payabli-bom:verifyTrustedArtifactNames :testutils:verifyTrustedArtifactNames
+
       # :taptopay needs a credential fork PRs cannot have; see the card-present job. :example is there
       # too, and not here, because it links :taptopay for the Tap to pay screen and so resolves the card
       # reader as well. :payabli-android re-exports :taptopay, so it resolves the reader too.
@@ -81,13 +89,6 @@ jobs:
       - name: Format
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
           :payabli-bom:ktlintCheck :testutils:ktlintCheck
-
-      # Dependency verification trusts sources and javadoc jars unchecked, for an IDE's downloads. This fails
-      # if the build itself resolves one, root included because its build script holds the plugins.
-      - name: Trusted artifact names
-        run: ./gradlew :verifyTrustedArtifactNames :core:verifyTrustedArtifactNames
-          :payin:verifyTrustedArtifactNames :telemetry:verifyTrustedArtifactNames
-          :payabli-bom:verifyTrustedArtifactNames :testutils:verifyTrustedArtifactNames
 
       - name: Android Lint
         run: ./gradlew :core:lint :payin:lint :telemetry:lint :testutils:lint
@@ -321,6 +322,11 @@ jobs:
           # See the note on the first setup-gradle in this file.
           cache-provider: basic
 
+      # First, for the reason given in the build job.
+      - name: Trusted artifact names
+        run: ./gradlew :taptopay:verifyTrustedArtifactNames :payabli-android:verifyTrustedArtifactNames
+          :example:verifyTrustedArtifactNames
+
       # Release as well as debug, because the release variant is the artifact the card reader vendor
       # signs and it resolves a source set debug never compiles. A break there is invisible to every
       # other job: main has no release variant at all, and this branch found one the day it enabled it.
@@ -341,10 +347,6 @@ jobs:
 
       - name: Format
         run: ./gradlew :taptopay:ktlintCheck :payabli-android:ktlintCheck :example:ktlintCheck
-
-      - name: Trusted artifact names
-        run: ./gradlew :taptopay:verifyTrustedArtifactNames :payabli-android:verifyTrustedArtifactNames
-          :example:verifyTrustedArtifactNames
 
       - name: Android Lint
         run: ./gradlew :taptopay:lint :payabli-android:lint :example:lint
