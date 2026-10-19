@@ -6,6 +6,7 @@ import com.payabli.sdk.core.auth.mintingThen
 import com.payabli.sdk.core.auth.testAuth
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
@@ -20,6 +21,7 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.network.Retry
 import com.payabli.sdk.core.network.RetryPolicy
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -619,6 +621,33 @@ class AuthenticatedTransportTest {
 
                 assertEquals(1, server.recorded.size)
                 assertTrue(mark.mayHaveLeft)
+            }
+        }
+
+    /** A request the provider makes through the SDK is not the payment's send, so it raises no mark for it. */
+    @Test
+    fun `a request the token provider makes leaves the payment's send mark down`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(OK to "{}")
+                val other = stack(server, testAuth())
+                val provider =
+                    PayabliTokenProvider {
+                        other.execute(ping())
+                        throw IOException("no token")
+                    }
+                val auth =
+                    PayabliAuth(
+                        PayabliConfig("entry", PayabliEnvironment.SANDBOX, tokenProvider = provider),
+                        RecordingSdkLogger(),
+                    )
+                val mark = PayabliSendMark()
+
+                val failure = failureFrom { withContext(mark) { stack(server, auth).execute(ping()) } }
+
+                assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, failure.type)
+                assertEquals("only the provider's own request reached the server", 1, server.recorded.size)
+                assertFalse("the provider's request raised the payment's mark", mark.mayHaveLeft)
             }
         }
 
