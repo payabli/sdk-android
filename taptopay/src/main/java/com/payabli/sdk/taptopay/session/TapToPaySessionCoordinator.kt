@@ -77,6 +77,9 @@ internal class TapToPaySessionCoordinator(
             val code: String,
         ) : ClaimKey {
             override val kind get() = SessionWorkKind.ACTIVATE
+
+            /** The code is a live credential inside its window, so the description names nothing it holds. */
+            override fun toString(): String = "Activation()"
         }
     }
 
