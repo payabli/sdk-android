@@ -91,6 +91,25 @@ class TelemetryCatalogTest {
     }
 
     @Test
+    fun everyPayInCompletionCarriesItsFailureType() {
+        listOf(
+            TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+            TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED,
+            TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED,
+            TelemetryEvents.PAYIN_VOID_COMPLETED,
+            TelemetryEvents.PAYIN_READ_COMPLETED,
+        ).forEach { event ->
+            val scrubbed =
+                TelemetryCatalog.scrub(
+                    event,
+                    mapOf(TelemetryProperty.FAILURE_TYPE.key to "NullPointerException"),
+                )
+
+            assertEquals(event, mapOf(TelemetryProperty.FAILURE_TYPE.key to "NullPointerException"), scrubbed)
+        }
+    }
+
+    @Test
     fun everyCloseEventCarriesItsOrigin() {
         listOf(
             TelemetryEvents.TTP_CLOSE_STARTED,

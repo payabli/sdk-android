@@ -46,7 +46,7 @@ public object TelemetryCatalog {
     private val FAILED = TIMED_OUTCOME + TelemetryProperty.ERROR_NUMBER.key
 
     /** A money-path completion, which the form and a direct call both report under one name. */
-    private val PAYIN = FAILED + TelemetryProperty.ORIGIN.key
+    private val PAYIN = FAILED + TelemetryProperty.ORIGIN.key + TelemetryProperty.FAILURE_TYPE.key
 
     /**
      * The device routes carry no attempt, and cannot.

@@ -908,6 +908,7 @@ package com.payabli.sdk.core.telemetry {
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty CODE;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty DURATION_MS;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty ERROR_NUMBER;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty FAILURE_TYPE;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty FIELD;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty FROM;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty ORIGIN;

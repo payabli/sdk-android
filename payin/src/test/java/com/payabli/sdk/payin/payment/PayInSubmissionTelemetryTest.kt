@@ -200,6 +200,7 @@ class PayInSubmissionTelemetryTest {
             assertEquals(TelemetryProperties.Outcome.DECLINED, properties[TelemetryProperty.OUTCOME.key])
             assertEquals("PAYMENT_DECLINED", properties[TelemetryProperty.CODE.key])
             assertEquals("1008", properties[TelemetryProperty.ERROR_NUMBER.key])
+            assertEquals("Refused", properties[TelemetryProperty.FAILURE_TYPE.key])
         }
 
     /** A form nobody can submit is a real thing to count, and it is invisible to anything watching requests. */
@@ -251,6 +252,30 @@ class PayInSubmissionTelemetryTest {
                 ),
                 recorded.map { it.second[TelemetryProperty.CODE.key] },
             )
+            recorded.forEach { (_, properties) ->
+                assertTrue(properties[TelemetryProperty.DURATION_MS.key] == null)
+                assertEquals("PayabliGenericException", properties[TelemetryProperty.FAILURE_TYPE.key])
+            }
+        }
+
+    /**
+     * A form this SDK refuses before sending is refused locally, and there is nothing to time because no
+     * request was made.
+     */
+    @Test
+    fun `a form this SDK refuses before sending is reported as refused locally, untimed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission = submissionOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
+
+            // An expiry that is not a month and a year is refused before any buffer is built.
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm(expiry = "not-a-date"))
+
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.REFUSED_LOCALLY, properties[TelemetryProperty.OUTCOME.key])
+            assertEquals(TelemetryProperties.Origin.FORM, properties[TelemetryProperty.ORIGIN.key])
+            assertTrue(properties[TelemetryProperty.DURATION_MS.key] == null)
+            assertEquals("InvalidInput", properties[TelemetryProperty.FAILURE_TYPE.key])
         }
 
     /**
@@ -416,6 +441,10 @@ class PayInSubmissionTelemetryTest {
             assertTrue(
                 "an abandoned payment took some measurable time",
                 properties[TelemetryProperty.DURATION_MS.key] != null,
+            )
+            assertTrue(
+                "an abandoned payment names the cancellation this holder converted",
+                properties[TelemetryProperty.FAILURE_TYPE.key] != null,
             )
         }
 
