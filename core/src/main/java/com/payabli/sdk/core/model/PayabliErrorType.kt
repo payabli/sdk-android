@@ -250,7 +250,7 @@ public enum class PayabliErrorType(
         3015,
         "READER_DEVICE_REFUSED",
         PayabliErrorCategory.DEVICE,
-        "The card reader refused this device.",
+        "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID.",
     ),
     READER_UNAVAILABLE(
         3016,

@@ -170,7 +170,12 @@ class PayabliErrorCatalogTest {
                 PayabliErrorCategory.CONFIGURATION,
                 "Card-present payments are not enabled for this paypoint.",
             ),
-            Row("READER_DEVICE_REFUSED", 3015, PayabliErrorCategory.DEVICE, "The card reader refused this device."),
+            Row(
+                "READER_DEVICE_REFUSED",
+                3015,
+                PayabliErrorCategory.DEVICE,
+                "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID.",
+            ),
             Row("READER_UNAVAILABLE", 3016, PayabliErrorCategory.RETRY_LATER, "The card reader could not be started."),
             Row("READER_SESSION_EXPIRED", 3017, PayabliErrorCategory.RETRY_LATER, "The card reader session expired."),
             Row("TAP_NOT_COMPLETED", 3018, PayabliErrorCategory.OUTCOME_UNKNOWN, "The card read did not complete."),
