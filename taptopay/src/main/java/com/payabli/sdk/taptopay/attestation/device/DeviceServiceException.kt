@@ -94,6 +94,21 @@ internal sealed class DeviceServiceException(
         reason: String,
     ) : DeviceServiceException("the device service does not accept this build of the app", resultCode, reason)
 
+    /**
+     * The app is not registered on the paypoint this call was made for.
+     *
+     * A fault in the paypoint's configuration, not in the device: the remedy is to register the app on the
+     * paypoint, and neither an activation code nor setting the device up again repairs it.
+     */
+    class AppNotRegistered(
+        resultCode: Int?,
+        reason: String,
+    ) : DeviceServiceException(
+            "the device service does not have this app registered for this paypoint",
+            resultCode,
+            reason,
+        )
+
     /** The registration this attestation was for is gone or no longer takes this key. Registering again repairs it. */
     class RegistrationGone(
         resultCode: Int?,
