@@ -53,6 +53,9 @@ private const val REFUSED_BODY = "refused"
 private const val UNAUTHORIZED = 401
 private const val OK = 200
 
+/** How many calls in a row a test drives against a token that never works. */
+private const val RUN = 5
+
 /** A status the default policy ignores, so only a widened one reaches the replay decision. */
 private const val WIDENED = 419
 
@@ -174,6 +177,28 @@ class AuthenticatedTransportTest {
         ): PayabliV2Envelope<T> = execute(request).asV2Envelope(payloadSerializer)
     }
 
+    /** One call the way a capability makes it: through [Retry], which would repeat any code it retries. */
+    private suspend fun retrying(transport: AuthenticatedTransport): PayabliResponse =
+        withContext(Dispatchers.IO) {
+            Retry.run(
+                policy =
+                    RetryPolicy(
+                        maxAttempts = 3,
+                        baseDelayMillis = 0,
+                        maxJitterMillis = 0,
+                        jitter = RetryPolicy.Jitter.None,
+                    ),
+                logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
+            ) { transport.execute(ping()) }
+        }
+
+    /** A holder whose every token, the first included, comes from [provider]. */
+    private fun authOver(provider: PayabliTokenProvider): PayabliAuth =
+        PayabliAuth(
+            PayabliConfig(entryPoint = "entry", environment = PayabliEnvironment.SANDBOX, tokenProvider = provider),
+            RecordingSdkLogger(),
+        )
+
     private fun authWithCountingRefresh(calls: AtomicInteger): PayabliAuth =
         PayabliAuth(
             PayabliConfig(
@@ -284,6 +309,72 @@ class AuthenticatedTransportTest {
 
                 assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure.type)
                 assertEquals("retry once, so two attempts and no more", 2, server.recorded.size)
+            }
+        }
+
+    // ---- a run of failing calls --------------------------------------------------------------------
+
+    @Test
+    fun `a provider that always fails is asked once per call, across a run of calls`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondWith(OK, "")
+                val calls = AtomicInteger()
+                val transport =
+                    stack(
+                        server,
+                        authOver {
+                            calls.incrementAndGet()
+                            throw IOException("provider down")
+                        },
+                    )
+
+                repeat(RUN) { done ->
+                    val failure = failureFrom { retrying(transport) }
+
+                    assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, failure.type)
+                    assertEquals("one provider call per call, and none between calls", done + 1, calls.get())
+                }
+                assertTrue("no request goes out without a token", server.recorded.isEmpty())
+            }
+        }
+
+    @Test
+    fun `a provider answering the token just refused is asked twice, then once per call`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "")
+                val calls = AtomicInteger()
+                val transport = stack(server, authOver { TEST_TOKEN.also { calls.incrementAndGet() } })
+
+                repeat(RUN) { done ->
+                    val before = calls.get()
+                    val failure = failureFrom { retrying(transport) }
+
+                    assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, failure.type)
+                    // The first call mints the token and asks again after the 401; later calls hold it.
+                    assertEquals("provider calls on call ${done + 1}", if (done == 0) 2 else 1, calls.get() - before)
+                    assertEquals("one request per call", done + 1, server.recorded.size)
+                }
+            }
+        }
+
+    @Test
+    fun `a provider whose every new token is refused is asked twice, then the session asks no more`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "")
+                val calls = AtomicInteger()
+                val transport = stack(server, authOver { "token-${calls.incrementAndGet()}" })
+
+                repeat(RUN) { done ->
+                    val failure = failureFrom { retrying(transport) }
+
+                    assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure.type)
+                    // A refreshed token refused in turn ends the session, so later calls reach nothing.
+                    assertEquals("provider calls after call ${done + 1}", 2, calls.get())
+                    assertEquals("requests after call ${done + 1}", 2, server.recorded.size)
+                }
             }
         }
 

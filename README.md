@@ -274,6 +274,8 @@ your token endpoint:
 - Concurrent callers share one call.
 - Each call has 30 seconds to return. A call that takes longer, throws, or returns a token the SDK can't use
   fails with `PayabliErrorType.TOKEN_PROVIDER_FAILED`.
+- The SDK doesn't retry a `TOKEN_PROVIDER_FAILED` or `TOKEN_EXPIRED` failure itself. Try again only when someone
+  using your app asks to, or wait longer before each attempt.
 - Let cancellation through. Don't catch `CancellationException`.
 
 ### Device identity
