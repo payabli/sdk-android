@@ -41,6 +41,12 @@ data class TapToPayUiState(
     /** Why the session failed, as the SDK named it. Null while it has not. */
     val failureReason: TerminalFailureReason? = null,
     /**
+     * Why this device cannot take contactless payments, as the error that was thrown said it, or
+     * null when no such error has been caught. Four error codes land the ineligible reason and
+     * only the thrown message says which, so the terminal carries it beside the reason.
+     */
+    val deviceFailure: String? = null,
+    /**
      * Why the last activation attempt was refused, or null if it was not.
      *
      * The reason is captured here, not read from [resultText], which any later action overwrites
@@ -111,6 +117,11 @@ class TapToPayViewModel(
         viewModelScope.launch {
             terminal.failureReason.collect { reason ->
                 _uiState.update { it.copy(failureReason = reason) }
+            }
+        }
+        viewModelScope.launch {
+            terminal.deviceFailure.collect { message ->
+                _uiState.update { it.copy(deviceFailure = message) }
             }
         }
         viewModelScope.launch {

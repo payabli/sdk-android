@@ -11,6 +11,7 @@ import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.model.PayabliAttempt
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.PayabliTTP
 import com.payabli.sdk.taptopay.TapToPayCapture
@@ -59,6 +60,13 @@ class TapToPayTerminal(
 
     private val _failureReason = MutableStateFlow<TerminalFailureReason?>(null)
     override val failureReason: StateFlow<TerminalFailureReason?> = _failureReason.asStateFlow()
+
+    /**
+     * The message of the error that landed the ineligible reason: set when one is caught, kept
+     * while the landing stands, cleared by any other state. The reason decides when it shows.
+     */
+    private val _deviceFailure = MutableStateFlow<String?>(null)
+    override val deviceFailure: StateFlow<String?> = _deviceFailure.asStateFlow()
 
     /** The amount of the last sale that may have moved money unconfirmed; a charge for it is declared a retry. */
     private var openAmount: BigDecimal? = null
@@ -168,6 +176,9 @@ class TapToPayTerminal(
         _sessionState.value = shown
         _isReady.value = shown == TerminalSessionState.Ready
         _failureReason.value = (state as? TapToPaySessionState.Failed)?.reason?.asTerminalReason()
+        // The message lives as long as the landing does: kept while the reason is ineligible,
+        // cleared by any other state, so a stale one cannot read as the current failure's.
+        if (_failureReason.value != TerminalFailureReason.DeviceIneligible) _deviceFailure.value = null
         // A charge ending is not the reader coming up.
         if (wasCharging && shown == TerminalSessionState.Ready) return
         state.asEventCode()?.let { emit(it) }
@@ -223,6 +234,7 @@ class TapToPayTerminal(
         } catch (withdrawn: CancellationException) {
             throw withdrawn
         } catch (failure: PayabliException) {
+            failure.ineligibleMessage?.let { _deviceFailure.value = it }
             Result.failure(failure.forScreen())
         } catch (failure: Exception) {
             Result.failure(failure)
@@ -239,6 +251,24 @@ class TapToPayTerminal(
  * catalog number support looks up.
  */
 internal fun PayabliException.forScreen(): TerminalFailure = TerminalFailure("$reason ($code)", this)
+
+/**
+ * The message of an error whose landing is the ineligible reason, or null when it landed another.
+ *
+ * Four error codes land that one reason and a line fixed to the reason cannot say which, so the
+ * thrown error's message, which is its code's own text, is carried beside the reason.
+ */
+internal val PayabliException.ineligibleMessage: String?
+    get() = message.takeIf { type in INELIGIBLE_TYPES }
+
+/** The error codes whose landing is the ineligible reason, so their messages are its line. */
+internal val INELIGIBLE_TYPES: Set<PayabliErrorType> =
+    setOf(
+        PayabliErrorType.DEVICE_OS_UNSUPPORTED,
+        PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
+        PayabliErrorType.READER_DEVICE_REFUSED,
+        PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE,
+    )
 
 /**
  * A charge for the open sale's amount, compared in cents as the SDK charges it, so `1.0`, `1.00` and `1.001`

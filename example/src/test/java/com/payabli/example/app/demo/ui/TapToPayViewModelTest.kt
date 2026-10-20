@@ -5,13 +5,22 @@ import com.payabli.example.app.demo.config.TokenHostSource
 import com.payabli.example.app.demo.config.TokenServerTarget
 import com.payabli.example.app.demo.net.TokenServerClient
 import com.payabli.example.app.demo.preflight.DeviceFacts
+import com.payabli.example.app.demo.terminal.ChargeReceipt
 import com.payabli.example.app.demo.terminal.DemoTerminalController
 import com.payabli.example.app.demo.terminal.TerminalController
+import com.payabli.example.app.demo.terminal.TerminalEvent
+import com.payabli.example.app.demo.terminal.TerminalFailure
+import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import com.payabli.example.app.demo.ui.taptopay.TapToPayViewModel
 import com.payabli.example.app.sdk.DemoEnvironment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -25,6 +34,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.math.BigDecimal
 
 /**
  * What this screen's view model owns, none of which the controller's own tests can reach: parsing
@@ -252,6 +262,23 @@ class TapToPayViewModelTest {
         }
 
     @Test
+    fun `an ineligible device's message is collected, and the result line keeps the code`() =
+        runTest {
+            val viewModel = model(terminal = RefusedDeviceTerminal())
+            viewModel.enableTerminal()
+
+            val state = viewModel.uiState.value
+            assertEquals(
+                "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID.",
+                state.deviceFailure,
+            )
+            assertEquals(
+                "✗ the reader refused this device (3015)",
+                state.resultText,
+            )
+        }
+
+    @Test
     fun `the buttons are released once an action finishes`() =
         runTest {
             val viewModel = model()
@@ -304,4 +331,45 @@ class TapToPayViewModelTest {
             assertTrue("still mid-flight: $text", text.startsWith("✗"))
             assertFalse("left disabled", viewModel.uiState.value.isWorking)
         }
+}
+
+/** A device the reader refused: initialize fails and the session lands the ineligible reason. */
+private class RefusedDeviceTerminal : TerminalController {
+    private val session = MutableStateFlow(TerminalSessionState.Error)
+
+    override val sessionState: StateFlow<TerminalSessionState> = session.asStateFlow()
+
+    // Nothing is emitted, so a subscriber that arrives late has missed nothing.
+    override val events: Flow<TerminalEvent> = MutableSharedFlow(extraBufferCapacity = 64)
+    override val isReady: StateFlow<Boolean> = MutableStateFlow(false)
+
+    private val reason = MutableStateFlow<TerminalFailureReason?>(TerminalFailureReason.DeviceIneligible)
+
+    override val failureReason: StateFlow<TerminalFailureReason?> = reason.asStateFlow()
+
+    /** The thrown error's message, published the way the terminal publishes it for that landing. */
+    override val deviceFailure: StateFlow<String?> =
+        MutableStateFlow(
+            "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID.",
+        ).asStateFlow()
+
+    override fun currentFailureReason(): TerminalFailureReason? = TerminalFailureReason.DeviceIneligible
+
+    override suspend fun initialize(): Result<Unit> =
+        Result.failure(
+            TerminalFailure(
+                "the reader refused this device (3015)",
+                RuntimeException(
+                    "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID.",
+                ),
+            ),
+        )
+
+    override suspend fun charge(amount: BigDecimal): Result<ChargeReceipt> =
+        Result.failure(RuntimeException("not reached"))
+
+    override suspend fun activateDevice(activationCode: String): Result<Unit> =
+        Result.failure(RuntimeException("not reached"))
+
+    override fun activationId(): String? = null
 }

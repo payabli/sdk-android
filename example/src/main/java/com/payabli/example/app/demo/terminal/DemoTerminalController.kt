@@ -51,6 +51,7 @@ class DemoTerminalController(
 
     /** Always null: this walks the sequence and has no failure state to reach. */
     override val failureReason: StateFlow<TerminalFailureReason?> = MutableStateFlow(null).asStateFlow()
+    override val deviceFailure: StateFlow<String?> = MutableStateFlow(null).asStateFlow()
 
     /** Nothing here fails, so there is never a reason to read. */
     override fun currentFailureReason(): TerminalFailureReason? = null

@@ -20,18 +20,29 @@ data class SessionChipSpec(
 )
 
 /**
- * Why the session stopped, for the step that offers to start it again. Empty when it has not.
+ * Why the session stopped, for the step that offers to start it again. The session ends on its
+ * own clock, so no action outcome describes it.
  *
- * The session ends on its own clock, so no action outcome describes it.
+ * @param state the session state the terminal reported.
+ * @param reason the reason the SDK named for a failed session, or null when it named none.
+ * @param deviceMessage the thrown error's message when the ineligible reason landed: four error
+ *   codes land it, and a line fixed to the reason cannot say which.
+ * @return the line the step shows, or an empty string when the session has not stopped.
  */
 fun sessionFailureReason(
     state: TerminalSessionState,
     reason: TerminalFailureReason? = null,
+    deviceMessage: String? = null,
 ): String =
     when (state) {
-        // The SDK names the reason, and it is what says whether to wait, to change a setting or to
-        // fetch another device. The fallback is for a failure that arrived without one.
-        TerminalSessionState.Error -> reason?.message ?: "The session stopped."
+        // The ineligible landing is four error codes sharing one reason, and a line fixed to the
+        // reason cannot say which, so the thrown error's message is the line.
+        TerminalSessionState.Error ->
+            when (reason) {
+                TerminalFailureReason.DeviceIneligible -> deviceMessage ?: reason.message
+                null -> "The session stopped."
+                else -> reason.message
+            }
         TerminalSessionState.SessionExpired -> "The session expired."
         else -> ""
     }

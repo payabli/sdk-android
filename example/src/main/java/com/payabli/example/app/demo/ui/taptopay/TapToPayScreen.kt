@@ -138,10 +138,12 @@ fun TapToPayScreen(
         StepRow(index = 4, step = steps[3], repeatable = true) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
                 // A denied reader fails this step with no charge attempted, so there is no recorded
-                // charge failure to show.
+                // charge failure to show. The ineligible reason's line is the thrown error's
+                // message, carried beside the reason.
                 FailureReason(
                     steps[3],
-                    state.chargeFailure ?: state.failureReason?.message.orEmpty(),
+                    state.chargeFailure
+                        ?: sessionFailureReason(state.session, state.failureReason, state.deviceFailure),
                 )
                 PaymentBlock(state, actions.onAmountChange, actions.onCharge)
             }
