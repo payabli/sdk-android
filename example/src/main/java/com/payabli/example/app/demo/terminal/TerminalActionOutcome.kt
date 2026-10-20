@@ -23,12 +23,15 @@ object TerminalActionOutcome {
     ): String = if (detail.isEmpty()) "✓ ${action.label} succeeded" else "✓ ${action.label}: $detail"
 
     /**
-     * A denial names the reader, not the step that met it, and every other failure names the step.
+     * A denial carries the error's own words alone, and every other failure names the step.
      *
-     * The step list already draws this line: a refused reader leaves setup and activation done and fails the
-     * payment step, because every call Payabli owns succeeded and the refusal is the card reader vendor's.
-     * Wording this as "Set up the terminal failed" put a sentence on screen that the list beside it
-     * contradicted, and the list is the one that is right.
+     * The step list leaves setup and activation done and fails the payment step, so a denial
+     * naming the step contradicts the list beside it, and the list is the one that is right.
+     *
+     * @param action the action that failed, named in the line unless the reader was refused.
+     * @param error the failure the action met, whose own words the line carries.
+     * @param readerDenied true when the reader refused the device, so the line names no step.
+     * @return the line the screen shows for the action's outcome.
      */
     fun failure(
         action: TerminalAction,
@@ -36,7 +39,7 @@ object TerminalActionOutcome {
         readerDenied: Boolean = false,
     ): String =
         if (readerDenied) {
-            "✗ The card reader was refused: ${describe(error)}"
+            "✗ ${describe(error)}"
         } else {
             "✗ ${action.label} failed: ${describe(error)}"
         }

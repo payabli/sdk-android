@@ -1,7 +1,6 @@
 package com.payabli.example.app.demo.terminal
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -107,19 +106,18 @@ class TerminalStateTest {
     }
 
     @Test
-    fun `a refused reader names the reader, not the step that met it`() {
-        // The step list leaves setup done and fails the payment step, because every call Payabli owns
-        // succeeded and the refusal is the vendor's. A line saying setup failed contradicted the list
-        // beside it.
+    fun `a refused reader carries the error's message, naming neither step nor reader`() {
+        // The step list leaves setup done and fails the payment step, so a line naming the step
+        // contradicts the list beside it, and the list is the one that is right. The error's
+        // message says what was refused without naming either.
         val line =
             TerminalActionOutcome.failure(
                 TerminalAction.Initialize,
-                IllegalStateException("677"),
+                IllegalStateException("the reader refused this device"),
                 readerDenied = true,
             )
 
-        assertTrue(line, line.contains("card reader was refused"))
-        assertFalse(line, line.contains("Set up the terminal failed"))
+        assertEquals("✗ the reader refused this device", line)
     }
 
     @Test
@@ -172,13 +170,86 @@ class TerminalStateTest {
     @Test
     fun `a stopped session reports the reason the SDK named`() {
         // Without this the step says only that the session stopped, which is the same sentence whether a
-        // paypoint needs changing, a service is down, or the device can never do this at all.
-        TerminalFailureReason.entries.forEach { reason ->
-            assertEquals(
-                reason.message,
-                sessionFailureReason(TerminalSessionState.Error, reason),
-            )
-        }
+        // paypoint needs changing, a service is down, or the device can never do this at all. The
+        // ineligible reason has no line of its own, so the tests under its own name carry that one.
+        TerminalFailureReason.entries
+            .filterNot { it == TerminalFailureReason.DeviceIneligible }
+            .forEach { reason ->
+                assertEquals(
+                    reason.message,
+                    sessionFailureReason(TerminalSessionState.Error, reason),
+                )
+            }
+    }
+
+    @Test
+    fun `an ineligible device shows the message of the error that was thrown`() {
+        // Four error codes land the ineligible reason and a line fixed to the reason cannot say
+        // which, so the thrown error's message is the line: it is the code's own text.
+        val refused =
+            "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID."
+        val osTooOld = "This device's operating system version cannot take contactless payments."
+
+        assertEquals(
+            refused,
+            sessionFailureReason(
+                TerminalSessionState.Error,
+                TerminalFailureReason.DeviceIneligible,
+                deviceMessage = refused,
+            ),
+        )
+        assertEquals(
+            osTooOld,
+            sessionFailureReason(
+                TerminalSessionState.Error,
+                TerminalFailureReason.DeviceIneligible,
+                deviceMessage = osTooOld,
+            ),
+        )
+    }
+
+    @Test
+    fun `an ineligible device with no captured message claims no cause`() {
+        // The same words as a failure that named no reason: both say nothing more is known. The
+        // second pin keeps the two hand-written copies of the sentence together.
+        assertEquals(
+            "The session stopped.",
+            sessionFailureReason(TerminalSessionState.Error, TerminalFailureReason.DeviceIneligible),
+        )
+        assertEquals(
+            TerminalFailureReason.DeviceIneligible.message,
+            sessionFailureReason(TerminalSessionState.Error, null),
+        )
+    }
+
+    @Test
+    fun `the ineligible landing outranks an earlier charge's outcome`() {
+        // A charge failure an earlier attempt left is not the current failure: the ineligible
+        // landing is, so its message is the charge step's line.
+        val refused =
+            "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID."
+
+        assertEquals(
+            refused,
+            chargeStepFailure(
+                "✗ Charge failed: The card was declined. (3020)",
+                TerminalSessionState.Error,
+                TerminalFailureReason.DeviceIneligible,
+                deviceMessage = refused,
+            ),
+        )
+    }
+
+    @Test
+    fun `a charge's own outcome is the line when no ineligible landing stands`() {
+        assertEquals(
+            "✗ Charge failed: The card was declined. (3020)",
+            chargeStepFailure(
+                "✗ Charge failed: The card was declined. (3020)",
+                TerminalSessionState.Ready,
+                null,
+            ),
+        )
     }
 
     @Test
