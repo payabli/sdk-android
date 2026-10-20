@@ -72,6 +72,8 @@ internal class SessionFixture(
     readerGate: (suspend () -> Unit)? = null,
     eligibilityFailure: Throwable? = null,
     readGate: (suspend () -> Unit)? = null,
+    /** Awaited after the request is recorded and before it is answered, so a test can hold one in flight. */
+    sendGate: suspend (PayabliRequest) -> Unit = {},
     elapsedRealtimeNanos: () -> Long = { System.nanoTime() },
     storeFailure: (operation: String, key: String) -> SecureStorageException? = { _, _ -> null },
     deviceKey: FakeDeviceKey = FakeDeviceKey(),
@@ -90,6 +92,7 @@ internal class SessionFixture(
             unsent = unsent,
             lost = lost,
             refused = refused,
+            sendGate = sendGate,
         )
 
     val reader = FakeTapToPayProvider(enrollment.trace, readerGate, eligibilityFailure, readGate = readGate)
