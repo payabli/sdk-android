@@ -321,7 +321,7 @@ class SessionSerializationTest {
         return fixture
     }
 
-    /** The code an activation request carried, read back off the wire rather than off a call site. */
+    /** The code an activation request carried, decoded from the request the fixture recorded. */
     private fun carriedCode(request: PayabliRequest): String =
         PayabliJson.format
             .decodeFromString(

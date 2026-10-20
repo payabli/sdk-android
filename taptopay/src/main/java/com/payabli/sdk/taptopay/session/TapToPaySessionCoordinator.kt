@@ -197,7 +197,7 @@ internal class TapToPaySessionCoordinator(
      * Runs the plan as the claim's owner, holding the region for the whole run.
      *
      * A withdrawn owner releases its joiners with [TapToPaySessionException.SetupAbandoned] and may be
-     * asked again: handing on the owner's cancellation would make the waiter's own scope unwind too.
+     * asked again: the waiter's own scope keeps running after the owner's is gone.
      */
     private suspend fun own(
         claim: Claim,
