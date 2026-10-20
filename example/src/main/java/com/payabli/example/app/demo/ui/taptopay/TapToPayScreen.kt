@@ -33,6 +33,7 @@ import com.payabli.example.app.demo.terminal.TerminalEvent
 import com.payabli.example.app.demo.terminal.TerminalEventCode
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
+import com.payabli.example.app.demo.terminal.chargeStepFailure
 import com.payabli.example.app.demo.terminal.chipSpecFor
 import com.payabli.example.app.demo.terminal.sessionFailureReason
 import com.payabli.example.app.demo.ui.components.BorderedButton
@@ -137,13 +138,9 @@ fun TapToPayScreen(
 
         StepRow(index = 4, step = steps[3], repeatable = true) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-                // A denied reader fails this step with no charge attempted, so there is no recorded
-                // charge failure to show. The ineligible reason's line is the thrown error's
-                // message, carried beside the reason.
                 FailureReason(
                     steps[3],
-                    state.chargeFailure
-                        ?: sessionFailureReason(state.session, state.failureReason, state.deviceFailure),
+                    chargeStepFailure(state.chargeFailure, state.session, state.failureReason, state.deviceFailure),
                 )
                 PaymentBlock(state, actions.onAmountChange, actions.onCharge)
             }

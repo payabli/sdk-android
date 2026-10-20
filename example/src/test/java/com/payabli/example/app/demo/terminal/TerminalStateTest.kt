@@ -223,6 +223,36 @@ class TerminalStateTest {
     }
 
     @Test
+    fun `the ineligible landing outranks an earlier charge's outcome`() {
+        // A charge failure an earlier attempt left is not the current failure: the ineligible
+        // landing is, so its message is the charge step's line.
+        val refused =
+            "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID."
+
+        assertEquals(
+            refused,
+            chargeStepFailure(
+                "✗ Charge failed: The card was declined. (3020)",
+                TerminalSessionState.Error,
+                TerminalFailureReason.DeviceIneligible,
+                deviceMessage = refused,
+            ),
+        )
+    }
+
+    @Test
+    fun `a charge's own outcome is the line when no ineligible landing stands`() {
+        assertEquals(
+            "✗ Charge failed: The card was declined. (3020)",
+            chargeStepFailure(
+                "✗ Charge failed: The card was declined. (3020)",
+                TerminalSessionState.Ready,
+                null,
+            ),
+        )
+    }
+
+    @Test
     fun `a stopped session with no reason still says something`() {
         assertEquals("The session stopped.", sessionFailureReason(TerminalSessionState.Error, null))
     }

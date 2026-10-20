@@ -12,6 +12,7 @@ import com.payabli.example.app.demo.terminal.TerminalEvent
 import com.payabli.example.app.demo.terminal.TerminalFailure
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
+import com.payabli.example.app.demo.terminal.chargeStepFailure
 import com.payabli.example.app.demo.ui.taptopay.TapToPayViewModel
 import com.payabli.example.app.sdk.DemoEnvironment
 import kotlinx.coroutines.Dispatchers
@@ -275,6 +276,22 @@ class TapToPayViewModelTest {
             assertEquals(
                 "✗ the reader refused this device (3015)",
                 state.resultText,
+            )
+        }
+
+    @Test
+    fun `a failed charge's outcome survives a refused initialize, and the landing outranks it`() =
+        runTest {
+            val viewModel = model(terminal = RefusedDeviceTerminal())
+            viewModel.setAmount("12.34")
+            viewModel.charge()
+            viewModel.enableTerminal()
+
+            val state = viewModel.uiState.value
+            assertNotNull("the charge's outcome was dropped", state.chargeFailure)
+            assertEquals(
+                "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID.",
+                chargeStepFailure(state.chargeFailure, state.session, state.failureReason, state.deviceFailure),
             )
         }
 

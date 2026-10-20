@@ -47,6 +47,28 @@ fun sessionFailureReason(
         else -> ""
     }
 
+/**
+ * The charge step's failure line: the ineligible landing outranks an earlier charge's outcome,
+ * because that landing is the current failure and the outcome is an earlier attempt's.
+ *
+ * @param chargeFailure the outcome the last charge attempt left, or null when none did.
+ * @param state the session state the terminal reported.
+ * @param reason the reason the SDK named for a failed session, or null when it named none.
+ * @param deviceMessage the thrown error's message when the ineligible reason landed: four error
+ *   codes land it, and a line fixed to the reason cannot say which.
+ * @return the line the step shows, or an empty string when the session has not stopped.
+ */
+fun chargeStepFailure(
+    chargeFailure: String?,
+    state: TerminalSessionState,
+    reason: TerminalFailureReason? = null,
+    deviceMessage: String? = null,
+): String =
+    when (reason) {
+        TerminalFailureReason.DeviceIneligible -> deviceMessage ?: reason.message
+        else -> chargeFailure ?: sessionFailureReason(state, reason, deviceMessage)
+    }
+
 fun chipSpecFor(state: TerminalSessionState): SessionChipSpec =
     when (state) {
         TerminalSessionState.Idle -> SessionChipSpec("Idle", ChipTone.Neutral)
