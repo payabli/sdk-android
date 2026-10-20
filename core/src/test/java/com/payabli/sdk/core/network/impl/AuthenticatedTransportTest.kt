@@ -56,8 +56,6 @@ private const val OK = 200
 /** How many calls in a row a test drives against a token that never works. */
 private const val RUN = 5
 
-private val TOKEN_FAILURES = setOf(PayabliErrorType.TOKEN_EXPIRED, PayabliErrorType.TOKEN_PROVIDER_FAILED)
-
 /** A status the default policy ignores, so only a widened one reaches the replay decision. */
 private const val WIDENED = 419
 
@@ -178,6 +176,21 @@ class AuthenticatedTransportTest {
             payloadSerializer: KSerializer<T>,
         ): PayabliV2Envelope<T> = execute(request).asV2Envelope(payloadSerializer)
     }
+
+    /** One call the way a capability makes it: through [Retry], which would repeat any code it retries. */
+    private suspend fun retrying(transport: AuthenticatedTransport): PayabliResponse =
+        withContext(Dispatchers.IO) {
+            Retry.run(
+                policy =
+                    RetryPolicy(
+                        maxAttempts = 3,
+                        baseDelayMillis = 0,
+                        maxJitterMillis = 0,
+                        jitter = RetryPolicy.Jitter.None,
+                    ),
+                logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
+            ) { transport.execute(ping()) }
+        }
 
     /** A holder whose every token, the first included, comes from [provider]. */
     private fun authOver(provider: PayabliTokenProvider): PayabliAuth =
@@ -317,7 +330,7 @@ class AuthenticatedTransportTest {
                     )
 
                 repeat(RUN) { done ->
-                    val failure = failureFrom { transport.execute(ping()) }
+                    val failure = failureFrom { retrying(transport) }
 
                     assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, failure.type)
                     assertEquals("one provider call per call, and none between calls", done + 1, calls.get())
@@ -327,37 +340,40 @@ class AuthenticatedTransportTest {
         }
 
     @Test
-    fun `a provider answering the token just refused is asked at most twice per call`() =
+    fun `a provider answering the token just refused is asked twice, then once per call`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 server.respondInOrder(UNAUTHORIZED to "")
                 val calls = AtomicInteger()
                 val transport = stack(server, authOver { TEST_TOKEN.also { calls.incrementAndGet() } })
 
-                repeat(RUN) {
+                repeat(RUN) { done ->
                     val before = calls.get()
-                    val failure = failureFrom { transport.execute(ping()) }
+                    val failure = failureFrom { retrying(transport) }
 
-                    assertTrue("a token failure, got ${failure.type}", failure.type in TOKEN_FAILURES)
-                    assertTrue("at most two provider calls per call", calls.get() - before <= 2)
+                    assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, failure.type)
+                    // The first call mints the token and asks again after the 401; later calls hold it.
+                    assertEquals("provider calls on call ${done + 1}", if (done == 0) 2 else 1, calls.get() - before)
+                    assertEquals("one request per call", done + 1, server.recorded.size)
                 }
             }
         }
 
     @Test
-    fun `a provider whose every new token is refused is asked at most twice per call`() =
+    fun `a provider whose every new token is refused is asked twice, then the session asks no more`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 server.respondInOrder(UNAUTHORIZED to "")
                 val calls = AtomicInteger()
                 val transport = stack(server, authOver { "token-${calls.incrementAndGet()}" })
 
-                repeat(RUN) {
-                    val before = calls.get()
-                    val failure = failureFrom { transport.execute(ping()) }
+                repeat(RUN) { done ->
+                    val failure = failureFrom { retrying(transport) }
 
-                    assertTrue("a token failure, got ${failure.type}", failure.type in TOKEN_FAILURES)
-                    assertTrue("at most two provider calls per call", calls.get() - before <= 2)
+                    assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure.type)
+                    // A refreshed token refused in turn ends the session, so later calls reach nothing.
+                    assertEquals("provider calls after call ${done + 1}", 2, calls.get())
+                    assertEquals("requests after call ${done + 1}", 2, server.recorded.size)
                 }
             }
         }
