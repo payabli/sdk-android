@@ -333,27 +333,58 @@ class SessionSerializationTest {
     fun `a second activation with the same code joins the one in flight`() =
         runTest(timeout = TEST_TIMEOUT) {
             val held = CompletableDeferred<Unit>()
-            val fixture = pendingSession(listOf(activateBody()), held)
+            val fixture =
+                pendingSession(
+                    listOf(decline(400, "Invalid activation code."), decline(400, "Invalid activation code.")),
+                    held,
+                )
             runCatching { fixture.coordinator.initialize() }
             assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
 
+            var firstFailure: Throwable? = null
             val first =
-                launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.activateDevice("111111") }
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    try {
+                        fixture.coordinator.activateDevice("111111")
+                    } catch (failure: Throwable) {
+                        firstFailure = failure
+                    }
+                }
             assertEquals(
                 "the first activation has left and has no answer",
                 1,
                 fixture.requestsTo(RouteScript.ACTIVATE).size,
             )
+            var secondFailure: Throwable? = null
             val second =
-                launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.activateDevice("111111") }
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    try {
+                        fixture.coordinator.activateDevice("111111")
+                    } catch (failure: Throwable) {
+                        secondFailure = failure
+                    }
+                }
             assertTrue("the second caller is waiting on the first", second.isActive)
 
             held.complete(Unit)
-            completing("the first activation") { first.join() }
+            completing("the refused activation") { first.join() }
             completing("the joining activation") { second.join() }
 
-            assertEquals("a double tap spends one attempt", 1, fixture.requestsTo(RouteScript.ACTIVATE).size)
-            assertEquals(TapToPaySessionState.Idle, fixture.state)
+            assertEquals(
+                "a double tap spends one attempt",
+                1,
+                fixture.requestsTo(RouteScript.ACTIVATE).size,
+            )
+            assertEquals(
+                PayabliErrorType.ACTIVATION_CODE_INCORRECT,
+                TapToPayErrorCodes.typeFor(firstFailure ?: error("the first activation was not refused")),
+            )
+            assertEquals(
+                "the joining caller is given the first's answer for the code they share",
+                PayabliErrorType.ACTIVATION_CODE_INCORRECT,
+                TapToPayErrorCodes.typeFor(secondFailure ?: error("the joining activation was not refused")),
+            )
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
         }
 
     @Test
