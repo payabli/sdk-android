@@ -158,6 +158,8 @@ internal class EnrollmentFixture(
     lost: (PayabliRequest) -> Exception? = { null },
     /** Thrown for a request answered 401 whose refresh then failed, with the hand-off taken back. */
     refused: (PayabliRequest) -> Exception? = { null },
+    /** Awaited after the request is recorded and before it is answered, so a test can hold one in flight. */
+    sendGate: suspend (PayabliRequest) -> Unit = {},
 ) {
     val trace: MutableList<String> = mutableListOf()
     val logger = RecordingSdkLogger()
@@ -175,6 +177,7 @@ internal class EnrollmentFixture(
             trace += request.path
             requests += request
             lost(request)?.let { throw it }
+            sendGate(request)
             script.respond(request)
         }
 

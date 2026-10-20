@@ -1,6 +1,14 @@
 package com.payabli.sdk.taptopay.session
 
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.network.PayabliJson
+import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.taptopay.TapToPayErrorCodes
+import com.payabli.sdk.taptopay.attestation.device.ActivateRequest
+import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
 import com.payabli.sdk.taptopay.enrollment.RouteScript
+import com.payabli.sdk.taptopay.enrollment.activateBody
+import com.payabli.sdk.taptopay.enrollment.decline
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,16 +36,13 @@ private val COMPLETION_PROBE = 30.seconds
 /** An `Error`, so the coordinator's fatal path is reached without an `OutOfMemoryError` in a test. */
 private class FatalTestError : Error()
 
+/** The 403 that leaves a session waiting for a code, from a stored binding. */
+private const val NOT_ACTIVE = "Device is not active."
+
 /**
- * That the three entry points never overlap, and that two of the same kind share one run.
- *
- * **A gate, not a race.** The store fake parks the first run inside the region and holds it there until the
- * test releases it, so the second caller arrives while the first is still in flight. Two callers merely
- * launched together almost never collide, and a test written that way passes with the serialization removed.
- *
- * `region.withLock` in `TapToPaySessionCoordinator.own` is held by the repair, the activation and the
- * real-thread tests; the claim slot in `runExclusively` is held by the two join tests. The queued-repair
- * test covers a build joining a build across a repair between them, so it holds both.
+ * That the three entry points never overlap, and what a second caller gets: a run it joins, or a turn it
+ * waits for. A gate, not a race: the fixture parks the first run and holds it there until the test
+ * releases it, so a second caller genuinely arrives while the first is in flight.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionSerializationTest {
@@ -297,5 +302,146 @@ class SessionSerializationTest {
             // It ran after the build. What it answered is the enrollment layer's business; that it waited
             // is this one's.
             assertFalse("two runs were inside the reader together", fixture.reader.sawOverlap)
+        }
+
+    /** A session waiting for a code, with the first activation parked at its send. */
+    private fun pendingSession(
+        activateAnswers: List<String>,
+        held: CompletableDeferred<Unit>,
+    ): SessionFixture {
+        val fixture =
+            SessionFixture(
+                RouteScript(
+                    RouteScript.CONFIG to listOf(decline(403, NOT_ACTIVE)),
+                    RouteScript.ACTIVATE to activateAnswers,
+                ),
+                sendGate = { request -> if (request.path == RouteScript.ACTIVATE) held.await() },
+            )
+        fixture.seedRecord()
+        return fixture
+    }
+
+    /** The code an activation request carried, read back off the wire rather than off a call site. */
+    private fun carriedCode(request: PayabliRequest): String =
+        PayabliJson.format
+            .decodeFromString(
+                ActivateRequest.serializer(),
+                request.body?.toString(Charsets.UTF_8) ?: error("the activation request carried no body"),
+            ).activationCode
+
+    @Test
+    fun `a second activation with the same code joins the one in flight`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture = pendingSession(listOf(activateBody()), held)
+            runCatching { fixture.coordinator.initialize() }
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
+
+            val first =
+                launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.activateDevice("111111") }
+            assertEquals(
+                "the first activation has left and has no answer",
+                1,
+                fixture.requestsTo(RouteScript.ACTIVATE).size,
+            )
+            val second =
+                launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.activateDevice("111111") }
+            assertTrue("the second caller is waiting on the first", second.isActive)
+
+            held.complete(Unit)
+            completing("the first activation") { first.join() }
+            completing("the joining activation") { second.join() }
+
+            assertEquals("a double tap spends one attempt", 1, fixture.requestsTo(RouteScript.ACTIVATE).size)
+            assertEquals(TapToPaySessionState.Idle, fixture.state)
+        }
+
+    @Test
+    fun `a second activation with a different code waits its turn and sends its own code`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture =
+                pendingSession(listOf(decline(400, "Invalid activation code."), activateBody()), held)
+            runCatching { fixture.coordinator.initialize() }
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
+
+            var refused: Throwable? = null
+            val first =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    try {
+                        fixture.coordinator.activateDevice("111111")
+                    } catch (failure: Throwable) {
+                        refused = failure
+                    }
+                }
+            assertEquals(
+                "the first activation has left and has no answer",
+                1,
+                fixture.requestsTo(RouteScript.ACTIVATE).size,
+            )
+            var secondFailure: Throwable? = null
+            val second =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    try {
+                        fixture.coordinator.activateDevice("222222")
+                    } catch (failure: Throwable) {
+                        secondFailure = failure
+                    }
+                }
+            assertTrue("the corrected code is waiting its turn", second.isActive)
+            assertEquals("nothing was sent for it while it waited", 1, fixture.requestsTo(RouteScript.ACTIVATE).size)
+
+            held.complete(Unit)
+            completing("the refused activation") { first.join() }
+            completing("the corrected activation") { second.join() }
+
+            assertEquals(
+                PayabliErrorType.ACTIVATION_CODE_INCORRECT,
+                TapToPayErrorCodes.typeFor(refused ?: error("the first activation was not refused")),
+            )
+            assertNull("the corrected code was answered for itself, not for the refused one", secondFailure)
+            assertEquals(
+                "each code was sent, each once",
+                listOf("111111", "222222"),
+                fixture.requestsTo(RouteScript.ACTIVATE).map(::carriedCode),
+            )
+            assertEquals(TapToPaySessionState.Idle, fixture.state)
+        }
+
+    @Test
+    fun `a second activation with a different code is refused without sending once the device is active`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture = pendingSession(listOf(activateBody()), held)
+            runCatching { fixture.coordinator.initialize() }
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
+
+            val first =
+                launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.activateDevice("111111") }
+            var refused: Throwable? = null
+            val second =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    try {
+                        fixture.coordinator.activateDevice("222222")
+                    } catch (failure: Throwable) {
+                        refused = failure
+                    }
+                }
+            assertTrue("the second activation is waiting its turn", second.isActive)
+
+            held.complete(Unit)
+            completing("the first activation") { first.join() }
+            completing("the refused activation") { second.join() }
+
+            assertEquals(
+                PayabliErrorType.DEVICE_NOT_PENDING,
+                TapToPayErrorCodes.typeFor(refused ?: error("the second activation was not refused")),
+            )
+            assertEquals(
+                "the active device refused it before anything was sent",
+                1,
+                fixture.requestsTo(RouteScript.ACTIVATE).size,
+            )
+            assertEquals(TapToPaySessionState.Idle, fixture.state)
         }
 }

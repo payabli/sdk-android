@@ -27,7 +27,7 @@ internal class FakeDeviceTransport(
     private val unsent: (PayabliRequest) -> Exception? = { null },
     /** A failure raised after the hand-off is taken back, as a send answered 401 whose refresh failed is. */
     private val refused: (PayabliRequest) -> Exception? = { null },
-    private val respond: (PayabliRequest) -> PayabliResponse,
+    private val respond: suspend (PayabliRequest) -> PayabliResponse,
 ) : PayabliTransport {
     val requests: MutableList<PayabliRequest> = mutableListOf()
 

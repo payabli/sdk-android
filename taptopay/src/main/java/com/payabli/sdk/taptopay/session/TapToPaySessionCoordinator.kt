@@ -29,19 +29,7 @@ import kotlinx.coroutines.withContext
 /**
  * Drives a card-present session: builds one, repairs one, and spends an activation code against one.
  *
- * **All three of those mutate the same state and reach the same reader, so they never overlap.** What a
- * second caller gets:
- *
- * - A caller of the **same** kind joins the one already in flight, running or waiting its turn, and is
- *   given its outcome, success or failure. It does no work of its own.
- * - A caller of a **different** kind waits for it and then runs. Repairing a session skips attestation and
- *   building one does not, so they cannot share an answer.
- * - A caller whose owner withdrew is given [TapToPaySessionException.SetupAbandoned] and may ask again.
- *   Handing on the owner's cancellation would make the waiter's own scope look like it is unwinding.
- *
- * Exclusion is [region]; joining is [inFlight]. Each is held by its own tests.
- *
- * **Locks are taken in one order and only one:** this region, then the enrollment coordinator's, then the
+ * Locks are taken in one order and only one: this region, then the enrollment coordinator's, then the
  * attestor's. The state monitor is never held across any of them.
  */
 internal class TapToPaySessionCoordinator(
@@ -71,11 +59,29 @@ internal class TapToPaySessionCoordinator(
     /** The failure this run last settled into. Read and written only with [region] held. */
     private var settledFailure: Exception? = null
 
-    /** One claim per kind, so a caller joins work of its own kind whatever else is queued. */
-    private val inFlight = mutableMapOf<SessionWorkKind, Claim>()
+    /** One claim per key, so a caller joins the run its own call would repeat. */
+    private val inFlight = mutableMapOf<ClaimKey, Claim>()
+
+    /**
+     * What a caller joins on. A setup entry point joins by kind; an activation joins only the run
+     * carrying its own code, and a different code waits its turn and runs after it.
+     */
+    private sealed interface ClaimKey {
+        val kind: SessionWorkKind
+
+        data class Setup(
+            override val kind: SessionWorkKind,
+        ) : ClaimKey
+
+        data class Activation(
+            val code: String,
+        ) : ClaimKey {
+            override val kind get() = SessionWorkKind.ACTIVATE
+        }
+    }
 
     private class Claim(
-        val kind: SessionWorkKind,
+        val key: ClaimKey,
         val done: CompletableDeferred<Unit>,
     )
 
@@ -98,7 +104,11 @@ internal class TapToPaySessionCoordinator(
      *
      * Fails with [TapToPaySessionException.PendingActivation] when the device still owes a code.
      */
-    suspend fun initialize() = runExclusively(SessionWorkKind.INITIALIZE, SessionRun(sequence = ::runInitialize))
+    suspend fun initialize() =
+        runExclusively(
+            ClaimKey.Setup(SessionWorkKind.INITIALIZE),
+            SessionRun(sequence = ::runInitialize),
+        )
 
     /**
      * Repairs a session whose reader is spent, and does nothing to one that is ready.
@@ -109,7 +119,7 @@ internal class TapToPaySessionCoordinator(
      * fetching the credentials and fails with [TapToPaySessionException.AttestationRequired], because
      * attesting is what would restore it. [initialize] is the remedy for both.
      */
-    suspend fun reinitializeIfNeeded() = runExclusively(SessionWorkKind.REINITIALIZE, repair())
+    suspend fun reinitializeIfNeeded() = runExclusively(ClaimKey.Setup(SessionWorkKind.REINITIALIZE), repair())
 
     private fun repair() = SessionRun(prepare = ::enterRepair, sequence = ::bringReaderUp)
 
@@ -127,7 +137,7 @@ internal class TapToPaySessionCoordinator(
                 pending = pendingActivation()
                 true
             }) { runActivateDevice(activationCode, pending) }
-        runExclusively(SessionWorkKind.ACTIVATE, run)
+        runExclusively(ClaimKey.Activation(activationCode), run)
     }
 
     /**
@@ -151,25 +161,30 @@ internal class TapToPaySessionCoordinator(
             charge()
         }
 
-    /** Decides whether to join or to run, under [claims], and does neither while holding it. */
+    /**
+     * Decides whether to join or to run, under [claims], and does neither while holding it.
+     *
+     * A caller joins the run whose key it matches and is given its outcome; every other caller waits
+     * for the region and runs at its own turn.
+     */
     private suspend fun runExclusively(
-        kind: SessionWorkKind,
+        key: ClaimKey,
         run: SessionRun,
     ) {
         val plan =
             claims.withLock {
-                val existing = inFlight[kind]
+                val existing = inFlight[key]
                 if (existing != null) {
                     RunPlan.Join(existing.done)
                 } else {
-                    Claim(kind, CompletableDeferred<Unit>()).also { inFlight[kind] = it }.let(RunPlan::Own)
+                    Claim(key, CompletableDeferred<Unit>()).also { inFlight[key] = it }.let(RunPlan::Own)
                 }
             }
         when (plan) {
             is RunPlan.Join -> {
                 logger.debug(
                     LogField.safe("event", "ttp_session_joined"),
-                    LogField.safe("phase", kind.diagnosticName),
+                    LogField.safe("phase", key.kind.diagnosticName),
                 ) { "joined the session work already running" }
                 plan.done.await()
             }
@@ -178,6 +193,12 @@ internal class TapToPaySessionCoordinator(
         }
     }
 
+    /**
+     * Runs the plan as the claim's owner, holding the region for the whole run.
+     *
+     * A withdrawn owner releases its joiners with [TapToPaySessionException.SetupAbandoned] and may be
+     * asked again: handing on the owner's cancellation would make the waiter's own scope unwind too.
+     */
     private suspend fun own(
         claim: Claim,
         run: SessionRun,
@@ -186,7 +207,7 @@ internal class TapToPaySessionCoordinator(
         try {
             region.withLock {
                 entered = true
-                runHeld(claim.kind, run)
+                runHeld(claim.key.kind, run)
             }
         } catch (withdrawn: CancellationException) {
             // **Only where this caller held the region.** A withdrawal reaching here without having entered
@@ -194,7 +215,7 @@ internal class TapToPaySessionCoordinator(
             // settle belongs to whatever is running inside. Idle is the one target never refused, so the
             // reset lands, and the run holding the region is then somewhere it cannot move on from: a build
             // parked at the reader comes back to find it cannot reach ready from idle.
-            if (entered && claim.kind.resetsOnWithdrawal) {
+            if (entered && claim.key.kind.resetsOnWithdrawal) {
                 withContext(NonCancellable) { manager.settle(TapToPaySessionState.Idle) }
             }
             release(claim, TapToPaySessionException.SetupAbandoned())
@@ -331,7 +352,7 @@ internal class TapToPaySessionCoordinator(
         claim: Claim,
         outcome: Throwable?,
     ) = withContext(NonCancellable) {
-        claims.withLock { if (inFlight[claim.kind] === claim) inFlight.remove(claim.kind) }
+        claims.withLock { if (inFlight[claim.key] === claim) inFlight.remove(claim.key) }
         if (outcome == null) claim.done.complete(Unit) else claim.done.completeExceptionally(outcome)
     }
 
@@ -522,7 +543,7 @@ private fun isRefusedToken(failure: Throwable): Boolean =
 /** An activation moves nothing before its answer, so withdrawing one leaves the code still owed. */
 private val SessionWorkKind.resetsOnWithdrawal: Boolean get() = this != SessionWorkKind.ACTIVATE
 
-/** Which of the three entry points is running, so two of the same kind can share one run. */
+/** Which of the three entry points is running, for its events, its landing and its diagnostics. */
 internal enum class SessionWorkKind {
     INITIALIZE,
     REINITIALIZE,
