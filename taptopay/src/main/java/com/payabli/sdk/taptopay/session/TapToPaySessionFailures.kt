@@ -132,6 +132,7 @@ internal object TapToPaySessionFailures {
             is DeviceServiceException.IntegrityRefused -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceServiceException.VerificationUnavailable -> failed(SERVICE_UNAVAILABLE)
             is DeviceServiceException.AppNotAccepted -> failed(CONFIGURATION_REJECTED)
+            is DeviceServiceException.AppNotRegistered -> failed(CONFIGURATION_REJECTED)
             is DeviceServiceException.RegistrationGone -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceServiceException.NotAttested -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceServiceException.NotFound -> failed(CONFIGURATION_REJECTED)

@@ -85,10 +85,24 @@ class AttestRefusalLandingTest {
                 PayabliErrorType.DEVICE_SETUP_NOT_CONFIGURED,
                 CONFIGURATION_REJECTED,
             ),
+            // The app is not registered on the paypoint.
+            Refusal(
+                403,
+                "Application is not authorized for this paypoint.",
+                PayabliErrorType.DEVICE_SETUP_NOT_CONFIGURED,
+                CONFIGURATION_REJECTED,
+            ),
             Refusal(
                 403,
                 "Entry point is not available for this request.",
                 PayabliErrorType.ENTRY_POINT_REFUSED,
+                CONFIGURATION_REJECTED,
+            ),
+            // Text that extends the refusal's own sentence is not the refusal.
+            Refusal(
+                403,
+                "Application is not authorized for this paypoint. Register the app on the paypoint.",
+                PayabliErrorType.PERMISSION_DENIED,
                 CONFIGURATION_REJECTED,
             ),
             // A request this SDK built that the service would not read.

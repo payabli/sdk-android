@@ -27,6 +27,7 @@ internal object AttestFailures : DeviceFailureMapper {
                     when (reason) {
                         IDENTITY_UNKNOWN -> DeviceServiceException.IntegrityRefused(resultCode, reason)
                         NOT_RECOGNIZED -> DeviceServiceException.AppNotAccepted(resultCode, reason)
+                        NOT_AUTHORIZED -> DeviceServiceException.AppNotRegistered(resultCode, reason)
                         NOT_USABLE -> DeviceServiceException.RegistrationGone(resultCode, reason)
                         else -> null
                     }
@@ -45,6 +46,7 @@ internal object AttestFailures : DeviceFailureMapper {
     private const val CHALLENGE_SPENT = "Challenge not found or already consumed."
     private const val IDENTITY_UNKNOWN = "Application identity could not be determined."
     private const val NOT_RECOGNIZED = "Application is not recognized by Google Play."
+    private const val NOT_AUTHORIZED = "Application is not authorized for this paypoint."
     private const val NOT_USABLE = "Device is not in a state that allows this operation."
     private const val DEVICE_NOT_FOUND = "Device not found."
 

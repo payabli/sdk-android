@@ -61,6 +61,7 @@ class TapToPaySessionFailuresTest {
             DeviceServiceException.Forbidden(403, REASON) to TapToPaySessionState.PendingActivation(ACTIVATION_ID),
             DeviceServiceException.NotAttested(401, REASON) to failed(DEVICE_SETUP_REQUIRED),
             DeviceServiceException.EntryPointUnusable(403, REASON) to failed(CONFIGURATION_REJECTED),
+            DeviceServiceException.AppNotRegistered(403, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceServiceException.NotFound(404, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceServiceException.BadRequest(400, REASON) to failed(SDK_INTERNAL_ERROR),
             DeviceServiceException.ServerFailure(500, REASON) to failed(SERVICE_UNAVAILABLE),
@@ -236,6 +237,23 @@ class TapToPaySessionFailuresTest {
             }
             assertEquals(name, failed(DEVICE_KEY_UNAVAILABLE), TapToPaySessionFailures.landingFor(failure, UNREADABLE))
         }
+    }
+
+    @Test
+    fun `an app not registered on the paypoint is never pending activation, whatever is registered`() {
+        val refusal = DeviceServiceException.AppNotRegistered(403, REASON)
+
+        assertFalse(TapToPaySessionFailures.owesActivation(refusal))
+
+        for (registration in EVERY_REGISTRATION) {
+            assertEquals(
+                registration::class.simpleName,
+                failed(CONFIGURATION_REJECTED),
+                TapToPaySessionFailures.landingFor(refusal, registration),
+            )
+        }
+
+        assertEquals(PayabliErrorType.DEVICE_SETUP_NOT_CONFIGURED, TapToPayErrorCodes.typeFor(refusal))
     }
 
     @Test

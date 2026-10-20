@@ -116,6 +116,7 @@ internal object TapToPayErrorCodes {
             is DeviceServiceException.IntegrityRefused -> PayabliErrorType.DEVICE_SETUP_REFUSED
             is DeviceServiceException.VerificationUnavailable -> PayabliErrorType.DEVICE_SETUP_UNAVAILABLE
             is DeviceServiceException.AppNotAccepted -> PayabliErrorType.DEVICE_SETUP_NOT_CONFIGURED
+            is DeviceServiceException.AppNotRegistered -> PayabliErrorType.DEVICE_SETUP_NOT_CONFIGURED
             is DeviceServiceException.RegistrationGone -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceServiceException.NotFound -> PayabliErrorType.ENTRY_POINT_REFUSED
             is DeviceServiceException.ServerFailure -> PayabliErrorType.SERVER_ERROR
