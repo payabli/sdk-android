@@ -131,9 +131,12 @@ class AuthenticatedTransportTest {
         )
 
     /** [guardedReplayRequest]'s counterpart for a route that says which rejections refuse its caller. */
-    private fun callerRefusalRequest(isCallerRefusal: (PayabliResponse) -> Boolean): PayabliRequest =
+    private fun callerRefusalRequest(
+        method: HttpMethod = HttpMethod.GET,
+        isCallerRefusal: (PayabliResponse) -> Boolean,
+    ): PayabliRequest =
         PayabliRequest(
-            method = HttpMethod.GET,
+            method = method,
             path = "/api/pay/$ID_SENTINEL",
             route = ROUTE,
             isCallerRefusal = isCallerRefusal,
@@ -1314,6 +1317,55 @@ class AuthenticatedTransportTest {
             assertEquals("the replay answered", OK, response.statusCode)
             assertEquals("one refresh", 1, calls.get())
             assertEquals("the send and its replay", 2, base.sends.size)
+        }
+
+    // ---- what each refusal leaves for the setup to renew -------------------------------------------
+    //
+    // A refusal the request calls its caller's records nothing; a pinned route's refusal is recorded
+    // for the device setup to renew.
+
+    @Test
+    fun `a refusal of the caller leaves nothing for the setup to renew`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondWith(UNAUTHORIZED, "")
+                val calls = AtomicInteger()
+                val auth = testAuth(tokenProvider = { REFRESHED.also { calls.incrementAndGet() } })
+                val subject = stack(server, auth)
+
+                val refused =
+                    completing("the refused batch") {
+                        subject.execute(callerRefusalRequest(HttpMethod.POST) { it.statusCode == UNAUTHORIZED })
+                    }
+
+                assertEquals("the refusal arrives as it came", UNAUTHORIZED, refused.statusCode)
+                assertEquals("no refresh inside the refusal", 0, calls.get())
+
+                subject.renewRefusedToken()
+
+                assertEquals("nothing was recorded for a renewal to spend", 0, calls.get())
+            }
+        }
+
+    @Test
+    fun `a pinned route's refusal is recorded and renewed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondWith(UNAUTHORIZED, "")
+                val calls = AtomicInteger()
+                val auth = testAuth(tokenProvider = { REFRESHED.also { calls.incrementAndGet() } })
+                val subject = stack(server, auth)
+
+                val refused = completing("the pinned request") { subject.execute(pinnedRequest(HttpMethod.POST)) }
+
+                assertEquals("the refusal arrives as it came", UNAUTHORIZED, refused.statusCode)
+                assertEquals("nothing is refreshed inside the pinned request", 0, calls.get())
+
+                subject.renewRefusedToken()
+
+                assertEquals("the renewal spent one provider call", 1, calls.get())
+                assertEquals(REFRESHED, auth.accessToken())
+            }
         }
 
     @Test

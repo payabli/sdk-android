@@ -3,6 +3,7 @@ package com.payabli.sdk.telemetry
 import com.payabli.sdk.core.PayabliSdkVersion
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.HttpMethod
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -74,9 +75,12 @@ class TelemetryUploaderTest {
             assertEquals(HttpMethod.POST, request.method)
             assertEquals(TelemetryUploader.ROUTE, request.path)
             assertEquals(TelemetryUploader.ROUTE, request.route)
-            // A rejected credential here must not spend the session's one refresh, and must not be able to
-            // condemn a session a payment is using.
-            assertTrue(request.isCredentialPinned)
+            // A 401 refuses this caller, not the credential it was sent with, so the refusal is not
+            // recorded for a device setup to renew.
+            assertFalse(request.isCredentialPinned)
+            val refusal = request.isCallerRefusal
+            assertTrue("a 401 refuses the caller", refusal(answered(401)))
+            assertFalse("an accepted batch does not", refusal(FakeTransport.accepted()))
         }
 
     /**
@@ -305,6 +309,9 @@ class TelemetryUploaderTest {
             occurredAtMillis = 1_755_000_000_000,
             session = session,
         )
+
+    private fun answered(statusCode: Int): PayabliResponse =
+        PayabliResponse(statusCode = statusCode, headers = emptyMap(), body = ByteArray(0))
 
     /**
      * A body that cannot be encoded is contained, not raised.

@@ -8,10 +8,12 @@ import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.telemetry.wire.TelemetryBatchBody
 import com.payabli.sdk.telemetry.wire.TelemetryEventBody
+import java.net.HttpURLConnection
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -56,9 +58,7 @@ internal class TelemetryUploader(
                     body = body,
                     bodySerializer = TelemetryBatchBody.serializer(),
                     route = ROUTE,
-                    // A rejected credential here must not spend the session's one refresh, and must not be
-                    // able to condemn a session a payment is using.
-                    isCredentialPinned = true,
+                    isCallerRefusal = ::isUnauthorized,
                 )
 
             val response = transport.execute(request)
@@ -141,3 +141,15 @@ internal class TelemetryUploader(
                 .format(Date(epochMillis))
     }
 }
+
+/**
+ * Whether the route's answer refuses this caller rather than the credential it was sent with.
+ *
+ * A pinned route's refusal is recorded for a device setup to renew; this route's refusals must leave
+ * the session's credential alone, so they are declared the caller's.
+ *
+ * @param response the answered request.
+ * @return true for a 401, the one status the recovery policy reads as a credential rejection.
+ */
+private fun isUnauthorized(response: PayabliResponse): Boolean =
+    response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED
