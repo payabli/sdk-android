@@ -61,6 +61,8 @@ public class PayabliRequest(
          * There is no [query] here. A route needing one alongside a JSON body uses the constructor, which
          * is also what a route whose body must be zeroized has to do, since this encodes to a `String`.
          *
+         * The parameter list mirrors the constructor's, and every call site names its arguments.
+         *
          * @param method the verb the request carries.
          * @param path the resolved path, identifiers embedded. Never logged, which is what [route] is for.
          * @param body the value serialized as the request's JSON body.
@@ -73,6 +75,7 @@ public class PayabliRequest(
          *   change, so such a rejection is returned as it arrived rather than recovered from.
          * @return the request carrying [body] encoded as JSON, with the content type set.
          */
+        @SuppressWarnings("kotlin:S107")
         public fun <T> json(
             method: HttpMethod,
             path: String,
