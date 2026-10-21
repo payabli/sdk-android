@@ -468,6 +468,28 @@ class PayInSubmissionTelemetryTest {
             )
         }
 
+    /** A read a caller abandons is reported as interrupted, with the cancellation's type and a duration. */
+    @Test
+    fun `an abandoned read is reported as interrupted, and cancellation still propagates`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = GatedPayInTransport.answering(READ_RECORD)
+            val submission = submissionOver(transport)
+
+            val running = launch { submission.readTransaction(TEST_ENTRY_POINT, "101-abc") }
+            transport.arrived.await()
+            running.cancel()
+            // join, not a scheduler advance: a cancelled coroutine completes when its report has run, which
+            // is inside the catch that rethrows.
+            running.join()
+
+            assertTrue("cancellation did not propagate", running.isCancelled)
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_READ_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.INTERRUPTED, properties[TelemetryProperty.OUTCOME.key])
+            assertTrue(properties[TelemetryProperty.FAILURE_TYPE.key] != null)
+            assertTrue(properties[TelemetryProperty.DURATION_MS.key] != null)
+        }
+
     @Test
     fun `no instrument and no payer data reaches a report`() =
         runTest(timeout = TEST_TIMEOUT) {
