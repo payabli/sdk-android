@@ -70,4 +70,5 @@ private fun PayabliRequest.copyWith(
         headers = headers,
         body = body,
         isCredentialPinned = isCredentialPinned,
+        isCallerRefusal = isCallerRefusal,
     )
