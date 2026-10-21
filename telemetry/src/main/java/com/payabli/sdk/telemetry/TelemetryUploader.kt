@@ -143,10 +143,10 @@ internal class TelemetryUploader(
 }
 
 /**
- * Whether the route's answer refuses this caller rather than the credential it was sent with.
+ * Whether this route's 401 is declared a refusal of its caller.
  *
- * A pinned route's refusal is recorded for a device setup to renew; this route's refusals must leave
- * the session's credential alone, so they are declared the caller's.
+ * A pinned route's refusal is recorded for a device setup to renew; this route's must leave the
+ * session's credential alone, however a new credential would answer.
  *
  * @param response the answered request.
  * @return true for a 401, the one status the recovery policy reads as a credential rejection.
