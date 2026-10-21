@@ -377,7 +377,7 @@ class TelemetryUploaderTest {
                     ),
                 )
 
-            assertEquals("an unsendable batch answered as sent", SendOutcome.KEEP, sent)
+            assertEquals("an unbuildable batch went back to the queue", SendOutcome.DISCARD, sent)
             assertTrue("the request was assembled and sent anyway", transport.sent.isEmpty())
         }
 }

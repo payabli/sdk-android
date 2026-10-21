@@ -22,8 +22,8 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Sends a batch, and lets nothing out. The caller is a payment app that asked for nothing, so no
- * failure escapes to it. A batch that was not accepted goes back to the queue for a later flush; a
- * 413 discards, because the same body is refused forever.
+ * failure escapes to it. A batch that was not accepted goes back to the queue for a later flush,
+ * and a body that would fail forever discards, refused for its size or unbuildable.
  */
 internal class TelemetryUploader(
     private val transport: PayabliTransport,
@@ -94,6 +94,7 @@ internal class TelemetryUploader(
                 LogField.safe("route", ROUTE),
                 LogField.safe("errorCode", failure.type.wireName),
             ) { "batch could not be sent; goes back to the queue" }
+            return SendOutcome.KEEP
         } catch (failure: RuntimeException) {
             // Wider than the transport's documented contract, and that is the point: a reporting channel that
             // can raise on a background coroutine takes the host app down with it, because an uncaught
@@ -103,9 +104,9 @@ internal class TelemetryUploader(
                 LogField.safe("event", "telemetry_batch_failed"),
                 LogField.safe("route", ROUTE),
                 LogField.safe("errorKind", failure.javaClass.simpleName),
-            ) { "batch could not be sent; goes back to the queue" }
+            ) { "batch could not be built or sent; discarded" }
+            return SendOutcome.DISCARD
         }
-        return SendOutcome.KEEP
     }
 
     private fun QueuedTelemetryEvent.toBody(): TelemetryEventBody =
