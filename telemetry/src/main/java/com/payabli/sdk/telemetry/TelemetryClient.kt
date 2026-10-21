@@ -176,8 +176,8 @@ internal class TelemetryClient(
      * Sends one request's worth, at most, and answers whether the drain it feeds may continue.
      *
      * Not a loop until empty: a burst refills as it drains. A batch that went back to the queue's
-     * front is resent at once by a continued drain, so its answer is false; a discarded one has
-     * nothing left to resend, and the drain carries on.
+     * front is resent at once by a continued drain, so its answer is false; a discarded or dropped
+     * one has nothing left to resend, and the drain carries on.
      */
     suspend fun flush(): Boolean =
         sending.withLock {
@@ -199,15 +199,17 @@ internal class TelemetryClient(
                 SendOutcome.SENT -> true
                 SendOutcome.KEEP -> {
                     // A channel stopped mid-send refuses the batch, and its events are lost with it.
-                    if (queue.pushFront(batch)) {
-                        queue.restoreDropCount(dropped)
+                    val requeued = queue.pushFront(batch)
+                    queue.restoreDropCount(dropped)
+                    if (requeued) {
+                        false
                     } else {
                         logger.debug(
                             LogField.safe("event", "telemetry_batch_after_stop"),
                             LogField.safe("count", batch.size),
                         ) { "the channel stopped while the batch was being sent; dropped" }
+                        true
                     }
-                    false
                 }
                 SendOutcome.DISCARD -> {
                     queue.restoreDropCount(dropped)

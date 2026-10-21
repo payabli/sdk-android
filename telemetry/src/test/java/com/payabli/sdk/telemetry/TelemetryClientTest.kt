@@ -594,6 +594,28 @@ class TelemetryClientTest {
         }
 
     /**
+     * A refused batch at shutdown drops with the channel, and the batches behind it still leave.
+     *
+     * The queue is closed before the drain runs, so the refused batch cannot go back: nothing of it
+     * remains to resend, and the drain carries on rather than abandoning what never failed.
+     */
+    @Test
+    fun stoppingSendsTheBatchesBehindARefusedOne() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport.refusingOnce(500)
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 10) { client ->
+                client.start()
+                repeat(45) { record(client) }
+
+                client.stop()
+
+                assertEquals("in five requests of at most ten each", 5, transport.sent.size)
+                assertEquals("every event left once, the refused ten included", 45, transport.eventsSent())
+            }
+        }
+
+    /**
      * A failed send starts nothing itself.
      *
      * The queue holds two requests' worth when the first is refused, and the drain answers one request:
