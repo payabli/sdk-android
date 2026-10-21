@@ -21,26 +21,28 @@ import java.util.TimeZone
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Sends a batch, and lets nothing out.
- *
- * Every failure ends here: a refused batch, an unreachable host, a body too large. The caller is a payment
- * app that asked for nothing, so there is nobody to hand a failure to, and a reporting channel that could
- * surface one would be a reporting channel that can interrupt a payment.
- *
- * **No retry.** A batch that did not arrive is dropped rather than kept, because the reply says only whether
- * the caller was authorized, so a client cannot tell a batch worth resending from one that will be refused
- * exactly the same way forever. Keeping it would trade a lost batch for a queue that never empties.
+ * Sends a batch, and lets nothing out. The caller is a payment app that asked for nothing, so no
+ * failure escapes to it. A batch that was not accepted goes back to the queue for a later flush; a
+ * 413 discards, because the same body is refused forever.
  */
 internal class TelemetryUploader(
     private val transport: PayabliTransport,
     private val context: TelemetrySessionContext,
     private val logger: SdkLogger,
 ) {
+    /**
+     * Sends one batch and answers what happened to it.
+     *
+     * @param batch the events to send, oldest first.
+     * @param droppedSinceLastSend the queue evictions the batch reports, which a batch that is not
+     *   accepted hands back.
+     * @return the batch's disposition, which says whether its events go back to the queue.
+     */
     suspend fun send(
         batch: List<QueuedTelemetryEvent>,
         droppedSinceLastSend: Int = 0,
-    ): Boolean {
-        if (batch.isEmpty()) return false
+    ): SendOutcome {
+        if (batch.isEmpty()) return SendOutcome.KEEP
 
         try {
             // Assembly is inside the guard. `PayabliRequest.json` serializes as it builds, so a wire model
@@ -68,14 +70,22 @@ internal class TelemetryUploader(
                     LogField.safe("route", ROUTE),
                     LogField.safe("statusCode", response.statusCode),
                 ) { "sent ${batch.size} events" }
-                return true
-            } else {
+                return SendOutcome.SENT
+            }
+            if (response.statusCode == HttpURLConnection.HTTP_ENTITY_TOO_LARGE) {
                 logger.debug(
                     LogField.safe("event", "telemetry_batch_refused"),
                     LogField.safe("route", ROUTE),
                     LogField.safe("statusCode", response.statusCode),
                 ) { "batch not accepted; discarded" }
+                return SendOutcome.DISCARD
             }
+            logger.debug(
+                LogField.safe("event", "telemetry_batch_refused"),
+                LogField.safe("route", ROUTE),
+                LogField.safe("statusCode", response.statusCode),
+            ) { "batch not accepted; goes back to the queue" }
+            return SendOutcome.KEEP
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: PayabliException) {
@@ -83,7 +93,7 @@ internal class TelemetryUploader(
                 LogField.safe("event", "telemetry_batch_failed"),
                 LogField.safe("route", ROUTE),
                 LogField.safe("errorCode", failure.type.wireName),
-            ) { "batch could not be sent; discarded" }
+            ) { "batch could not be sent; goes back to the queue" }
         } catch (failure: RuntimeException) {
             // Wider than the transport's documented contract, and that is the point: a reporting channel that
             // can raise on a background coroutine takes the host app down with it, because an uncaught
@@ -93,9 +103,9 @@ internal class TelemetryUploader(
                 LogField.safe("event", "telemetry_batch_failed"),
                 LogField.safe("route", ROUTE),
                 LogField.safe("errorKind", failure.javaClass.simpleName),
-            ) { "batch could not be sent; discarded" }
+            ) { "batch could not be sent; goes back to the queue" }
         }
-        return false
+        return SendOutcome.KEEP
     }
 
     private fun QueuedTelemetryEvent.toBody(): TelemetryEventBody =
@@ -140,6 +150,20 @@ internal class TelemetryUploader(
                 .apply { timeZone = TimeZone.getTimeZone("UTC") }
                 .format(Date(epochMillis))
     }
+}
+
+/**
+ * What a send did to the batch, so its caller knows whether the events go back.
+ */
+internal enum class SendOutcome {
+    /** The batch was accepted, and its events are spent. */
+    SENT,
+
+    /** The batch was not delivered, and its events go back to the queue for a later flush. */
+    KEEP,
+
+    /** The batch was refused for its size, which the same body would be forever. */
+    DISCARD,
 }
 
 /**

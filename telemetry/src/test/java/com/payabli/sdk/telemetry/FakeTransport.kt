@@ -70,6 +70,32 @@ internal class FakeTransport(
         fun refusing(statusCode: Int): FakeTransport =
             FakeTransport { PayabliResponse(statusCode = statusCode, headers = emptyMap(), body = ByteArray(0)) }
 
+        /** Answers [statusCode] once and 202 after it: the answer a requeued batch's next flush gets. */
+        fun refusingOnce(statusCode: Int): FakeTransport {
+            var refused = false
+            return FakeTransport {
+                if (refused) {
+                    accepted()
+                } else {
+                    refused = true
+                    PayabliResponse(statusCode = statusCode, headers = emptyMap(), body = ByteArray(0))
+                }
+            }
+        }
+
+        /** Fails once and answers 202 after it: a send that could not be made, then one that is. */
+        fun failingOnce(): FakeTransport {
+            var failed = false
+            return FakeTransport {
+                if (failed) {
+                    accepted()
+                } else {
+                    failed = true
+                    throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the host could not be reached")
+                }
+            }
+        }
+
         fun failing(): FakeTransport =
             FakeTransport {
                 throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the host could not be reached")

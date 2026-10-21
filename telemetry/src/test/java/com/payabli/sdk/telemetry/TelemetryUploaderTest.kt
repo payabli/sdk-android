@@ -247,19 +247,50 @@ class TelemetryUploaderTest {
         }
 
     @Test
-    fun arefusedBatchIsDiscardedWithoutReachingTheCaller() =
+    fun arefusedBatchAnswersKeepAndMakesOneRequest() =
         runTest {
             val transport = FakeTransport.refusing(statusCode = 401)
 
-            TelemetryUploader(transport, context, logger).send(listOf(anEvent()))
+            val outcome = TelemetryUploader(transport, context, logger).send(listOf(anEvent()))
 
+            assertEquals(SendOutcome.KEEP, outcome)
             assertEquals(1, transport.sent.size)
         }
 
     @Test
-    fun atransportFailureIsDiscardedWithoutReachingTheCaller() =
+    fun atransportFailureAnswersKeep() =
         runTest {
-            TelemetryUploader(FakeTransport.failing(), context, logger).send(listOf(anEvent()))
+            assertEquals(
+                SendOutcome.KEEP,
+                TelemetryUploader(FakeTransport.failing(), context, logger).send(listOf(anEvent())),
+            )
+        }
+
+    /**
+     * The answer separates the one status that discards.
+     *
+     * Every other failure is about the caller or the transport, so a later flush may deliver the batch;
+     * a 413 is about the body, which the same events would be refused for forever.
+     */
+    @Test
+    fun theSendAnswerIsKeepForEveryFailureButARefusalForSize() =
+        runTest {
+            assertEquals(SendOutcome.SENT, TelemetryUploader(FakeTransport(), context, logger).send(listOf(anEvent())))
+            for (status in listOf(401, 403, 429, 500)) {
+                assertEquals(
+                    "status $status was not answered keep",
+                    SendOutcome.KEEP,
+                    TelemetryUploader(FakeTransport.refusing(status), context, logger).send(listOf(anEvent())),
+                )
+            }
+            assertEquals(
+                SendOutcome.DISCARD,
+                TelemetryUploader(FakeTransport.refusing(413), context, logger).send(listOf(anEvent())),
+            )
+            assertEquals(
+                SendOutcome.KEEP,
+                TelemetryUploader(FakeTransport.failing(), context, logger).send(listOf(anEvent())),
+            )
         }
 
     @Test
@@ -346,7 +377,7 @@ class TelemetryUploaderTest {
                     ),
                 )
 
-            assertFalse("an unsendable batch reported as sent", sent)
+            assertEquals("an unsendable batch answered as sent", SendOutcome.KEEP, sent)
             assertTrue("the request was assembled and sent anyway", transport.sent.isEmpty())
         }
 }

@@ -173,15 +173,10 @@ internal class TelemetryClient(
     }
 
     /**
-     * Sends one request's worth, at most, and answers whether it sent anything.
+     * Sends one request's worth, at most, and answers whether a batch was accepted.
      *
-     * Not a loop until empty: a burst refills as fast as it drains, and a flush that chased it would hold
-     * this coroutine and the queue's lock against every emitting thread. Whatever is left is picked up by the
-     * next full batch or the next tick. Shutdown is the exception and loops in [stop], because there is no
-     * next tick.
-     *
-     * The return value is for that loop alone. Nothing else asks: a flush that sent nothing and a flush that
-     * failed are the same answer to every other caller, which is that reporting is best effort.
+     * Not a loop until empty: a burst refills as it drains. A batch that was not accepted goes back to
+     * the queue's front, and the false answer keeps a loop here from sending it again at once.
      */
     suspend fun flush(): Boolean =
         sending.withLock {
@@ -199,10 +194,25 @@ internal class TelemetryClient(
                 ) { "queue was full; oldest events evicted" }
             }
 
-            // The response says nothing about a refused batch's content, so its events are not retried.
-            // The count describes the gap rather than filling it, and goes back to the queue.
-            if (!uploader.send(batch, dropped)) queue.restoreDropCount(dropped)
-            true
+            when (uploader.send(batch, dropped)) {
+                SendOutcome.SENT -> true
+                SendOutcome.KEEP -> {
+                    // A channel stopped mid-send refuses the batch, and its events are lost with it.
+                    if (queue.pushFront(batch)) {
+                        queue.restoreDropCount(dropped)
+                    } else {
+                        logger.debug(
+                            LogField.safe("event", "telemetry_batch_after_stop"),
+                            LogField.safe("count", batch.size),
+                        ) { "the channel stopped while the batch was being sent; dropped" }
+                    }
+                    false
+                }
+                SendOutcome.DISCARD -> {
+                    queue.restoreDropCount(dropped)
+                    false
+                }
+            }
         }
 }
 

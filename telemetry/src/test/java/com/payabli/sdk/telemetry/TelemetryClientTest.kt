@@ -3,7 +3,6 @@
 package com.payabli.sdk.telemetry
 
 import com.payabli.sdk.core.config.PayabliEnvironment
-import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
@@ -443,31 +442,25 @@ class TelemetryClientTest {
     /**
      * A refused batch does not take the count with it.
      *
-     * A refused batch's events are not retried, and the uploader swallows the refusal, so a count taken
-     * with them is a count nobody sees: the batch that finally lands reports none, and a stream that
-     * overflowed while offline arrives looking quiet.
+     * Its events go back to the front of the queue, so the next batch that is accepted carries both them
+     * and the count the refused one owed: a stream that overflowed while offline arrives reporting both.
      */
     @Test
     fun aCountSurvivesTheBatchThatWasRefused() =
         runTest(timeout = TEST_TIMEOUT) {
-            var refuse = true
-            val transport =
-                FakeTransport {
-                    if (refuse) {
-                        PayabliResponse(statusCode = 500, headers = emptyMap(), body = ByteArray(0))
-                    } else {
-                        FakeTransport.accepted()
-                    }
-                }
+            val transport = FakeTransport.refusingOnce(500)
 
             withClient(transport, batchSize = 1_000, maxEventsPerRequest = 1_000, capacity = 4) { client ->
                 repeat(10) { record(client) }
                 client.flush()
 
-                refuse = false
-                record(client)
                 client.flush()
 
+                assertEquals(
+                    "the refused batch's events did not go back: ${transport.bodyAsText(1)}",
+                    4,
+                    transport.bodyAsText(1).split("\"schemaVersion\"").size - 1,
+                )
                 assertTrue(
                     "the refused batch took the count with it: ${transport.bodyAsText(1)}",
                     transport.bodyAsText(1).contains(""""droppedSinceLastSend":6"""),
@@ -475,42 +468,132 @@ class TelemetryClientTest {
             }
         }
 
+    // ---- a batch that was not accepted goes back to the front of the queue ------------------------
+    //
+    // One test per refusal kind: the kinds arrive by different arms, and the events' fate is the same.
+
+    @Test
+    fun aBatchRefusedWithA401IsQueuedAgainInOrder() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport.refusingOnce(401)
+
+            withClient(transport, batchSize = 100) { client ->
+                record(client, "one")
+                record(client, "two")
+                record(client, "three")
+                client.flush()
+
+                assertEquals("the refused batch was sent more than once", 1, transport.sent.size)
+
+                client.flush()
+                assertCarriedInOrder(transport.bodyAsText(1))
+            }
+        }
+
+    @Test
+    fun aBatchRefusedWithA429IsQueuedAgainInOrder() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport.refusingOnce(429)
+
+            withClient(transport, batchSize = 100) { client ->
+                record(client, "one")
+                record(client, "two")
+                record(client, "three")
+                client.flush()
+
+                assertEquals("the refused batch was sent more than once", 1, transport.sent.size)
+
+                client.flush()
+                assertCarriedInOrder(transport.bodyAsText(1))
+            }
+        }
+
+    @Test
+    fun aBatchRefusedWithA500IsQueuedAgainInOrder() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport.refusingOnce(500)
+
+            withClient(transport, batchSize = 100) { client ->
+                record(client, "one")
+                record(client, "two")
+                record(client, "three")
+                client.flush()
+
+                assertEquals("the refused batch was sent more than once", 1, transport.sent.size)
+
+                client.flush()
+                assertCarriedInOrder(transport.bodyAsText(1))
+            }
+        }
+
+    @Test
+    fun aBatchThatCouldNotBeSentIsQueuedAgainInOrder() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport.failingOnce()
+
+            withClient(transport, batchSize = 100) { client ->
+                record(client, "one")
+                record(client, "two")
+                record(client, "three")
+                client.flush()
+
+                assertEquals("the failed batch was sent more than once", 1, transport.sent.size)
+
+                client.flush()
+                assertCarriedInOrder(transport.bodyAsText(1))
+            }
+        }
+
     /**
-     * A count read with nothing to send is a count nobody ever sees.
+     * One answer discards the batch: 413, a body the route refuses the same way forever.
      *
-     * `takeDropCount` resets as it reads, so taking it before the batch was checked consumed the evictions
-     * and discarded them: the next real batch then reported none.
+     * The events do not go back, so a flush with nothing queued makes no request and consumes no count,
+     * and the eviction count the batch carried rides the next batch that is accepted.
      */
     @Test
-    fun aFlushWithNothingToSendDoesNotConsumeTheCount() =
+    fun aBatchRefusedWithA413DiscardsRatherThanGoingBack() =
         runTest(timeout = TEST_TIMEOUT) {
-            var refuse = true
-            val transport =
-                FakeTransport {
-                    if (refuse) {
-                        PayabliResponse(statusCode = 500, headers = emptyMap(), body = ByteArray(0))
-                    } else {
-                        FakeTransport.accepted()
-                    }
-                }
+            val transport = FakeTransport.refusingOnce(413)
 
             withClient(transport, batchSize = 1_000, maxEventsPerRequest = 1_000, capacity = 4) { client ->
-                // Refused, so the count goes back to the queue and is still owed while nothing is queued.
-                // Reported instead, the counter would be zero here and this would pass against the defect.
                 repeat(10) { record(client) }
                 client.flush()
-                transport.sent.clear()
-                refuse = false
 
-                // Nothing queued, so this sends nothing and must take nothing.
                 client.flush()
+                assertEquals("the discarded batch went back to the queue", 1, transport.sent.size)
 
                 record(client)
                 client.flush()
                 assertTrue(
-                    "the empty flush consumed what was still owed: ${transport.bodyAsText()}",
-                    transport.bodyAsText().contains(""""droppedSinceLastSend":6"""),
+                    "the count the discarded batch carried was lost: ${transport.bodyAsText(1)}",
+                    transport.bodyAsText(1).contains(""""droppedSinceLastSend":6"""),
                 )
+            }
+        }
+
+    /**
+     * A failed send starts nothing itself.
+     *
+     * The queue holds two requests' worth when the first is refused, and the drain answers one request:
+     * until the timer fires, nothing sends the returned batch again.
+     */
+    @Test
+    fun aFailedSendMakesNoRequestUntilTheNextFlush() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport.refusingOnce(500)
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 100) { client ->
+                client.start()
+                repeat(150) { record(client) }
+                client.flushAsync()
+
+                assertEquals("the refused batch was sent again at once", 1, transport.sent.size)
+
+                advanceTimeBy(FLUSH_INTERVAL - 1.seconds)
+                assertEquals("a request was made before the next flush", 1, transport.sent.size)
+
+                advanceTimeBy(2.seconds)
+                assertEquals("the next flush did not send the returned batch", 3, transport.sent.size)
             }
         }
 
@@ -625,6 +708,23 @@ class TelemetryClientTest {
 
     private fun record(client: TelemetryClient) {
         client.record(TelemetryEvents.SDK_INITIALIZED, mapOf(TelemetryProperty.STATE.key to "ready"))
+    }
+
+    private fun record(
+        client: TelemetryClient,
+        state: String,
+    ) {
+        client.record(TelemetryEvents.SDK_INITIALIZED, mapOf(TelemetryProperty.STATE.key to state))
+    }
+
+    /** The three recorded states, on the body, in the order they were recorded. */
+    private fun assertCarriedInOrder(body: String) {
+        val one = body.indexOf("\"one\"")
+        val two = body.indexOf("\"two\"")
+        val three = body.indexOf("\"three\"")
+        assertTrue("the first event was not carried: $body", one >= 0)
+        assertTrue("the second was not carried after the first: $body", two > one)
+        assertTrue("the third was not carried after the second: $body", three > two)
     }
 
     private companion object {
