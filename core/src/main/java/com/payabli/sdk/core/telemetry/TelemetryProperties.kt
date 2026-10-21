@@ -50,6 +50,14 @@ public enum class TelemetryProperty {
 
     /** The failure's number in the SDK's error catalog, as text. */
     ERROR_NUMBER,
+
+    /**
+     * The failing type's simple name at a public entry point, as its own source spells it. Never a message, a
+     * package, a stack or a cause chain.
+     *
+     * R8 minifies library classes when the host app is minified, so the name is a hint rather than a diagnosis.
+     */
+    FAILURE_TYPE,
     ;
 
     /** The key as it goes on the wire. */

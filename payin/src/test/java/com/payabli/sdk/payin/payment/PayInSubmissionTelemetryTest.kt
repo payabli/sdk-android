@@ -23,8 +23,10 @@ import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -200,6 +202,27 @@ class PayInSubmissionTelemetryTest {
             assertEquals(TelemetryProperties.Outcome.DECLINED, properties[TelemetryProperty.OUTCOME.key])
             assertEquals("PAYMENT_DECLINED", properties[TelemetryProperty.CODE.key])
             assertEquals("1008", properties[TelemetryProperty.ERROR_NUMBER.key])
+            assertEquals("Refused", properties[TelemetryProperty.FAILURE_TYPE.key])
+        }
+
+    /**
+     * A failure this holder never classified is reported by the type the entry point caught, not by the
+     * wrapper that replaced it.
+     */
+    @Test
+    fun `an unexpected failure is reported by the type the entry point caught`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission =
+                submissionOver(
+                    FakePayInTransport.failingWith(IllegalStateException("a defect in a collaborator")),
+                )
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
+
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.FAILED, properties[TelemetryProperty.OUTCOME.key])
+            assertEquals("IllegalStateException", properties[TelemetryProperty.FAILURE_TYPE.key])
         }
 
     /** A form nobody can submit is a real thing to count, and it is invisible to anything watching requests. */
@@ -251,6 +274,30 @@ class PayInSubmissionTelemetryTest {
                 ),
                 recorded.map { it.second[TelemetryProperty.CODE.key] },
             )
+            recorded.forEach { (_, properties) ->
+                assertTrue(properties[TelemetryProperty.DURATION_MS.key] == null)
+                assertEquals("PayabliGenericException", properties[TelemetryProperty.FAILURE_TYPE.key])
+            }
+        }
+
+    /**
+     * A form this SDK refuses before sending is refused locally, and there is nothing to time because no
+     * request was made.
+     */
+    @Test
+    fun `a form this SDK refuses before sending is reported as refused locally, untimed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission = submissionOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
+
+            // An expiry that is not a month and a year is refused before any buffer is built.
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm(expiry = "not-a-date"))
+
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.REFUSED_LOCALLY, properties[TelemetryProperty.OUTCOME.key])
+            assertEquals(TelemetryProperties.Origin.FORM, properties[TelemetryProperty.ORIGIN.key])
+            assertTrue(properties[TelemetryProperty.DURATION_MS.key] == null)
+            assertEquals("InvalidInput", properties[TelemetryProperty.FAILURE_TYPE.key])
         }
 
     /**
@@ -394,15 +441,18 @@ class PayInSubmissionTelemetryTest {
             val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
             val submission = submissionOver(transport)
 
+            // Completed only if submit returns, which is what a swallowed cancellation looks like from here.
+            val answered = CompletableDeferred<PayInSubmissionState?>()
             val running =
-                launch { submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()) }
+                launch { answered.complete(submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())) }
             transport.arrived.await()
             running.cancel()
             // join, not a scheduler advance: a cancelled coroutine completes when its finally has run, which
             // is where the report is.
             running.join()
 
-            assertTrue("cancellation did not propagate", running.isCancelled)
+            assertFalse("submit answered a caller whose scope was already gone", answered.isCompleted)
+            assertTrue("the coroutine was left running", running.isCancelled)
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
             assertEquals(
@@ -417,6 +467,35 @@ class PayInSubmissionTelemetryTest {
                 "an abandoned payment took some measurable time",
                 properties[TelemetryProperty.DURATION_MS.key] != null,
             )
+            assertTrue(
+                "an abandoned payment names the cancellation this holder converted",
+                properties[TelemetryProperty.FAILURE_TYPE.key] != null,
+            )
+        }
+
+    /** A read a caller abandons is reported as interrupted, with the cancellation's type and a duration. */
+    @Test
+    fun `an abandoned read is reported as interrupted, and cancellation still propagates`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = GatedPayInTransport.answering(READ_RECORD)
+            val submission = submissionOver(transport)
+
+            // Completed only if readTransaction returns, which is what a swallowed cancellation looks like from here.
+            val answered = CompletableDeferred<Result<PayInTransaction>>()
+            val running = launch { answered.complete(submission.readTransaction(TEST_ENTRY_POINT, "101-abc")) }
+            transport.arrived.await()
+            running.cancel()
+            // join, not a scheduler advance: a cancelled coroutine completes when its report has run, which
+            // is inside the catch that rethrows.
+            running.join()
+
+            assertFalse("readTransaction answered a caller whose scope was already gone", answered.isCompleted)
+            assertTrue("the coroutine was left running", running.isCancelled)
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_READ_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.INTERRUPTED, properties[TelemetryProperty.OUTCOME.key])
+            assertTrue(properties[TelemetryProperty.FAILURE_TYPE.key] != null)
+            assertTrue(properties[TelemetryProperty.DURATION_MS.key] != null)
         }
 
     @Test

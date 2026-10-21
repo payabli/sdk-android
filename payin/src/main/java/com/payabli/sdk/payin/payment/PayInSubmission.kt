@@ -305,10 +305,18 @@ internal class PayInSubmission(
         val startedAt = elapsedRealtimeNanos()
         return try {
             val transaction = withContext(dispatcher) { moneyIn.readTransaction(transId) }
-            report(event, TelemetryProperties.Outcome.APPROVED, null, startedAt, entryPoint, fromForm = false)
+            report(event, TelemetryProperties.Outcome.APPROVED, null, null, startedAt, entryPoint, fromForm = false)
             Result.success(transaction)
         } catch (cancellation: CancellationException) {
-            report(event, TelemetryProperties.Outcome.INTERRUPTED, null, startedAt, entryPoint, fromForm = false)
+            report(
+                event,
+                TelemetryProperties.Outcome.INTERRUPTED,
+                null,
+                cancellation.javaClass.simpleName,
+                startedAt,
+                entryPoint,
+                fromForm = false,
+            )
             throw cancellation
         } catch (failure: Exception) {
             val cause =
@@ -318,7 +326,15 @@ internal class PayInSubmission(
                         REASON_UNEXPECTED,
                         cause = RedactedCause(failure),
                     )
-            report(event, outcomeOf(cause), cause.type, startedAt, entryPoint, fromForm = false)
+            report(
+                event,
+                outcomeOf(cause),
+                cause.type,
+                failure.javaClass.simpleName,
+                startedAt,
+                entryPoint,
+                fromForm = false,
+            )
             Result.failure(cause)
         }
     }
@@ -369,7 +385,7 @@ internal class PayInSubmission(
             logger.debug(LogField.safe("event", "payin_submission_already_in_flight")) {
                 "a submission is already in flight, so this one was refused"
             }
-            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null, entryPoint, publishes)
+            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null, null, entryPoint, publishes)
             return null
         }
         // Starting here would overwrite an outcome nothing has read yet, and a taken payment would leave no
@@ -382,7 +398,7 @@ internal class PayInSubmission(
             logger.debug(LogField.safe("event", "payin_submission_outcome_unacknowledged")) {
                 "an outcome has not been acknowledged, so this submission was refused"
             }
-            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null, entryPoint, publishes)
+            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null, null, entryPoint, publishes)
             return null
         }
         onReserved(true)
@@ -391,11 +407,15 @@ internal class PayInSubmission(
         val sendMark = PayabliSendMark()
         if (publishes) sink.value = PayInSubmissionState.Submitting
         var outcome: PayInSubmissionState? = null
+        // The failing type's name, read where the failure is caught: the wrapping below replaces the type
+        // and keeps no copy of its name.
+        var failingType: String? = null
         try {
             outcome = withContext(dispatcher + sendMark) { call(retry) }
         } catch (cancellation: CancellationException) {
             // Rethrown, or the coroutine stops being cancellable. Open only when a send of this payment may have run:
             // a resent key's earlier send, or this one past the hand-off; never for an operation moving no money.
+            failingType = cancellation.javaClass.simpleName
             val interrupted = PayInException.Interrupted()
             val unknown = movesMoney && retry.key != null && (retry.reused || sendMark.mayHaveLeft)
             outcome =
@@ -404,6 +424,7 @@ internal class PayInSubmission(
                 )
             throw cancellation
         } catch (failure: Exception) {
+            failingType = failure.javaClass.simpleName
             outcome = failure.asFailed(retry, movesMoney, sendMark.mayHaveLeft)
         } finally {
             // Nothing here suspends, so all of it runs on the canceled path as it does on any other. That is
@@ -413,7 +434,7 @@ internal class PayInSubmission(
                 retry.mayHaveLeft = sendMark.mayHaveLeft
                 retry.payment?.let { settle(it, finished, retry) }
                 if (publishes) sink.value = finished
-                report(event, outcomeOf(finished), codeOf(finished), startedAt, entryPoint, publishes)
+                report(event, outcomeOf(finished), codeOf(finished), failingType, startedAt, entryPoint, publishes)
             }
             inFlight.unlock()
         }
@@ -603,6 +624,7 @@ internal class PayInSubmission(
      * @param event the telemetry event naming the operation.
      * @param outcome how the submission ended.
      * @param code the failure's classification, or null when it succeeded.
+     * @param failureType the failing type's simple name as it reached this holder, or null when it succeeded.
      * @param startedAt when the submission began, or null when it never started.
      * @param entryPoint the integration point the request was sent to, or null for the session's.
      * @param fromForm whether a form started the submission.
@@ -611,6 +633,7 @@ internal class PayInSubmission(
         event: String,
         outcome: String,
         code: PayabliErrorType?,
+        failureType: String?,
         startedAt: Long?,
         entryPoint: String?,
         fromForm: Boolean,
@@ -620,15 +643,19 @@ internal class PayInSubmission(
         val attributed = if (entryPoint == null) session else session?.forEntryPoint(entryPoint)
 
         if (attributed != null) {
-            TelemetryRecorders.recordFor(attributed, event) { measurements(outcome, code, startedAt, fromForm) }
+            TelemetryRecorders.recordFor(
+                attributed,
+                event,
+            ) { measurements(outcome, code, failureType, startedAt, fromForm) }
         } else {
-            TelemetryRecorders.record(event) { measurements(outcome, code, startedAt, fromForm) }
+            TelemetryRecorders.record(event) { measurements(outcome, code, failureType, startedAt, fromForm) }
         }
     }
 
     private fun measurements(
         outcome: String,
         code: PayabliErrorType?,
+        failureType: String?,
         startedAt: Long?,
         fromForm: Boolean,
     ): Map<String, String> =
@@ -642,11 +669,15 @@ internal class PayInSubmission(
                 put(TelemetryProperty.CODE.key, it.wireName)
                 put(TelemetryProperty.ERROR_NUMBER.key, it.code.toString())
             }
-            startedAt?.let {
-                put(
-                    TelemetryProperty.DURATION_MS.key,
-                    TimeUnit.NANOSECONDS.toMillis(elapsedRealtimeNanos() - it).toString(),
-                )
+            failureType?.let { put(TelemetryProperty.FAILURE_TYPE.key, it) }
+            // A submission refused before anything is sent has nothing to time.
+            if (outcome != TelemetryProperties.Outcome.REFUSED_LOCALLY) {
+                startedAt?.let {
+                    put(
+                        TelemetryProperty.DURATION_MS.key,
+                        TimeUnit.NANOSECONDS.toMillis(elapsedRealtimeNanos() - it).toString(),
+                    )
+                }
             }
         }
 
