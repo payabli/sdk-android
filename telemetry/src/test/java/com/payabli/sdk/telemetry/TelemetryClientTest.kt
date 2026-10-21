@@ -572,6 +572,28 @@ class TelemetryClientTest {
         }
 
     /**
+     * A discarded batch ends nothing: the batches behind it still leave.
+     *
+     * The discarded one has nothing left to resend, so the drain carries on through it, where a batch
+     * that went back would be sent again at once.
+     */
+    @Test
+    fun stoppingSendsTheBatchesBehindADiscardedOne() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport.refusingOnce(413)
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 10) { client ->
+                client.start()
+                repeat(45) { record(client) }
+
+                client.stop()
+
+                assertEquals("in five requests of at most ten each", 5, transport.sent.size)
+                assertEquals("every event left once, the discarded ten included", 45, transport.eventsSent())
+            }
+        }
+
+    /**
      * A failed send starts nothing itself.
      *
      * The queue holds two requests' worth when the first is refused, and the drain answers one request:

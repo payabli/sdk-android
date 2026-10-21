@@ -173,10 +173,11 @@ internal class TelemetryClient(
     }
 
     /**
-     * Sends one request's worth, at most, and answers whether a batch was accepted.
+     * Sends one request's worth, at most, and answers whether the drain it feeds may continue.
      *
-     * Not a loop until empty: a burst refills as it drains. A batch that was not accepted goes back to
-     * the queue's front, and the false answer keeps a loop here from sending it again at once.
+     * Not a loop until empty: a burst refills as it drains. A batch that went back to the queue's
+     * front is resent at once by a continued drain, so its answer is false; a discarded one has
+     * nothing left to resend, and the drain carries on.
      */
     suspend fun flush(): Boolean =
         sending.withLock {
@@ -210,7 +211,7 @@ internal class TelemetryClient(
                 }
                 SendOutcome.DISCARD -> {
                     queue.restoreDropCount(dropped)
-                    false
+                    true
                 }
             }
         }
