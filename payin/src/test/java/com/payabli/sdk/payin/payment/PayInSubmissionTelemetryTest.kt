@@ -23,8 +23,10 @@ import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -439,15 +441,18 @@ class PayInSubmissionTelemetryTest {
             val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
             val submission = submissionOver(transport)
 
+            // Completed only if submit returns, which is what a swallowed cancellation looks like from here.
+            val answered = CompletableDeferred<PayInSubmissionState?>()
             val running =
-                launch { submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()) }
+                launch { answered.complete(submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())) }
             transport.arrived.await()
             running.cancel()
             // join, not a scheduler advance: a cancelled coroutine completes when its finally has run, which
             // is where the report is.
             running.join()
 
-            assertTrue("cancellation did not propagate", running.isCancelled)
+            assertFalse("submit answered a caller whose scope was already gone", answered.isCompleted)
+            assertTrue("the coroutine was left running", running.isCancelled)
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
             assertEquals(
@@ -475,14 +480,17 @@ class PayInSubmissionTelemetryTest {
             val transport = GatedPayInTransport.answering(READ_RECORD)
             val submission = submissionOver(transport)
 
-            val running = launch { submission.readTransaction(TEST_ENTRY_POINT, "101-abc") }
+            // Completed only if readTransaction returns, which is what a swallowed cancellation looks like from here.
+            val answered = CompletableDeferred<Result<PayInTransaction>>()
+            val running = launch { answered.complete(submission.readTransaction(TEST_ENTRY_POINT, "101-abc")) }
             transport.arrived.await()
             running.cancel()
             // join, not a scheduler advance: a cancelled coroutine completes when its report has run, which
             // is inside the catch that rethrows.
             running.join()
 
-            assertTrue("cancellation did not propagate", running.isCancelled)
+            assertFalse("readTransaction answered a caller whose scope was already gone", answered.isCompleted)
+            assertTrue("the coroutine was left running", running.isCancelled)
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_READ_COMPLETED, event)
             assertEquals(TelemetryProperties.Outcome.INTERRUPTED, properties[TelemetryProperty.OUTCOME.key])
