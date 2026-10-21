@@ -203,6 +203,26 @@ class PayInSubmissionTelemetryTest {
             assertEquals("Refused", properties[TelemetryProperty.FAILURE_TYPE.key])
         }
 
+    /**
+     * A failure this holder never classified is reported by the type the entry point caught, not by the
+     * wrapper that replaced it.
+     */
+    @Test
+    fun `an unexpected failure is reported by the type the entry point caught`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission =
+                submissionOver(
+                    FakePayInTransport.failingWith(IllegalStateException("a defect in a collaborator")),
+                )
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
+
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.FAILED, properties[TelemetryProperty.OUTCOME.key])
+            assertEquals("IllegalStateException", properties[TelemetryProperty.FAILURE_TYPE.key])
+        }
+
     /** A form nobody can submit is a real thing to count, and it is invisible to anything watching requests. */
     @Test
     fun `a submission refused before anything is sent is reported as refused locally`() =
