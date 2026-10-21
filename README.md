@@ -418,8 +418,9 @@ Their READMEs say how to configure and run both. In sandbox, use Payabli's
 ## Privacy and data collection
 
 When `sdk-android-telemetry` is in your app, which `sdk-android` includes, the SDK sends error and usage
-events to Payabli. Set `telemetryEnabled = false` in `PayabliConfig` to turn it off; the SDK then queues
-and sends nothing.
+events to Payabli, with no card, payer or account data. For Google Play's Data safety form, the SDK
+collects device or other IDs and crash logs and diagnostics, and none of it is shared or used for
+tracking.
 
 Every request the SDK sends to Payabli carries an `X-Pyb-Client` header with the SDK version, the platform, the OS
 version, the device model, the locale and the device ID described under [Device identity](#device-identity).
