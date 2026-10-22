@@ -5,6 +5,7 @@ import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.network.AuthRecoveryPolicy
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
@@ -449,6 +450,23 @@ class PayInSubmissionTest {
             assertTrue("${failed(refused).cause}", failed(refused).cause is PayInException.InvalidInput)
             assertFalse(submission.sent(refused))
             assertNull("a request was handed over for a refused amount", transport.request)
+        }
+
+    /**
+     * A 401 on both attempts reached a service that acted on neither, so the form keeps the card. The transport
+     * hands each attempt over and takes it back on its 401, as the authenticated transport does.
+     */
+    @Test
+    fun `a payment refused with 401 on its replay too is not marked sent`() =
+        runTest(timeout = timeout) {
+            val transport = RefusedTwice()
+            val submission = submissionOver(transport)
+
+            val refused = requireNotNull(submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()))
+
+            assertEquals(2, transport.attempts)
+            assertEquals(PayabliErrorType.TOKEN_EXPIRED, failed(refused).cause.type)
+            assertFalse(submission.sent(refused))
         }
 
     /** A state this submission did not publish was not sent by it. */
@@ -2118,6 +2136,27 @@ class PayInSubmissionTest {
             }
             this.request = request
             throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the link dropped")
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("the PayIn clients decode their own envelopes")
+    }
+
+    /** Hands the request over twice, takes each hand-off back on a 401, and ends as a refused renewal does. */
+    private class RefusedTwice : PayabliTransport {
+        var attempts = 0
+            private set
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            val mark = currentCoroutineContext()[PayabliSendMark]
+            repeat(2) {
+                attempts++
+                mark?.mark()
+                mark?.lower()
+            }
+            throw AuthRecoveryPolicy().exhausted()
         }
 
         override suspend fun <T> execute(
