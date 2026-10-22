@@ -1,6 +1,5 @@
 package com.payabli.sdk.payin.client
 
-import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.form.PayInAmountRefusal
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
@@ -216,17 +215,6 @@ internal object PayInValidation {
     internal val FIELD_TOTAL_AMOUNT: String = inPaymentDetails(PayInRoutes.FIELD_TOTAL_AMOUNT)
     internal val FIELD_SERVICE_FEE: String = inPaymentDetails(PayInRoutes.FIELD_SERVICE_FEE)
     internal val FIELD_SURCHARGE_FEE: String = inPaymentDetails(PayInRoutes.FIELD_SURCHARGE_FEE)
-    private val AMOUNT_FIELDS: Set<String> = setOf(FIELD_TOTAL_AMOUNT, FIELD_SERVICE_FEE, FIELD_SURCHARGE_FEE)
-
-    /**
-     * Whether [cause] is an amount refused before anything was sent, which leaves every field as the payer typed it.
-     *
-     * @param cause what a submission failed with.
-     * @return true when [cause] is an amount refusal; false otherwise.
-     */
-    fun refusedAnAmount(cause: PayabliException): Boolean =
-        cause is PayInException.InvalidInput && cause.field in AMOUNT_FIELDS
-
     internal val FIELD_CARD_NUMBER: String = inPaymentMethod(PayInRoutes.FIELD_CARD_NUMBER)
     internal val FIELD_CARD_CVV: String = inPaymentMethod(PayInRoutes.FIELD_CARD_SECURITY_CODE)
     internal val FIELD_CARD_EXPIRY: String = inPaymentMethod(PayInRoutes.FIELD_CARD_EXPIRY)

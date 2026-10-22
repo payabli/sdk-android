@@ -267,22 +267,6 @@ class PayInValidationTest {
     }
 
     @Test
-    fun `only an amount refused before sending counts as an amount refusal`() {
-        val refused =
-            refusal {
-                PayInValidation.paymentDetails(
-                    PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.50")),
-                )
-            }!!
-
-        assertTrue(PayInValidation.refusedAnAmount(refused))
-        assertTrue(PayInValidation.refusedAnAmount(PayInException.InvalidInput("paymentDetails.serviceFee", "x")))
-        assertTrue(PayInValidation.refusedAnAmount(PayInException.InvalidInput("paymentDetails.surchargeFee", "x")))
-        assertFalse(PayInValidation.refusedAnAmount(PayInException.InvalidInput("paymentMethod.cardnumber", "x")))
-        assertFalse(PayInValidation.refusedAnAmount(PayInException.InvalidInput(null, "x")))
-    }
-
-    @Test
     fun `a negative surcharge is refused naming the surcharge`() {
         assertEquals(
             "paymentDetails.surchargeFee",

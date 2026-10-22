@@ -25,7 +25,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.payabli.sdk.payin.R
-import com.payabli.sdk.payin.client.PayInValidation
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldRules
 import com.payabli.sdk.payin.form.PayInFormConfiguration
@@ -49,6 +48,7 @@ import java.math.BigDecimal
  * where it is held decides what the payer keeps across a rotation.
  * @param submission the submission state this composition draws.
  * @param draft the payer's values; one draft draws one form.
+ * @param sent whether an outcome followed a request handed to the network, which is when the instrument goes.
  * @param configuration the form's configuration.
  * @param reports where the form's telemetry goes.
  * @param submitText the button's wording.
@@ -65,6 +65,7 @@ import java.math.BigDecimal
 internal fun PayInFormContent(
     submission: PayInSubmissionState,
     draft: PayInFormDraft,
+    sent: (PayInSubmissionState) -> Boolean,
     configuration: PayInFormConfiguration,
     reports: PayInFormReports,
     submitText: PayInSubmitText,
@@ -82,6 +83,7 @@ internal fun PayInFormContent(
     // on them.
     val completed by rememberUpdatedState(onCompleted)
     val failed by rememberUpdatedState(onFailed)
+    val wasSent by rememberUpdatedState(sent)
     val methodChanged by rememberUpdatedState(onMethodChanged)
 
     val isSubmitting = submission is PayInSubmissionState.Submitting
@@ -144,7 +146,9 @@ internal fun PayInFormContent(
         reports.refusedFields(rejected)
         draft.rejectedFields = rejected
         // On the composition's dispatcher; moving either call to the flow's coroutine needs withContext(Main).
-        draft.submissionPending = outcome.deliver(draft::clearInstrument, completed, failed)
+        // Only once the instrument went out: a refusal before sending, of any kind, leaves what the payer typed.
+        val clearInstrument = { if (wasSent(outcome)) draft.clearInstrument() }
+        draft.submissionPending = outcome.deliver(clearInstrument, completed, failed)
     }
 
     val context =
@@ -209,7 +213,7 @@ internal fun PayInFormContent(
  * wait for. Idle says the flow holds nothing of this form's, so the flag goes: a form keeping it
  * would take the next outcome on that flow as its own.
  *
- * @param clearInstrument clears the instrument's buffers.
+ * @param clearInstrument clears the instrument's buffers where the outcome followed a send.
  * @param onCompleted the service accepted it.
  * @param onFailed it did not complete; where the outcome is unknown the cause is `Unsettled`.
  * @return true when a submission is still this form's to wait for; false otherwise.
@@ -227,8 +231,7 @@ private fun PayInSubmissionState.deliver(
         }
 
         is PayInSubmissionState.Failed -> {
-            // An amount refused before sending keeps every field: nothing went out, and only the host can change it.
-            if (!PayInValidation.refusedAnAmount(cause)) clearInstrument()
+            clearInstrument()
             onFailed(this)
             false
         }
@@ -458,6 +461,7 @@ private fun PayabliPayInFormPreview() {
     PayInFormContent(
         submission = PayInSubmissionState.Idle,
         draft = remember { PayInFormDraft() },
+        sent = { false },
         configuration = PayInFormConfiguration(),
         reports = PayInFormReports.None,
         submitText = PayInSubmitText.Capture,

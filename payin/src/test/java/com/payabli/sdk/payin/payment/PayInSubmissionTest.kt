@@ -414,6 +414,53 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
         }
 
+    /** A form lets the instrument go only for an outcome whose request was handed to the network. */
+    @Test
+    fun `an outcome is marked sent only once its request was handed to the network`() =
+        runTest(timeout = timeout) {
+            val transport = HandOffTransport(handsOff = false)
+            val submission = submissionOver(transport)
+
+            // Each read as it is published: only the latest outcome is held.
+            val beforeHandOff = requireNotNull(submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()))
+            assertFalse(submission.sent(beforeHandOff))
+
+            assertTrue(submission.reset())
+            transport.handsOff = true
+            val afterHandOff = requireNotNull(submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()))
+            assertTrue(submission.sent(afterHandOff))
+        }
+
+    /** An amount the request cannot send is refused in the submission, before the hand-off, so nothing is marked. */
+    @Test
+    fun `an amount refusal is not marked sent`() =
+        runTest(timeout = timeout) {
+            val transport = HandOffTransport(handsOff = true)
+            val submission = submissionOver(transport)
+            val reachingTheTotal =
+                PayabliPayInOperation.Capture(
+                    PayInTransactionOptions(
+                        paymentDetails = PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.50")),
+                    ),
+                )
+
+            val refused = requireNotNull(submission.submit(TEST_ENTRY_POINT, reachingTheTotal, cardForm()))
+
+            assertTrue("${failed(refused).cause}", failed(refused).cause is PayInException.InvalidInput)
+            assertFalse(submission.sent(refused))
+            assertNull("a request was handed over for a refused amount", transport.request)
+        }
+
+    /** A state this submission did not publish was not sent by it. */
+    @Test
+    fun `a state the submission did not publish is not marked sent`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(HandOffTransport(handsOff = true))
+            requireNotNull(submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()))
+
+            assertFalse(submission.sent(PayInSubmissionState.Failed(PayInException.InvalidInput(null, "x"))))
+        }
+
     /** A payment that never left ran nowhere: its error is reported as it is, and a retry after it is new. */
     @Test
     fun `a new payment that fails before the hand-off reports the plain error and holds no key`() =

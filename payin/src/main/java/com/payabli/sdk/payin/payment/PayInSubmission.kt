@@ -104,6 +104,10 @@ internal class PayInSubmission(
 
     private val sink = MutableStateFlow<PayInSubmissionState>(PayInSubmissionState.Idle)
 
+    /** The last published outcome that followed a hand-off to the network. */
+    @Volatile
+    private var sentOutcome: PayInSubmissionState? = null
+
     val state: StateFlow<PayInSubmissionState> = sink.asStateFlow()
 
     /**
@@ -340,6 +344,15 @@ internal class PayInSubmission(
     }
 
     /**
+     * Whether [outcome] is the published outcome of a submission whose request was handed to the network, which
+     * is when a form lets the instrument go.
+     *
+     * @param outcome a state read from [state].
+     * @return true when [outcome] followed a send; false otherwise, including for a state this did not publish.
+     */
+    fun sent(outcome: PayInSubmissionState): Boolean = outcome === sentOutcome
+
+    /**
      * Back to [PayInSubmissionState.Idle], for a screen taking a second payment.
      *
      * Refused while a submission is in flight, so a caller cannot clear the state out from under one.
@@ -433,7 +446,11 @@ internal class PayInSubmission(
             if (finished != null) {
                 retry.mayHaveLeft = sendMark.mayHaveLeft
                 retry.payment?.let { settle(it, finished, retry) }
-                if (publishes) sink.value = finished
+                if (publishes) {
+                    // Before the publish, so a form reading the outcome reads whether it was sent with it.
+                    sentOutcome = finished.takeIf { sendMark.mayHaveLeft }
+                    sink.value = finished
+                }
                 report(event, outcomeOf(finished), codeOf(finished), failingType, startedAt, entryPoint, publishes)
             }
             inFlight.unlock()

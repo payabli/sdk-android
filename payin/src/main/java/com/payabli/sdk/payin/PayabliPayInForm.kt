@@ -107,6 +107,7 @@ public fun PayabliPayInForm(
     PayInFormContent(
         submission = submission,
         draft = impl.draft,
+        sent = impl::sent,
         configuration = offered,
         reports = impl.reports,
         submitText = PayInSubmitText.of(operation),

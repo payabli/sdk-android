@@ -116,6 +116,15 @@ internal class PayInPaymentFlow private constructor(
     internal fun consume(): Boolean = submission.reset()
 
     /**
+     * Whether [outcome] followed a request handed to the network, which is when a form lets the instrument go.
+     *
+     * @param outcome a state read from [state].
+     * @return true when [outcome] followed a send; false otherwise.
+     */
+    @JvmSynthetic
+    internal fun sent(outcome: PayInSubmissionState): Boolean = submission.sent(outcome)
+
+    /**
      * Runs [operation] on [scope], for a caller with no coroutine at the call site. What the SDK's
      * own form calls: the outcome is readable through [state] alone, and the suspending members
      * below return it instead.

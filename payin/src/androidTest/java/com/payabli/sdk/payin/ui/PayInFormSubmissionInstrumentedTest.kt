@@ -65,10 +65,14 @@ class PayInFormSubmissionInstrumentedTest {
 
     private var submission by mutableStateOf<PayInSubmissionState>(PayInSubmissionState.Idle)
 
+    /** The outcomes that followed a send, as the submission marks them; any other is a refusal before sending. */
+    private val sentOutcomes = mutableSetOf<PayInSubmissionState>()
+
     private val succeeded =
-        PayInSubmissionState.Succeeded.Payment(
-            PayInResult("A0000", reason = null, explanation = null, action = null, transaction = null),
-        )
+        PayInSubmissionState.Succeeded
+            .Payment(
+                PayInResult("A0000", reason = null, explanation = null, action = null, transaction = null),
+            ).also { sentOutcomes += it }
 
     /** The test card as the field draws it, which is how a query finds what a box is holding. */
     private val groupedPan = "4111 1111 1111 1111"
@@ -82,10 +86,18 @@ class PayInFormSubmissionInstrumentedTest {
             ),
         )
 
+    /** The service's refusal of a submission that was sent. */
     private fun refusing(field: PayInField): PayInSubmissionState.Failed =
+        PayInSubmissionState
+            .Failed(
+                cause = PayInException.Refused(PayInFailure("D1001", "Refused", null, null, 200)),
+                fieldErrors = mapOf(field to PayInFieldError.NotAccepted),
+            ).also { sentOutcomes += it }
+
+    /** A refusal before sending that names no amount, which no list of refusals sparing the fields knows. */
+    private fun refusingBeforeSending(): PayInSubmissionState.Failed =
         PayInSubmissionState.Failed(
-            cause = PayInException.Refused(PayInFailure("D1001", "Refused", null, null, 200)),
-            fieldErrors = mapOf(field to PayInFieldError.NotAccepted),
+            PayInException.InvalidInput("paymentMethod", "This payment method cannot be authorized"),
         )
 
     @Test
@@ -160,6 +172,38 @@ class PayInFormSubmissionInstrumentedTest {
         submit()
 
         rule.runOnIdle { submission = refusingTheAmount() }
+        rule.waitForIdle()
+
+        rule.runOnIdle {
+            assertEquals(TEST_ROUTING, draft.typed[PayInField.RoutingNumber])
+            assertEquals(TEST_ACCOUNT, draft.typed[PayInField.AccountNumber])
+        }
+    }
+
+    @Test
+    fun anyRefusalBeforeSendingKeepsTheCard() {
+        showCardForm()
+        fillCard()
+        submit()
+
+        rule.runOnIdle { submission = refusingBeforeSending() }
+        rule.waitForIdle()
+
+        rule.runOnIdle {
+            assertEquals(TEST_PAN, draft.typed[PayInField.CardNumber])
+            assertEquals(TEST_SECURITY_CODE, draft.typed[PayInField.CardSecurityCode])
+            assertEquals(TEST_EXPIRY, draft.typed[PayInField.CardExpiration])
+        }
+    }
+
+    @Test
+    fun anyRefusalBeforeSendingKeepsTheBankAccount() {
+        showBankForm()
+        fillBank()
+        type(R.string.payabli_payin_field_first_name, "Ada")
+        submit()
+
+        rule.runOnIdle { submission = refusingBeforeSending() }
         rule.waitForIdle()
 
         rule.runOnIdle {
@@ -324,6 +368,7 @@ class PayInFormSubmissionInstrumentedTest {
                 PayInFormContent(
                     submission = submission,
                     draft = draft,
+                    sent = { it in sentOutcomes },
                     configuration = configuration,
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
