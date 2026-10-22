@@ -164,6 +164,10 @@ internal class ChargeKeyStore(
         fun forgetHeld() {
             runBlocking { SHARED_LOCK.withLock { SHARED_HELD.clear() } }
         }
+
+        /** When each held key's clock started, newest first, under the same lock. Process state for tests. */
+        @JvmSynthetic
+        fun heldSince(): List<Long> = runBlocking { SHARED_LOCK.withLock { SHARED_HELD.map { it.reservedAt } } }
     }
 }
 
