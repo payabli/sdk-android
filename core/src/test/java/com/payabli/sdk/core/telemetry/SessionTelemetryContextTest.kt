@@ -35,17 +35,19 @@ class SessionTelemetryContextTest {
     @Test
     fun theContextCarriesWhatEveryEventHasToReport() =
         runTest {
-            val session = install(entryPoint = "an-entry-point", telemetryEnabled = true)
+            val session = install(entryPoint = "an-entry-point")
 
             assertEquals("an-entry-point", session.telemetry.entryPoint)
             assertEquals(PayabliEnvironment.SANDBOX, session.telemetry.environment)
-            assertTrue(session.telemetry.telemetryEnabled)
         }
 
+    /** The environment and the device, and nothing else: telemetry is always on, so there is no switch to show. */
     @Test
-    fun theHostsOptOutReachesTheChannel() =
+    fun theContextDescribesItsEnvironmentAndDevice() =
         runTest {
-            assertFalse(install(telemetryEnabled = false).telemetry.telemetryEnabled)
+            val rendered = install().telemetry.toString()
+
+            assertTrue(rendered, rendered.startsWith("TelemetrySessionContext(environment=${PayabliEnvironment.SANDBOX}, device="))
         }
 
     /** It identifies one SDK lifetime, so it has to be fresh per install rather than per device or install. */
@@ -78,7 +80,6 @@ class SessionTelemetryContextTest {
 
     private suspend fun install(
         entryPoint: String = "an-entry-point",
-        telemetryEnabled: Boolean = true,
     ): PayabliSession =
         PayabliSession
             .initializeWith(
@@ -86,7 +87,6 @@ class SessionTelemetryContextTest {
                     entryPoint = entryPoint,
                     environment = PayabliEnvironment.SANDBOX,
                     tokenProvider = PayabliTokenProvider { "a-minted-token" },
-                    telemetryEnabled = telemetryEnabled,
                 ),
             ) { UnusedTransport }
 

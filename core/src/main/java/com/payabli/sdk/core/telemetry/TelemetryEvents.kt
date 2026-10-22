@@ -147,8 +147,8 @@ public object TelemetryEvents {
     public const val SDK_INITIALIZED: String = "sdk.initialized"
 
     /**
-     * Declared and never emitted: reporting through a channel the host switched off is the one
-     * thing switching it off forbids. Kept so that neither platform reintroduces it as a new name.
+     * Declared and never emitted: telemetry has no switch, so there is nothing for it to report. Kept so
+     * that neither platform reintroduces it as a new name.
      */
     public const val SDK_TELEMETRY_DISABLED: String = "sdk.telemetryDisabled"
 

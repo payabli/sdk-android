@@ -14,7 +14,6 @@ import com.payabli.sdk.core.config.PayabliEnvironment
  * it correlates a run and grants nothing, which is the same bar `LoggableFieldNames` holds `sid` to.
  *
  * @property environment selects the base URL, and is reported alongside every event.
- * @property telemetryEnabled the host's opt-out. False means no recorder is installed at all.
  * @property sessionId identifies this SDK lifetime. Fresh per install.
  * @property device what this is running on, for every event to carry: which device the run happened on,
  *   what kind of device it is, and which platform release — the difference between one handset retrying
@@ -24,7 +23,6 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 public class TelemetrySessionContext(
     entryPoint: String,
     public val environment: PayabliEnvironment,
-    public val telemetryEnabled: Boolean,
     public val sessionId: String,
     public val device: TelemetryDeviceContext,
 ) {
@@ -51,16 +49,15 @@ public class TelemetrySessionContext(
         if (entryPoint.trim() == this.entryPoint) {
             this
         } else {
-            TelemetrySessionContext(entryPoint, environment, telemetryEnabled, sessionId, device)
+            TelemetrySessionContext(entryPoint, environment, sessionId, device)
         }
 
     /**
      * Withholds the entry point, matching `PayabliConfig.toString`. It names a specific merchant, and this
      * string reaches exception messages and crash reports.
      *
-     * @return the environment, the opt-out and the device, withholding the entry point.
+     * @return the environment and the device, withholding the entry point.
      */
     override fun toString(): String =
-        "TelemetrySessionContext(environment=$environment, telemetryEnabled=$telemetryEnabled, " +
-            "device=$device)"
+        "TelemetrySessionContext(environment=$environment, device=$device)"
 }

@@ -62,14 +62,12 @@ package com.payabli.sdk.core {
 package com.payabli.sdk.core.config {
 
   public final class PayabliConfig {
-    ctor public PayabliConfig(String entryPoint, com.payabli.sdk.core.config.PayabliEnvironment environment, com.payabli.sdk.core.config.PayabliTokenProvider tokenProvider, optional boolean telemetryEnabled);
+    ctor public PayabliConfig(String entryPoint, com.payabli.sdk.core.config.PayabliEnvironment environment, com.payabli.sdk.core.config.PayabliTokenProvider tokenProvider);
     method @InaccessibleFromKotlin public String getEntryPoint();
     method @InaccessibleFromKotlin public com.payabli.sdk.core.config.PayabliEnvironment getEnvironment();
-    method @InaccessibleFromKotlin public boolean getTelemetryEnabled();
     method @InaccessibleFromKotlin public com.payabli.sdk.core.config.PayabliTokenProvider getTokenProvider();
     property public String entryPoint;
     property public com.payabli.sdk.core.config.PayabliEnvironment environment;
-    property public boolean telemetryEnabled;
     property public com.payabli.sdk.core.config.PayabliTokenProvider tokenProvider;
   }
 
@@ -932,18 +930,16 @@ package com.payabli.sdk.core.telemetry {
   }
 
   @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class TelemetrySessionContext {
-    ctor public TelemetrySessionContext(String entryPoint, com.payabli.sdk.core.config.PayabliEnvironment environment, boolean telemetryEnabled, String sessionId, com.payabli.sdk.core.telemetry.TelemetryDeviceContext device);
+    ctor public TelemetrySessionContext(String entryPoint, com.payabli.sdk.core.config.PayabliEnvironment environment, String sessionId, com.payabli.sdk.core.telemetry.TelemetryDeviceContext device);
     method public com.payabli.sdk.core.telemetry.TelemetrySessionContext forEntryPoint(String entryPoint);
     method @InaccessibleFromKotlin public com.payabli.sdk.core.telemetry.TelemetryDeviceContext getDevice();
     method @InaccessibleFromKotlin public String getEntryPoint();
     method @InaccessibleFromKotlin public com.payabli.sdk.core.config.PayabliEnvironment getEnvironment();
     method @InaccessibleFromKotlin public String getSessionId();
-    method @InaccessibleFromKotlin public boolean getTelemetryEnabled();
     property public com.payabli.sdk.core.telemetry.TelemetryDeviceContext device;
     property public String entryPoint;
     property public com.payabli.sdk.core.config.PayabliEnvironment environment;
     property public String sessionId;
-    property public boolean telemetryEnabled;
   }
 
 }

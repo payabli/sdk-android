@@ -543,7 +543,6 @@ class PayInSubmissionTelemetryTest {
         TelemetrySessionContext(
             entryPoint = TEST_ENTRY_POINT,
             environment = PayabliEnvironment.SANDBOX,
-            telemetryEnabled = true,
             sessionId = "the-session-this-flow-was-built-for",
             device = TelemetryDeviceContext.NONE,
         )

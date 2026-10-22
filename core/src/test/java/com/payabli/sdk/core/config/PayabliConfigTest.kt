@@ -24,12 +24,10 @@ class PayabliConfigTest {
         entryPoint: String = entry,
         environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
         tokenProvider: PayabliTokenProvider = PayabliTokenProvider { "minted" },
-        telemetryEnabled: Boolean = true,
     ) = PayabliConfig(
         entryPoint = entryPoint,
         environment = environment,
         tokenProvider = tokenProvider,
-        telemetryEnabled = telemetryEnabled,
     )
 
     private fun failureFrom(block: () -> Unit): PayabliException {
@@ -147,8 +145,15 @@ class PayabliConfigTest {
             assertEquals("fresh-token", config(tokenProvider = provider).tokenProvider?.freshToken())
         }
 
+    /**
+     * Telemetry is always on, so the configuration offers no switch for it. A defaulted parameter would add a
+     * second constructor, which is why the count is asserted as well as the name.
+     */
     @Test
-    fun `telemetry can be switched off explicitly`() {
-        assertFalse(config(telemetryEnabled = false).telemetryEnabled)
+    fun `the configuration offers no telemetry switch`() {
+        val constructors = PayabliConfig::class.java.constructors
+
+        assertEquals(listOf(3), constructors.map { it.parameterCount })
+        assertTrue(PayabliConfig::class.java.methods.none { it.name.contains("telemetry", ignoreCase = true) })
     }
 }

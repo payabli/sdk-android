@@ -159,17 +159,17 @@ class PayInFormTelemetryInstrumentedTest {
     }
 
     /**
-     * A form built under a session that had reporting off stays off, whatever replaced that session.
+     * With the recorder cleared, a form goes through its whole funnel and reports nothing.
      *
-     * A form outlives a re-initialize: the flow holds the retired session's transport and the composition
-     * holds the flow. Reported through whichever recorder is installed, presenting it after an enabled
-     * successor arrives emits events the host had opted out of, and under the successor's identity.
+     * The way to silence telemetry while the module is linked, for a test that needs it: clear the recorder.
+     * There is no configuration that turns it off.
      */
     @Test
-    fun aFormFromAnOptedOutSessionReportsNothing() {
+    fun aFormWithNoRecorderInstalledReportsNothing() {
         listen()
+        TelemetryRecorders.clear()
 
-        showForm(telemetry = aSession(telemetryEnabled = false))
+        showForm(telemetry = aSession())
         fillBank()
         submit()
         rule.waitForIdle()
@@ -177,22 +177,21 @@ class PayInFormTelemetryInstrumentedTest {
         assertEquals(emptyList<Pair<String, Map<String, String>>>(), recorded)
     }
 
-    /** And the same form under a session that allows it reports the funnel as usual. */
+    /** And the same form with a recorder installed reports the funnel as usual. */
     @Test
-    fun aFormFromAnEnabledSessionReportsAsUsual() {
+    fun aFormForAGivenSessionReportsAsUsual() {
         listen()
 
-        showForm(telemetry = aSession(telemetryEnabled = true))
+        showForm(telemetry = aSession())
         rule.waitForIdle()
 
         assertEquals(1, recorded.count { it.first == TelemetryEvents.FORM_PRESENTED })
     }
 
-    private fun aSession(telemetryEnabled: Boolean) =
+    private fun aSession() =
         TelemetrySessionContext(
             entryPoint = TEST_ENTRY_POINT,
             environment = PayabliEnvironment.SANDBOX,
-            telemetryEnabled = telemetryEnabled,
             sessionId = "a-session",
             device = TelemetryDeviceContext.NONE,
         )

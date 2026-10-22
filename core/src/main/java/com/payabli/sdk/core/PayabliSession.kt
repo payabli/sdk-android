@@ -305,7 +305,6 @@ public class PayabliSession private constructor(
                             TelemetrySessionContext(
                                 entryPoint = config.entryPoint,
                                 environment = config.environment,
-                                telemetryEnabled = config.telemetryEnabled,
                                 sessionId = UUID.randomUUID().toString(),
                                 device = device,
                             ),
@@ -389,20 +388,13 @@ public class PayabliSession private constructor(
     ) {
         private val entryPoint = config.entryPoint
         private val environment = config.environment
-        private val telemetryEnabled = config.telemetryEnabled
 
         override fun equals(other: Any?): Boolean =
             other is ConfigIdentity &&
                 entryPoint == other.entryPoint &&
-                environment == other.environment &&
-                telemetryEnabled == other.telemetryEnabled
+                environment == other.environment
 
-        override fun hashCode(): Int {
-            var result = entryPoint.hashCode()
-            result = 31 * result + environment.hashCode()
-            result = 31 * result + telemetryEnabled.hashCode()
-            return result
-        }
+        override fun hashCode(): Int = 31 * entryPoint.hashCode() + environment.hashCode()
 
         /**
          * Carries no credential and no identifier, matching `PayabliConfig.toString`.
@@ -410,9 +402,9 @@ public class PayabliSession private constructor(
          * The entry point is withheld: it names a specific merchant, and this string reaches exception
          * messages and crash reports. It is the same rule and the same reason as `PayabliConfig`'s.
          *
-         * @return the environment and the telemetry flag, carrying no credential and no identifier.
+         * @return the environment, carrying no credential and no identifier.
          */
-        override fun toString(): String = "ConfigIdentity(environment=$environment, telemetryEnabled=$telemetryEnabled)"
+        override fun toString(): String = "ConfigIdentity(environment=$environment)"
     }
 }
 

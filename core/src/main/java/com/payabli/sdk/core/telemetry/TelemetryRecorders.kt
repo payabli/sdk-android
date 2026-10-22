@@ -14,8 +14,8 @@ import com.payabli.sdk.core.logging.warn
  * every constructor between the session and the call site.
  *
  * **Nothing is installed by default, and that is the whole design.** Absent an installed recorder every
- * [record] is a field read and a return, so a host that never links the telemetry module pays nothing and
- * every emitting call site is written the same way whether one is linked or not.
+ * [record] is a field read and a return, so an app on `:core` alone pays nothing and
+ * every emitting call site is written the same way whether a recorder is installed or not.
  *
  * [record] is `inline`, so [current] and [refused] are part of this artifact's binary surface even though a
  * host cannot name them: an inlined body is copied into every calling module and has to be able to reach what
@@ -53,7 +53,7 @@ public object TelemetryRecorders {
      * it began under. A recorder that is not [SessionScopedRecorder] still receives the event and its
      * properties; only the session is dropped.
      *
-     * @param session the session the event belongs to, and whose opt-out is read.
+     * @param session the session the event belongs to.
      * @param event the catalog name of the event.
      * @param properties the declared properties, built only if a recorder is installed.
      */
@@ -62,11 +62,6 @@ public object TelemetryRecorders {
         event: String,
         properties: () -> Map<String, String> = { emptyMap() },
     ) {
-        // The opt-out is the one that was in force when the operation ran. A session with reporting off
-        // installs no recorder, so nothing of its own can reach here; a successor that enabled it does have
-        // one, and without this the earlier session's work would leave on it.
-        if (!session.telemetryEnabled) return
-
         val recorder = current() ?: return
         try {
             if (recorder is SessionScopedRecorder) {
