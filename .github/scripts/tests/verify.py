@@ -150,7 +150,7 @@ UNIT_XML = "core/build/test-results/testDebugUnitTest/TEST-com.payabli.sdk.core.
 INST_XML = "core/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
 PAYIN_INST_XML = "payin/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
 COV_XML = "core/build/reports/coverage/test/debug/report.xml"
-EXAMPLE_COV_XML = "example/build/reports/coverage/test/withTelemetry/debug/report.xml"
+EXAMPLE_COV_XML = "example/build/reports/coverage/test/debug/report.xml"
 SRC = "core/src/test/java/com/payabli/sdk/core/RetryTest.kt"
 SUBJ = "core/src/main/java/com/payabli/sdk/core/Retry.kt"
 
@@ -250,7 +250,7 @@ def test_collector():
         UNIT_XML: junit("S", [("a", None)]),
         INST_XML: junit("I", [("a", None)]),
         "taptopay/build/test-results/testDebugUnitTest/TEST-x.xml": junit("T", [("cp", None)]),
-        "example/build/test-results/testWithTelemetryDebugUnitTest/TEST-y.xml": junit("E", [("ex", None)]),
+        "example/build/test-results/testDebugUnitTest/TEST-y.xml": junit("E", [("ex", None)]),
     }), CARD_PRESENT_OUTCOME="success", CARD_PRESENT_MODULES="taptopay,example")
     check("C4e both card-present modules present is green", "verdict=green" in r["output"], r["output"])
 
@@ -460,10 +460,10 @@ def test_collector():
     check("C16 a real report is still 'measured'",
           b2["core"]["state"] == "measured" and b2["core"]["percent"] == 90.0, json.dumps(b2["core"]))
 
-    # C22 a module with product flavors is expected per variant. The nightly runs :example twice, and the
-    # absent-artifact build is the whole reason the flavors exist, so a variant that stops running has to be
+    # C22 a module with product flavors is expected per variant, so a variant that stops running has to be
     # visible. Globbing the module covers one variant with the other: the count is never zero and the module
-    # never reads as silent.
+    # never reads as silent. No module has flavors today; the collector keeps the per-variant path because
+    # W10 accepts the form, and these fixtures name two flavors of the sample app as a stand-in.
     # The fixtures below are at the directory AGP actually writes, `<buildType>/flavors/<flavor>`, and the
     # module list is the one nightly.yml carries. Both were a bare variant name until 2026-09-10, which was
     # self-consistent and matched nothing on a real runner. W10 is what holds the workflow's value to this
@@ -476,8 +476,8 @@ def test_collector():
             INST_XML: junit("I", [("b", None)]),
             PAYIN_INST_XML: junit("P", [("c", None)]),
             f"{example_inst}/withTelemetry/TEST-emulator.xml": junit("E", [("d", None)]),
-            # withoutTelemetry wrote nothing: the flavor that proves the absent-artifact path stopped
-            # running, and the module as a whole still has results.
+            # withoutTelemetry wrote nothing: one flavor stopped running, and the module as a whole still
+            # has results.
         }),
         INSTRUMENTED_OUTCOME="success",
         INSTRUMENTED_MODULES=example_modules,
@@ -506,27 +506,27 @@ def test_collector():
     )
     check("C22 both variants present is green", "verdict=green" in r["output"], r["output"])
 
-    # C21 the one module whose report is not under `debug`. :example has product flavors, so its coverage is
-    # written under the flavored variant, and a collector looking for `debug` finds nothing and calls it
-    # missing -- which reads exactly like a module whose tests did not run. Nothing else here writes that
-    # path, so a typo in the variant name would leave every check in this file green.
+    # C21 the sample app's coverage is read under `debug`, as every module's is. It once had product flavors
+    # and wrote under the flavored variant, so a report left at that path is not read: reading it would
+    # measure a build nothing produces any more.
     r = run_collector(make_repo({
         UNIT_XML: junit("S", [("a", None)]),
         INST_XML: junit("I", [("b", None)]),
         EXAMPLE_COV_XML: COVERAGE.format(bm=20, bc=80, lm=10, lc=90),
     }))
-    flavored = {m["module"]: m for m in r["facts"]["coverage"][0]["modules"]}
-    check("C21 the flavored report is measured", flavored["example"]["state"] == "measured",
-          json.dumps(flavored["example"]))
-    check("C21 and it is read, not guessed", flavored["example"]["percent"] == 80.0,
-          json.dumps(flavored["example"]))
-    unflavored = run_collector(make_repo({
+    measured = {m["module"]: m for m in r["facts"]["coverage"][0]["modules"]}
+    check("C21 the sample app's report is measured", measured["example"]["state"] == "measured",
+          json.dumps(measured["example"]))
+    check("C21 and it is read, not guessed", measured["example"]["percent"] == 80.0,
+          json.dumps(measured["example"]))
+    flavored = run_collector(make_repo({
         UNIT_XML: junit("S", [("a", None)]),
         INST_XML: junit("I", [("b", None)]),
-        "example/build/reports/coverage/test/debug/report.xml": COVERAGE.format(bm=20, bc=80, lm=10, lc=90),
+        "example/build/reports/coverage/test/withTelemetry/debug/report.xml":
+            COVERAGE.format(bm=20, bc=80, lm=10, lc=90),
     }))
-    by_module = {m["module"]: m for m in unflavored["facts"]["coverage"][0]["modules"]}
-    check("C21 the same report under `debug` is not found", by_module["example"]["state"] == "missing",
+    by_module = {m["module"]: m for m in flavored["facts"]["coverage"][0]["modules"]}
+    check("C21 a report at the old flavored path is not found", by_module["example"]["state"] == "missing",
           json.dumps(by_module["example"]))
 
     # C17 an unparseable coverage report reads as unmeasured rather than being dropped

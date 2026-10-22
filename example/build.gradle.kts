@@ -152,31 +152,6 @@ android {
         }
     }
 
-    // Two builds of the sample app, differing in one dependency and nothing else.
-    //
-    // **Linking the telemetry artifact is the whole of the integration**, so the only honest test of an app
-    // that did not link it is an app that did not link it. Simulating the absence from inside a test can only
-    // reach the code path; it cannot show that the SDK initializes, runs and reports nothing when the class
-    // is genuinely not on the classpath, which is what every integrator who depends on `:core` alone gets.
-    //
-    // `withTelemetry` is what the umbrella gives an integrator and is the default for ordinary runs.
-    flavorDimensions += "reporting"
-    productFlavors {
-        create("withTelemetry") {
-            dimension = "reporting"
-        }
-        create("withoutTelemetry") {
-            dimension = "reporting"
-
-            // This build exists to answer one question — does the SDK work when the artifact is not linked —
-            // so it runs the one class that asks it. Running the whole instrumented suite twice would double
-            // a device run to re-prove things the other flavor already proved, and the walkthrough talks to
-            // real paypoints.
-            testInstrumentationRunnerArguments["class"] =
-                "com.payabli.example.TelemetryLinkageInstrumentedTest"
-        }
-    }
-
     // **The release variant exists for one reason: the card reader vendor signs a release artifact.**
     // It was disabled here, on the grounds that nothing publishes this app and so nobody could say why CI
     // would assemble it. That reason has been overtaken: the vendor's signing and onboarding step is what
@@ -229,8 +204,6 @@ dependencies {
     // The SDK's payment form. An integrator would take the umbrella; this app takes the module
     // directly because it is in the same build.
     implementation(project(":payin"))
-    // Only one flavor links it; `withoutTelemetry` is the build that proves the SDK works without it.
-    "withTelemetryImplementation"(project(":telemetry"))
 
     // The SDK's card-present module, which the Tap to pay screen drives. It resolves from a credentialed
     // repository, so every job that builds this app needs that credential; ci.yml puts it beside :taptopay

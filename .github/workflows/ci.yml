@@ -319,8 +319,7 @@ jobs:
       # other job: main has no release variant at all, and this branch found one the day it enabled it.
       - name: Build
         run: ./gradlew :taptopay:assembleDebug :payabli-android:assembleDebug
-          :example:assembleWithTelemetryDebug
-          :example:assembleWithoutTelemetryDebug :example:assembleWithTelemetryRelease
+          :example:assembleDebug :example:assembleRelease
 
       - name: Unit tests
         run: ./gradlew :taptopay:test :example:test
@@ -340,7 +339,7 @@ jobs:
 
       - name: Coverage
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
-          :example:createWithTelemetryDebugUnitTestCoverageReport
+          :example:createDebugUnitTestCoverageReport
 
   sonar:
     name: SonarCloud

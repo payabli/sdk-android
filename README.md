@@ -261,10 +261,10 @@ val session: PayabliSession = PayabliSession.initialize(config, HostBindings(app
 
 - `PayabliConfig` throws when the entry point is blank.
 - There is one session per app process.
-- Calling `initialize` again with the same entry point, environment and `telemetryEnabled` returns the same
-  session, which keeps its original token provider. A different one throws a `PayabliException` whose `type` is
-  `INVALID_CONFIGURATION`, and the session already running stays in place. After authentication has failed for
-  good, it builds a fresh session instead.
+- Calling `initialize` again with the same entry point and environment returns the same session, which keeps its
+  original token provider. A different one throws a `PayabliException` whose `type` is `INVALID_CONFIGURATION`, and
+  the session already running stays in place. After authentication has failed for good, it builds a fresh session
+  instead.
 
 The token provider is a `PayabliTokenProvider`, a `suspend` function that returns a new access token from
 your token endpoint:
@@ -417,8 +417,8 @@ Their READMEs say how to configure and run both. In sandbox, use Payabli's
 
 ## Privacy and data collection
 
-When `sdk-android-telemetry` is in your app, which `sdk-android` includes, the SDK sends error and usage
-events to Payabli, with no card, payer or account data. The events are not listed. For Google Play's
+The SDK sends error and usage events to Payabli, with no card, payer or account data. Telemetry is always
+on and can't be turned off. The events are not listed. For Google Play's
 Data safety form, the SDK collects device or other IDs, app interactions, and crash logs and
 diagnostics, and none of it is shared or used for tracking.
 

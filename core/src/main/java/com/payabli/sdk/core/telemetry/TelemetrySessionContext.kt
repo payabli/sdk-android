@@ -58,6 +58,5 @@ public class TelemetrySessionContext(
      *
      * @return the environment and the device, withholding the entry point.
      */
-    override fun toString(): String =
-        "TelemetrySessionContext(environment=$environment, device=$device)"
+    override fun toString(): String = "TelemetrySessionContext(environment=$environment, device=$device)"
 }

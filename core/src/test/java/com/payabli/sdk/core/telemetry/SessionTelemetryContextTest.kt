@@ -47,7 +47,10 @@ class SessionTelemetryContextTest {
         runTest {
             val rendered = install().telemetry.toString()
 
-            assertTrue(rendered, rendered.startsWith("TelemetrySessionContext(environment=${PayabliEnvironment.SANDBOX}, device="))
+            assertTrue(
+                rendered,
+                rendered.startsWith("TelemetrySessionContext(environment=${PayabliEnvironment.SANDBOX}, device="),
+            )
         }
 
     /** It identifies one SDK lifetime, so it has to be fresh per install rather than per device or install. */
@@ -78,9 +81,7 @@ class SessionTelemetryContextTest {
             assertFalse(context.toString().contains("a-named-merchant"))
         }
 
-    private suspend fun install(
-        entryPoint: String = "an-entry-point",
-    ): PayabliSession =
+    private suspend fun install(entryPoint: String = "an-entry-point"): PayabliSession =
         PayabliSession
             .initializeWith(
                 PayabliConfig(

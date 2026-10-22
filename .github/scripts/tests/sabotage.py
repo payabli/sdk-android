@@ -94,7 +94,7 @@ PUBLIC_SURFACE = WORKFLOW_DIR / "public-surface.yml"
 # The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
 # no longer matches the file reports itself invalid rather than caught, and two copies drift apart silently.
 WALKTHROUGH_COMMAND = (
-    "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest "
+    "            ./gradlew :example:connectedDebugAndroidTest "
     "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true"
 )
 # The nightly's instrumented module list, quoted by four mutations below. One spelling, for the reason the
@@ -1242,7 +1242,7 @@ MUTATIONS = [
 
     ("A live setting is passed as a gradle argument, putting it in a command line", LIVE_FLOWS, "workflows",
      WALKTHROUGH_COMMAND,
-     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest "
+     "            ./gradlew :example:connectedDebugAndroidTest "
      "-Ppayabli.sampleWalkthrough=true "
      "-Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\""),
 
@@ -1256,7 +1256,7 @@ MUTATIONS = [
     # tier nobody asked to produce anything.
     ("The nightly names a module the instrumented step does not run", NIGHTLY, "workflows",
      INSTRUMENTED_MODULES_LINE,
-     "          INSTRUMENTED_MODULES: core,payin,example:debug/flavors/withTelemetry"),
+     "          INSTRUMENTED_MODULES: core,payin,example"),
 
     # The same disagreement from the other side. A module dropped from the value is checked by nothing, so
     # it can go silent under a sibling's results with nothing about the remaining entries looking wrong.
@@ -1268,10 +1268,11 @@ MUTATIONS = [
     # the results-directory form — `example:withTelemetryDebug`, the value that shipped on 2026-08-27 and
     # left the nightly red for fourteen nights while its tests passed, and `example:release/...`, a well
     # formed path naming a build type the step does not run. Both need a flavored module in the value to
-    # break, and this branch names none: :example depends on :taptopay, whose native library is arm64 only,
-    # so its test APK cannot install on the x86_64 emulator this job uses. W10 still carries the shape
-    # checks and nothing now proves they are not vacuous, which is the pair this file exists to keep.
-    # Restore both cases in the same change that returns :example to INSTRUMENTED_MODULES.
+    # break, and no module has flavors since the sample app's telemetry pair was removed. :example could
+    # not be named anyway: it depends on :taptopay, whose native library is arm64 only, so its test APK
+    # cannot install on the x86_64 emulator this job uses. W10 still carries the shape checks and nothing
+    # now proves they are not vacuous, which is the pair this file exists to keep.
+    # Restore both cases in the same change that names a flavored module in INSTRUMENTED_MODULES.
 
     # Substitution happens before the script runs, so the guard inside the script cannot see the value that
     # replaced it. This is the form the file used to carry.
@@ -1283,7 +1284,7 @@ MUTATIONS = [
     ("The emulator script is written with a line continuation again", LIVE_FLOWS, "workflows",
      WALKTHROUGH_COMMAND,
      "            ./gradlew \\\n"
-     "              :example:connectedWithTelemetryDebugAndroidTest "
+     "              :example:connectedDebugAndroidTest "
      "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true"),
 
     # The origin an environment outside the checkout arrives by. Written in the file it is the address this
