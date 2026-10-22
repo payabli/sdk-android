@@ -2,6 +2,7 @@ package com.payabli.sdk.core.network.impl
 
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.PayabliResponse
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -123,6 +124,7 @@ class PayabliRequestDecorationTest {
                     route = "/api/v2/MoneyIn/capture/{id}",
                     query = listOf("a" to "1"),
                     isCredentialPinned = true,
+                    isCallerRefusal = { true },
                 )
 
             val decorated = listOf(stamping("X-Added", "1")).applyTo(original)
@@ -131,10 +133,14 @@ class PayabliRequestDecorationTest {
             assertEquals("/api/v2/MoneyIn/capture/9", decorated.path)
             assertEquals("/api/v2/MoneyIn/capture/{id}", decorated.route)
             assertEquals(listOf("a" to "1"), decorated.query)
-            // Nothing below `applyTo` reads the pin: the transport checks it on the request it was handed,
-            // one layer above the chain. Asserted so `copyWith` stays complete, since a property dropped
-            // there stays invisible until something below the chain starts reading it.
+            // Nothing below `applyTo` reads the pin or the caller refusal: the transport checks both
+            // on the request it was handed, one layer above the chain. Asserted so `copyWith` stays
+            // complete, since a dropped property stays invisible until something reads it.
             assertTrue("the pin was dropped by the copy", decorated.isCredentialPinned)
+            assertTrue(
+                "the caller refusal was dropped by the copy",
+                decorated.isCallerRefusal(PayabliResponse(statusCode = 401, headers = emptyMap(), body = ByteArray(0))),
+            )
         }
 
     @Test

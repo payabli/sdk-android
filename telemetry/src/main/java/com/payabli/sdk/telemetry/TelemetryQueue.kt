@@ -72,6 +72,26 @@ internal class TelemetryQueue(
         }
 
     /**
+     * Returns a batch that was not delivered to the front of the queue, in its order.
+     *
+     * Overflow evicts from the front as [offer] does, so the oldest go: a batch that keeps failing is
+     * evicted by the newer events filling the queue behind it.
+     *
+     * @param batch the batch's events, oldest first.
+     * @return true when the events were queued again, and false once [close] has been called.
+     */
+    fun pushFront(batch: List<QueuedTelemetryEvent>): Boolean =
+        synchronized(lock) {
+            if (closed) return@synchronized false
+            for (index in batch.indices.reversed()) events.addFirst(batch[index])
+            while (events.size > capacity) {
+                events.removeFirst()
+                droppedSinceLastDrain++
+            }
+            true
+        }
+
+    /**
      * Refuses everything offered from here on, so a shutdown drain is the last read of this queue.
      *
      * [drain] still works, because the drain runs after this.

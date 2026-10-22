@@ -3,6 +3,7 @@ package com.payabli.sdk.telemetry
 import com.payabli.sdk.core.PayabliSdkVersion
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.HttpMethod
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -74,9 +75,12 @@ class TelemetryUploaderTest {
             assertEquals(HttpMethod.POST, request.method)
             assertEquals(TelemetryUploader.ROUTE, request.path)
             assertEquals(TelemetryUploader.ROUTE, request.route)
-            // A rejected credential here must not spend the session's one refresh, and must not be able to
-            // condemn a session a payment is using.
-            assertTrue(request.isCredentialPinned)
+            // A 401 refuses this caller, not the credential it was sent with, so the refusal is not
+            // recorded for a device setup to renew.
+            assertFalse(request.isCredentialPinned)
+            val refusal = request.isCallerRefusal
+            assertTrue("a 401 refuses the caller", refusal(answered(401)))
+            assertFalse("an accepted batch does not", refusal(FakeTransport.accepted()))
         }
 
     /**
@@ -243,19 +247,50 @@ class TelemetryUploaderTest {
         }
 
     @Test
-    fun arefusedBatchIsDiscardedWithoutReachingTheCaller() =
+    fun arefusedBatchAnswersKeepAndMakesOneRequest() =
         runTest {
             val transport = FakeTransport.refusing(statusCode = 401)
 
-            TelemetryUploader(transport, context, logger).send(listOf(anEvent()))
+            val outcome = TelemetryUploader(transport, context, logger).send(listOf(anEvent()))
 
+            assertEquals(SendOutcome.KEEP, outcome)
             assertEquals(1, transport.sent.size)
         }
 
     @Test
-    fun atransportFailureIsDiscardedWithoutReachingTheCaller() =
+    fun atransportFailureAnswersKeep() =
         runTest {
-            TelemetryUploader(FakeTransport.failing(), context, logger).send(listOf(anEvent()))
+            assertEquals(
+                SendOutcome.KEEP,
+                TelemetryUploader(FakeTransport.failing(), context, logger).send(listOf(anEvent())),
+            )
+        }
+
+    /**
+     * The answer separates the one status that discards.
+     *
+     * Every other failure is about the caller or the transport, so a later flush may deliver the batch;
+     * a 413 is about the body, which the same events would be refused for forever.
+     */
+    @Test
+    fun theSendAnswerIsKeepForEveryFailureButARefusalForSize() =
+        runTest {
+            assertEquals(SendOutcome.SENT, TelemetryUploader(FakeTransport(), context, logger).send(listOf(anEvent())))
+            for (status in listOf(401, 403, 429, 500)) {
+                assertEquals(
+                    "status $status was not answered keep",
+                    SendOutcome.KEEP,
+                    TelemetryUploader(FakeTransport.refusing(status), context, logger).send(listOf(anEvent())),
+                )
+            }
+            assertEquals(
+                SendOutcome.DISCARD,
+                TelemetryUploader(FakeTransport.refusing(413), context, logger).send(listOf(anEvent())),
+            )
+            assertEquals(
+                SendOutcome.KEEP,
+                TelemetryUploader(FakeTransport.failing(), context, logger).send(listOf(anEvent())),
+            )
         }
 
     @Test
@@ -306,6 +341,9 @@ class TelemetryUploaderTest {
             session = session,
         )
 
+    private fun answered(statusCode: Int): PayabliResponse =
+        PayabliResponse(statusCode = statusCode, headers = emptyMap(), body = ByteArray(0))
+
     /**
      * A body that cannot be encoded is contained, not raised.
      *
@@ -339,7 +377,7 @@ class TelemetryUploaderTest {
                     ),
                 )
 
-            assertFalse("an unsendable batch reported as sent", sent)
+            assertEquals("an unbuildable batch went back to the queue", SendOutcome.DISCARD, sent)
             assertTrue("the request was assembled and sent anyway", transport.sent.isEmpty())
         }
 }

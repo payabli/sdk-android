@@ -571,7 +571,7 @@ package com.payabli.sdk.core.network {
   }
 
   public static final class PayabliRequest.Companion {
-    method public <T> com.payabli.sdk.core.network.PayabliRequest json(com.payabli.sdk.core.network.HttpMethod method, String path, T body, kotlinx.serialization.KSerializer<T> bodySerializer, optional String? route, optional java.util.Map<java.lang.String,java.lang.String> headers, optional boolean isCredentialPinned);
+    method public <T> com.payabli.sdk.core.network.PayabliRequest json(com.payabli.sdk.core.network.HttpMethod method, String path, T body, kotlinx.serialization.KSerializer<T> bodySerializer, optional String? route, optional java.util.Map<java.lang.String,java.lang.String> headers, optional boolean isCredentialPinned, optional kotlin.jvm.functions.Function1<? super com.payabli.sdk.core.network.PayabliResponse,java.lang.Boolean> isCallerRefusal);
     property public static String APPLICATION_JSON;
     property public static String CONTENT_TYPE_HEADER;
     property public static String IDEMPOTENCY_KEY_HEADER;

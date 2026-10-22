@@ -61,6 +61,8 @@ public class PayabliRequest(
          * There is no [query] here. A route needing one alongside a JSON body uses the constructor, which
          * is also what a route whose body must be zeroized has to do, since this encodes to a `String`.
          *
+         * The parameter list mirrors the constructor's, and every call site names its arguments.
+         *
          * @param method the verb the request carries.
          * @param path the resolved path, identifiers embedded. Never logged, which is what [route] is for.
          * @param body the value serialized as the request's JSON body.
@@ -69,8 +71,11 @@ public class PayabliRequest(
          * @param headers extra headers sent with the request.
          * @param isCredentialPinned whether the request is bound to the credential it carries, skipping
          *   credential recovery on a refusal.
+         * @param isCallerRefusal whether a response refuses this caller, which a new credential cannot
+         *   change, so such a rejection is returned as it arrived rather than recovered from.
          * @return the request carrying [body] encoded as JSON, with the content type set.
          */
+        @SuppressWarnings("kotlin:S107")
         public fun <T> json(
             method: HttpMethod,
             path: String,
@@ -79,6 +84,7 @@ public class PayabliRequest(
             route: String? = null,
             headers: Map<String, String> = emptyMap(),
             isCredentialPinned: Boolean = false,
+            isCallerRefusal: (PayabliResponse) -> Boolean = { false },
         ): PayabliRequest =
             PayabliRequest(
                 method = method,
@@ -87,6 +93,7 @@ public class PayabliRequest(
                 headers = headers + (CONTENT_TYPE_HEADER to APPLICATION_JSON),
                 body = PayabliJson.format.encodeToString(bodySerializer, body).toByteArray(Charsets.UTF_8),
                 isCredentialPinned = isCredentialPinned,
+                isCallerRefusal = isCallerRefusal,
             )
     }
 }
