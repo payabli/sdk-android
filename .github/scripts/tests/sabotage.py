@@ -1268,10 +1268,10 @@ MUTATIONS = [
     # the results-directory form — `example:withTelemetryDebug`, the value that shipped on 2026-08-27 and
     # left the nightly red for fourteen nights while its tests passed, and `example:release/...`, a well
     # formed path naming a build type the step does not run. Both need a flavored module in the value to
-    # break, and no module has flavors since the sample app's telemetry pair was removed. :example could
-    # not be named anyway: it depends on :taptopay, whose native library is arm64 only, so its test APK
-    # cannot install on the x86_64 emulator this job uses. W10 still carries the shape checks and nothing
-    # now proves they are not vacuous, which is the pair this file exists to keep.
+    # break, and no module has flavors. :example could not be named in any case: it depends on :taptopay,
+    # whose native library is arm64 only, so its test APK cannot install on the x86_64 emulator this job
+    # uses. W10 still carries the shape checks and nothing now proves they are not vacuous, which is the
+    # pair this file exists to keep.
     # Restore both cases in the same change that names a flavored module in INSTRUMENTED_MODULES.
 
     # Substitution happens before the script runs, so the guard inside the script cannot see the value that

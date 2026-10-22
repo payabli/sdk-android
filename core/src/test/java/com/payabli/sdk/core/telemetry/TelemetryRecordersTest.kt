@@ -30,8 +30,7 @@ class TelemetryRecordersTest {
     /**
      * With nothing installed, a record for a session costs nothing and reaches nobody.
      *
-     * This is how a test silences telemetry while the module is linked: clear the recorder, never configure
-     * the session differently.
+     * This is how a test silences telemetry while the module is linked.
      */
     @Test
     fun aRecordForASessionWithNothingInstalledBuildsNothing() {

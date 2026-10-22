@@ -161,8 +161,7 @@ class PayInFormTelemetryInstrumentedTest {
     /**
      * With the recorder cleared, a form goes through its whole funnel and reports nothing.
      *
-     * The way to silence telemetry while the module is linked, for a test that needs it: clear the recorder.
-     * There is no configuration that turns it off.
+     * The way to silence telemetry while the module is linked, for a test that needs it.
      */
     @Test
     fun aFormWithNoRecorderInstalledReportsNothing() {

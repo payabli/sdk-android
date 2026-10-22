@@ -38,7 +38,7 @@ import kotlin.time.Duration.Companion.seconds
 class CardPresentReportsWithNothingListeningTest {
     private val logger = RecordingSdkLogger()
 
-    /** The premise the rest of this class rests on, held rather than assumed: nothing is listening. */
+    /** The premise the rest of this class rests on: nothing is listening. */
     @Before
     fun nothingIsListening() {
         TelemetryRecorders.clear()

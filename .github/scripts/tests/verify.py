@@ -506,9 +506,8 @@ def test_collector():
     )
     check("C22 both variants present is green", "verdict=green" in r["output"], r["output"])
 
-    # C21 the sample app's coverage is read under `debug`, as every module's is. It once had product flavors
-    # and wrote under the flavored variant, so a report left at that path is not read: reading it would
-    # measure a build nothing produces any more.
+    # C21 the sample app's coverage is read under `debug`, as every module's is, and a report at a flavored
+    # path is not read: no build writes one.
     r = run_collector(make_repo({
         UNIT_XML: junit("S", [("a", None)]),
         INST_XML: junit("I", [("b", None)]),

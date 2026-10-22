@@ -41,7 +41,7 @@ class SessionTelemetryContextTest {
             assertEquals(PayabliEnvironment.SANDBOX, session.telemetry.environment)
         }
 
-    /** The environment and the device, and nothing else: telemetry is always on, so there is no switch to show. */
+    /** The environment and the device, and nothing else. */
     @Test
     fun theContextDescribesItsEnvironmentAndDevice() =
         runTest {

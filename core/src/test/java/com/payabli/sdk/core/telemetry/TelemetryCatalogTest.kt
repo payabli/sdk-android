@@ -34,7 +34,7 @@ class TelemetryCatalogTest {
         assertEquals(emptyList<String>(), missing)
     }
 
-    /** Retired with the switch it reported. The name is not reused, so the catalog still drops it. */
+    /** The name is retired and not reused, so the catalog drops it. */
     @Test
     fun theRetiredDisabledEventCannotBeEmitted() {
         assertNull(TelemetryCatalog.scrub("sdk.telemetryDisabled", emptyMap()))
