@@ -476,6 +476,21 @@ internal class TapToPayChargeRunner(
     ) = TapToPayErrorCodes.exceptionFor(failure, type, paymentTransId, capture)
 
     /**
+     * Ends a charge whose session was replaced once [paymentTransId] opened: no card is read, the close is
+     * attempted, and the terminal lands [TapToPayFailureReason.SESSION_ENDED].
+     */
+    private suspend fun refuseRetiredCharge(
+        paymentTransId: String,
+        idempotencyKey: String,
+        resentKey: Boolean,
+    ): Nothing {
+        val refusal = PayabliGenericException(PayabliErrorType.SESSION_NOT_INITIALIZED, REASON_RETIRED)
+        closeAfterFailedRead(paymentTransId, refusal, idempotencyKey, resentKey)
+        manager.failCharge(TapToPayFailureReason.SESSION_ENDED)
+        throw refusal
+    }
+
+    /**
      * Closes an uncompleted tap, uncancellably. A close that lands keeps the key, because the answer is not decoded
      * and a capture reads like a failure. The one release is a refusal saying the processor has no record of it.
      */
@@ -513,21 +528,6 @@ internal class TapToPayChargeRunner(
                 false
             }
         if (closed) TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.CHARGE)
-    }
-
-    /**
-     * Ends a charge whose session was replaced once [paymentTransId] opened: no card is read, the close is
-     * attempted, and the terminal lands [TapToPayFailureReason.SESSION_ENDED].
-     */
-    private suspend fun refuseRetiredCharge(
-        paymentTransId: String,
-        idempotencyKey: String,
-        resentKey: Boolean,
-    ): Nothing {
-        val refusal = PayabliGenericException(PayabliErrorType.SESSION_NOT_INITIALIZED, REASON_RETIRED)
-        closeAfterFailedRead(paymentTransId, refusal, idempotencyKey, resentKey)
-        manager.failCharge(TapToPayFailureReason.SESSION_ENDED)
-        throw refusal
     }
 
     /**
