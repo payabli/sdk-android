@@ -44,6 +44,8 @@ internal class AuthenticatedTransport(
 
         val stamped = SentToken()
         val first = withContext(stamped) { base.execute(request) }
+        // Every 401 is refused before the service acts on a request, so that send ran nothing; a replay marks again.
+        lowerOnUnauthorized(first)
         if (!recovery.isCredentialRejection(first)) return first
 
         // Above the refresh, which is the half that breaks a pinned credential. Declining only the replay
@@ -69,9 +71,6 @@ internal class AuthenticatedTransport(
             return first
         }
 
-        // A 401 is refused before the service acts on a request, so that send ran nothing; the replay marks again.
-        if (first.statusCode == HTTP_UNAUTHORIZED) currentCoroutineContext()[PayabliSendMark]?.lower()
-
         // The token the chain stamped, not one this class read earlier: a rotation between the two reads would
         // make them disagree, and reporting the earlier one replays the credential just refused.
         refresh(stamped.value ?: auth.accessToken())
@@ -90,6 +89,7 @@ internal class AuthenticatedTransport(
         // No re-authorizing: re-entering the transport re-runs the chain, which reads the token again.
         val replayed = SentToken()
         val second = withContext(replayed) { base.execute(request) }
+        lowerOnUnauthorized(second)
         if (!recovery.isCredentialRejection(second)) return second
 
         // The fresh credential was refused for this caller, which says nothing about the session.
@@ -172,6 +172,15 @@ internal class AuthenticatedTransport(
      */
     private fun routeField(request: PayabliRequest): LogField =
         request.route?.let { LogField.safe("route", it) } ?: LogField.redacted("route", null)
+
+    /**
+     * Takes back the hand-off [PayabliSendMark] recorded for a send the service answered 401.
+     *
+     * @param response the service's answer to that send.
+     */
+    private suspend fun lowerOnUnauthorized(response: PayabliResponse) {
+        if (response.statusCode == HTTP_UNAUTHORIZED) currentCoroutineContext()[PayabliSendMark]?.lower()
+    }
 
     /**
      * Not delegated: [base]'s overload maps a 401 to a typed error before this could recover it.

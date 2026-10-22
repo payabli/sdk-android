@@ -733,6 +733,53 @@ class AuthenticatedTransportTest {
             }
         }
 
+    /** A replay refused with a second 401 ran nothing either, so the mark the replay raised comes down again. */
+    @Test
+    fun `a replay refused with a second 401 lowers the send mark again`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "", UNAUTHORIZED to "")
+                val mark = PayabliSendMark()
+
+                runCatching {
+                    withContext(mark) { stack(server, testAuth(tokenProvider = { "a-fresh-token" })).execute(ping()) }
+                }
+
+                assertEquals(2, server.recorded.size)
+                assertFalse(mark.mayHaveLeft)
+            }
+        }
+
+    /** A 401 on a route that pins its credential is returned unrecovered, and it ran nothing. */
+    @Test
+    fun `a 401 on a pinned route lowers the send mark`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "")
+                val mark = PayabliSendMark()
+
+                withContext(mark) { stack(server, testAuth()).execute(pinnedRequest(HttpMethod.POST)) }
+
+                assertFalse(mark.mayHaveLeft)
+            }
+        }
+
+    /** A 401 a route reads as refusing its caller is returned unrecovered, and it ran nothing. */
+    @Test
+    fun `a 401 refusing the caller lowers the send mark`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "")
+                val mark = PayabliSendMark()
+
+                withContext(mark) {
+                    stack(server, testAuth()).execute(callerRefusalRequest(isCallerRefusal = { true }))
+                }
+
+                assertFalse(mark.mayHaveLeft)
+            }
+        }
+
     /** Only a 401 is refused before the service acts; a widened rejection keeps the mark the send raised. */
     @Test
     fun `a widened rejection keeps the send mark`() =
