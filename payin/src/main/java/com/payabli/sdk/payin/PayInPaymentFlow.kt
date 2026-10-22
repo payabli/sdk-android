@@ -116,10 +116,10 @@ internal class PayInPaymentFlow private constructor(
     internal fun consume(): Boolean = submission.reset()
 
     /**
-     * Whether [outcome] followed a request handed to the network, which is when a form lets the instrument go.
+     * Whether the service may have acted on the request [outcome] answers, which is when a form lets the instrument go.
      *
      * @param outcome a state read from [state].
-     * @return true when [outcome] followed a send; false otherwise.
+     * @return true when it may have; false otherwise.
      */
     @JvmSynthetic
     internal fun sent(outcome: PayInSubmissionState): Boolean = submission.sent(outcome)

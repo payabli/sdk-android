@@ -104,7 +104,7 @@ internal class PayInSubmission(
 
     private val sink = MutableStateFlow<PayInSubmissionState>(PayInSubmissionState.Idle)
 
-    /** The last published outcome that followed a hand-off to the network. */
+    /** The last published outcome whose request the service may have acted on. */
     @Volatile
     private var sentOutcome: PayInSubmissionState? = null
 
@@ -344,11 +344,11 @@ internal class PayInSubmission(
     }
 
     /**
-     * Whether [outcome] is the published outcome of a submission whose request was handed to the network, which
-     * is when a form lets the instrument go.
+     * Whether [outcome] is the published outcome of a request the service may have acted on, which is when a form
+     * lets the instrument go.
      *
      * @param outcome a state read from [state].
-     * @return true when [outcome] followed a send; false otherwise, including for a state this did not publish.
+     * @return true when it may have; false otherwise, including for a state this did not publish.
      */
     fun sent(outcome: PayInSubmissionState): Boolean = outcome === sentOutcome
 
