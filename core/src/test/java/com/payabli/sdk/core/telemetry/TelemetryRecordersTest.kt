@@ -28,43 +28,37 @@ class TelemetryRecordersTest {
     }
 
     /**
-     * A record from a session that had reporting off does not leave on a session that has it on.
+     * With nothing installed, a record for a session costs nothing and reaches nobody.
      *
-     * The opt-out that counts is the one in force when the operation ran. Nothing of that session's own can
-     * reach an installed recorder, because it installs none; what can is an operation that started under it
-     * and finished after a successor with reporting enabled took over.
+     * This is how a test silences telemetry while the module is linked.
      */
     @Test
-    fun aRecordFromAnOptedOutSessionIsNotDelivered() {
-        val seen = mutableListOf<String>()
+    fun aRecordForASessionWithNothingInstalledBuildsNothing() {
         var built = 0
-        TelemetryRecorders.install { event, _ -> seen += event }
 
-        TelemetryRecorders.recordFor(aSession(telemetryEnabled = false), TelemetryEvents.PAYIN_CAPTURE_COMPLETED) {
+        TelemetryRecorders.recordFor(aSession(), TelemetryEvents.PAYIN_CAPTURE_COMPLETED) {
             built++
             emptyMap()
         }
 
-        assertTrue(seen.isEmpty())
-        assertEquals("the properties were built for an event nobody may have", 0, built)
+        assertEquals("the properties were built for an event nobody receives", 0, built)
     }
 
-    /** And the same call for a session that allows it is delivered. */
+    /** And the same call with a recorder installed is delivered. */
     @Test
-    fun aRecordFromAnEnabledSessionIsDelivered() {
+    fun aRecordForASessionIsDelivered() {
         val seen = mutableListOf<String>()
         TelemetryRecorders.install { event, _ -> seen += event }
 
-        TelemetryRecorders.recordFor(aSession(telemetryEnabled = true), TelemetryEvents.PAYIN_CAPTURE_COMPLETED)
+        TelemetryRecorders.recordFor(aSession(), TelemetryEvents.PAYIN_CAPTURE_COMPLETED)
 
         assertEquals(listOf(TelemetryEvents.PAYIN_CAPTURE_COMPLETED), seen)
     }
 
-    private fun aSession(telemetryEnabled: Boolean) =
+    private fun aSession() =
         TelemetrySessionContext(
             entryPoint = "an-entry-point",
             environment = PayabliEnvironment.SANDBOX,
-            telemetryEnabled = telemetryEnabled,
             sessionId = "a-session",
             device = TelemetryDeviceContext.NONE,
         )

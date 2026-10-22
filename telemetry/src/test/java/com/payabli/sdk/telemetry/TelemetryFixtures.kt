@@ -22,7 +22,6 @@ internal fun aSession(
 ) = TelemetrySessionContext(
     entryPoint = entryPoint,
     environment = environment,
-    telemetryEnabled = true,
     sessionId = sessionId,
     device = aDevice(),
 )

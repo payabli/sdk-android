@@ -320,7 +320,7 @@ jobs:
           PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
           PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
         run: ./gradlew --no-daemon --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
-          :example:createWithTelemetryDebugUnitTestCoverageReport
+          :example:createDebugUnitTestCoverageReport
 
       - name: Pack the results
         if: always()

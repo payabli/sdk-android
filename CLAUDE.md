@@ -37,8 +37,7 @@
 
 **`test` does not compile `src/androidTest`, and neither does `lint`.** So a change to a shared type can
 leave every instrumented source set uncompilable while all three of those pass, and the first thing to say so
-is CI. `assembleAndroidTest` is the cheap check: it compiles every instrumented variant, including
-`:example`'s two flavours, which `assembleDebugAndroidTest` does not reach. It needs no device.
+is CI. `assembleAndroidTest` is the cheap check: it compiles every instrumented variant. It needs no device.
 
 The unit suite is not the expensive part: every module's tests run in about 25 seconds and a fix that broke a
 sibling module is exactly what they catch, so run them freely. `lint` is roughly four times that and belongs
@@ -60,7 +59,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 
 **Core**: `:core` (`com.payabli.sdk.core`), session, token and transport foundation. Depends on nothing first-party; everything else depends on it.
 **Capabilities**: `:taptopay` (card-present) · `:payin` (card-not-present)
-**Opt-in**: `:telemetry`
+**Reporting**: `:telemetry`, which `:payin` and `:taptopay` depend on, so every payment artifact brings it
 **Aggregate**: `:payabli-android` (umbrella AAR: `:core` + `:payin` + `:taptopay` + `:telemetry`) · `:payabli-bom` (version constraints)
 **Infra**: `:example` (sample app, `com.payabli.example.app`; see `example/README.md`), `build-logic` (convention plugins)
 

@@ -14,7 +14,7 @@ import com.payabli.sdk.core.logging.warn
  * How the reporting module is started, by the session rather than by the app that embeds it.
  *
  * Telemetry is the SDK reporting on itself. An integrator who has to remember to switch it on is an
- * integrator whose incidents are the ones with no data, so linking the artifact is the whole integration and
+ * integrator whose incidents are the ones with no data, so every payment artifact brings the module and
  * there is nothing to call.
  *
  * `:core` cannot name the telemetry module — the dependency runs the other way — so the module implements
@@ -54,26 +54,16 @@ public interface TelemetryBootstrap {
 }
 
 /**
- * Finds the reporting module, if the app linked it.
- *
- * **One class name, looked up once.** Not a service loader and not a plugin registry: there is exactly one
- * optional module, so a mechanism that could find several would be more machinery for the same result. The
- * day there is a second, this is where that changes.
- *
- * The lookup is by name because the dependency cannot go the other way, and the telemetry artifact carries
- * the keep rule that holds its own class through R8. A module that is absent, stripped or unloadable leaves
- * [installed] null and the SDK reports nothing, which is what an integrator who did not link it asked for.
+ * Finds the reporting module by its one class name, looked up once, since `:core` cannot depend on it.
+ * The telemetry artifact's keep rule holds the class through R8. A module that is absent, stripped or
+ * unloadable leaves [installed] null and the SDK reports nothing.
  */
 internal object TelemetryBootstraps {
     private val logger get() = LoggerRegistry.of(LogCategory.TELEMETRY)
 
     /**
-     * The name [installed] looks for.
-     *
-     * A variable only so a test can point it at a class that is not there. **An app that did not link the
-     * module is the common case, not an edge one**, and the branch that serves it — the lookup missing and
-     * the SDK carrying on — cannot be reached from a test whose classpath carries the module. Pointing the
-     * name elsewhere reaches the same code by the same route.
+     * The name [installed] looks for. A variable only so a test can point it at a class that is not there,
+     * which reaches the path an app depending on `:core` alone takes from a classpath that has the module.
      */
     @VisibleForTesting
     internal var implementation: String = TelemetryBootstrap.IMPLEMENTATION
@@ -87,10 +77,9 @@ internal object TelemetryBootstraps {
     /**
      * The module, or null.
      *
-     * The negative answer is cached too. Absent is the common case, and a class lookup that misses is the
-     * expensive one.
+     * The negative answer is cached too, since a class lookup that misses is the expensive one.
      *
-     * @return the module, or null when the app did not link one.
+     * @return the module, or null when it is not on the classpath.
      */
     @Synchronized
     fun installed(): TelemetryBootstrap? {
@@ -180,7 +169,7 @@ internal object TelemetryBootstraps {
             logger.debug(LogField.safe("event", "telemetry_module_found")) { "reporting is linked" }
             module as TelemetryBootstrap
         } catch (_: ClassNotFoundException) {
-            // The ordinary case for an app that did not link the module.
+            // An app depending on `:core` alone.
             null
         } catch (failure: ReflectiveOperationException) {
             unusable(failure)

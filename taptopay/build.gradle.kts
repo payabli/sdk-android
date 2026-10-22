@@ -91,8 +91,10 @@ android {
 }
 
 dependencies {
-    // Capability modules depend on :core only, never on a sibling capability.
+    // Capability modules depend on :core, never on a sibling capability.
     api(project(":core"))
+    // Every payment artifact brings telemetry, so an app cannot leave it out. Nothing in it is public.
+    implementation(project(":telemetry"))
     // Strict, and it reaches a consumer only through published module metadata. Gradle takes the highest
     // on a conflict, and card-present is certified against one reader version.
     implementation(libs.fiserv.ttp) {

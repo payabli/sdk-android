@@ -28,7 +28,7 @@ run instead: `-Ppayabli.demo.entryPoint=entry0000`.
 exported into, or from CI, where there is no file to edit:
 
 ```bash
-PAYABLI_DEMO_ENTRYPOINT=entry0000 ./gradlew :example:installWithTelemetryDebug
+PAYABLI_DEMO_ENTRYPOINT=entry0000 ./gradlew :example:installDebug
 ```
 
 The default is what the build falls back to when nothing is set. The template prefills two of them,

@@ -16,13 +16,11 @@ private const val REASON_MISSING_ENTRY_POINT = "entryPoint must not be blank"
  * @property environment selects the base URL for every request.
  * @property tokenProvider called when the SDK needs a token: once before the first request, and again
  *   whenever one is rejected. Required, because it is the only way a token reaches the SDK.
- * @property telemetryEnabled read by the telemetry module. On by default, so switching it off is an explicit choice.
  */
 public class PayabliConfig(
     public val entryPoint: String,
     public val environment: PayabliEnvironment,
     public val tokenProvider: PayabliTokenProvider,
-    public val telemetryEnabled: Boolean = true,
 ) {
     init {
         if (entryPoint.isBlank()) {
@@ -34,7 +32,7 @@ public class PayabliConfig(
      * Carries no identifier. `entryPoint` is withheld because it names a specific merchant, and this
      * string reaches exception messages and crash reports.
      *
-     * @return the environment and the telemetry flag, carrying no identifier.
+     * @return the environment, carrying no identifier.
      */
-    override fun toString(): String = "PayabliConfig(environment=$environment, telemetryEnabled=$telemetryEnabled)"
+    override fun toString(): String = "PayabliConfig(environment=$environment)"
 }

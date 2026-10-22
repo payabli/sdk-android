@@ -165,43 +165,33 @@ subprojects {
                 ktlintTasks.joinToString(",") { "$reports/ktlint/$it/$it.xml" },
             )
 
-            // Which variant writes the reports. The sample app is the only module with product flavors, so
-            // every report it produces is variant-qualified and nothing it writes is called `debug`. One
-            // flavor is the source: the two differ by a dependency and by no code of the app's own, so
-            // reporting both would measure the same lines twice. Named here rather than derived, because a
-            // path that does not exist is not an error in Sonar. It is a warning, and the module reports as
-            // unmeasured.
-            val isFlavored = path == ":example"
-            val coveragePath = if (isFlavored) "withTelemetry/debug" else "debug"
-            val lintVariant = if (isFlavored) "withTelemetryDebug" else "debug"
-
             // Set only where the producing task exists.
             plugins.withId("com.android.library") {
-                property("sonar.androidLint.reportPaths", "$reports/lint-results-$lintVariant.xml")
+                property("sonar.androidLint.reportPaths", "$reports/lint-results-debug.xml")
             }
             plugins.withId("com.android.application") {
-                property("sonar.androidLint.reportPaths", "$reports/lint-results-$lintVariant.xml")
+                property("sonar.androidLint.reportPaths", "$reports/lint-results-debug.xml")
             }
             // Both tiers, comma-separated, and Sonar unions them: a line covered on the device counts
             // whether or not a unit test also reaches it. Without the second path an instrumented test
             // contributes nothing to coverage on new code however much it exercises, which measured SDK
             // code that only a device can reach as untested and failed the gate on it.
             //
-            // Listed per source set that exists rather than unconditionally, for the reason the comment
-            // above `coveragePath` gives: a path that is not there is a warning and an unmeasured module,
-            // not an error. That is also why the instrumented job's own artifact step fails on an empty
-            // upload, and why the sonar job checks these two files before analysing. Locally, a module
-            // whose instrumented tier has not been run reports the same warning, which is correct.
+            // Listed per source set that exists rather than unconditionally: in Sonar a path that is not there
+            // is a warning and an unmeasured module, not an error. That is also why the instrumented job's own
+            // artifact step fails on an empty upload, and why the sonar job checks these two files before
+            // analysing. Locally, a module whose instrumented tier has not been run reports the same warning,
+            // which is correct.
             val coverageReports =
                 buildList {
                     if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
-                        add("$reports/coverage/test/$coveragePath/report.xml")
+                        add("$reports/coverage/test/debug/report.xml")
                     }
                     if (layout.projectDirectory.dir("src/androidTest").asFile.isDirectory) {
                         // `connected` is a real directory AGP writes, not a typo for the unit path above:
                         // the device the report came from is part of where it lands. Confirmed by running
                         // the task rather than read off the task name.
-                        add("$reports/coverage/androidTest/$coveragePath/connected/report.xml")
+                        add("$reports/coverage/androidTest/debug/connected/report.xml")
                     }
                 }
             if (coverageReports.isNotEmpty()) {

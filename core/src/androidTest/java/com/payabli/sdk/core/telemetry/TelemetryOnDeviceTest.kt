@@ -104,10 +104,8 @@ class TelemetryOnDeviceTest {
         assertTrue("the platform reported no release", device.osVersion.isNotBlank())
         assertEquals(context.packageName, device.packageName)
 
-        // No device type, because this test application takes no card-present payments and so can hold no
-        // device record. That is the negative case on real hardware; the positive one cannot be shown from
-        // here, since nothing in this repository puts card-present and reporting on one classpath. What
-        // covers it is the pair `CardPresentModuleDiscoveryTest` and the uploader's own wire assertion.
+        // No device type: this test application takes no card-present payments. The positive case is
+        // covered by `CardPresentModuleDiscoveryTest` and the uploader's own wire assertion.
         assertEquals("", device.type)
     }
 

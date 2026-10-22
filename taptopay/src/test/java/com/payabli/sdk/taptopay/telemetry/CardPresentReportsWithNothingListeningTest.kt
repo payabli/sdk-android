@@ -2,7 +2,7 @@ package com.payabli.sdk.taptopay.telemetry
 
 import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
 import com.payabli.sdk.core.model.PayabliErrorType
-import com.payabli.sdk.core.telemetry.TelemetryBootstrap
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
 import com.payabli.sdk.taptopay.adapters.ReaderFailureKind
@@ -20,32 +20,23 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * The card-present reporting sites on a build that did not link the telemetry artifact.
- *
- * **This module's classpath is that build.** `:taptopay` depends on `:core` and nothing else, so the
- * reporting module is genuinely absent here rather than mocked away — which is the configuration a
- * card-present integrator gets: the umbrella omits this artifact, so an app linking it has to add reporting
- * separately or not at all.
- *
- * These drive the real call sites rather than imitating the calls they make. Every one of them reports, and
- * every one of them has to behave identically with nothing listening: the route still answers, the failure
- * is still classified, and the caller cannot tell.
+ * The real card-present reporting call sites with no recorder installed, as before `initialize` and after
+ * teardown. Each behaves identically with nothing listening: the route answers, the failure is classified,
+ * and the caller cannot tell.
  */
-class CardPresentReportsWithoutTelemetryTest {
+class CardPresentReportsWithNothingListeningTest {
     private val logger = RecordingSdkLogger()
 
-    /** The premise the rest of this class rests on. If it ever fails, these tests stopped testing absence. */
-    @Test
-    fun theReportingModuleIsNotOnThisClasspath() {
-        assertThrows(ClassNotFoundException::class.java) {
-            Class.forName(TelemetryBootstrap.IMPLEMENTATION)
-        }
+    /** The premise the rest of this class rests on: nothing is listening. */
+    @Before
+    fun nothingIsListening() {
+        TelemetryRecorders.clear()
     }
 
     @Test

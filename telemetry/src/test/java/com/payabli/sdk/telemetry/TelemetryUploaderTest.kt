@@ -22,7 +22,6 @@ class TelemetryUploaderTest {
         TelemetrySessionContext(
             entryPoint = "an-entry-point",
             environment = PayabliEnvironment.SANDBOX,
-            telemetryEnabled = true,
             sessionId = "0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d",
             device = aDevice(),
         )
@@ -137,7 +136,6 @@ class TelemetryUploaderTest {
                 TelemetrySessionContext(
                     entryPoint = "an-entry-point",
                     environment = PayabliEnvironment.SANDBOX,
-                    telemetryEnabled = true,
                     sessionId = "0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d",
                     device =
                         TelemetryDeviceContext(
@@ -171,7 +169,6 @@ class TelemetryUploaderTest {
                 TelemetrySessionContext(
                     entryPoint = "an-entry-point",
                     environment = PayabliEnvironment.SANDBOX,
-                    telemetryEnabled = true,
                     sessionId = "0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d",
                     device = TelemetryDeviceContext.NONE,
                 )

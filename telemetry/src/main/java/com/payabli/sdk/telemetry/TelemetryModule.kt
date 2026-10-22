@@ -29,8 +29,6 @@ import kotlin.time.Duration.Companion.seconds
  * **Found by name from `:core`, so it needs its no-argument constructor and its type.**
  * `keepRules/rules.keep` here holds both through an integrator's R8, and renaming or moving this class is a
  * change to that file and to the name `:core` looks for.
- *
- * `PayabliConfig.telemetryEnabled` off installs nothing: no queue, no timer, no request.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class TelemetryModule : TelemetryBootstrap {
@@ -40,12 +38,6 @@ public class TelemetryModule : TelemetryBootstrap {
     ) {
         val logger = LoggerRegistry.of(LogCategory.TELEMETRY)
         val context = session.telemetry
-
-        if (!context.telemetryEnabled) {
-            stop()
-            logger.info(LogField.safe("event", "telemetry_disabled")) { "telemetry is off for this session" }
-            return
-        }
 
         val client =
             TelemetryClient(

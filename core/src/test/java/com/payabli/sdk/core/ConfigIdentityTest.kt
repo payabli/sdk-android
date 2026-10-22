@@ -21,14 +21,12 @@ class ConfigIdentityTest {
     private fun config(
         entryPoint: String = ENTRY_POINT,
         environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
-        telemetryEnabled: Boolean = true,
         tokenProvider: PayabliTokenProvider = PayabliTokenProvider { "t" },
     ) = PayabliSession.ConfigIdentity(
         PayabliConfig(
             entryPoint = entryPoint,
             environment = environment,
             tokenProvider = tokenProvider,
-            telemetryEnabled = telemetryEnabled,
         ),
     )
 
@@ -44,7 +42,6 @@ class ConfigIdentityTest {
         // behind whichever other field a single combined case happened to also change.
         assertNotEquals(config(), config(entryPoint = "another-entry"))
         assertNotEquals(config(), config(environment = PayabliEnvironment.PRODUCTION))
-        assertNotEquals(config(), config(telemetryEnabled = false))
     }
 
     @Test

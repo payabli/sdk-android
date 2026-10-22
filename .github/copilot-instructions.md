@@ -10,7 +10,7 @@ demonstrates it.
 | `:core` | Session, token and transport foundation. Depends on nothing first-party. | yes |
 | `:payin` | Card-not-present: the clients, the submission holder and the Compose payment form. | yes |
 | `:taptopay` | Card-present: attestation and the card reader. | yes |
-| `:telemetry` | Opt-in instrumentation. | yes |
+| `:telemetry` | The SDK reporting on itself, brought by `:payin` and `:taptopay`. | yes |
 | `:payabli-android` | Umbrella AAR over `:core`, `:payin`, `:taptopay` and `:telemetry`. | yes |
 | `:payabli-bom` | Version constraints. | yes |
 | `:example` | The sample app. Not shipped, not depended on by anything. | **no** |
