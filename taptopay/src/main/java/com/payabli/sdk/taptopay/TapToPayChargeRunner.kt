@@ -279,7 +279,7 @@ internal class TapToPayChargeRunner(
                 throw withdrawn
             } catch (failure: Throwable) {
                 // A refused key extends no marker an earlier send wrote, and a send that never left writes none.
-                // Any other answer means the service saw the key.
+                // Any other answer may have reached the key check, and restarting errs toward holding the key.
                 if (!askedForCard && openedAs == null && (failure is ChargeKeyRefusal || !sendMark.mayHaveLeft)) {
                     arrivedAt = null
                 }
