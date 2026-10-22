@@ -267,6 +267,23 @@ class PayInValidationTest {
     }
 
     @Test
+    fun `a negative surcharge is refused naming the surcharge`() {
+        assertEquals(
+            "paymentDetails.surchargeFee",
+            refusal {
+                PayInValidation.paymentDetails(
+                    PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("-0.31")),
+                )
+            }?.field,
+        )
+        assertNull(
+            refusal {
+                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal.ZERO))
+            },
+        )
+    }
+
+    @Test
     fun `a surcharge above the total is refused naming the total`() {
         assertEquals(
             "paymentDetails.totalAmount",

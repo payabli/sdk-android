@@ -56,11 +56,10 @@ class PayInAmountTextTest {
     }
 
     @Test
-    fun `a negative amount that is sent is drawn as the minus figure it is`() {
+    fun `a negative surcharge is refused, so it draws no summary rather than a minus figure`() {
         val credit = PayInPaymentDetails(totalAmount = BigDecimal("12.34"), surchargeFee = BigDecimal("-0.31"))
 
-        assertEquals(BigDecimal("-0.31"), credit.shownAmount(PayInField.SurchargeFee))
-        assertEquals("-$0.31", formatAmount(BigDecimal("-0.31"), "USD", Locale.US))
+        assertEquals(listOf(card), placeAmounts(listOf(card), credit).map { it.section })
     }
 
     @Test
@@ -255,6 +254,13 @@ class PayInAmountTextTest {
 
         assertEquals(emptyList<Pair<PayInField, BigDecimal>>(), drawn.amounts)
         assertEquals(BigDecimal("12.34"), drawn.total)
+    }
+
+    @Test
+    fun `a negative surcharge that cancels the charge is refused and draws no summary`() {
+        val cancelled = PayInPaymentDetails(totalAmount = BigDecimal("12.34"), surchargeFee = BigDecimal("-12.34"))
+
+        assertEquals(listOf(card), placeAmounts(listOf(card), cancelled).map { it.section })
     }
 
     @Test

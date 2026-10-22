@@ -82,6 +82,11 @@ class PayInSummaryRowsTest {
     }
 
     @Test
+    fun `a negative surcharge empties every figure`() {
+        assertNoFigures(PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("-0.31")))
+    }
+
+    @Test
     fun `fees that reach the total empty every figure`() {
         assertNoFigures(PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.30")))
         assertNoFigures(PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.50")))
