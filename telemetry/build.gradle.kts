@@ -33,7 +33,7 @@ kotlin {
 }
 
 dependencies {
-    // Capability modules depend on :core only, never on a sibling capability.
+    // Depends on :core only. Every payment module depends on this one.
     api(project(":core"))
 
     // The process lifecycle, for the flush as the app goes away.

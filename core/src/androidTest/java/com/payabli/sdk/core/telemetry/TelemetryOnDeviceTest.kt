@@ -106,8 +106,8 @@ class TelemetryOnDeviceTest {
 
         // No device type, because this test application takes no card-present payments and so can hold no
         // device record. That is the negative case on real hardware; the positive one cannot be shown from
-        // here, since nothing in this repository puts card-present and reporting on one classpath. What
-        // covers it is the pair `CardPresentModuleDiscoveryTest` and the uploader's own wire assertion.
+        // here, since card-present is not on this module's classpath. What covers it is the pair
+        // `CardPresentModuleDiscoveryTest` and the uploader's own wire assertion.
         assertEquals("", device.type)
     }
 
