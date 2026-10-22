@@ -87,6 +87,7 @@ class TapToPayTransitionMatrixTest {
         val forward =
             setOf(
                 TapToPayChargeActivity.OPENING to TapToPayChargeActivity.WAITING_FOR_CARD,
+                TapToPayChargeActivity.OPENING to TapToPayChargeActivity.CLOSING,
                 TapToPayChargeActivity.WAITING_FOR_CARD to TapToPayChargeActivity.CLOSING,
             )
         for (from in TapToPayChargeActivity.entries) {

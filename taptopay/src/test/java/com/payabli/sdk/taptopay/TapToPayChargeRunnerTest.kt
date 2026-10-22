@@ -2862,6 +2862,7 @@ class TapToPayChargeRunnerTest {
                         }
                     },
                 ).also { it.coordinator.initialize() }
+            val seen = statesOf(fixture)
 
             val failure =
                 runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
@@ -2870,6 +2871,15 @@ class TapToPayChargeRunnerTest {
             assertTrue(failure.toString(), failure is TapToPayException)
             assertEquals(PayabliErrorType.SESSION_NOT_INITIALIZED, (failure as TapToPayException).type)
             assertEquals(TRANS_ID, failure.paymentTransId)
+            assertEquals(
+                listOf(
+                    TapToPaySessionState.Ready,
+                    opening,
+                    closing,
+                    TapToPaySessionState.Failed(TapToPayFailureReason.SESSION_ENDED),
+                ),
+                seen,
+            )
             assertEquals(TapToPayCapture.NOT_CHARGED, failure.capture)
             assertNull("the reader was asked for a card", fixture.reader.lastReadRequest)
             assertEquals("the close was not attempted exactly once", 1, closesAttempted)
