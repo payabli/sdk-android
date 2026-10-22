@@ -527,6 +527,50 @@ class TapToPayChargeRunnerTest {
             assertEquals("the resend did not restart the clock", "$MINTED_KEY-1", fixture.keySent(2))
         }
 
+    /** A resend whose payment opened reached the service, so its key's clock restarts even if no card is read. */
+    @Test
+    fun `a resend refused once its payment opened restarts its key's clock`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val clock =
+                java.util.concurrent.atomic
+                    .AtomicLong(1_000_000_000L)
+            var live = true
+            var opens = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to List(2) { configBody() },
+                        INITIATE to List(3) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to List(3) { "{}" },
+                    ),
+                    sendGate = { request -> if (request.path == INITIATE && ++opens == 2) live = false },
+                    elapsedRealtimeNanos = clock::get,
+                    isLive = { live },
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+            val half = com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            clock.addAndGet(half)
+            val refused =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+                }.exceptionOrNull()
+            live = true
+            clock.addAndGet(half)
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+
+            assertEquals(PayabliErrorType.SESSION_NOT_INITIALIZED, (refused as? TapToPayException)?.type)
+            assertEquals("the refused resend did not restart the clock", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
     /** A resend that failed before any connection wrote nothing at the service, so the key's clock stands. */
     @Test
     fun `a resend that never left the device keeps its key's earlier time`() =
@@ -2796,6 +2840,68 @@ class TapToPayChargeRunnerTest {
             assertNull("the reader was asked for a card", fixture.reader.lastReadRequest)
             assertEquals(1, fixture.reader.prepareCount)
             assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.SESSION_ENDED), fixture.state)
+        }
+
+    @Test
+    fun `a session replaced while its payment opens reads no card, and the close it attempts is refused unsent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var live = true
+            var closesAttempted = 0
+            val fixture =
+                SessionFixture(
+                    script(),
+                    sendGate = { request -> if (request.path == INITIATE) live = false },
+                    isLive = { live },
+                    // A finished session's transport refuses every request before sending it.
+                    unsent = { request ->
+                        if (request.path == UPDATE && !live) {
+                            closesAttempted++
+                            PayabliGenericException(PayabliErrorType.SESSION_NOT_INITIALIZED, "the session finished")
+                        } else {
+                            null
+                        }
+                    },
+                ).also { it.coordinator.initialize() }
+            val seen = statesOf(fixture)
+
+            val failure =
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                    .exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(PayabliErrorType.SESSION_NOT_INITIALIZED, (failure as TapToPayException).type)
+            assertEquals(TRANS_ID, failure.paymentTransId)
+            assertEquals(
+                listOf(
+                    TapToPaySessionState.Ready,
+                    opening,
+                    closing,
+                    TapToPaySessionState.Failed(TapToPayFailureReason.SESSION_ENDED),
+                ),
+                seen,
+            )
+            assertEquals(TapToPayCapture.NOT_CHARGED, failure.capture)
+            assertNull("the reader was asked for a card", fixture.reader.lastReadRequest)
+            assertEquals("the close was not attempted exactly once", 1, closesAttempted)
+            assertFalse("the replaced session sent a close", UPDATE in fixture.routes)
+            assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.SESSION_ENDED), fixture.state)
+        }
+
+    @Test
+    fun `a session still live once its payment opens reads the card and closes it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var opened = false
+            val fixture =
+                SessionFixture(script(), sendGate = { request -> if (request.path == INITIATE) opened = true })
+                    .also { it.coordinator.initialize() }
+
+            val receipt = runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            assertTrue("the payment was never opened", opened)
+            assertEquals(TRANS_ID, receipt.paymentTransId)
+            assertEquals(TRANS_ID, fixture.reader.lastReadRequest?.merchantTransactionId)
+            assertTrue("the payment was not closed", UPDATE in fixture.routes)
+            assertEquals(TapToPaySessionState.Ready, fixture.state)
         }
 
     @Test

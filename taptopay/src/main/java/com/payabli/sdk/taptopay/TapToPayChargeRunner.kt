@@ -10,6 +10,7 @@ import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.network.PayabliSendMark
@@ -27,6 +28,7 @@ import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
+import com.payabli.sdk.taptopay.session.REASON_RETIRED
 import com.payabli.sdk.taptopay.session.TapToPayChargeActivity
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionCoordinator
@@ -200,6 +202,11 @@ internal class TapToPayChargeRunner(
                             LogField.safe("phase", "initiate"),
                         ) { "the payment was opened" }
 
+                        // Again here, because a replacement can land while the payment opens.
+                        if (!coordinator.isSessionLive()) {
+                            refuseRetiredCharge(paymentTransId, idempotencyKey, resentKey)
+                        }
+
                         // Before the read: the processor takes the sale before the answer arrives.
                         askedForCard = true
                         capture = TapToPayCapture.UNKNOWN
@@ -271,8 +278,9 @@ internal class TapToPayChargeRunner(
                 throw withdrawn
             } catch (failure: Throwable) {
                 // A 409 does not extend the marker an earlier send wrote, and a send that never left starts none.
+                // An opening that returned did leave, whatever failed after it.
                 val unsent = !sendMark.mayHaveLeft || !TapToPayErrorCodes.typeFor(failure).leavesOutcomeUnknown
-                if (!askedForCard && (isConflict(failure) || unsent)) arrivedAt = null
+                if (!askedForCard && openedAs == null && (isConflict(failure) || unsent)) arrivedAt = null
                 // Only before the read: after it, no failure proves the money did not move.
                 if (!askedForCard) {
                     val key = reserved
@@ -466,6 +474,21 @@ internal class TapToPayChargeRunner(
         paymentTransId: String?,
         capture: TapToPayCapture,
     ) = TapToPayErrorCodes.exceptionFor(failure, type, paymentTransId, capture)
+
+    /**
+     * Ends a charge whose session was replaced once [paymentTransId] opened: no card is read, the close is
+     * attempted, and the terminal lands [TapToPayFailureReason.SESSION_ENDED].
+     */
+    private suspend fun refuseRetiredCharge(
+        paymentTransId: String,
+        idempotencyKey: String,
+        resentKey: Boolean,
+    ): Nothing {
+        val refusal = PayabliGenericException(PayabliErrorType.SESSION_NOT_INITIALIZED, REASON_RETIRED)
+        closeAfterFailedRead(paymentTransId, refusal, idempotencyKey, resentKey)
+        manager.failCharge(TapToPayFailureReason.SESSION_ENDED)
+        throw refusal
+    }
 
     /**
      * Closes an uncompleted tap, uncancellably. A close that lands keeps the key, because the answer is not decoded

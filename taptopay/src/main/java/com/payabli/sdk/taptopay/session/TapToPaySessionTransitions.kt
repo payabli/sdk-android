@@ -63,13 +63,17 @@ internal object TapToPaySessionTransitions {
             is Failed -> to == AttestingDevice || to == FetchingConfig
         }
 
-    /** A charge opens, waits for a card, then closes. A failed opening ends the charge without the other two. */
+    /**
+     * A charge opens, waits for a card, then closes. A failed opening ends the charge without the other two, and
+     * an opening closed without a read goes straight to closing.
+     */
     private fun advances(
         from: TapToPayChargeActivity,
         to: TapToPayChargeActivity,
     ): Boolean =
         when (from) {
-            TapToPayChargeActivity.OPENING -> to == TapToPayChargeActivity.WAITING_FOR_CARD
+            TapToPayChargeActivity.OPENING ->
+                to == TapToPayChargeActivity.WAITING_FOR_CARD || to == TapToPayChargeActivity.CLOSING
             TapToPayChargeActivity.WAITING_FOR_CARD -> to == TapToPayChargeActivity.CLOSING
             TapToPayChargeActivity.CLOSING -> false
         }
