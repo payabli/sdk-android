@@ -130,6 +130,27 @@ class TTPTransactionClientTest {
         }
 
     @Test
+    fun `a 409 that is not a JSON object is the key being refused`() =
+        runTest(timeout = timeout) {
+            val (_, client) = client(answer("Duplicated idempotencyKey", 409))
+
+            val failure = runCatching { client.open() }.exceptionOrNull()
+
+            assertTrue("$failure", failure is ChargeKeyRefusal)
+        }
+
+    @Test
+    fun `a 409 carrying a JSON object is a conflict, not the key being refused`() =
+        runTest(timeout = timeout) {
+            val (_, client) = client(answer("""{"responseText":"Possible duplicate payment","isSuccess":false}""", 409))
+
+            val failure = runCatching { client.open() }.exceptionOrNull()
+
+            assertFalse("$failure", failure is ChargeKeyRefusal)
+            assertEquals(PayabliErrorType.CONFLICT, (failure as? PayabliException)?.type)
+        }
+
+    @Test
     fun `a body that is not the envelope cannot be read`() =
         runTest(timeout = timeout) {
             val (_, client) = client(answer("<html>gateway error</html>"))

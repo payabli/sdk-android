@@ -21,6 +21,7 @@ import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.model.identifiesSomeone
+import com.payabli.sdk.taptopay.network.ChargeKeyRefusal
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.network.sendableAmountOrNull
@@ -277,10 +278,11 @@ internal class TapToPayChargeRunner(
                 if (!askedForCard && !sendMark.mayHaveLeft) arrivedAt = null
                 throw withdrawn
             } catch (failure: Throwable) {
-                // A 409 does not extend the marker an earlier send wrote, and a send that never left starts none.
-                // An opening that returned did leave, whatever failed after it.
-                val unsent = !sendMark.mayHaveLeft || !TapToPayErrorCodes.typeFor(failure).leavesOutcomeUnknown
-                if (!askedForCard && openedAs == null && (isConflict(failure) || unsent)) arrivedAt = null
+                // A refused key extends no marker an earlier send wrote, and a send that never left writes none.
+                // Any other answer may have reached the key check, and restarting errs toward holding the key.
+                if (!askedForCard && openedAs == null && (failure is ChargeKeyRefusal || !sendMark.mayHaveLeft)) {
+                    arrivedAt = null
+                }
                 // Only before the read: after it, no failure proves the money did not move.
                 if (!askedForCard) {
                     val key = reserved
@@ -460,7 +462,7 @@ internal class TapToPayChargeRunner(
     ): PayabliErrorType {
         if (unclosed) return PayabliErrorType.PAYMENT_NOT_CLOSED
         // An opening refused as a repeat of this SDK's own resent key: an earlier charge has not finished.
-        if (!cardWasAsked && resentKey && isConflict(failure)) return PayabliErrorType.CHARGE_NOT_FINISHED
+        if (!cardWasAsked && resentKey && failure is ChargeKeyRefusal) return PayabliErrorType.CHARGE_NOT_FINISHED
         val type = TapToPayErrorCodes.typeFor(failure)
         val claimsNothingWasSent =
             type == PayabliErrorType.SDK_INTERNAL_ERROR || type == PayabliErrorType.VALIDATION_ERROR
@@ -560,8 +562,4 @@ internal class TapToPayChargeRunner(
 
     private fun Throwable.saysTheProcessorHasNoRecord(): Boolean =
         this is PayabliValidationException && detail == PROCESSOR_HAS_NO_RECORD
-
-    /** Whether [failure] is the service refusing a key it already holds. */
-    private fun isConflict(failure: Throwable): Boolean =
-        failure is PayabliException && failure.type == PayabliErrorType.CONFLICT
 }

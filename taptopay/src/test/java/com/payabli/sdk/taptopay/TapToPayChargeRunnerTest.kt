@@ -77,6 +77,13 @@ private const val NOT_AT_PROCESSOR = "Unable to locate the transaction with the 
 /** The reader's mark in the shared trace, which is how a second tap is counted. */
 private const val READ = "reader:read"
 
+/** The idempotency check's 409, the one answer that is not a JSON object. */
+private const val KEY_REFUSED = "Duplicated idempotencyKey"
+
+/** Duplicate-payment protection's 409, which names the earlier sale. */
+private const val DUPLICATE_SALE =
+    """{"responseText":"Possible duplicate payment","isSuccess":false,"responseData":{"resultCode":3}}"""
+
 private fun script(
     updates: Int = 1,
     opens: Int = 1,
@@ -360,7 +367,7 @@ class TapToPayChargeRunnerTest {
                         RouteScript.REGISTER to listOf(registerBody(status = "active")),
                         RouteScript.ATTEST to listOf(attestBody()),
                         RouteScript.CONFIG to listOf(configBody()),
-                        INITIATE to List(3) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        INITIATE to listOf(approved("{\"paymentTransId\":\"$TRANS_ID\"}"), KEY_REFUSED, KEY_REFUSED),
                         UPDATE to List(2) { "{}" },
                         statusFor = { path -> if (path == INITIATE && ++openings >= 2) 409 else 200 },
                     ),
@@ -422,7 +429,7 @@ class TapToPayChargeRunnerTest {
                         RouteScript.REGISTER to listOf(registerBody(status = "active")),
                         RouteScript.ATTEST to listOf(attestBody()),
                         RouteScript.CONFIG to listOf(configBody()),
-                        INITIATE to List(2) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        INITIATE to listOf(approved("{\"paymentTransId\":\"$TRANS_ID\"}"), KEY_REFUSED),
                         UPDATE to listOf("{}"),
                         statusFor = { path -> if (path == INITIATE && ++openings >= 2) 409 else 200 },
                     ),
@@ -461,7 +468,12 @@ class TapToPayChargeRunnerTest {
                         RouteScript.REGISTER to listOf(registerBody(status = "active")),
                         RouteScript.ATTEST to listOf(attestBody()),
                         RouteScript.CONFIG to listOf(configBody()),
-                        INITIATE to List(3) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        INITIATE to
+                            listOf(
+                                approved("{\"paymentTransId\":\"$TRANS_ID\"}"),
+                                KEY_REFUSED,
+                                approved("{\"paymentTransId\":\"$TRANS_ID\"}"),
+                            ),
                         UPDATE to List(3) { "{}" },
                         statusFor = { path -> if (path == INITIATE && ++openings == 2) 409 else 200 },
                     ),
@@ -804,8 +816,11 @@ class TapToPayChargeRunnerTest {
             assertEquals("the withdrawn sale replaced the open sale's key", "$MINTED_KEY-1", fixture.keySent(1))
         }
 
-    /** A ready session whose [opening]-th charge opening, counting from 1, is answered 409. */
-    private suspend fun conflictOnOpening(opening: Int): SessionFixture {
+    /** A ready session whose [opening]-th charge opening, counting from 1, is answered 409 with [refusal]. */
+    private suspend fun conflictOnOpening(
+        opening: Int,
+        refusal: String = KEY_REFUSED,
+    ): SessionFixture {
         var openings = 0
         return SessionFixture(
             RouteScript(
@@ -813,7 +828,8 @@ class TapToPayChargeRunnerTest {
                 RouteScript.REGISTER to listOf(registerBody(status = "active")),
                 RouteScript.ATTEST to listOf(attestBody()),
                 RouteScript.CONFIG to listOf(configBody()),
-                INITIATE to List(2) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                INITIATE to
+                    List(2) { if (it == opening - 1) refusal else approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
                 UPDATE to List(2) { "{}" },
                 statusFor = { path -> if (path == INITIATE && ++openings == opening) 409 else 200 },
             ),
@@ -851,6 +867,134 @@ class TapToPayChargeRunnerTest {
                 }.exceptionOrNull()
 
             assertEquals(PayabliErrorType.CONFLICT, (failure as? TapToPayException)?.type)
+        }
+
+    @Test
+    fun `a resend refused as a duplicate sale stays a conflict`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = conflictOnOpening(2, refusal = DUPLICATE_SALE)
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+                }.exceptionOrNull() as? TapToPayException
+
+            assertEquals(PayabliErrorType.CONFLICT, failure?.type)
+            assertEquals(TapToPayCapture.UNKNOWN, failure?.capture)
+        }
+
+    /** A first charge's time, a declared retry's time half the bound later, and how the retry failed. */
+    private class AnsweredResend(
+        val failure: TapToPayException?,
+        val firstSentAt: Long,
+        val resentAt: Long,
+    )
+
+    /**
+     * Leaves a first charge unknown, then half the bound later sends a declared retry whose opening is answered
+     * with [answer] and [status], or fails before the hand-off with [unsent], or after it with [lost].
+     */
+    private suspend fun resendAnswered(
+        answer: String = approved("{\"paymentTransId\":\"$TRANS_ID\"}"),
+        status: Int? = null,
+        unsent: Exception? = null,
+        lost: Exception? = null,
+    ): AnsweredResend {
+        val clock =
+            java.util.concurrent.atomic
+                .AtomicLong(1_000_000_000L)
+        var answered = 0
+        var unsentSends = 0
+        var lostSends = 0
+        val fixture =
+            SessionFixture(
+                RouteScript(
+                    RouteScript.CHALLENGE to listOf(challengeBody()),
+                    RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                    RouteScript.ATTEST to listOf(attestBody()),
+                    RouteScript.CONFIG to listOf(configBody()),
+                    INITIATE to listOf(approved("{\"paymentTransId\":\"$TRANS_ID\"}"), answer),
+                    UPDATE to listOf("{}"),
+                    statusFor = { path -> if (path == INITIATE && ++answered == 2) status else null },
+                ),
+                elapsedRealtimeNanos = clock::get,
+                unsent = { request -> unsent.takeIf { request.path == INITIATE && ++unsentSends == 2 } },
+                lost = { request -> lost.takeIf { request.path == INITIATE && ++lostSends == 2 } },
+            ).also { it.coordinator.initialize() }
+        fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+
+        runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+        val firstSentAt = clock.get()
+        val resentAt = clock.addAndGet(com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2)
+        val failure =
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }.exceptionOrNull()
+        return AnsweredResend(failure as? TapToPayException, firstSentAt, resentAt)
+    }
+
+    @Test
+    fun `a resend refused as a repeat of its key keeps the key and its clock`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val resend = resendAnswered(KEY_REFUSED, status = 409)
+
+            assertEquals(PayabliErrorType.CHARGE_NOT_FINISHED, resend.failure?.type)
+            assertEquals(
+                "the refused repeat restarted the clock",
+                listOf(resend.firstSentAt),
+                ChargeKeyStore.heldSince(),
+            )
+        }
+
+    @Test
+    fun `a resend refused as a duplicate sale keeps the key and restarts its clock`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val resend = resendAnswered(DUPLICATE_SALE, status = 409)
+
+            assertEquals(PayabliErrorType.CONFLICT, resend.failure?.type)
+            assertEquals(TapToPayCapture.UNKNOWN, resend.failure?.capture)
+            assertEquals("the answered resend kept its clock", listOf(resend.resentAt), ChargeKeyStore.heldSince())
+        }
+
+    @Test
+    fun `a resend refused as invalid keeps the key and restarts its clock`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val resend = resendAnswered("{}", status = 400)
+
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, resend.failure?.type)
+            assertEquals("the answered resend kept its clock", listOf(resend.resentAt), ChargeKeyStore.heldSince())
+        }
+
+    @Test
+    fun `a resend whose opening is declined keeps the key and restarts its clock`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val resend = resendAnswered(declined())
+
+            assertEquals(PayabliErrorType.PAYMENT_NOT_OPENED, resend.failure?.type)
+            assertEquals("the answered resend kept its clock", listOf(resend.resentAt), ChargeKeyStore.heldSince())
+        }
+
+    @Test
+    fun `a resend lost after the hand-off keeps the key and restarts its clock`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val resend = resendAnswered(lost = PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "dropped"))
+
+            assertEquals(TapToPayCapture.UNKNOWN, resend.failure?.capture)
+            assertEquals("the lost resend kept its clock", listOf(resend.resentAt), ChargeKeyStore.heldSince())
+        }
+
+    @Test
+    fun `a resend that never left keeps the key and its clock`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val resend = resendAnswered(unsent = PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "offline"))
+
+            assertEquals(
+                "the unsent resend restarted the clock",
+                listOf(resend.firstSentAt),
+                ChargeKeyStore.heldSince(),
+            )
         }
 
     @Test

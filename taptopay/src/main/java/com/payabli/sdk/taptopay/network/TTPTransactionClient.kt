@@ -6,6 +6,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
@@ -192,7 +193,11 @@ internal class TTPTransactionClient(
         route: String,
         response: PayabliResponse,
     ): InitiatePayload {
-        failureFor(route, response)?.let { throw it }
+        failureFor(route, response)?.let { failure ->
+            // A 409 whose body is not a JSON object is the idempotency check refusing the key. Any other 409,
+            // such as a refused duplicate sale, stays a conflict.
+            throw if (failure.isConflict() && !response.bodyAsText().isJsonObject()) ChargeKeyRefusal() else failure
+        }
         val envelope =
             try {
                 PayabliJson.format.decodeFromString(
@@ -322,3 +327,24 @@ internal fun String.isUsableTransId(): Boolean {
     val trimmed = trim()
     return trimmed.isNotEmpty() && trimmed != "." && trimmed != ".."
 }
+
+/**
+ * The service refused the opening's idempotency key because it had already seen it.
+ *
+ * A conflict like any other until the charge reads it, which tells a resent held key from a new one.
+ */
+internal class ChargeKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)")
+
+private fun Throwable.isConflict(): Boolean = this is PayabliException && type == PayabliErrorType.CONFLICT
+
+/**
+ * Whether this body is a JSON object, which the idempotency check's refusal never is.
+ *
+ * @return true when the body parses as a JSON object.
+ */
+private fun String.isJsonObject(): Boolean =
+    try {
+        PayabliJson.format.parseToJsonElement(this) is JsonObject
+    } catch (unreadable: SerializationException) {
+        false
+    }
