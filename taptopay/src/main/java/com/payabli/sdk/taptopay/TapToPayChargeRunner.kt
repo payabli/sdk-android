@@ -10,6 +10,7 @@ import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.network.PayabliSendMark
@@ -27,6 +28,7 @@ import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
+import com.payabli.sdk.taptopay.session.REASON_RETIRED
 import com.payabli.sdk.taptopay.session.TapToPayChargeActivity
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionCoordinator
@@ -199,6 +201,11 @@ internal class TapToPayChargeRunner(
                             LogField.safe("event", "ttp_charge_opened"),
                             LogField.safe("phase", "initiate"),
                         ) { "the payment was opened" }
+
+                        // Again here, because a replacement can land while the payment opens.
+                        if (!coordinator.isSessionLive()) {
+                            refuseRetiredCharge(paymentTransId, idempotencyKey, resentKey)
+                        }
 
                         // Before the read: the processor takes the sale before the answer arrives.
                         askedForCard = true
@@ -505,6 +512,21 @@ internal class TapToPayChargeRunner(
                 false
             }
         if (closed) TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.CHARGE)
+    }
+
+    /**
+     * Ends a charge whose session was replaced once [paymentTransId] opened: no card is read, the close is
+     * attempted, and the terminal lands [TapToPayFailureReason.SESSION_ENDED].
+     */
+    private suspend fun refuseRetiredCharge(
+        paymentTransId: String,
+        idempotencyKey: String,
+        resentKey: Boolean,
+    ): Nothing {
+        val refusal = PayabliGenericException(PayabliErrorType.SESSION_NOT_INITIALIZED, REASON_RETIRED)
+        closeAfterFailedRead(paymentTransId, refusal, idempotencyKey, resentKey)
+        manager.failCharge(TapToPayFailureReason.SESSION_ENDED)
+        throw refusal
     }
 
     /**

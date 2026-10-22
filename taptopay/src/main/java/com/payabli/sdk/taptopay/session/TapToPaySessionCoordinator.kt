@@ -458,6 +458,9 @@ internal class TapToPaySessionCoordinator(
         }
     }
 
+    /** Whether this terminal's session is still the installed one. A charge reads it inside [runCharge]. */
+    fun isSessionLive(): Boolean = isLive()
+
     /** Refuses to go on for a terminal whose session was replaced or ended, before the reader is touched. */
     private fun requireLive() {
         if (!isLive()) {
@@ -494,7 +497,7 @@ internal class TapToPaySessionCoordinator(
  */
 private val SETUP_GATE = Mutex()
 
-private const val REASON_RETIRED = "the session this was created with was replaced or ended; create a new one"
+internal const val REASON_RETIRED = "the session this was created with was replaced or ended; create a new one"
 
 /**
  * What an entry point runs: [prepare] once, then [sequence], which the coordinator runs again after renewing a

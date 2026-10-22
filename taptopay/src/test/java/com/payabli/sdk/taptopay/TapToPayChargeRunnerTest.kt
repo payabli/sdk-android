@@ -2799,6 +2799,58 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a session replaced while its payment opens reads no card, and the close it attempts is refused unsent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var live = true
+            var closesAttempted = 0
+            val fixture =
+                SessionFixture(
+                    script(),
+                    sendGate = { request -> if (request.path == INITIATE) live = false },
+                    isLive = { live },
+                    // A finished session's transport refuses every request before sending it.
+                    unsent = { request ->
+                        if (request.path == UPDATE && !live) {
+                            closesAttempted++
+                            PayabliGenericException(PayabliErrorType.SESSION_NOT_INITIALIZED, "the session finished")
+                        } else {
+                            null
+                        }
+                    },
+                ).also { it.coordinator.initialize() }
+
+            val failure =
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                    .exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(PayabliErrorType.SESSION_NOT_INITIALIZED, (failure as TapToPayException).type)
+            assertEquals(TRANS_ID, failure.paymentTransId)
+            assertEquals(TapToPayCapture.NOT_CHARGED, failure.capture)
+            assertNull("the reader was asked for a card", fixture.reader.lastReadRequest)
+            assertEquals("no close was attempted", 1, closesAttempted)
+            assertFalse("the replaced session sent a close", UPDATE in fixture.routes)
+            assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.SESSION_ENDED), fixture.state)
+        }
+
+    @Test
+    fun `a session still live once its payment opens reads the card and closes it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var opened = false
+            val fixture =
+                SessionFixture(script(), sendGate = { request -> if (request.path == INITIATE) opened = true })
+                    .also { it.coordinator.initialize() }
+
+            val receipt = runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            assertTrue("the payment was never opened", opened)
+            assertEquals(TRANS_ID, receipt.paymentTransId)
+            assertEquals(TRANS_ID, fixture.reader.lastReadRequest?.merchantTransactionId)
+            assertTrue("the payment was not closed", UPDATE in fixture.routes)
+            assertEquals(TapToPaySessionState.Ready, fixture.state)
+        }
+
+    @Test
     fun `a read under way when its session is replaced finishes, stays held, and a new terminal closes it`() =
         runTest(timeout = TEST_TIMEOUT) {
             // A session is replaced only once it has finished, and a finished session's transport refuses every
