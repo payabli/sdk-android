@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.payabli.sdk.payin.R
+import com.payabli.sdk.payin.client.PayInValidation
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldRules
 import com.payabli.sdk.payin.form.PayInFormConfiguration
@@ -226,7 +227,8 @@ private fun PayInSubmissionState.deliver(
         }
 
         is PayInSubmissionState.Failed -> {
-            clearInstrument()
+            // An amount refused before sending keeps every field: nothing went out, and only the host can change it.
+            if (!PayInValidation.refusedAnAmount(cause)) clearInstrument()
             onFailed(this)
             false
         }

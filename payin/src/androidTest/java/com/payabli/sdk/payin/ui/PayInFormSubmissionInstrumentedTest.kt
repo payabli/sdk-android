@@ -34,6 +34,8 @@ import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.telemetry.PayInFormReports
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -70,6 +72,15 @@ class PayInFormSubmissionInstrumentedTest {
 
     /** The test card as the field draws it, which is how a query finds what a box is holding. */
     private val groupedPan = "4111 1111 1111 1111"
+
+    /** The refusal submission answers with when the amounts cannot be sent, before anything leaves the device. */
+    private fun refusingTheAmount(): PayInSubmissionState.Failed =
+        PayInSubmissionState.Failed(
+            PayInException.InvalidInput(
+                "paymentDetails.totalAmount",
+                "The service fee and surcharge must be less than the total amount",
+            ),
+        )
 
     private fun refusing(field: PayInField): PayInSubmissionState.Failed =
         PayInSubmissionState.Failed(
@@ -121,6 +132,56 @@ class PayInFormSubmissionInstrumentedTest {
         rule.onNodeWithText(TEST_ROUTING).assertDoesNotExist()
         rule.onNodeWithText("Ada Lovelace").assertExists()
         rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).assertIsNotEnabled()
+    }
+
+    @Test
+    fun anAmountRefusedBeforeSendingKeepsTheCard() {
+        // Nothing was sent, and only the host can change an amount, so the payer types nothing again.
+        showCardForm()
+        fillCard()
+        submit()
+
+        rule.runOnIdle { submission = refusingTheAmount() }
+        rule.waitForIdle()
+
+        rule.runOnIdle {
+            assertEquals(TEST_PAN, draft.typed[PayInField.CardNumber])
+            assertEquals(TEST_SECURITY_CODE, draft.typed[PayInField.CardSecurityCode])
+            assertEquals(TEST_EXPIRY, draft.typed[PayInField.CardExpiration])
+        }
+        rule.onNodeWithText("Ada Lovelace").assertExists()
+    }
+
+    @Test
+    fun anAmountRefusedBeforeSendingKeepsTheBankAccount() {
+        showBankForm()
+        fillBank()
+        type(R.string.payabli_payin_field_first_name, "Ada")
+        submit()
+
+        rule.runOnIdle { submission = refusingTheAmount() }
+        rule.waitForIdle()
+
+        rule.runOnIdle {
+            assertEquals(TEST_ROUTING, draft.typed[PayInField.RoutingNumber])
+            assertEquals(TEST_ACCOUNT, draft.typed[PayInField.AccountNumber])
+        }
+    }
+
+    @Test
+    fun aBankRefusalAfterSendingEmptiesTheAccount() {
+        showBankForm()
+        fillBank()
+        type(R.string.payabli_payin_field_first_name, "Ada")
+        submit()
+
+        rule.runOnIdle { submission = refusing(PayInField.AccountNumber) }
+        rule.waitForIdle()
+
+        rule.runOnIdle {
+            assertNull(draft.typed[PayInField.RoutingNumber])
+            assertNull(draft.typed[PayInField.AccountNumber])
+        }
     }
 
     @Test
