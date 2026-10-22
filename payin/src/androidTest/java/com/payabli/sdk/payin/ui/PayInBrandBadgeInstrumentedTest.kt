@@ -169,6 +169,7 @@ class PayInBrandBadgeInstrumentedTest {
                 PayInFormContent(
                     submission = PayInSubmissionState.Idle,
                     draft = draft,
+                    sent = { true },
                     configuration = configuration,
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,

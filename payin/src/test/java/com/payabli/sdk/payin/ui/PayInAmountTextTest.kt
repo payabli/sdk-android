@@ -56,11 +56,10 @@ class PayInAmountTextTest {
     }
 
     @Test
-    fun `a negative amount that is sent is drawn as the minus figure it is`() {
+    fun `a negative surcharge is refused, so it draws no summary rather than a minus figure`() {
         val credit = PayInPaymentDetails(totalAmount = BigDecimal("12.34"), surchargeFee = BigDecimal("-0.31"))
 
-        assertEquals(BigDecimal("-0.31"), credit.shownAmount(PayInField.SurchargeFee))
-        assertEquals("-$0.31", formatAmount(BigDecimal("-0.31"), "USD", Locale.US))
+        assertEquals(listOf(card), placeAmounts(listOf(card), credit).map { it.section })
     }
 
     @Test
@@ -205,18 +204,18 @@ class PayInAmountTextTest {
     ) = placeAmounts(listOf(card), details, showsBaseAmount).last()
 
     @Test
-    fun `the amount is the charge less the service fee, and the total adds the surcharge`() {
+    fun `the amount is the charge less the service fee and the surcharge, and the total is the charge`() {
         val drawn = summaryOf(details, showsBaseAmount = true)
 
         assertEquals(
             listOf(
-                PayInField.Amount to BigDecimal("12.24"),
+                PayInField.Amount to BigDecimal("11.93"),
                 PayInField.ServiceFee to BigDecimal("0.10"),
                 PayInField.SurchargeFee to BigDecimal("0.31"),
             ),
             drawn.amounts,
         )
-        assertEquals(BigDecimal("12.65"), drawn.total)
+        assertEquals(BigDecimal("12.34"), drawn.total)
     }
 
     @Test
@@ -235,10 +234,10 @@ class PayInAmountTextTest {
     }
 
     @Test
-    fun `on a surcharged charge the amount is what was sent and the total adds the surcharge`() {
+    fun `on a surcharged charge the surcharge sits inside the total`() {
         val drawn =
             summaryOf(
-                PayInPaymentDetails(totalAmount = BigDecimal("1.00"), surchargeFee = BigDecimal("0.03")),
+                PayInPaymentDetails(totalAmount = BigDecimal("1.03"), surchargeFee = BigDecimal("0.03")),
                 showsBaseAmount = true,
             )
 
@@ -258,30 +257,24 @@ class PayInAmountTextTest {
     }
 
     @Test
-    fun `a negative surcharge that cancels the charge draws the rows and no total`() {
-        val drawn =
-            summaryOf(
-                PayInPaymentDetails(totalAmount = BigDecimal("12.34"), surchargeFee = BigDecimal("-12.34")),
-                showsBaseAmount = true,
-            )
+    fun `a negative surcharge that cancels the charge is refused and draws no summary`() {
+        val cancelled = PayInPaymentDetails(totalAmount = BigDecimal("12.34"), surchargeFee = BigDecimal("-12.34"))
 
-        assertEquals(
-            listOf(PayInField.Amount to BigDecimal("12.34"), PayInField.SurchargeFee to BigDecimal("-12.34")),
-            drawn.amounts,
-        )
-        assertNull(drawn.total)
+        assertEquals(listOf(card), placeAmounts(listOf(card), cancelled).map { it.section })
     }
 
     @Test
-    fun `a charge that is all fee draws the fee and the total, and no amount`() {
-        val drawn =
-            summaryOf(
-                PayInPaymentDetails(totalAmount = BigDecimal("0.10"), serviceFee = BigDecimal("0.10")),
-                showsBaseAmount = true,
-            )
+    fun `a charge that is all surcharge draws no summary`() {
+        val allSurcharge = PayInPaymentDetails(totalAmount = BigDecimal("0.30"), surchargeFee = BigDecimal("0.30"))
 
-        assertEquals(listOf(PayInField.ServiceFee to BigDecimal("0.10")), drawn.amounts)
-        assertEquals(BigDecimal("0.10"), drawn.total)
+        assertEquals(listOf(card), placeAmounts(listOf(card), allSurcharge).map { it.section })
+    }
+
+    @Test
+    fun `a charge that is all fee draws no summary`() {
+        val allFee = PayInPaymentDetails(totalAmount = BigDecimal("0.10"), serviceFee = BigDecimal("0.10"))
+
+        assertEquals(listOf(card), placeAmounts(listOf(card), allFee).map { it.section })
     }
 
     @Test
@@ -292,7 +285,7 @@ class PayInAmountTextTest {
             listOf(PayInField.ServiceFee to BigDecimal("0.10"), PayInField.SurchargeFee to BigDecimal("0.31")),
             drawn.amounts,
         )
-        assertEquals(BigDecimal("12.65"), drawn.total)
+        assertEquals(BigDecimal("12.34"), drawn.total)
     }
 
     @Test

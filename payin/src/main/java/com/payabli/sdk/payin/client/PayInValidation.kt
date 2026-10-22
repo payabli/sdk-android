@@ -74,6 +74,9 @@ internal object PayInValidation {
                 PayInAmountRefusal.ServiceFeeOutOfRange -> FIELD_SERVICE_FEE to "The service fee is out of range"
                 PayInAmountRefusal.ServiceFeeNegative -> FIELD_SERVICE_FEE to "A service fee cannot be negative"
                 PayInAmountRefusal.SurchargeOutOfRange -> FIELD_SURCHARGE_FEE to "The surcharge is out of range"
+                PayInAmountRefusal.SurchargeNegative -> FIELD_SURCHARGE_FEE to "A surcharge cannot be negative"
+                PayInAmountRefusal.FeesReachTotal ->
+                    FIELD_TOTAL_AMOUNT to "The service fee and surcharge must be less than the total amount"
             }
         throw PayInException.InvalidInput(field, message)
     }

@@ -118,7 +118,7 @@ internal class PayInFormDraft {
         entered.keys.retainAll(configuration.inputFieldsFor(method).toSet())
     }
 
-    /** The instrument goes once the submission has an outcome, approved or refused. */
+    /** The instrument goes once the service may have acted on a submission, approved or refused. */
     fun clearInstrument() = PayInSensitiveFields.CLEARED_ON_OUTCOME.forEach { entered.remove(it) }
 
     /**

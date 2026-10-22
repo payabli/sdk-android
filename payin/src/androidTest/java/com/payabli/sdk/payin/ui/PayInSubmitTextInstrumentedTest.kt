@@ -75,6 +75,7 @@ class PayInSubmitTextInstrumentedTest {
                 PayInFormContent(
                     submission = submission,
                     draft = draft,
+                    sent = { true },
                     configuration = PayInFormConfiguration(),
                     reports = PayInFormReports.None,
                     submitText = submitText,

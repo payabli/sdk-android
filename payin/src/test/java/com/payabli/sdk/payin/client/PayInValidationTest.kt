@@ -267,6 +267,73 @@ class PayInValidationTest {
     }
 
     @Test
+    fun `a negative surcharge is refused naming the surcharge`() {
+        assertEquals(
+            "paymentDetails.surchargeFee",
+            refusal {
+                PayInValidation.paymentDetails(
+                    PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("-0.31")),
+                )
+            }?.field,
+        )
+        assertNull(
+            refusal {
+                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal.ZERO))
+            },
+        )
+    }
+
+    @Test
+    fun `a surcharge above the total is refused naming the total`() {
+        assertEquals(
+            "paymentDetails.totalAmount",
+            refusal {
+                PayInValidation.paymentDetails(
+                    PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.50")),
+                )
+            }?.field,
+        )
+    }
+
+    @Test
+    fun `a service fee equal to the total is refused naming the total`() {
+        assertEquals(
+            "paymentDetails.totalAmount",
+            refusal {
+                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("1.00"), serviceFee = BigDecimal("1.00")))
+            }?.field,
+        )
+    }
+
+    @Test
+    fun `a fee and a surcharge a cent below the total are accepted`() {
+        assertNull(
+            refusal {
+                PayInValidation.paymentDetails(
+                    PayInPaymentDetails(
+                        BigDecimal("1.00"),
+                        serviceFee = BigDecimal("0.50"),
+                        surchargeFee = BigDecimal("0.49"),
+                    ),
+                )
+            },
+        )
+    }
+
+    @Test
+    fun `fees are judged against the total at the scale they are sent`() {
+        // 0.995 is sent as 1.00, which reaches a total of 1.00.
+        assertEquals(
+            "paymentDetails.totalAmount",
+            refusal {
+                PayInValidation.paymentDetails(
+                    PayInPaymentDetails(BigDecimal("1.00"), serviceFee = BigDecimal("0.995")),
+                )
+            }?.field,
+        )
+    }
+
+    @Test
     fun `an amount larger than a Double holds exactly is accepted`() {
         assertNull(refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("12345678901234.56"))) })
     }

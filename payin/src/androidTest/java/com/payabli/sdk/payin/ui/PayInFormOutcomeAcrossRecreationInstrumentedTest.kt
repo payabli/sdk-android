@@ -163,6 +163,7 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
                 PayInFormContent(
                     submission = submission,
                     draft = draft,
+                    sent = { true },
                     configuration = configuration,
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,

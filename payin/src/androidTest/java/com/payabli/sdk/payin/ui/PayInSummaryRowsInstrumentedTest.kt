@@ -75,11 +75,11 @@ class PayInSummaryRowsInstrumentedTest {
 
         rule
             .onNode(
-                hasText(string(R.string.payabli_payin_field_amount)) and hasText(figure("12.24", "USD")),
+                hasText(string(R.string.payabli_payin_field_amount)) and hasText(figure("11.93", "USD")),
             ).assertExists()
         rule
             .onNode(
-                hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.65", "USD")),
+                hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.34", "USD")),
             ).assertExists()
 
         val surcharge =
@@ -91,7 +91,7 @@ class PayInSummaryRowsInstrumentedTest {
         val total =
             rule
                 .onNode(
-                    hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.65", "USD")),
+                    hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.34", "USD")),
                 ).getBoundsInRoot()
         assertTrue(
             "the total must sit below the surcharge row: ${total.top} vs ${surcharge.top}",
@@ -132,6 +132,7 @@ class PayInSummaryRowsInstrumentedTest {
                 PayInFormContent(
                     submission = PayInSubmissionState.Idle,
                     draft = draft,
+                    sent = { true },
                     configuration = configuration,
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
@@ -206,7 +207,7 @@ class PayInSummaryRowsInstrumentedTest {
             labels = PayInFormLabels(total = "Due today"),
         )
 
-        rule.onNode(hasText("Due today") and hasText(figure("12.65", "USD"))).assertExists()
+        rule.onNode(hasText("Due today") and hasText(figure("12.34", "USD"))).assertExists()
         rule.onNodeWithText(string(R.string.payabli_payin_summary_total)).assertDoesNotExist()
     }
 
@@ -226,6 +227,7 @@ class PayInSummaryRowsInstrumentedTest {
                     PayInFormContent(
                         submission = PayInSubmissionState.Idle,
                         draft = draft,
+                        sent = { true },
                         configuration = configuration,
                         reports = PayInFormReports.None,
                         submitText = PayInSubmitText.Capture,
@@ -253,7 +255,7 @@ class PayInSummaryRowsInstrumentedTest {
 
         rule
             .onNode(
-                hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.65", "USD")),
+                hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.34", "USD")),
             ).assertExists()
     }
 
@@ -292,6 +294,7 @@ class PayInSummaryRowsInstrumentedTest {
                 PayInFormContent(
                     submission = PayInSubmissionState.Idle,
                     draft = draft,
+                    sent = { true },
                     configuration = form,
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,

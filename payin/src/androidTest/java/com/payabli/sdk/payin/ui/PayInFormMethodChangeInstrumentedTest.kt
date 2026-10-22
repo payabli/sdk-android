@@ -113,6 +113,7 @@ class PayInFormMethodChangeInstrumentedTest {
                 PayInFormContent(
                     submission = PayInSubmissionState.Idle,
                     draft = draft,
+                    sent = { true },
                     configuration = both,
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
@@ -141,6 +142,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     PayInFormContent(
                         submission = PayInSubmissionState.Idle,
                         draft = draft,
+                        sent = { true },
                         configuration = configuration.value,
                         reports = PayInFormReports.None,
                         submitText = PayInSubmitText.Capture,
@@ -169,6 +171,7 @@ class PayInFormMethodChangeInstrumentedTest {
                 PayInFormContent(
                     submission = PayInSubmissionState.Idle,
                     draft = draft,
+                    sent = { true },
                     configuration = both,
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
@@ -177,6 +180,7 @@ class PayInFormMethodChangeInstrumentedTest {
                 PayInFormContent(
                     submission = PayInSubmissionState.Idle,
                     draft = draft,
+                    sent = { true },
                     configuration = both,
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
@@ -221,6 +225,7 @@ class PayInFormMethodChangeInstrumentedTest {
                 PayInFormContent(
                     submission = PayInSubmissionState.Idle,
                     draft = draft(),
+                    sent = { true },
                     configuration = configuration,
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
@@ -236,6 +241,7 @@ class PayInFormMethodChangeInstrumentedTest {
                 PayInFormContent(
                     submission = PayInSubmissionState.Idle,
                     draft = draft,
+                    sent = { true },
                     configuration = configuration(),
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
