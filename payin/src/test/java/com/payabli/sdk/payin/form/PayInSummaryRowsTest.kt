@@ -82,12 +82,36 @@ class PayInSummaryRowsTest {
     }
 
     @Test
-    fun `a charge that is all surcharge draws the surcharge and the total, and no amount`() {
-        val allSurcharge = PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.30"))
+    fun `fees that reach the total empty every figure`() {
+        assertNoFigures(PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.30")))
+        assertNoFigures(PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.50")))
+        assertNoFigures(PayInPaymentDetails(BigDecimal("0.50"), serviceFee = BigDecimal("0.50")))
+        assertNoFigures(PayInPaymentDetails(BigDecimal("1.00"), serviceFee = BigDecimal("1.00")))
+        assertNoFigures(
+            PayInPaymentDetails(BigDecimal("1.00"), serviceFee = BigDecimal("0.50"), surchargeFee = BigDecimal("0.50")),
+        )
+    }
 
-        assertNull(PayInSummaryRows.rowAmount(PayInField.Amount, allSurcharge))
-        assertEquals(BigDecimal("0.30"), PayInSummaryRows.rowAmount(PayInField.SurchargeFee, allSurcharge))
-        assertEquals(BigDecimal("0.30"), PayInSummaryRows.totalRowAmount(allSurcharge))
+    @Test
+    fun `fees are compared with the total at the scale it is sent`() {
+        assertNoFigures(
+            PayInPaymentDetails(
+                BigDecimal("1.004"),
+                serviceFee = BigDecimal("0.50"),
+                surchargeFee = BigDecimal("0.50"),
+            ),
+        )
+    }
+
+    @Test
+    fun `fees a cent below the total leave an amount of a cent`() {
+        val cent =
+            PayInPaymentDetails(BigDecimal("1.00"), serviceFee = BigDecimal("0.50"), surchargeFee = BigDecimal("0.49"))
+
+        assertEquals(BigDecimal("0.01"), PayInSummaryRows.rowAmount(PayInField.Amount, cent))
+        assertEquals(BigDecimal("0.50"), PayInSummaryRows.rowAmount(PayInField.ServiceFee, cent))
+        assertEquals(BigDecimal("0.49"), PayInSummaryRows.rowAmount(PayInField.SurchargeFee, cent))
+        assertEquals(BigDecimal("1.00"), PayInSummaryRows.totalRowAmount(cent))
     }
 
     @Test

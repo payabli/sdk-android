@@ -11,6 +11,7 @@ internal enum class PayInAmountRefusal {
     ServiceFeeOutOfRange,
     ServiceFeeNegative,
     SurchargeOutOfRange,
+    FeesReachTotal,
 }
 
 /**
@@ -28,6 +29,9 @@ internal fun PayInPaymentDetails.amountRefusal(): PayInAmountRefusal? {
     val fee =
         serviceFee?.let { it.sendableOrNull() ?: return PayInAmountRefusal.ServiceFeeOutOfRange }
     if (fee != null && fee < BigDecimal.ZERO) return PayInAmountRefusal.ServiceFeeNegative
-    if (surchargeFee != null && surchargeFee.sendableOrNull() == null) return PayInAmountRefusal.SurchargeOutOfRange
+    val surcharge =
+        surchargeFee?.let { it.sendableOrNull() ?: return PayInAmountRefusal.SurchargeOutOfRange }
+    // The base, the total less the fee and the surcharge, has to stay above zero.
+    if ((fee ?: BigDecimal.ZERO) + (surcharge ?: BigDecimal.ZERO) >= total) return PayInAmountRefusal.FeesReachTotal
     return null
 }
