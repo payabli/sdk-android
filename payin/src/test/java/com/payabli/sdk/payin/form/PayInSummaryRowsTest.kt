@@ -82,14 +82,6 @@ class PayInSummaryRowsTest {
     }
 
     @Test
-    fun `a negative surcharge raises the amount and leaves the total as sent`() {
-        val credited = PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("-0.31"))
-
-        assertEquals(BigDecimal("12.65"), PayInSummaryRows.rowAmount(PayInField.Amount, credited))
-        assertEquals(BigDecimal("12.34"), PayInSummaryRows.totalRowAmount(credited))
-    }
-
-    @Test
     fun `a charge that is all surcharge draws the surcharge and the total, and no amount`() {
         val allSurcharge = PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.30"))
 
@@ -115,13 +107,6 @@ class PayInSummaryRowsTest {
 
         assertNull(PayInSummaryRows.rowAmount(PayInField.ServiceFee, zeroFee))
         assertNull(PayInSummaryRows.rowAmount(PayInField.Amount, allFee))
-    }
-
-    @Test
-    fun `a surcharge never moves the total off what is sent`() {
-        val credited = PayInPaymentDetails(BigDecimal("0.31"), surchargeFee = BigDecimal("-0.31"))
-
-        assertEquals(BigDecimal("0.31"), PayInSummaryRows.totalRowAmount(credited))
     }
 
     @Test

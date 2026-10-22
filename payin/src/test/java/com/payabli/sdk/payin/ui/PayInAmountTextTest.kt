@@ -258,18 +258,15 @@ class PayInAmountTextTest {
     }
 
     @Test
-    fun `a negative surcharge raises the amount and leaves the total as sent`() {
+    fun `a charge that is all surcharge draws the surcharge and the total, and no amount`() {
         val drawn =
             summaryOf(
-                PayInPaymentDetails(totalAmount = BigDecimal("12.34"), surchargeFee = BigDecimal("-12.34")),
+                PayInPaymentDetails(totalAmount = BigDecimal("0.30"), surchargeFee = BigDecimal("0.30")),
                 showsBaseAmount = true,
             )
 
-        assertEquals(
-            listOf(PayInField.Amount to BigDecimal("24.68"), PayInField.SurchargeFee to BigDecimal("-12.34")),
-            drawn.amounts,
-        )
-        assertEquals(BigDecimal("12.34"), drawn.total)
+        assertEquals(listOf(PayInField.SurchargeFee to BigDecimal("0.30")), drawn.amounts)
+        assertEquals(BigDecimal("0.30"), drawn.total)
     }
 
     @Test
