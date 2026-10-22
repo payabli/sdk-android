@@ -34,10 +34,9 @@ import com.payabli.sdk.payin.ui.PayInSubmitText
  * `MaterialTheme`, so light, dark and dynamic color arrive with nothing passed. Use
  * `PayInFormStyleOverrides` to change one value, or `LocalPayInFormStyle` for every form in a tree.
  *
- * **When the service rejects a field, that field is marked and the instrument is emptied.** The card number,
- * expiry, security code, routing number and account number go on any outcome, because the instrument was
- * submitted either way. What identifies the payer stays, so correcting one field is not a second round of
- * typing.
+ * **The instrument goes once the service may have acted on it.** The card number, expiry, security code, routing
+ * and account number are emptied after an approval or a refusal by the service, and kept after a refusal before
+ * that, such as an amount the request cannot send. A field the service rejects is marked; the payer's details stay.
  *
  * **Nothing in a failure is loggable.** [onFailed] carries the failure so a host can show it or navigate away
  * from it. `PayabliException.reason` and `detail` are displayable only: some of them can quote what was
