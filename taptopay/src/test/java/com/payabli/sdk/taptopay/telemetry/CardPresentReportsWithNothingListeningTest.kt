@@ -26,14 +26,9 @@ import org.junit.Test
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * The card-present reporting sites with no recorder installed.
- *
- * Nothing here installs a session, so nothing starts the telemetry module and every report reaches no recorder,
- * which is also the state before `initialize` and after a session is torn down.
- *
- * These drive the real call sites rather than imitating the calls they make. Every one of them reports, and
- * every one of them has to behave identically with nothing listening: the route still answers, the failure
- * is still classified, and the caller cannot tell.
+ * The real card-present reporting call sites with no recorder installed, as before `initialize` and after
+ * teardown. Each behaves identically with nothing listening: the route answers, the failure is classified,
+ * and the caller cannot tell.
  */
 class CardPresentReportsWithNothingListeningTest {
     private val logger = RecordingSdkLogger()

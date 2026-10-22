@@ -54,26 +54,16 @@ public interface TelemetryBootstrap {
 }
 
 /**
- * Finds the reporting module, if the app linked it.
- *
- * **One class name, looked up once.** Not a service loader and not a plugin registry: there is exactly one
- * such module, so a mechanism that could find several would be more machinery for the same result. The
- * day there is a second, this is where that changes.
- *
- * The lookup is by name because the dependency cannot go the other way, and the telemetry artifact carries
- * the keep rule that holds its own class through R8. A module that is absent, stripped or unloadable leaves
- * [installed] null and the SDK reports nothing.
+ * Finds the reporting module by its one class name, looked up once, since `:core` cannot depend on it.
+ * The telemetry artifact's keep rule holds the class through R8. A module that is absent, stripped or
+ * unloadable leaves [installed] null and the SDK reports nothing.
  */
 internal object TelemetryBootstraps {
     private val logger get() = LoggerRegistry.of(LogCategory.TELEMETRY)
 
     /**
-     * The name [installed] looks for.
-     *
-     * A variable only so a test can point it at a class that is not there. **An app depending on `:core` alone
-     * has no module**, and the branch that serves it — the lookup missing and
-     * the SDK carrying on — cannot be reached from a test whose classpath carries the module. Pointing the
-     * name elsewhere reaches the same code by the same route.
+     * The name [installed] looks for. A variable only so a test can point it at a class that is not there,
+     * which reaches the path an app depending on `:core` alone takes from a classpath that has the module.
      */
     @VisibleForTesting
     internal var implementation: String = TelemetryBootstrap.IMPLEMENTATION
