@@ -41,8 +41,8 @@ public object PayInSummaryRows {
     ): String = labels.totalOrNull() ?: context.getString(R.string.payabli_payin_summary_total)
 
     /**
-     * The figure on [field]'s row. Amount is the total less the service fee, read only beside a fee or a
-     * surcharge, whatever [PayInFormConfiguration.showsBaseAmount] is set to.
+     * The figure on [field]'s row. Amount is the total less the service fee and the surcharge, read only beside
+     * a fee or a surcharge, whatever [PayInFormConfiguration.showsBaseAmount] is set to.
      *
      * @param field the row's field.
      * @param details what is being charged, or null.
@@ -61,6 +61,7 @@ public object PayInSummaryRows {
                     .shownAmount(PayInField.Amount)
                     ?.takeIf { fee != null || surcharge != null }
                     ?.subtract(fee ?: BigDecimal.ZERO)
+                    ?.subtract(surcharge ?: BigDecimal.ZERO)
                     ?.takeIf { it.signum() != 0 }
             PayInField.ServiceFee -> fee
             PayInField.SurchargeFee -> surcharge
@@ -69,16 +70,14 @@ public object PayInSummaryRows {
     }
 
     /**
-     * The figure on the Total row: the total amount plus any surcharge, which is what is charged.
+     * The figure on the Total row: the total amount, which holds any surcharge sent and is what is charged.
      *
      * @param details what is being charged, or null.
      * @return the figure on the Total row, or null when the row is not drawn.
      */
     public fun totalRowAmount(details: PayInPaymentDetails?): BigDecimal? {
         if (details == null || details.amountRefusal() != null) return null
-        val charge = details.shownAmount(PayInField.Amount) ?: return null
-        val surcharge = details.shownAmount(PayInField.SurchargeFee) ?: BigDecimal.ZERO
-        return charge.add(surcharge).takeIf { it.signum() != 0 }
+        return details.shownAmount(PayInField.Amount)
     }
 
     /**
