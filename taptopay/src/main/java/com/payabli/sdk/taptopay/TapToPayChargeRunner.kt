@@ -278,8 +278,9 @@ internal class TapToPayChargeRunner(
                 throw withdrawn
             } catch (failure: Throwable) {
                 // A 409 does not extend the marker an earlier send wrote, and a send that never left starts none.
+                // An opening that returned did leave, whatever failed after it.
                 val unsent = !sendMark.mayHaveLeft || !TapToPayErrorCodes.typeFor(failure).leavesOutcomeUnknown
-                if (!askedForCard && (isConflict(failure) || unsent)) arrivedAt = null
+                if (!askedForCard && openedAs == null && (isConflict(failure) || unsent)) arrivedAt = null
                 // Only before the read: after it, no failure proves the money did not move.
                 if (!askedForCard) {
                     val key = reserved
