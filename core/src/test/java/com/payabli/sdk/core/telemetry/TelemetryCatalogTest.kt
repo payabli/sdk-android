@@ -29,14 +29,15 @@ class TelemetryCatalogTest {
     }
 
     @Test
-    fun everyDeclaredNameHasARowExceptTheOneThatIsNeverEmitted() {
+    fun everyDeclaredNameHasARow() {
         val missing = declaredNames.filter { it !in TelemetryCatalog.events }
-        assertEquals(listOf(TelemetryEvents.SDK_TELEMETRY_DISABLED), missing)
+        assertEquals(emptyList<String>(), missing)
     }
 
+    /** Retired with the switch it reported. The name is not reused, so the catalog still drops it. */
     @Test
-    fun theEventThatIsNeverEmittedCannotBeEmitted() {
-        assertNull(TelemetryCatalog.scrub(TelemetryEvents.SDK_TELEMETRY_DISABLED, emptyMap()))
+    fun theRetiredDisabledEventCannotBeEmitted() {
+        assertNull(TelemetryCatalog.scrub("sdk.telemetryDisabled", emptyMap()))
     }
 
     @Test

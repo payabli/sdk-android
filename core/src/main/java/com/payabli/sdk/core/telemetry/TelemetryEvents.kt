@@ -146,12 +146,6 @@ public object TelemetryEvents {
     /** A session is installed and reporting has started. This is the success case of the two above. */
     public const val SDK_INITIALIZED: String = "sdk.initialized"
 
-    /**
-     * Declared and never emitted: telemetry has no switch, so there is nothing for it to report. Kept so
-     * that neither platform reintroduces it as a new name.
-     */
-    public const val SDK_TELEMETRY_DISABLED: String = "sdk.telemetryDisabled"
-
     /** The host broker returned a token. */
     public const val AUTH_TOKEN_ACQUIRED: String = "auth.tokenAcquired"
 

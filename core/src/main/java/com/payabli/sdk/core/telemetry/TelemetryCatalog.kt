@@ -59,10 +59,6 @@ public object TelemetryCatalog {
 
     /**
      * The whole vocabulary, event by event.
-     *
-     * `sdk.telemetryDisabled` is absent. It is declared in [TelemetryEvents] so that neither
-     * platform reintroduces the name, and leaving it out here is what makes the promise that it is never
-     * reported hold even if a call site is written.
      */
     private val ALLOWED: Map<String, Set<String>> =
         mapOf(

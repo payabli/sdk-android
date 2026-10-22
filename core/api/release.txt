@@ -796,7 +796,6 @@ package com.payabli.sdk.core.telemetry {
     property public static String SDK_INITIALIZED;
     property public static String SDK_INITIALIZE_FAILED;
     property public static String SDK_INITIALIZE_STARTED;
-    property public static String SDK_TELEMETRY_DISABLED;
     property public static String TTP_ATTESTATION_FAILED;
     property public static String TTP_ATTESTATION_QUOTA_EXHAUSTED;
     property public static String TTP_ATTESTATION_STARTED;
@@ -836,7 +835,6 @@ package com.payabli.sdk.core.telemetry {
     field public static final String SDK_INITIALIZED = "sdk.initialized";
     field public static final String SDK_INITIALIZE_FAILED = "sdk.initialize.failed";
     field public static final String SDK_INITIALIZE_STARTED = "sdk.initialize.started";
-    field public static final String SDK_TELEMETRY_DISABLED = "sdk.telemetryDisabled";
     field public static final String TTP_ATTESTATION_FAILED = "ttp.attestation.failed";
     field public static final String TTP_ATTESTATION_QUOTA_EXHAUSTED = "ttp.attestation.quotaExhausted";
     field public static final String TTP_ATTESTATION_STARTED = "ttp.attestation.started";
