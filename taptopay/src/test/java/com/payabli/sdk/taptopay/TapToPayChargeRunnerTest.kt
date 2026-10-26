@@ -1600,6 +1600,23 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `an approved tap whose close the processor has no record of is still charged`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            fixture.reader.answerReadWith(cardRead())
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            val tapFailure = failure as? TapToPayException
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, tapFailure?.type)
+            assertEquals(TapToPayCapture.CHARGED, tapFailure?.capture)
+            assertEquals(TRANS_ID, tapFailure?.paymentTransId)
+        }
+
+    @Test
     fun `a failed tap on a key this SDK resent keeps tap not completed whatever the close answers`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR), opens = 3)

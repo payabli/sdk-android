@@ -294,7 +294,14 @@ internal class TapToPayChargeRunner(
                         }
                     }
                 }
-                val type = hostTypeFor(failure, unclosed = failure === unclosed, cardWasAsked = askedForCard, resentKey)
+                val type =
+                    hostTypeFor(
+                        failure,
+                        unclosed = failure === unclosed,
+                        cardWasAsked = askedForCard,
+                        resentKey = resentKey,
+                        capture = capture,
+                    )
                 // Before wrapping: the report classifies by the failure's own type.
                 TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard, type = type)
                 // The code that says the payment was not taken is the one answer whose capture is known: the
@@ -460,10 +467,18 @@ internal class TapToPayChargeRunner(
         unclosed: Boolean,
         cardWasAsked: Boolean,
         resentKey: Boolean,
+        capture: TapToPayCapture,
     ): PayabliErrorType {
-        // The close's refusal saying the processor has no record of this payment is about the charge, but
-        // only a run that minted its key may act on it: a resent key names an attempt nothing here resolves.
-        if (!resentKey && failure.saysTheProcessorHasNoRecord()) return PayabliErrorType.PAYMENT_NOT_TAKEN
+        // A refusal saying the processor has no record of the payment is about a failed tap only: a run
+        // that minted its key, asked for the card and never saw the sale charged. An approved tap is
+        // charged whatever its close was refused with, and a resent key names an attempt nothing resolves.
+        if (!resentKey &&
+            cardWasAsked &&
+            capture != TapToPayCapture.CHARGED &&
+            failure.saysTheProcessorHasNoRecord()
+        ) {
+            return PayabliErrorType.PAYMENT_NOT_TAKEN
+        }
         if (unclosed) return PayabliErrorType.PAYMENT_NOT_CLOSED
         // An opening refused as a repeat of this SDK's own resent key: an earlier charge has not finished.
         if (!cardWasAsked && resentKey && failure is ChargeKeyRefusal) return PayabliErrorType.CHARGE_NOT_FINISHED
