@@ -4040,6 +4040,9 @@ def test_workflows():
             shas[branch] = commit(version, branch)
         git("tag", "-a", "0.2.0", "-m", "0.2.0", shas["release/0.2.0"])
         git("tag", "qa-probe-1", shas["release/0.3.0"])
+        # A tag that shadows the short name of main's remote ref, on 0.2.0's commit: a guard that reads
+        # `origin/main` finds 0.2.0 there and passes.
+        git("tag", "origin/main", shas["release/0.2.0"])
         git("checkout", "-q", "-b", "hotfix/0.1.2", "0.1.1")
         shas["hotfix/0.1.2"] = commit("0.1.2", "hotfix/0.1.2")
         git("checkout", "-q", "main")
