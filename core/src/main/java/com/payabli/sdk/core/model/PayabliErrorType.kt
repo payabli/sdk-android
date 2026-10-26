@@ -362,6 +362,12 @@ public enum class PayabliErrorType(
         PayabliErrorCategory.OUTCOME_UNKNOWN,
         "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes.",
     ),
+    PAYMENT_NOT_TAKEN(
+        3035,
+        "PAYMENT_NOT_TAKEN",
+        PayabliErrorCategory.RETRY_LATER,
+        "The payment was not taken, and the card was not charged. Try again.",
+    ),
 }
 
 /**

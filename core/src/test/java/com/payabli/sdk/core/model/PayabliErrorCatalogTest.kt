@@ -254,6 +254,12 @@ class PayabliErrorCatalogTest {
                 PayabliErrorCategory.OUTCOME_UNKNOWN,
                 "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes.",
             ),
+            Row(
+                "PAYMENT_NOT_TAKEN",
+                3035,
+                PayabliErrorCategory.RETRY_LATER,
+                "The payment was not taken, and the card was not charged. Try again.",
+            ),
         )
 
     @Test
