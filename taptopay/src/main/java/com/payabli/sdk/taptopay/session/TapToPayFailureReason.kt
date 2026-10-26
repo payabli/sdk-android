@@ -43,6 +43,15 @@ public enum class TapToPayFailureReason {
     DEVICE_INELIGIBLE,
 
     /**
+     * The device's contactless radio was switched off, so the charge that reached here read no card and
+     * nothing can have been charged.
+     *
+     * The remedy is the merchant's alone: turning the radio on in Settings. Unlike [DEVICE_INELIGIBLE],
+     * the handset can take contactless payments once the radio is on.
+     */
+    CONTACTLESS_DISABLED,
+
+    /**
      * The SDK and the service disagree about the contract, or the SDK has a defect.
      *
      * This side of the wire. A failure inside the service is [SERVICE_UNAVAILABLE], which is why the name
