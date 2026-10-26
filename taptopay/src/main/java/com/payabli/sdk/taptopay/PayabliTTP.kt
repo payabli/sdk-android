@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * Every call that fails fails with [TapToPayException], with two exceptions a caller has to know about:
  * a cancellation unwinds as `CancellationException`, because withdrawing is not a failure, and a JVM
- * `Error` is not caught at all.
+ * `Error` other than a linkage failure is not caught at all.
  *
  * **A withdrawn charge is the one place that is not the whole story.** Once the card has been taken, the
  * call that tells the service is uncancellable, so a cancellation arriving after that point can still end
@@ -119,7 +119,7 @@ public class PayabliTTP private constructor(
          */
         @JvmStatic
         public fun isSupported(context: Context): Boolean =
-            CardReaderEligibility(context).isSatisfied() && !looksEmulated()
+            wrapping { CardReaderEligibility(context).isSatisfied() && !looksEmulated() }
 
         /**
          * Builds a terminal against [session].
@@ -153,10 +153,16 @@ public class PayabliTTP private constructor(
  * A failure that already names its payment passes through too, since rebuilding it would drop what it
  * names.
  *
+ * A linkage failure converts here as an exception does, so nothing outside the SDK's own failure
+ * vocabulary crosses an entry point; every other JVM `Error` still passes through unwrapped.
+ *
+ * `inline` rather than `suspend`, so the one ladder serves the non-suspending [PayabliTTP.isSupported]
+ * as well: the block is compiled into its caller, which is where a suspending call in it belongs.
+ *
  * At file scope rather than on the instance because [PayabliTTP.create] needs it too, and a member of the
  * class is unreachable from the companion that builds one.
  */
-private suspend fun <T> wrapping(block: suspend () -> T): T =
+private inline fun <T> wrapping(block: () -> T): T =
     try {
         block()
     } catch (withdrawn: CancellationException) {
@@ -164,10 +170,16 @@ private suspend fun <T> wrapping(block: suspend () -> T): T =
     } catch (named: TapToPayException) {
         throw named
     } catch (failure: Exception) {
-        throw TapToPayErrorCodes.exceptionFor(
-            failure,
-            TapToPayErrorCodes.typeFor(failure),
-            paymentTransId = null,
-            capture = TapToPayCapture.NOT_CHARGED,
-        )
+        throw converted(failure)
+    } catch (failure: LinkageError) {
+        throw converted(failure)
     }
+
+/** The failure an entry point answers an unclassified original with, under the codes' classification. */
+private fun converted(failure: Throwable): TapToPayException =
+    TapToPayErrorCodes.exceptionFor(
+        failure,
+        TapToPayErrorCodes.typeFor(failure),
+        paymentTransId = null,
+        capture = TapToPayCapture.NOT_CHARGED,
+    )

@@ -297,8 +297,12 @@ internal class TapToPayChargeRunner(
                 val type = hostTypeFor(failure, unclosed = failure === unclosed, cardWasAsked = askedForCard, resentKey)
                 // Before wrapping: the report classifies by the failure's own type.
                 TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard, type = type)
-                // A JVM Error passes through unwrapped, as the facade promises.
-                throw if (failure is Exception) failed(failure, type, openedAs, capture) else failure
+                // A JVM Error that is no linkage failure passes through unwrapped, as the facade promises.
+                throw if (failure is Exception || failure is LinkageError) {
+                    failed(failure, type, openedAs, capture)
+                } else {
+                    failure
+                }
             } finally {
                 // A key still held names the newest unsettled charge, the only one a retry can claim.
                 reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it, arrivedAt) } }
@@ -411,17 +415,30 @@ internal class TapToPayChargeRunner(
                 // rethrow.
                 throw withdrawn
             } catch (failure: Exception) {
-                TapToPayReports.closeFailed(failure, startedAt, TelemetryProperties.Origin.RETRY)
-                // Still held, so this can be tried again.
-                throw failed(
-                    failure,
-                    PayabliErrorType.PAYMENT_NOT_CLOSED,
-                    pending.paymentTransId,
-                    captureOf(pending.read.outcome, pending.resentKey),
-                )
+                throw closeRetryFailed(failure, startedAt, pending)
+            } catch (failure: LinkageError) {
+                throw closeRetryFailed(failure, startedAt, pending)
             }
             TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.RETRY)
         }
+
+    /**
+     * A failed close retry's answer: reported as the close it was, still held so this can be tried again,
+     * and the failure converted under the payment's own capture state.
+     */
+    private fun closeRetryFailed(
+        failure: Throwable,
+        startedAt: Long,
+        pending: PendingClose,
+    ): Nothing {
+        TapToPayReports.closeFailed(failure, startedAt, TelemetryProperties.Origin.RETRY)
+        throw failed(
+            failure,
+            PayabliErrorType.PAYMENT_NOT_CLOSED,
+            pending.paymentTransId,
+            captureOf(pending.read.outcome, pending.resentKey),
+        )
+    }
 
     /**
      * What the reader's answer says about the money, which is not the same as whether it answered.
@@ -471,7 +488,7 @@ internal class TapToPayChargeRunner(
 
     /** The failure a caller sees, under [type], carrying the payment it belongs to and whether the money moved. */
     private fun failed(
-        failure: Exception,
+        failure: Throwable,
         type: PayabliErrorType,
         paymentTransId: String?,
         capture: TapToPayCapture,
