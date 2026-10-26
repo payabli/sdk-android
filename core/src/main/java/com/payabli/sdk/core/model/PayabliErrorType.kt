@@ -362,6 +362,19 @@ public enum class PayabliErrorType(
         PayabliErrorCategory.OUTCOME_UNKNOWN,
         "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes.",
     ),
+
+    // 3035 is held for a code not declared yet, and no member takes it.
+
+    /**
+     * The device's contactless radio is switched off. No card was read, so nothing can have been charged,
+     * and the remedy is the merchant's alone: turning the radio on in Settings.
+     */
+    CONTACTLESS_DISABLED(
+        3036,
+        "CONTACTLESS_DISABLED",
+        PayabliErrorCategory.CONFIGURATION,
+        "Contactless (NFC) is turned off on this device. Turn it on in Settings.",
+    ),
 }
 
 /**

@@ -78,6 +78,7 @@ class LeavesOutcomeUnknownTest {
             PayabliErrorType.TOO_MANY_OPEN_CHARGES,
             PayabliErrorType.PAYMENT_NOT_HELD,
             PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE,
+            PayabliErrorType.CONTACTLESS_DISABLED,
         )
 
     @Test

@@ -254,6 +254,12 @@ class PayabliErrorCatalogTest {
                 PayabliErrorCategory.OUTCOME_UNKNOWN,
                 "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes.",
             ),
+            Row(
+                "CONTACTLESS_DISABLED",
+                3036,
+                PayabliErrorCategory.CONFIGURATION,
+                "Contactless (NFC) is turned off on this device. Turn it on in Settings.",
+            ),
         )
 
     @Test
@@ -299,8 +305,8 @@ class PayabliErrorCatalogTest {
     }
 
     private companion object {
-        /** Numbers no member may take. */
-        val reserved = setOf(3032)
+        /** Numbers no member takes: 3032 is reserved, and 3035 is held for a code not declared yet. */
+        val reserved = setOf(3032, 3035)
     }
 
     @Test

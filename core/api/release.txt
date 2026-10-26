@@ -318,6 +318,7 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CARD_PRESENT_NOT_ENABLED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CHARGE_NOT_FINISHED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CONFLICT;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CONTACTLESS_DISABLED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DECODING_ERROR;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_HARDWARE_UNSUPPORTED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_IDENTITY_UNAVAILABLE;
