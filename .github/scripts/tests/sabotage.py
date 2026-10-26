@@ -155,6 +155,19 @@ RELEASE_SUBJECT_THEN_TAG = (
     '          fetch-depth: 0\n'
     '          persist-credentials: false\n'
     '\n'
+    '      # Again here, where the tag is created: a release cut while this one waited for approval has tagged\n'
+    '      # a newer version since the check ran.\n'
+    '      - name: Check the version is not below the newest release\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '        run: |\n'
+    "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+    '          newest=$(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p" | sort -V | tail -n 1)\n'
+    '          if [ -n "$newest" ] && [ "$(printf \'%s\\n%s\\n\' "$newest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then\n'
+    '            echo "::error::the newest release is $newest, and $VERSION is lower."\n'
+    '            exit 1\n'
+    '          fi\n'
+    '\n'
     '      # A tag already on this commit is a resumed release and is not pushed twice. One on another commit is\n'
     '      # a number already spent.\n'
     '      - name: Create the tag\n'
@@ -195,6 +208,19 @@ RELEASE_TAG_THEN_SUBJECT = (
     '        with:\n'
     '          fetch-depth: 0\n'
     '          persist-credentials: false\n'
+    '\n'
+    '      # Again here, where the tag is created: a release cut while this one waited for approval has tagged\n'
+    '      # a newer version since the check ran.\n'
+    '      - name: Check the version is not below the newest release\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '        run: |\n'
+    "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+    '          newest=$(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p" | sort -V | tail -n 1)\n'
+    '          if [ -n "$newest" ] && [ "$(printf \'%s\\n%s\\n\' "$newest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then\n'
+    '            echo "::error::the newest release is $newest, and $VERSION is lower."\n'
+    '            exit 1\n'
+    '          fi\n'
     '\n'
     '      # A tag already on this commit is a resumed release and is not pushed twice. One on another commit is\n'
     '      # a number already spent.\n'
@@ -2220,11 +2246,37 @@ MUTATIONS = [
      "          BRANCH: ${{ steps.branch.outputs.branch }}\n", "          BRANCH: main\n"),
 
     ("Release counts a tag that is not a release as the newest release", RELEASE, "workflows",
-     " refs/tags | sed -nE \"/$release/p\" | sort -V | tail -n 1)",
-     " refs/tags | sort -V | tail -n 1)"),
+     "          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest=$(git for-each-ref --format='%(refname:strip=2)' refs/tags | sed -nE \"/$release/p\" | sort -V",
+     "          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest=$(git for-each-ref --format='%(refname:strip=2)' refs/tags | sort -V"),
 
     ("Release refuses a version above the newest release and accepts one below it", RELEASE, "workflows",
-     '| sort -V | tail -n 1)" != "$VERSION" ]; then', '| sort -V | tail -n 1)" = "$VERSION" ]; then'),
+     "          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest=$(git for-each-ref --format='%(refname:strip=2)' refs/tags | sed -nE \"/$release/p\" | sort -V | tail -n 1)\n"
+     "          if [ -n \"$newest\" ] && [ \"$(printf '%s\\n%s\\n' \"$newest\" \"$VERSION\" | sort -V | tail -n 1)\" != \"$VERSION\" ]; then",
+     "          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest=$(git for-each-ref --format='%(refname:strip=2)' refs/tags | sed -nE \"/$release/p\" | sort -V | tail -n 1)\n"
+     "          if [ -n \"$newest\" ] && [ \"$(printf '%s\\n%s\\n' \"$newest\" \"$VERSION\" | sort -V | tail -n 1)\" = \"$VERSION\" ]; then"),
+
+    ("Release tags without refusing a version below the newest release again", RELEASE, "workflows",
+     "          VERSION: ${{ needs.check.outputs.version }}\n        run: |\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest=",
+     "          VERSION: ${{ needs.check.outputs.version }}\n        run: |\n"
+     "          exit 0\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest="),
+
+    ("Release checks the newest release again against the run's own version", RELEASE, "workflows",
+     "      - name: Check the version is not below the newest release\n        env:\n"
+     "          VERSION: ${{ needs.check.outputs.version }}\n",
+     "      - name: Check the version is not below the newest release\n        env:\n"
+     "          VERSION: 9.9.9\n"),
 
     ("Release refuses an earlier release that is in main and accepts one that is not", RELEASE, "workflows",
      '&& [ "$(git merge-base "$tagged" origin/main)" != "$tagged" ]; then',

@@ -327,6 +327,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Again here, where the tag is created: a release cut while this one waited for approval has tagged
+      # a newer version since the check ran.
+      - name: Check the version is not below the newest release
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          release='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          newest=$(git for-each-ref --format='%(refname:strip=2)' refs/tags | sed -nE "/$release/p" | sort -V | tail -n 1)
+          if [ -n "$newest" ] && [ "$(printf '%s\n%s\n' "$newest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then
+            echo "::error::the newest release is $newest, and $VERSION is lower."
+            exit 1
+          fi
+
       # A tag already on this commit is a resumed release and is not pushed twice. One on another commit is
       # a number already spent.
       - name: Create the tag

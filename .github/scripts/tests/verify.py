@@ -4212,6 +4212,20 @@ def test_workflows():
           len(tagging) == 1 and env_of(tagging[0], "GH_TOKEN") == token,
           f"{[env_of(step, 'GH_TOKEN') for step in tagging]}")
 
+    # The newest-release refusal again, in the job that tags: a release cut while this one waited for its
+    # approval has tagged a newer version since the check ran. Before the tag, and run on the fixture.
+    again = [i for i, step in enumerate(gate_steps)
+             if step.get("name") == "Check the version is not below the newest release"]
+    check("W17 and the release job refuses a version below the newest release again, before it tags",
+          len(again) == 1 and tag_at is not None and again[0] < tag_at
+          and env_of(gate_steps[again[0]], "VERSION") == approved_version,
+          f"at={again} tag={tag_at} {[env_of(gate_steps[i], 'VERSION') for i in again]}")
+    if len(again) == 1:
+        below = run_step(gate_steps[again[0]], {"VERSION": "0.1.2"}, cwd=repo)[0]
+        above = run_step(gate_steps[again[0]], {"VERSION": "0.3.0"}, cwd=repo)[0]
+        check("W17 and it refuses the version below and passes the one above", (below, above) == (1, 0),
+              f"below={below} above={above}")
+
     # The subject, checked before the tag and before the assume. The role trusts the environment and the
     # setting that shapes the claim is GitHub's, so a mismatch found after the tag has spent the number.
     subject, expected = subject_checked(gate_steps, "release")
