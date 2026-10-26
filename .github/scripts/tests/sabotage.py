@@ -744,6 +744,10 @@ MUTATIONS = [
     ("A QA snapshot runs the suites under a shell without -e", QA, "workflows",
      "      - name: Unit tests\n        env:\n", "      - name: Unit tests\n        shell: bash {0}\n        env:\n"),
 
+    ("CI groups push runs by branch, so a waiting push run is replaced by the next", CI, "workflows",
+     "  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}\n",
+     "  group: ci-${{ github.ref }}\n"),
+
     ("CI cancels a run on a push, the run a release names", CI, "workflows",
      "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}", "  cancel-in-progress: true"),
 
