@@ -177,7 +177,8 @@ public sealed class PayabliPayIn {
 
     public companion object {
         /**
-         * Builds one over [session], for [entryPoint].
+         * Builds one over [session], for [entryPoint]. A failure the SDK did not classify converts to
+         * the SDK's unknown failure, as at every entry point.
          *
          * @param session an initialized session, whose transport carries the bearer, the one 401 recovery and
          *   the replay rule. Nothing here holds a credential or a token path of its own.

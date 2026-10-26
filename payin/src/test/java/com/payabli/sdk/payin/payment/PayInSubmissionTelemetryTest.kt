@@ -225,6 +225,26 @@ class PayInSubmissionTelemetryTest {
             assertEquals("IllegalStateException", properties[TelemetryProperty.FAILURE_TYPE.key])
         }
 
+    /**
+     * A linkage failure is one of those: the report names the type the entry point caught, and the
+     * entry point still answers rather than letting it escape.
+     */
+    @Test
+    fun `a linkage failure is reported by the type the entry point caught`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission =
+                submissionOver(
+                    FakePayInTransport.failingWith(NoClassDefFoundError("a class the payer's device lacks")),
+                )
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
+
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.FAILED, properties[TelemetryProperty.OUTCOME.key])
+            assertEquals("NoClassDefFoundError", properties[TelemetryProperty.FAILURE_TYPE.key])
+        }
+
     /** A form nobody can submit is a real thing to count, and it is invisible to anything watching requests. */
     @Test
     fun `a submission refused before anything is sent is reported as refused locally`() =

@@ -3,6 +3,9 @@ package com.payabli.sdk.payin
 import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
@@ -18,6 +21,7 @@ import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.model.RedactedCause
 import com.payabli.sdk.payin.payment.PayInSubmission
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
@@ -255,6 +259,10 @@ internal class PayInPaymentFlow private constructor(
          * a Kotlin boundary and not a JVM one, and a function can be `@JvmSynthetic` where a constructor
          * cannot, so construction goes through here and the constructors are private.
          *
+         * A failure the SDK did not classify converts to its unknown failure here, as at every entry
+         * point; construction belongs to no failure event, so the converted failure is thrown and
+         * nothing is reported.
+         *
          * @param session an initialized session.
          * @param entryPoint the partner integration point every request is sent to.
          * @param scope where a submission started by the form runs.
@@ -265,12 +273,24 @@ internal class PayInPaymentFlow private constructor(
             session: PayabliSession,
             entryPoint: String,
             scope: CoroutineScope,
-        ): PayInPaymentFlow = PayInPaymentFlow(session, entryPoint, scope)
+        ): PayInPaymentFlow =
+            try {
+                PayInPaymentFlow(session, entryPoint, scope)
+            } catch (failure: PayabliException) {
+                throw failure
+            } catch (original: Exception) {
+                throw unexpectedFailure(original)
+            } catch (original: LinkageError) {
+                throw unexpectedFailure(original)
+            }
 
         /**
          * The seam a test builds over, which takes a transport rather than a session.
          * [elapsedRealtimeNanos] defaults to the production clock; a JVM test has to pass one, because
          * `SystemClock` does not exist there and the default throws rather than measuring anything.
+         *
+         * A failure the SDK did not classify converts here as in the session factory above: the
+         * converted failure is thrown and nothing is reported.
          *
          * @param transport the transport every request goes through.
          * @param entryPoint the partner integration point every request is sent to.
@@ -291,6 +311,29 @@ internal class PayInPaymentFlow private constructor(
             logger: SdkLogger? = null,
             telemetry: TelemetrySessionContext? = null,
         ): PayInPaymentFlow =
-            PayInPaymentFlow(transport, entryPoint, scope, dispatcher, elapsedRealtimeNanos, logger, telemetry)
+            try {
+                PayInPaymentFlow(transport, entryPoint, scope, dispatcher, elapsedRealtimeNanos, logger, telemetry)
+            } catch (failure: PayabliException) {
+                throw failure
+            } catch (original: Exception) {
+                throw unexpectedFailure(original)
+            } catch (original: LinkageError) {
+                throw unexpectedFailure(original)
+            }
+
+        /**
+         * The failure a construction answers an unclassified original with: the SDK's unknown failure,
+         * the original kept as its redacted cause. Construction belongs to no failure event, so the
+         * caller throws this and reports nothing.
+         *
+         * @param original the failure as it was thrown, before conversion.
+         * @return the failure to throw in the original's place.
+         */
+        private fun unexpectedFailure(original: Throwable): PayabliGenericException =
+            PayabliGenericException(
+                PayabliErrorType.UNKNOWN,
+                PayabliErrorType.UNKNOWN.message,
+                cause = RedactedCause(original),
+            )
     }
 }

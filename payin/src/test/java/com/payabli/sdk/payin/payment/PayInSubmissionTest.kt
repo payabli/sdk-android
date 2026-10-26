@@ -1652,12 +1652,34 @@ class PayInSubmissionTest {
 
             val state = failed(submission.state.value)
             assertEquals(PayabliErrorType.UNKNOWN, state.cause.type)
+            // The send ended with the outcome unknown, so the converted reason travels as the Unsettled detail.
+            assertEquals(PayabliErrorType.UNKNOWN.message, state.cause.detail)
             val carried =
                 state.cause.cause
                     ?.message
                     .orEmpty()
             assertFalse("the cause carried its message: $carried", carried.contains(TEST_PAN))
             assertTrue("the cause lost the type that raised it: $carried", carried.contains("IllegalStateException"))
+        }
+
+    @Test
+    fun `a linkage failure arrives classified, with its own message withheld`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(NoClassDefFoundError("could not load $TEST_PAN"))
+            val submission = submissionOver(transport)
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            val state = failed(submission.state.value)
+            assertEquals(PayabliErrorType.UNKNOWN, state.cause.type)
+            // The send ended with the outcome unknown, so the converted reason travels as the Unsettled detail.
+            assertEquals(PayabliErrorType.UNKNOWN.message, state.cause.detail)
+            val carried =
+                state.cause.cause
+                    ?.message
+                    .orEmpty()
+            assertFalse("the cause carried its message: $carried", carried.contains(TEST_PAN))
+            assertTrue("the cause lost the type that raised it: $carried", carried.contains("NoClassDefFoundError"))
         }
 
     // --- cancellation ---
@@ -2015,6 +2037,20 @@ class PayInSubmissionTest {
 
             assertFalse("$failure", failure is PayInException.Unsettled)
             assertEquals(PayabliErrorType.SERVER_ERROR, (failure as? PayabliException)?.type)
+        }
+
+    @Test
+    fun `a read that fails with a linkage error arrives classified`() =
+        runTest(timeout = timeout) {
+            val submission =
+                submissionOver(
+                    FakePayInTransport.failingWith(NoClassDefFoundError("a class the reader needs")),
+                )
+
+            val failure = submission.readTransaction(TEST_ENTRY_POINT, "101-abc").exceptionOrNull()
+
+            assertEquals(PayabliErrorType.UNKNOWN, (failure as? PayabliException)?.type)
+            assertEquals(PayabliErrorType.UNKNOWN.message, (failure as? PayabliException)?.reason)
         }
 
     @Test
