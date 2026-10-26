@@ -329,9 +329,12 @@ jobs:
             exit 1
           fi
 
-      # For the uploader, and the tags the step below reads.
+      # For the uploader, and the tags and main the steps below read. Named by SHA: a branch ref makes the
+      # checkout pin origin/main back to the dispatch-time commit when main has moved since, and the checks
+      # below need main as it is now.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 

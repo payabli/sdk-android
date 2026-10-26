@@ -149,9 +149,12 @@ RELEASE_SUBJECT_THEN_TAG = (
     '            exit 1\n'
     '          fi\n'
     '\n'
-    '      # For the uploader, and the tags the step below reads.\n'
+    '      # For the uploader, and the tags and main the steps below read. Named by SHA: a branch ref makes the\n'
+    '      # checkout pin origin/main back to the dispatch-time commit when main has moved since, and the checks\n'
+    '      # below need main as it is now.\n'
     '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n'
     '        with:\n'
+    '          ref: ${{ github.sha }}\n'
     '          fetch-depth: 0\n'
     '          persist-credentials: false\n'
     '\n'
@@ -225,9 +228,12 @@ RELEASE_SUBJECT_THEN_TAG = (
     '\n'
 )
 RELEASE_TAG_THEN_SUBJECT = (
-    '      # For the uploader, and the tags the step below reads.\n'
+    '      # For the uploader, and the tags and main the steps below read. Named by SHA: a branch ref makes the\n'
+    '      # checkout pin origin/main back to the dispatch-time commit when main has moved since, and the checks\n'
+    '      # below need main as it is now.\n'
     '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n'
     '        with:\n'
+    '          ref: ${{ github.sha }}\n'
     '          fetch-depth: 0\n'
     '          persist-credentials: false\n'
     '\n'
@@ -2045,8 +2051,8 @@ MUTATIONS = [
      'permissions:\n  contents: read\n  id-token: write\n\n#'),
 
     ("Release runs Gradle beside the deploy key and the publishing token", RELEASE, "workflows",
-     "      # For the uploader, and the tags the step below reads.\n",
-     "      - run: ./gradlew help\n      # For the uploader, and the tags the step below reads.\n"),
+     "      # For the uploader, and the tags and main the steps below read. Named by SHA: a branch ref makes the\n",
+     "      - run: ./gradlew help\n      # For the uploader, and the tags and main the steps below read. Named by SHA: a branch ref makes the\n"),
 
     ("Release hands the upload step a secret", RELEASE, "workflows",
      "          VERSION: ${{ needs.check.outputs.version }}\n          ROLE_ARN",
@@ -2646,6 +2652,10 @@ MUTATIONS = [
      '              fi\n'
      '            fi\n'
      '          done\n'),
+
+    ("Release checks out main by branch, which pins origin/main to the dispatch-time commit", RELEASE, "workflows",
+     "          ref: ${{ github.sha }}\n          fetch-depth: 0\n          persist-credentials: false\n",
+     "          fetch-depth: 0\n          persist-credentials: false\n"),
 
     ("Release lets the merge-back guard fail without failing the job", RELEASE, "workflows",
      "      - name: Check every earlier release is in main and in the commit\n",

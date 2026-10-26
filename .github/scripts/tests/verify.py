@@ -3942,8 +3942,11 @@ def test_workflows():
     # The uploader it runs is this workflow's, the commit the run was dispatched on, and not the commit
     # being released, which may carry an older one.
     gate_checkouts = [step.get("with") or {} for step in gate_steps if "actions/checkout" in str(step.get("uses", ""))]
-    check("W17 and it checks out this workflow's own commit",
-          len(gate_checkouts) == 1 and not gate_checkouts[0].get("ref") and not gate_checkouts[0].get("repository"),
+    # By SHA: with a branch ref, the checkout fetches the dispatch-time commit into origin/main when main has
+    # moved since (actions/checkout `testRef`, then `getRefSpec`), and the merge-back check reads a stale main.
+    check("W17 and it checks out this workflow's own commit, by SHA so origin/main stays the fetched tip",
+          len(gate_checkouts) == 1 and " ".join(str(gate_checkouts[0].get("ref", "")).split()) == "${{ github.sha }}"
+          and not gate_checkouts[0].get("repository"),
           f"{gate_checkouts}")
     # Full history is what fetches the tags: any other depth fetches none, so the lookup below finds no tag,
     # a resume pushes it again, and a spent number is reported as a refused push rather than said.
