@@ -309,9 +309,9 @@ internal class TapToPayChargeRunner(
         }
 
     /**
-     * Asks for one card for [amount], at the scale the paypoint recorded. Every other exit, cancellation and a JVM
-     * `Error` included, closes [paymentTransId] and rethrows what it caught, and keeps the key unless that close
-     * finds the processor has no record of it; that refusal is thrown in the read failure's place.
+     * Asks for one card for [amount], at the scale the paypoint recorded. Every other exit, cancellation
+     * and a JVM `Error` included, closes [paymentTransId] and rethrows what it caught, except on a run
+     * that minted its key: the close's no-record refusal is thrown in its place and settles the key.
      */
     private suspend fun readCard(
         paymentTransId: String,
@@ -451,11 +451,9 @@ internal class TapToPayChargeRunner(
     }
 
     /**
-     * The catalog entry a charge's failure reaches the caller under.
-     *
-     * Once the reader has been asked for a card the sale may be captured, so a code saying nothing was sent
-     * is not true of it, whatever the failure's own type: such a failure from then on is the payment's outcome
-     * not being confirmed.
+     * The catalog entry a charge's failure reaches the caller under. Once the reader has been asked for
+     * a card the sale may be captured, so whatever the failure's own type, a code saying nothing was sent
+     * is not true of it: such a failure is the payment's outcome not being confirmed.
      */
     private fun hostTypeFor(
         failure: Throwable,
@@ -499,11 +497,11 @@ internal class TapToPayChargeRunner(
     }
 
     /**
-     * Closes an uncompleted tap, uncancellably. A close that lands keeps the key, because the answer is not decoded
-     * and a capture reads like a failure. The one release is a refusal saying the processor has no record of it.
+     * Closes an uncompleted tap, uncancellably. A close that lands keeps the key, because the answer is not
+     * decoded and a capture reads like a failure. The one release is the refusal saying the processor has no
+     * record of the payment, on a run that minted its key.
      *
-     * @return the close's no-record refusal to report in place of the read's failure on a run that minted
-     * its key, or null.
+     * @return the close's no-record refusal on a run that minted its key, or null.
      */
     private suspend fun closeAfterFailedRead(
         paymentTransId: String,
