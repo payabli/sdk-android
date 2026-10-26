@@ -1501,7 +1501,7 @@ class TapToPayChargeRunnerTest {
     /**
      * A failed-tap script whose first close lands and every later one is refused as unknown to the
      * processor. A close that lands releases nothing, so the first charge's key stays held: the setup
-     * a resent run needs, now that a no-record close settles the minted attempt.
+     * a resent run needs.
      */
     private suspend fun firstCloseLandsThenNoRecord(opens: Int = 3): SessionFixture {
         var closes = 0
@@ -1536,7 +1536,7 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `an indeterminate tap the processor has no record of settles its attempt`() =
+    fun `an indeterminate tap the processor has no record of keeps its attempt held`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
             fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
@@ -1548,7 +1548,7 @@ class TapToPayChargeRunnerTest {
             }
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(0))
-            assertEquals("the retry minted a fresh attempt", "$MINTED_KEY-2", fixture.keySent(1))
+            assertEquals("the retry resent the held key", "$MINTED_KEY-1", fixture.keySent(1))
         }
 
     @Test
