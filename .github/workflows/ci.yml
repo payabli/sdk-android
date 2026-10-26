@@ -9,7 +9,8 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   # A pull request's run only: a release names a commit that passed this workflow on a push to its release
-  # or hotfix branch, and a run cancelled by the next merge is one that never passed.
+  # or hotfix branch, and a running push cancelled by the next merge is one that never passed. GitHub still
+  # replaces a push run that is waiting behind another; the release then names the later commit.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

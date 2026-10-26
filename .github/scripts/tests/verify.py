@@ -4046,6 +4046,8 @@ def test_workflows():
         shas["main"] = commit("0.2.0", "main")
         for branch in ("main", "release/0.2.0", "release/0.3.0", "hotfix/0.1.2"):
             git("update-ref", f"refs/remotes/origin/{branch}", shas[branch])
+        # Named under release/0.4.0 without being it: a prefix match would take it for that branch.
+        git("update-ref", "refs/remotes/origin/release/0.4.0/extra", shas["release/0.3.0"])
         return root, shas
 
     def checker_step(name: str) -> dict | None:
@@ -4076,7 +4078,7 @@ def test_workflows():
               lands(shas["release/0.2.0"], "0.3.0")[0] == 1, f"{lands(shas['release/0.2.0'], '0.3.0')}")
         check("W17 and a commit only on main is refused, though its version's branch exists",
               lands(shas["main"], "0.2.0")[0] == 1, f"{lands(shas['main'], '0.2.0')}")
-        check("W17 and a version with no branch at all is refused",
+        check("W17 and a version with no branch of its own is refused, beside one whose name starts with it",
               lands(shas["release/0.3.0"], "0.4.0")[0] == 1, f"{lands(shas['release/0.3.0'], '0.4.0')}")
 
     # A version below the newest release would be published after it. Equal is a resumed release, which the
@@ -4395,7 +4397,7 @@ def test_workflows():
     # `${{ github.ref == github.ref }}` both cancel and both survive an inequality. `concurrency` may also
     # be a bare string, which is a group with no cancellation to read.
     ci_cancels = cancels_of(ci_doc.get("concurrency"))
-    check("W17 and ci.yml cancels no run on a push, which is what a release names",
+    check("W17 and ci.yml cancels no running push, which is what a release names",
           ci_cancels in ("", "False", "${{ github.event_name == 'pull_request' }}"), ci_cancels)
     # A release is cut from its release or hotfix branch, so CI runs on pushes there as well as on main.
     ci_on = (ci_doc.get(True) if True in ci_doc else ci_doc.get("on")) or {}
@@ -4466,9 +4468,11 @@ def test_workflows():
     # source branch, so this job is the rule, and it is run on the names it decides rather than read.
     source_doc = workflow_doc(SOURCE_WORKFLOW)
     source_on = (source_doc.get(True) if True in source_doc else source_doc.get("on")) or {}
-    source_pr = source_on.get("pull_request") or {}
-    check("W18 the source-branch workflow runs on pull requests to main and nothing else",
-          set(source_on) == {"pull_request"} and source_pr.get("branches") == ["main"], f"{source_on}")
+    source_pr = source_on.get("pull_request_target") or {}
+    # main's copy judges the pull request, so one that edits this file is judged by what it would replace.
+    # Safe only while the job checks nothing out and holds no token, which the next checks hold.
+    check("W18 the source-branch workflow runs main's copy on pull requests to main, and nothing else",
+          set(source_on) == {"pull_request_target"} and source_pr.get("branches") == ["main"], f"{source_on}")
     # The default types miss a pull request retargeted to main, which arrives as `edited`.
     check("W18 and on a pull request retargeted to main",
           {"opened", "synchronize", "reopened", "edited"} <= set(source_pr.get("types") or []),
@@ -4479,14 +4483,21 @@ def test_workflows():
     check("W18 and it is one step, with no checkout", len(source_steps) == 1 and len(sourced) == 1,
           f"{[step.get('name') or step.get('uses') for step in source_steps]}")
     # Through the environment: a branch name interpolated into the script is parsed as shell.
-    check("W18 and the branch reaches the script through the environment",
-          len(sourced) == 1 and " ".join(str((sourced[0].get("env") or {}).get("HEAD_REF", "")).split())
-          == "${{ github.head_ref }}" and "${{" not in str(sourced[0].get("run", "")), f"{sourced[0] if sourced else ''}")
+    source_env = {key: " ".join(str(value).split()) for key, value in ((sourced[0].get("env") or {}) if sourced else {}).items()}
+    check("W18 and the branch and its repository reach the script through the environment",
+          len(sourced) == 1 and source_env.get("HEAD_REF") == "${{ github.head_ref }}"
+          and source_env.get("HEAD_REPO") == "${{ github.event.pull_request.head.repo.full_name }}"
+          and "${{" not in str(sourced[0].get("run", "")), f"{sourced[0] if sourced else ''}")
     if len(sourced) == 1:
+        # A fork's branch can carry any name, so a release branch from a fork is refused.
+        forked = run_step(sourced[0], {"HEAD_REF": "release/0.2.0", "HEAD_REPO": "someone/sdk-android",
+                                       "GITHUB_REPOSITORY": "payabli/sdk-android"})[0]
+        check("W18 and a release branch from a fork is refused", forked == 1, f"status={forked}")
         for branch, status in (("release/0.2.0", 0), ("hotfix/0.2.1", 0), ("dependabot/github_actions/actions-1", 0),
                                ("feat/ci-release-branches", 1), ("release", 1), ("release/", 1),
                                ("dependabot/", 1), ("main", 1), ("x/release/0.2.0", 1)):
-            ran = run_step(sourced[0], {"HEAD_REF": branch})[0]
+            ran = run_step(sourced[0], {"HEAD_REF": branch, "HEAD_REPO": "payabli/sdk-android",
+                                        "GITHUB_REPOSITORY": "payabli/sdk-android"})[0]
             check(f"W18 and a pull request from {branch} is {'accepted' if status == 0 else 'refused'}",
                   ran == status, f"status={ran}")
 

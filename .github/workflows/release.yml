@@ -107,7 +107,9 @@ jobs:
         run: |
           branch=
           for candidate in "release/$VERSION" "hotfix/$VERSION"; do
-            tip=$(git for-each-ref --format='%(objectname)' "refs/remotes/origin/$candidate")
+            # for-each-ref matches a prefix, so release/0.2.0 would also find release/0.2.0/x. Exact name only.
+            tip=$(git for-each-ref --format='%(refname) %(objectname)' "refs/remotes/origin/$candidate" |
+              awk -v ref="refs/remotes/origin/$candidate" '$1 == ref { print $2 }')
             if [ -n "$tip" ] && [ "$(git merge-base "$COMMIT" "$tip")" = "$COMMIT" ]; then
               branch=$candidate
               break
@@ -157,7 +159,7 @@ jobs:
             tagged=$(git rev-parse "refs/tags/$tag^{commit}")
             if [ "$tag" != "$VERSION" ] && [ "$(printf '%s\n%s\n' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ] \
                 && [ "$(git merge-base "$tagged" origin/main)" != "$tagged" ]; then
-              echo "::error::release $tag is not in main: its release or hotfix branch has not merged back."
+              echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."
               exit 1
             fi
           done

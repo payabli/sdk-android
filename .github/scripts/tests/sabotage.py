@@ -2311,6 +2311,16 @@ MUTATIONS = [
     ("Source branch is handed a token", SOURCE_BRANCH, "workflows",
      "permissions: {}\n", "permissions:\n  contents: read\n"),
 
+    ("Source branch runs the pull request's own copy of itself", SOURCE_BRANCH, "workflows",
+     "on:\n  pull_request_target:\n", "on:\n  pull_request:\n"),
+
+    ("Source branch takes a fork's branch by its name", SOURCE_BRANCH, "workflows",
+     '          if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then\n',
+     '          if [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ] && [ -z "$HEAD_REPO" ]; then\n'),
+
+    ("Release takes a branch whose name only starts with the version's for that branch", RELEASE, "workflows",
+     "'$1 == ref { print $2 }'", "'index($1, ref) == 1 { print $2 }'"),
+
     ("The harness stops running when the source-branch rule changes", SCRIPTS, "workflows",
      "      - '.github/workflows/source-branch.yml'\n      # The harness reads the live workflows",
      "      # The harness reads the live workflows"),
