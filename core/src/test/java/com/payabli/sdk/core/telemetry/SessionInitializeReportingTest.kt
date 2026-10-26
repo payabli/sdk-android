@@ -7,6 +7,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.model.RedactedFailure
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
@@ -28,10 +29,12 @@ import org.junit.Test
  * Application and an Activity both initializing: the second call changes nothing.
  *
  * Nothing is listening on a first install or after a reset, because the channel is what a successful install
- * creates, so what these cover is a repeat call against a live session.
+ * creates, so what these cover is a repeat call against a live session — and the converted failure, which a
+ * first install reports only to the recorder a test installs itself.
  */
 class SessionInitializeReportingTest {
     private val recorded = mutableListOf<String>()
+    private val recordedProperties = mutableListOf<Map<String, String>>()
 
     @Before
     fun listen() {
@@ -39,7 +42,10 @@ class SessionInitializeReportingTest {
         // starts, which would replace the one below. Pointed at a name that resolves to nothing, it does not.
         TelemetryBootstraps.implementation = "com.payabli.sdk.telemetry.NotOnThisClasspath"
         TelemetryBootstraps.forget()
-        TelemetryRecorders.install { event, _ -> recorded += event }
+        TelemetryRecorders.install { event, properties ->
+            recorded += event
+            recordedProperties += properties
+        }
     }
 
     @After
@@ -74,6 +80,50 @@ class SessionInitializeReportingTest {
             assertEquals(
                 listOf(TelemetryEvents.SDK_INITIALIZE_STARTED, TelemetryEvents.SDK_INITIALIZE_FAILED),
                 recorded,
+            )
+        }
+
+    /**
+     * A failure outside the refusals converts, and the pair it reports names the type that failed.
+     *
+     * The converting catch sits in `install`, the half of `initialize` these tests reach without host
+     * bindings; `initialize` wraps the same conversion around the log-level derivation too. The converted
+     * failure carries the SDK's words alone, keeps the original as a redacted cause, and the report tells
+     * it from a refusal by `outcome` and by `failure_type`.
+     */
+    @Test
+    fun aFailureOutsideTheRefusalsIsConvertedAndItsPairNamesTheTypeThatFailed() =
+        runTest {
+            class Foreign : RuntimeException("a message the SDK must not carry out")
+
+            val foreign = Foreign()
+
+            val thrown =
+                runCatching {
+                    PayabliSession.initializeWith(configFor("an-entry-point")) { _ -> throw foreign }
+                }
+
+            val converted = thrown.exceptionOrNull()
+            assertTrue("the foreign failure reached the caller unconverted", converted is PayabliGenericException)
+            converted as PayabliGenericException
+            assertEquals(PayabliErrorType.UNKNOWN, converted.type)
+            assertEquals(PayabliErrorType.UNKNOWN.message, converted.reason)
+            assertTrue("the original is not kept as a redacted cause", converted.cause is RedactedFailure)
+            assertEquals(foreign.javaClass.name, converted.cause?.message)
+            assertEquals(
+                listOf(TelemetryEvents.SDK_INITIALIZE_STARTED, TelemetryEvents.SDK_INITIALIZE_FAILED),
+                recorded,
+            )
+            assertEquals(mapOf(TelemetryProperty.STATE.key to "uninitialized"), recordedProperties[0])
+            val reported = recordedProperties[1]
+            assertEquals(TelemetryProperties.Outcome.FAILED, reported[TelemetryProperty.OUTCOME.key])
+            assertEquals(PayabliErrorType.UNKNOWN.wireName, reported[TelemetryProperty.CODE.key])
+            assertEquals(PayabliErrorType.UNKNOWN.code.toString(), reported[TelemetryProperty.ERROR_NUMBER.key])
+            assertEquals(PayabliErrorType.UNKNOWN.message, reported[TelemetryProperty.REASON.key])
+            assertEquals("Foreign", reported[TelemetryProperty.FAILURE_TYPE.key])
+            assertTrue(
+                "duration_ms is missing or not a number",
+                reported[TelemetryProperty.DURATION_MS.key]?.toLongOrNull() != null,
             )
         }
 

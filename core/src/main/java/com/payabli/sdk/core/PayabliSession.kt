@@ -23,6 +23,7 @@ import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
 import com.payabli.sdk.core.network.impl.AuthenticatedTransport
 import com.payabli.sdk.core.network.impl.ClientFacts
+import com.payabli.sdk.core.network.impl.RedactedCause
 import com.payabli.sdk.core.telemetry.TelemetryBootstraps
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
@@ -124,10 +125,19 @@ public class PayabliSession private constructor(
         /**
          * Emits [level] and everything more severe. [LogLevel.NONE] silences the SDK.
          *
+         * A failure the SDK did not classify converts to its unknown failure, as it does at every entry
+         * point, so nothing outside the SDK's own failure vocabulary crosses this one either.
+         *
          * @param level the cutoff to emit at and above.
          */
         public fun setLogLevel(level: LogLevel) {
-            LoggerRegistry.setLogLevel(level)
+            try {
+                LoggerRegistry.setLogLevel(level)
+            } catch (original: Exception) {
+                throw unexpectedFailure(original)
+            } catch (original: LinkageError) {
+                throw unexpectedFailure(original)
+            }
         }
 
         /**
@@ -154,6 +164,10 @@ public class PayabliSession private constructor(
          * whether it is called before or after this. Records go to the platform log, never to a callback, and
          * every one is redacted before it is written.
          *
+         * A failure the SDK did not classify converts to [PayabliException] with [PayabliErrorType.UNKNOWN],
+         * the original kept as its redacted cause, so nothing outside the SDK's own failure vocabulary
+         * crosses this boundary.
+         *
          * @param config the configuration to install; two configurations built separately count as the same one.
          * @param host the host application's bindings, whose context derives the diagnostic log level once.
          * @return the started session, or the one already started under the same configuration.
@@ -162,23 +176,28 @@ public class PayabliSession private constructor(
             config: PayabliConfig,
             host: HostBindings,
         ): PayabliSession {
-            host.appContext.applicationContext.applyHostLogLevel()
+            val startedAt = System.nanoTime()
 
-            return install(config, host) { onAuthFailure, client ->
-                TransportFactory
-                    .authenticated(
-                        config,
-                        IO_DISPATCHER,
-                        client,
-                        TransportAssembly(onAuthFailure = onAuthFailure),
-                    ).let(::SessionAuth)
+            return convertingUnexpectedFailures(startedAt) {
+                host.appContext.applicationContext.applyHostLogLevel()
+
+                install(config, host) { onAuthFailure, client ->
+                    TransportFactory
+                        .authenticated(
+                            config,
+                            IO_DISPATCHER,
+                            client,
+                            TransportAssembly(onAuthFailure = onAuthFailure),
+                        ).let(::SessionAuth)
+                }
             }
         }
 
         /**
          * Same, against an explicit [baseUrl] and with no host bindings, for `:core`'s own JVM tests, which
-         * skip the host-log-level derivation. `internal` because a member left public in bytecode for
-         * testing is an origin override in a shipped artifact.
+         * skip the host-log-level derivation. A failure the SDK did not classify converts here as in
+         * [initialize]. `internal` because a member left public in bytecode for testing is an origin
+         * override in a shipped artifact.
          *
          * @param baseUrl the origin every request goes to.
          * @param config the configuration to install.
@@ -192,17 +211,22 @@ public class PayabliSession private constructor(
             config: PayabliConfig,
             host: HostBindings? = null,
             identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
-        ): PayabliSession =
-            install(config, host, identifierOf) { onAuthFailure, client ->
-                TransportFactory
-                    .authenticatedAgainst(
-                        baseUrl,
-                        config,
-                        IO_DISPATCHER,
-                        TransportAssembly(onAuthFailure = onAuthFailure),
-                        client,
-                    ).let(::SessionAuth)
+        ): PayabliSession {
+            val startedAt = System.nanoTime()
+
+            return convertingUnexpectedFailures(startedAt) {
+                install(config, host, identifierOf) { onAuthFailure, client ->
+                    TransportFactory
+                        .authenticatedAgainst(
+                            baseUrl,
+                            config,
+                            IO_DISPATCHER,
+                            TransportAssembly(onAuthFailure = onAuthFailure),
+                            client,
+                        ).let(::SessionAuth)
+                }
             }
+        }
 
         /**
          * Drops the installed session and puts [state] back, so one test cannot decide the outcome of the
@@ -225,7 +249,9 @@ public class PayabliSession private constructor(
         }
 
         /**
-         * Same, with the transport supplied, so a test can hold the critical section open.
+         * Same, with the transport supplied, so a test can hold the critical section open. A failure the
+         * SDK did not classify converts here as in [initialize], which makes a throwing transport the
+         * evidence for that catch.
          *
          * @param config the configuration to install.
          * @param buildTransport builds the transport. The session renews no refused token.
@@ -235,8 +261,13 @@ public class PayabliSession private constructor(
         internal suspend fun initializeWith(
             config: PayabliConfig,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
-        ): PayabliSession =
-            install(config, host = null) { onAuthFailure, _ -> SessionAuth(buildTransport(onAuthFailure)) {} }
+        ): PayabliSession {
+            val startedAt = System.nanoTime()
+
+            return convertingUnexpectedFailures(startedAt) {
+                install(config, host = null) { onAuthFailure, _ -> SessionAuth(buildTransport(onAuthFailure)) {} }
+            }
+        }
 
         private suspend fun install(
             config: PayabliConfig,
@@ -362,6 +393,91 @@ public class PayabliSession private constructor(
                     TelemetryProperty.REASON.key to failure.reason,
                     TelemetryProperty.DURATION_MS.key to
                         TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt).toString(),
+                )
+            }
+        }
+
+        /**
+         * Runs an initialize's body, letting the failures the SDK itself classified through unchanged and
+         * converting everything else: no failure outside the SDK's own vocabulary crosses an entry point.
+         *
+         * @param startedAt when the initialize began, for the duration a converted failure reports.
+         * @param attempt the initialize's body: the log-level derivation and the install, or a test's
+         *   stand-in for them.
+         * @return the session the body installed.
+         */
+        private suspend fun convertingUnexpectedFailures(
+            startedAt: Long,
+            attempt: suspend () -> PayabliSession,
+        ): PayabliSession =
+            try {
+                attempt()
+            } catch (failure: PayabliException) {
+                throw failure
+            } catch (original: Exception) {
+                throw converted(original, startedAt)
+            } catch (original: LinkageError) {
+                throw converted(original, startedAt)
+            }
+
+        /**
+         * Builds the failure every entry point answers an unclassified original with: the SDK's unknown
+         * failure, whose reason is the catalog's own text and whose cause is the original redacted — type
+         * and frames kept, message dropped.
+         *
+         * @param original the failure as it was thrown, before conversion.
+         * @return the failure to throw in the original's place.
+         */
+        private fun unexpectedFailure(original: Throwable): PayabliGenericException =
+            PayabliGenericException(
+                PayabliErrorType.UNKNOWN,
+                PayabliErrorType.UNKNOWN.message,
+                cause = RedactedCause(original),
+            )
+
+        /**
+         * Converts an initialize's unclassified failure, reporting it first as the pair that answers the
+         * start: `outcome=failed` and `failure_type` naming the original, which is what tells a converted
+         * failure from a refusal the SDK named.
+         *
+         * @param original the failure as it was thrown, before conversion.
+         * @param startedAt when the initialize began, for the duration.
+         * @return the converted failure, for the catch to throw.
+         */
+        private fun converted(
+            original: Throwable,
+            startedAt: Long,
+        ): PayabliGenericException {
+            val failure = unexpectedFailure(original)
+            reportConverted(failure, original, startedAt)
+            return failure
+        }
+
+        /**
+         * Reports an initialize that failed outside the refusals the SDK names: a start and its failure,
+         * so the start is answered, with `outcome=failed` and `failure_type` naming the original.
+         *
+         * @param failure the converted failure the initialize is about to throw.
+         * @param original the failure as it was thrown, whose type the report names.
+         * @param startedAt when the initialize began, for the duration.
+         */
+        private fun reportConverted(
+            failure: PayabliGenericException,
+            original: Throwable,
+            startedAt: Long,
+        ) {
+            TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
+                mapOf(TelemetryProperty.STATE.key to reportedState())
+            }
+            TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_FAILED) {
+                mapOf(
+                    TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.FAILED,
+                    TelemetryProperty.CODE.key to failure.type.wireName,
+                    TelemetryProperty.ERROR_NUMBER.key to failure.code.toString(),
+                    TelemetryProperty.REASON.key to failure.reason,
+                    TelemetryProperty.DURATION_MS.key to
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt).toString(),
+                    TelemetryProperty.FAILURE_TYPE.key to original.javaClass.simpleName,
                 )
             }
         }
