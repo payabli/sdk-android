@@ -2661,6 +2661,16 @@ MUTATIONS = [
      "          ref: ${{ github.sha }}\n          fetch-depth: 0\n          persist-credentials: false\n",
      "          fetch-depth: 0\n          persist-credentials: false\n"),
 
+    ("Release's second merge-back check drifts from the first", RELEASE, "workflows",
+     "          COMMIT: ${{ needs.check.outputs.commit }}\n          VERSION: ${{ needs.check.outputs.version }}\n"
+     "        run: |\n          release=",
+     "          COMMIT: ${{ needs.check.outputs.commit }}\n          VERSION: ${{ needs.check.outputs.version }}\n"
+     "        run: |\n          # drifted\n          release="),
+
+    ("Release's second newest-release check drifts from the first", RELEASE, "workflows",
+     "        env:\n          VERSION: ${{ needs.check.outputs.version }}\n        run: |\n          release=",
+     "        env:\n          VERSION: ${{ needs.check.outputs.version }}\n        run: |\n          # drifted\n          release="),
+
     ("Release lets the merge-back guard fail without failing the job", RELEASE, "workflows",
      "      - name: Check every earlier release is in main and in the commit\n",
      "      - name: Check every earlier release is in main and in the commit\n        continue-on-error: true\n"),

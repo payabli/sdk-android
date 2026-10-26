@@ -4272,6 +4272,18 @@ def test_workflows():
         check("W17 and it refuses an earlier release missing from main or the commit, and passes one in both",
               (unmerged, stale, fresh) == (1, 1, 0), f"unmerged={unmerged} stale={stale} fresh={fresh}")
 
+    # Each guard the release job repeats is the check job's own script, word for word: two copies edited apart
+    # leave the second refusing something else, or nothing, while every check above still finds its step.
+    for first, again in (("Check the version is not below the newest release",
+                          "Check the version is not below the newest release"),
+                         ("Check every earlier release is in main and in the commit",
+                          "Check again that every earlier release is in main and in the commit")):
+        ours = checker_step(first)
+        theirs = next((step for step in gate_steps if step.get("name") == again), None)
+        check(f"W17 and the release job's copy of '{first}' runs the check job's script unchanged",
+              ours is not None and theirs is not None and ours.get("run") == theirs.get("run"),
+              f"check={ours is not None} release={theirs is not None}")
+
     # The subject, checked before the tag and before the assume. The role trusts the environment and the
     # setting that shapes the claim is GitHub's, so a mismatch found after the tag has spent the number.
     subject, expected = subject_checked(gate_steps, "release")
