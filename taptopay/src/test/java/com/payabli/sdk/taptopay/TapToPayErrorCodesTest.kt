@@ -88,6 +88,7 @@ class TapToPayErrorCodesTest {
             CardReaderException.DeviceDenied(null) to PayabliErrorType.READER_DEVICE_REFUSED,
             CardReaderException.SessionUnusable(null) to PayabliErrorType.READER_SESSION_EXPIRED,
             CardReaderException.ReadFailed(null) to PayabliErrorType.TAP_NOT_COMPLETED,
+            CardReaderException.ContactlessDisabled(null) to PayabliErrorType.CONTACTLESS_DISABLED,
             TTPTransactionException.NotEnabled() to PayabliErrorType.CARD_PRESENT_NOT_ENABLED,
             TTPTransactionException.Refused("D", "refused") to PayabliErrorType.PAYMENT_NOT_OPENED,
             TTPTransactionException.ServiceRejected("E", "refused") to PayabliErrorType.PAYMENT_NOT_OPENED,
@@ -115,14 +116,13 @@ class TapToPayErrorCodesTest {
     fun `every card-present code this platform can produce has a cause`() {
         // No cause asks a merchant to accept terms. The runner alone names a failed close or a resent key. No
         // failure proves a device cannot attest: "not available" also means the integrity service is off or the
-        // store is out of date. The contactless-radio code is declared ahead of the causes that produce it.
+        // store is out of date.
         val notFromACause =
             setOf(
                 PayabliErrorType.TERMS_NOT_ACCEPTED,
                 PayabliErrorType.PAYMENT_NOT_CLOSED,
                 PayabliErrorType.CHARGE_NOT_FINISHED,
                 PayabliErrorType.DEVICE_SETUP_UNSUPPORTED,
-                PayabliErrorType.CONTACTLESS_DISABLED,
             )
         val cardPresent = PayabliErrorType.entries.filter { it.code in 3001..3999 }.toSet()
         assertEquals(cardPresent - notFromACause, causes.map { it.second }.filter { it in cardPresent }.toSet())

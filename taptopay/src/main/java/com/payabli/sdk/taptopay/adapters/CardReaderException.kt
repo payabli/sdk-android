@@ -37,6 +37,14 @@ internal sealed class CardReaderException(
     class ReadFailed(
         cause: Throwable?,
     ) : CardReaderException("the tap did not complete", cause)
+
+    /**
+     * The tap did not produce a payment: the contactless radio was switched off. The charge fails as
+     * `CONTACTLESS_DISABLED` and the session lands `Failed` on the same reason.
+     */
+    class ContactlessDisabled(
+        cause: Throwable?,
+    ) : CardReaderException("the contactless radio is switched off", cause)
 }
 
 private fun armingMessage(cause: Throwable?): String = withCode("the reader did not come up", cause)

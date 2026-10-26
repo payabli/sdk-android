@@ -108,6 +108,8 @@ internal class TapToPayChargeRunner(
     private val coordinator: TapToPaySessionCoordinator,
     private val manager: TapToPaySessionManager,
     private val reader: TapToPayProvider,
+    // Supplied rather than read inside the charge, so a test can hold the refusing side of it.
+    private val contactlessEnabled: () -> Boolean,
     private val client: TTPTransactionClient,
     private val store: AttestedDeviceStore,
     private val keys: ChargeKeyStore,
@@ -166,6 +168,13 @@ internal class TapToPayChargeRunner(
             // Never unset: once a card is asked for, no failure releases the key.
             var askedForCard = false
             try {
+                // At the call, not by listening: the adapter's state broadcasts reach no app.
+                if (!contactlessEnabled()) {
+                    throw PayabliGenericException(
+                        PayabliErrorType.CONTACTLESS_DISABLED,
+                        PayabliErrorType.CONTACTLESS_DISABLED.message,
+                    )
+                }
                 // Inside the session region from the repair to the close, so no setup rebuilds the session
                 // under the read.
                 coordinator.runCharge {
@@ -337,6 +346,11 @@ internal class TapToPayChargeRunner(
                 failure is CardReaderException.DeviceDenied
             ) {
                 manager.invalidate()
+            }
+            // A switched-off radio ends the charge on the contactless-disabled reason; the reader is
+            // re-armed by the next charge's repair, once the radio is on.
+            if (failure is CardReaderException.ContactlessDisabled) {
+                manager.failCharge(TapToPayFailureReason.CONTACTLESS_DISABLED)
             }
             throw failure
         }

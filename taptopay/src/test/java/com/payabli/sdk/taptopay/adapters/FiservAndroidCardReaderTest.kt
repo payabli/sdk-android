@@ -312,6 +312,17 @@ class FiservAndroidCardReaderTest {
         }
 
     @Test
+    fun `a switched-off radio is refused as its own cause`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val disabled = CardReaderFailure(ReaderFailureKind.CONTACTLESS_DISABLED)
+            val gateway = FakeCardReaderGateway(readFailure = disabled)
+
+            val failure = runCatching { readerFor(gateway).startReading(readRequest()) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.ContactlessDisabled)
+        }
+
+    @Test
     fun `every other reader failure is the tap that did not complete`() =
         runTest(timeout = TEST_TIMEOUT) {
             for (kind in listOf(ReaderFailureKind.CONTACTLESS_UNAVAILABLE, ReaderFailureKind.UNCLASSIFIED)) {

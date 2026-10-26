@@ -150,12 +150,14 @@ class TapToPayChargeRunnerTest {
     private fun runnerOver(
         fixture: SessionFixture,
         environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
+        contactlessEnabled: () -> Boolean = { true },
     ) = TapToPayChargeRunner(
         entry = ENTRY,
         environment = environment,
         coordinator = fixture.coordinator,
         manager = fixture.manager,
         reader = fixture.reader,
+        contactlessEnabled = contactlessEnabled,
         client = TTPTransactionClient(fixture.enrollment.transport, fixture.enrollment.logger),
         store = fixture.enrollment.store,
         keys = fixture.keys,
@@ -170,6 +172,7 @@ class TapToPayChargeRunnerTest {
         coordinator = fixture.coordinator,
         manager = fixture.manager,
         reader = fixture.reader,
+        contactlessEnabled = { true },
         client =
             TTPTransactionClient(
                 GatedCloseTransport(fixture.enrollment.transport, onClose),
@@ -241,6 +244,60 @@ class TapToPayChargeRunnerTest {
             assertTrue(failure.toString(), failure is IllegalArgumentException)
             assertFalse("a payment was opened for a charge naming nobody", INITIATE in fixture.routes)
             assertEquals("the reader was asked for a card", null, fixture.reader.lastReadRequest)
+        }
+
+    @Test
+    fun `a charge with the contactless radio off is refused as 3036 and sends nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Refused before anything is asked for, because the remedy is on the phone: told here, a
+            // merchant turns the radio on and charges again; told after the tap, one tapped for nothing.
+            val reported = mutableListOf<Pair<String, Map<String, String>>>()
+            TelemetryRecorders.install { event, properties -> reported += event to properties }
+            try {
+                val fixture = readyFixture()
+
+                val failure =
+                    runCatching {
+                        runnerOver(fixture, contactlessEnabled = { false })
+                            .charge(details(), PAYER, TapToPayInvoiceData(), null)
+                    }.exceptionOrNull() as TapToPayException
+
+                assertEquals(PayabliErrorType.CONTACTLESS_DISABLED, failure.type)
+                assertEquals(PayabliErrorType.CONTACTLESS_DISABLED.message, failure.reason)
+                assertEquals(
+                    "a charge with the radio off was reported as charged",
+                    TapToPayCapture.NOT_CHARGED,
+                    failure.capture,
+                )
+                assertNull("a payment was named with the radio off", failure.paymentTransId)
+                assertFalse("a payment was opened with the radio off", INITIATE in fixture.routes)
+                assertEquals("a key was minted with the radio off", 0, fixture.minted.get())
+                assertEquals(
+                    "the session was changed by a radio that is off",
+                    TapToPaySessionState.Ready,
+                    fixture.state,
+                )
+                assertTrue("the session stopped reporting ready", fixture.manager.isReady.value)
+                assertEquals("the reader was asked for a card", null, fixture.reader.lastReadRequest)
+                val charge = reported.single { it.first == TelemetryEvents.TTP_CHARGE_FAILED }.second
+                assertEquals("3036", charge[TelemetryProperty.ERROR_NUMBER.key])
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
+
+    @Test
+    fun `a charge with the radio on behaves as before`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The default answers on. An inverted read refuses every charge, so one full charge pins the
+            // direction: nothing is refused while the radio reads on.
+            val fixture = readyFixture()
+
+            val receipt = runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            assertEquals(TRANS_ID, receipt.paymentTransId)
+            assertEquals(listOf(INITIATE, UPDATE), fixture.routes.filter { it.startsWith("/api/v2/MoneyIn") })
+            assertEquals(TapToPaySessionState.Ready, fixture.state)
         }
 
     @Test
@@ -1328,6 +1385,30 @@ class TapToPayChargeRunnerTest {
             assertTrue(failure.toString(), failure?.cause is CardReaderException.ReadFailed)
             assertTrue(UPDATE in fixture.routes)
             assertEquals(TapToPaySessionState.Ready, fixture.state)
+        }
+
+    @Test
+    fun `a contactless-disabled read is 3036, not an unknown outcome`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The vendor raises its own exception when the switch goes off while the reader waits. Left
+            // unclassified it lands as a tap that did not complete, which sends a merchant to a lookup
+            // before charging again — for a payment that never reached a card.
+            val fixture = readyFixture()
+            fixture.reader.failNextRead(CardReaderException.ContactlessDisabled(null))
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.CONTACTLESS_DISABLED, failure.type)
+            assertEquals(TRANS_ID, failure.paymentTransId)
+            assertTrue("the failed read was not closed", UPDATE in fixture.routes)
+            assertEquals(
+                TapToPaySessionState.Failed(TapToPayFailureReason.CONTACTLESS_DISABLED),
+                fixture.state,
+            )
+            assertFalse("a failed session still reported ready", fixture.manager.isReady.value)
         }
 
     @Test
