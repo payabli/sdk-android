@@ -13,6 +13,7 @@ import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.network.impl.AuthFailureListener
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.KSerializer
@@ -125,6 +126,27 @@ class SessionInitializeReportingTest {
                 "duration_ms is missing or not a number",
                 reported[TelemetryProperty.DURATION_MS.key]?.toLongOrNull() != null,
             )
+        }
+
+    /**
+     * A withdrawn initialize is not a failure: it passes through as `CancellationException` and reports
+     * nothing, because converting it would both hide the withdrawal from the caller that is unwinding
+     * and report an outcome for one.
+     */
+    @Test
+    fun aWithdrawnInitializePassesThroughUnconvertedAndReportsNothing() =
+        runTest {
+            // Raised by the attempt rather than the job being cancelled from outside, which reaches the
+            // converting catch as the same value either way.
+            val outcome =
+                runCatching {
+                    PayabliSession.initializeWith(configFor("an-entry-point")) { _ ->
+                        throw CancellationException("the host withdrew")
+                    }
+                }.exceptionOrNull()
+
+            assertTrue("a withdrawal was converted: $outcome", outcome is CancellationException)
+            assertEquals(emptyList<String>(), recorded)
         }
 
     /**

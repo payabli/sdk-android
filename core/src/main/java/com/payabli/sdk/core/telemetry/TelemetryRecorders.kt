@@ -5,6 +5,9 @@ import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.network.impl.RedactedCause
 
 /**
  * The one installed [TelemetryRecorder], and the call every emitting site actually makes.
@@ -35,16 +38,51 @@ public object TelemetryRecorders {
      * Replacing rather than refusing: a session re-initialized after a terminal failure installs again, and
      * refusing the second install would leave the new session reporting through the dead one's queue.
      *
+     * A failure the SDK did not classify converts to its unknown failure, as at every entry point, and is
+     * reported nowhere: no failure event exists for the install.
+     *
      * @param recorder the recorder to install, replacing whatever was there.
      */
     public fun install(recorder: TelemetryRecorder) {
-        installed = recorder
+        try {
+            installed = recorder
+        } catch (original: Exception) {
+            throw unexpectedFailure(original)
+        } catch (original: LinkageError) {
+            throw unexpectedFailure(original)
+        }
     }
 
-    /** Removes the installed recorder, so [record] goes back to costing nothing. */
+    /**
+     * Removes the installed recorder, so [record] goes back to costing nothing.
+     *
+     * A failure the SDK did not classify converts to its unknown failure, as at every entry point, and is
+     * reported nowhere: no failure event exists for the removal.
+     */
     public fun clear() {
-        installed = null
+        try {
+            installed = null
+        } catch (original: Exception) {
+            throw unexpectedFailure(original)
+        } catch (original: LinkageError) {
+            throw unexpectedFailure(original)
+        }
     }
+
+    /**
+     * The failure an install or a removal answers an unclassified original with: the SDK's unknown failure,
+     * the original kept as its redacted cause. Neither belongs to a failure event, so the caller throws
+     * this and reports nothing.
+     *
+     * @param original the failure as it was thrown, before conversion.
+     * @return the failure to throw in the original's place.
+     */
+    private fun unexpectedFailure(original: Throwable): PayabliGenericException =
+        PayabliGenericException(
+            PayabliErrorType.UNKNOWN,
+            PayabliErrorType.UNKNOWN.message,
+            cause = RedactedCause(original),
+        )
 
     /**
      * Records [event] as belonging to [session] rather than to whatever is installed now.

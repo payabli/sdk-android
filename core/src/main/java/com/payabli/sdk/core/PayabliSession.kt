@@ -31,6 +31,7 @@ import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -126,7 +127,7 @@ public class PayabliSession private constructor(
          * Emits [level] and everything more severe. [LogLevel.NONE] silences the SDK.
          *
          * A failure the SDK did not classify converts to its unknown failure, as it does at every entry
-         * point, so nothing outside the SDK's own failure vocabulary crosses this one either.
+         * point, and is reported nowhere: no failure event exists for a log-level change.
          *
          * @param level the cutoff to emit at and above.
          */
@@ -166,7 +167,8 @@ public class PayabliSession private constructor(
          *
          * A failure the SDK did not classify converts to [PayabliException] with [PayabliErrorType.UNKNOWN],
          * the original kept as its redacted cause, so nothing outside the SDK's own failure vocabulary
-         * crosses this boundary.
+         * crosses this boundary. A caller that withdraws unwinds as `CancellationException`, because
+         * withdrawing is not a failure.
          *
          * @param config the configuration to install; two configurations built separately count as the same one.
          * @param host the host application's bindings, whose context derives the diagnostic log level once.
@@ -400,6 +402,8 @@ public class PayabliSession private constructor(
         /**
          * Runs an initialize's body, letting the failures the SDK itself classified through unchanged and
          * converting everything else: no failure outside the SDK's own vocabulary crosses an entry point.
+         * A withdrawn caller passes through too, because withdrawing is not a failure and converting it
+         * would hide the withdrawal from the caller that is unwinding.
          *
          * @param startedAt when the initialize began, for the duration a converted failure reports.
          * @param attempt the initialize's body: the log-level derivation and the install, or a test's
@@ -412,6 +416,8 @@ public class PayabliSession private constructor(
         ): PayabliSession =
             try {
                 attempt()
+            } catch (withdrawn: CancellationException) {
+                throw withdrawn
             } catch (failure: PayabliException) {
                 throw failure
             } catch (original: Exception) {
