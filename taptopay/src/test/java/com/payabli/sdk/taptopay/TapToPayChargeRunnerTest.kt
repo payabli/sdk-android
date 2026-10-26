@@ -1617,7 +1617,7 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `an indeterminate tap whose close the processor has no record of says the payment was not taken`() =
+    fun `an indeterminate tap whose close the processor has no record of says the payment was not closed`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
             fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
@@ -1628,11 +1628,11 @@ class TapToPayChargeRunnerTest {
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
-            val notTaken = failure as TapToPayException
-            assertEquals(PayabliErrorType.PAYMENT_NOT_TAKEN, notTaken.type)
-            assertEquals(TapToPayCapture.NOT_CHARGED, notTaken.capture)
-            assertEquals(TRANS_ID, notTaken.paymentTransId)
-            assertEquals(NOT_AT_PROCESSOR, notTaken.detail)
+            val notClosed = failure as TapToPayException
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, notClosed.type)
+            assertEquals(TapToPayCapture.UNKNOWN, notClosed.capture)
+            assertEquals(TRANS_ID, notClosed.paymentTransId)
+            assertEquals(NOT_AT_PROCESSOR, notClosed.detail)
         }
 
     @Test

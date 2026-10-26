@@ -303,7 +303,6 @@ internal class TapToPayChargeRunner(
                         unclosed = failure === unclosed,
                         cardWasAsked = askedForCard,
                         resentKey = resentKey,
-                        capture = capture,
                     )
                 // Before wrapping: the report classifies by the failure's own type.
                 TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard, type = type)
@@ -476,14 +475,13 @@ internal class TapToPayChargeRunner(
         unclosed: Boolean,
         cardWasAsked: Boolean,
         resentKey: Boolean,
-        capture: TapToPayCapture,
     ): PayabliErrorType {
-        // A refusal saying the processor has no record of the payment is about a failed tap only: a run
-        // that minted its key, asked for the card and never saw the sale charged. An approved tap is
-        // charged whatever its close was refused with, and a resent key names an attempt nothing resolves.
+        // A refusal saying the processor has no record of the payment is about the close of a failed
+        // read: a run that minted its key, asked for the card and never saw the sale charged. A completed
+        // read's close is the payment not being closed, and a resent key names an earlier attempt.
         if (!resentKey &&
             cardWasAsked &&
-            capture != TapToPayCapture.CHARGED &&
+            !unclosed &&
             failure.saysTheProcessorHasNoRecord()
         ) {
             return PayabliErrorType.PAYMENT_NOT_TAKEN
