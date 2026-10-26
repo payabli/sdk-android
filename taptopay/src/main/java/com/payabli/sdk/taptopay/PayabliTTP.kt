@@ -48,6 +48,9 @@ public class PayabliTTP private constructor(
      * Spends the six-digit code the merchant was issued for this device.
      *
      * Leaves the session idle: the device is approved and nothing is set up, so [initialize] comes next.
+     *
+     * A failure the SDK did not classify converts to the SDK's own failure, as at every entry point, and
+     * is reported nowhere: no failure event exists for an activation.
      */
     public suspend fun activateDevice(activationCode: String): Unit =
         wrapping { coordinator.activateDevice(activationCode) }
@@ -116,6 +119,9 @@ public class PayabliTTP private constructor(
          * paypoint that is not enabled for card-present, a device the vendor has refused, or a reader that
          * fails once it is armed, so `false` is reliable and `true` is not a promise. The SDK does not
          * consult this: [create] and [initialize] run whatever it says, and report what actually happened.
+         *
+         * A failure the SDK did not classify converts to the SDK's own failure, as at every entry point,
+         * and is reported nowhere: no failure event exists for an eligibility answer.
          */
         @JvmStatic
         public fun isSupported(context: Context): Boolean =
@@ -126,6 +132,9 @@ public class PayabliTTP private constructor(
          *
          * The entry point is the session's, read from what it publishes rather than taken again here, so a
          * terminal cannot be pointed at one the session was not configured with.
+         *
+         * A failure the SDK did not classify converts to the SDK's own failure, as at every entry point,
+         * and is reported nowhere: building a terminal belongs to no failure event.
          */
         public suspend fun create(
             session: PayabliSession,
