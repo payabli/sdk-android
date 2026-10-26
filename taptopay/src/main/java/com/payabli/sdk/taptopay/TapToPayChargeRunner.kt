@@ -324,8 +324,8 @@ internal class TapToPayChargeRunner(
 
     /**
      * Asks for one card for [amount], at the scale the paypoint recorded. Every other exit, cancellation
-     * and a JVM `Error` included, closes [paymentTransId] and rethrows what it caught, except on a run
-     * that minted its key: the close's no-record refusal is thrown in its place and settles the key.
+     * and a JVM `Error` included, closes [paymentTransId] and rethrows what it caught. A minted-key run's
+     * `Exception` gives way to the close's no-record refusal, which settles the key; an `Error` never does.
      */
     private suspend fun readCard(
         paymentTransId: String,
@@ -354,6 +354,12 @@ internal class TapToPayChargeRunner(
                 failure is CardReaderException.DeviceDenied
             ) {
                 manager.invalidate()
+            }
+            // A JVM Error is never converted into a payment outcome: it keeps its place, the close's
+            // refusal suppressed on it, the way a failed close rides on a refused card.
+            if (noRecord != null && failure is Error) {
+                failure.addSuppressed(noRecord)
+                throw failure
             }
             throw noRecord ?: failure
         }
@@ -547,8 +553,8 @@ internal class TapToPayChargeRunner(
                     keys.settle(entry, environment, idempotencyKey)
                 }
                 // On a run that minted its key, the refusal naming this payment one the processor holds no
-                // record of is about the charge, so it alone is handed back to be reported in the read
-                // failure's place. Anything else raised here stays swallowed, an `Error` included.
+                // record of is about the charge, so it alone is handed back to the caller. Anything else
+                // raised here stays swallowed, an `Error` included.
                 logger.warn(
                     LogField.safe("event", "ttp_charge_close_failed"),
                     LogField.safe("phase", "update"),

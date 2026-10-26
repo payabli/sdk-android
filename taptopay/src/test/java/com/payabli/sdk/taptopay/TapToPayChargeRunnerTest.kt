@@ -1709,6 +1709,30 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a JVM error during the tap keeps its place when the close says the processor has no record`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The vendor loads native code, so a LinkageError from the reader is the reachable shape here. The
+            // close's refusal naming a payment the processor holds no record of is about the charge, but an
+            // `Error` is the caller's to see: the refusal rides suppressed, never in the error's place.
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            val raised = LinkageError("libmc3.so")
+            fixture.reader.failNextRead(raised)
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertSame("the error was converted rather than rethrown", raised, failure)
+            val suppressed = failure?.suppressed.orEmpty()
+            assertTrue(
+                "the close's refusal was dropped: ${suppressed.toList()}",
+                suppressed.singleOrNull() is PayabliException,
+            )
+            assertTrue("the opened payment was left standing", UPDATE in fixture.routes)
+        }
+
+    @Test
     fun `a second terminal for one entry point repeats the attempt the first left unsettled`() =
         runTest(timeout = TEST_TIMEOUT) {
             // A terminal is built per call and caches nothing, so the retry usually comes from a second one
