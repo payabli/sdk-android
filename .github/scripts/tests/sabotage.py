@@ -2279,15 +2279,25 @@ MUTATIONS = [
      "          VERSION: 9.9.9\n"),
 
     ("Release refuses an earlier release that is in main and accepts one that is not", RELEASE, "workflows",
-     '&& [ "$(git merge-base "$tagged" origin/main)" != "$tagged" ]; then',
-     '&& [ "$(git merge-base "$tagged" origin/main)" = "$tagged" ]; then'),
+     'if [ "$(git merge-base "$tagged" origin/main)" != "$tagged" ]; then',
+     'if [ "$(git merge-base "$tagged" origin/main)" = "$tagged" ]; then'),
 
     ("Release requires a later release in main as well as an earlier one", RELEASE, "workflows",
      '| sort -V | head -n 1)" = "$tag" ]', '| sort -V | tail -n 1)" = "$tag" ]'),
 
     ("Release lets the merge-back guard fail without failing the job", RELEASE, "workflows",
-     "      - name: Check every earlier release is in main\n",
-     "      - name: Check every earlier release is in main\n        continue-on-error: true\n"),
+     "      - name: Check every earlier release is in main and in the commit\n",
+     "      - name: Check every earlier release is in main and in the commit\n        continue-on-error: true\n"),
+
+    ("Release cuts a commit that lacks an earlier release main already holds", RELEASE, "workflows",
+     'if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then',
+     'if [ "$(git merge-base "$tagged" "$COMMIT")" = "$COMMIT" ]; then'),
+
+    ("Release checks the earlier releases against main's head rather than the named commit", RELEASE, "workflows",
+     "      - name: Check every earlier release is in main and in the commit\n        env:\n"
+     "          COMMIT: ${{ inputs.commit }}\n",
+     "      - name: Check every earlier release is in main and in the commit\n        env:\n"
+     "          COMMIT: ${{ github.sha }}\n"),
 
     # The source branch. A ruleset cannot name it, so this job is the whole rule.
     ("Source branch refuses a hotfix branch", SOURCE_BRANCH, "workflows",

@@ -4015,7 +4015,7 @@ def test_workflows():
     # release/0.3.0 branch from it; hotfix/0.1.2 branches from the tag; main then moves on with a commit
     # of its own. 0.2.0 is tagged on its branch and has not merged back. qa-probe-1 is a tag that is not a
     # release, which a version comparison would otherwise sort above every number.
-    def release_repo() -> tuple[Path, dict[str, str]]:
+    def release_repo(merged: bool = False) -> tuple[Path, dict[str, str]]:
         root = Path(tempfile.mkdtemp(dir=SCRATCH))
         env = {**os.environ, "GIT_AUTHOR_NAME": "Dana Rivera", "GIT_AUTHOR_EMAIL": "dana@payabli.com",
                "GIT_COMMITTER_NAME": "Dana Rivera", "GIT_COMMITTER_EMAIL": "dana@payabli.com"}
@@ -4044,8 +4044,17 @@ def test_workflows():
         shas["hotfix/0.1.2"] = commit("0.1.2", "hotfix/0.1.2")
         git("checkout", "-q", "main")
         shas["main"] = commit("0.2.0", "main")
+        tips = dict(shas)
+        # Merged: 0.2.0 merged back into main, then main merged into release/0.3.0, keeping its version.
+        # The commit before that second merge stays on the branch without 0.2.0 in it.
+        if merged:
+            git("merge", "-q", "--no-ff", "-m", "Merge release/0.2.0", "release/0.2.0")
+            tips["main"] = git("rev-parse", "HEAD")
+            git("checkout", "-q", "release/0.3.0")
+            git("merge", "-q", "--no-ff", "-X", "ours", "-m", "Merge main", "main")
+            tips["release/0.3.0"] = shas["release/0.3.0+main"] = git("rev-parse", "HEAD")
         for branch in ("main", "release/0.2.0", "release/0.3.0", "hotfix/0.1.2"):
-            git("update-ref", f"refs/remotes/origin/{branch}", shas[branch])
+            git("update-ref", f"refs/remotes/origin/{branch}", tips[branch])
         # Named under release/0.4.0 without being it: a prefix match would take it for that branch.
         git("update-ref", "refs/remotes/origin/release/0.4.0/extra", shas["release/0.3.0"])
         return root, shas
@@ -4056,9 +4065,18 @@ def test_workflows():
     # A fixture that cannot be built fails a check rather than raising, so every check after it still runs.
     try:
         repo, shas = release_repo()
+        merged_repo, merged_shas = release_repo(merged=True)
     except (subprocess.CalledProcessError, OSError) as error:
         check("W17 the release fixture repository builds", False, f"{error}: {getattr(error, 'stderr', '')}")
-        repo, shas = SCRATCH, dict.fromkeys(("base", "main", "release/0.2.0", "release/0.3.0", "hotfix/0.1.2"), "")
+        repo = merged_repo = SCRATCH
+        shas = merged_shas = dict.fromkeys(("base", "main", "release/0.2.0", "release/0.3.0", "hotfix/0.1.2",
+                                            "release/0.3.0+main"), "")
+
+    # What a guard printed as well as its status, since its message names the release it refused for.
+    def ran(step: dict, env: dict[str, str], cwd: Path) -> tuple[int, str]:
+        done = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", str(step.get("run", ""))],
+                              cwd=cwd, capture_output=True, text=True, timeout=60, env={**os.environ, **env})
+        return done.returncode, done.stdout
     on_branch = checker_step("Check the commit is on its release or hotfix branch")
     check("W17 and a commit on the branch of the version it declares",
           on_branch is not None and env_of(on_branch, "COMMIT") == named
@@ -4095,25 +4113,28 @@ def test_workflows():
         check("W17 and the newest release itself, a resume, is not", equal == 0, f"{equal}")
         check("W17 and a tag that is not a release is not counted as one", above == 0, f"{above}")
 
-    # main holds every release before the next is cut. 0.2.0 is tagged and not merged back, so 0.3.0 is
-    # refused naming it; 0.2.0 itself and a hotfix below it are not, since nothing lower is outside main.
-    merged = checker_step("Check every earlier release is in main")
-    check("W17 and every earlier release is in main",
-          merged is not None and env_of(merged, "VERSION") == "${{ steps." + str((version_ids or [""])[0]) + ".outputs.version }}",
+    # main holds every release before the next is cut, and so does the commit cut. Unmerged, 0.2.0 is tagged
+    # and not in main, so 0.3.0 is refused naming it, while 0.2.0 itself and a hotfix below it are not.
+    # Merged, 0.2.0 is in main, and 0.3.0 is refused at a commit from before its branch merged main.
+    merged = checker_step("Check every earlier release is in main and in the commit")
+    check("W17 and every earlier release is in main and in the commit",
+          merged is not None and env_of(merged, "VERSION") == "${{ steps." + str((version_ids or [""])[0]) + ".outputs.version }}"
+          and env_of(merged, "COMMIT") == named,
           f"{merged.get('env') if merged else None}")
     if merged is not None:
-        # Run directly rather than through run_step, which keeps the page and drops what the step printed.
-        refused = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c",
-                                  str(merged.get("run", ""))],
-                                 cwd=repo, capture_output=True, text=True, timeout=60,
-                                 env={**os.environ, "VERSION": "0.3.0"})
-        later, out = refused.returncode, refused.stdout
-        same = run_step(merged, {"VERSION": "0.2.0"}, cwd=repo)[0]
-        lower = run_step(merged, {"VERSION": "0.1.2"}, cwd=repo)[0]
+        later, out = ran(merged, {"VERSION": "0.3.0", "COMMIT": shas["release/0.3.0"]}, repo)
+        same = ran(merged, {"VERSION": "0.2.0", "COMMIT": shas["release/0.2.0"]}, repo)[0]
+        lower = ran(merged, {"VERSION": "0.1.2", "COMMIT": shas["hotfix/0.1.2"]}, repo)[0]
         check("W17 and a release is refused while an earlier one is not in main, naming it",
               later == 1 and "release 0.2.0 is not in main" in out, f"status={later} out={out!r}")
         check("W17 and the unmerged release itself is not refused for being unmerged", same == 0, f"{same}")
         check("W17 and a lower version than the unmerged release is not either", lower == 0, f"{lower}")
+        stale, stale_out = ran(merged, {"VERSION": "0.3.0", "COMMIT": merged_shas["release/0.3.0"]}, merged_repo)
+        fresh = ran(merged, {"VERSION": "0.3.0", "COMMIT": merged_shas["release/0.3.0+main"]}, merged_repo)[0]
+        check("W17 and a release is refused at a commit that lacks an earlier release main holds, naming it",
+              stale == 1 and f"release 0.2.0 is not in {merged_shas['release/0.3.0']}" in stale_out,
+              f"status={stale} out={stale_out!r}")
+        check("W17 and accepted once its branch has merged main", fresh == 0, f"{fresh}")
     checked_out = [step.get("with") or {} for step in checker_steps if "actions/checkout" in str(step.get("uses", ""))]
     check("W17 and it reads the version at that commit",
           bool(checked_out) and " ".join(str(checked_out[0].get("ref", "")).split()) == "${{ inputs.commit }}",

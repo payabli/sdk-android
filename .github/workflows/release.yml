@@ -148,19 +148,25 @@ jobs:
             exit 1
           fi
 
-      # Every earlier release is merged back before the next is cut, so main holds each tagged commit and a
-      # later release is never cut without an earlier one's fixes.
-      - name: Check every earlier release is in main
+      # Every earlier release is merged back into main, and main into this release's branch, before the next
+      # is cut: main then holds each tagged commit, and the commit released carries every earlier fix.
+      - name: Check every earlier release is in main and in the commit
         env:
+          COMMIT: ${{ inputs.commit }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           release='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           for tag in $(git for-each-ref --format='%(refname:strip=2)' refs/tags | sed -nE "/$release/p"); do
             tagged=$(git rev-parse "refs/tags/$tag^{commit}")
-            if [ "$tag" != "$VERSION" ] && [ "$(printf '%s\n%s\n' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ] \
-                && [ "$(git merge-base "$tagged" origin/main)" != "$tagged" ]; then
-              echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."
-              exit 1
+            if [ "$tag" != "$VERSION" ] && [ "$(printf '%s\n%s\n' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then
+              if [ "$(git merge-base "$tagged" origin/main)" != "$tagged" ]; then
+                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."
+                exit 1
+              fi
+              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then
+                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."
+                exit 1
+              fi
             fi
           done
 
