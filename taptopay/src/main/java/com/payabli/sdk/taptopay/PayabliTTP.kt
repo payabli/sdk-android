@@ -71,7 +71,7 @@ public class PayabliTTP private constructor(
      */
     public suspend fun charge(
         paymentDetails: TapToPayPaymentDetails,
-        customer: TapToPayCustomerData,
+        customer: TapToPayCustomerData = TapToPayCustomerData(),
         invoice: TapToPayInvoiceData = TapToPayInvoiceData(),
         orderDescription: String? = null,
         attempt: PayabliAttempt = PayabliAttempt.NewPayment,
