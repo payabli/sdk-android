@@ -234,7 +234,14 @@ internal class TapToPayChargeRunner(
                                         closeStartedAt,
                                         TelemetryProperties.Origin.CHARGE,
                                     )
-                                    if (!resentKey && result.outcome == CardReadOutcome.DECLINED) {
+                                    // A declined card settles whatever its close was refused with. An indeterminate
+                                    // tap settles on the one refusal saying the processor holds no record of the
+                                    // payment: nothing reached the processor, so a fresh attempt is safe.
+                                    val declinedTap = result.outcome == CardReadOutcome.DECLINED
+                                    val indeterminateNoRecord =
+                                        result.outcome == CardReadOutcome.INDETERMINATE &&
+                                            failure.saysTheProcessorHasNoRecord()
+                                    if (!resentKey && (declinedTap || indeterminateNoRecord)) {
                                         keys.settle(entry, environment, idempotencyKey)
                                     }
                                     return@withContext failure
