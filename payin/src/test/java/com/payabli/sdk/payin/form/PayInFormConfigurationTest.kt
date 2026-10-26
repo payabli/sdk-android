@@ -2,6 +2,7 @@ package com.payabli.sdk.payin.form
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -417,5 +418,40 @@ class PayInFormConfigurationTest {
             CARD_INSTRUMENT_FIELDS,
             configuration.sectionsFor(PayInMethodType.Card).single().fields,
         )
+    }
+
+    // --- placements ---
+
+    @Test
+    fun `the placements default to a trailing icon, a message above the submit button, and the message shown`() {
+        val configuration = PayInFormConfiguration()
+
+        assertEquals(PayInCardBrandIconPlacement.Trailing, configuration.cardBrandIconPlacement)
+        assertEquals(PayInFailureMessagePlacement.AboveSubmitButton, configuration.failureMessagePlacement)
+        assertTrue(configuration.showsFailureMessage)
+    }
+
+    @Test
+    fun `copy keeps the placements, and can replace them`() {
+        val configuration = PayInFormConfiguration(cardBrandIconPlacement = PayInCardBrandIconPlacement.Hidden)
+        val moved = configuration.copy(failureMessagePlacement = PayInFailureMessagePlacement.Top)
+
+        assertEquals(PayInCardBrandIconPlacement.Hidden, moved.cardBrandIconPlacement)
+        assertEquals(PayInFailureMessagePlacement.Top, moved.failureMessagePlacement)
+        assertFalse(configuration.copy(showsFailureMessage = false).showsFailureMessage)
+    }
+
+    @Test
+    fun `two configurations differing only in a placement or the opt-out are not equal`() {
+        val plain = PayInFormConfiguration()
+
+        listOf(
+            PayInFormConfiguration(cardBrandIconPlacement = PayInCardBrandIconPlacement.Hidden),
+            PayInFormConfiguration(failureMessagePlacement = PayInFailureMessagePlacement.Top),
+            PayInFormConfiguration(showsFailureMessage = false),
+        ).forEach { other ->
+            assertNotEquals(plain, other)
+            assertNotEquals(plain.hashCode(), other.hashCode())
+        }
     }
 }

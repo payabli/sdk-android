@@ -22,6 +22,10 @@ public class PayInFormLabels(
     fieldLabels: Map<PayInField, String> = emptyMap(),
     fieldPlaceholders: Map<PayInField, String> = emptyMap(),
     public val total: String? = null,
+    public val declinedMessage: String? = null,
+    public val retryLaterMessage: String? = null,
+    public val outcomeUnknownMessage: String? = null,
+    public val otherMessage: String? = null,
 ) {
     public val fieldLabels: Map<PayInField, String> = Collections.unmodifiableMap(fieldLabels.toMap())
     public val fieldPlaceholders: Map<PayInField, String> =
@@ -73,6 +77,35 @@ public class PayInFormLabels(
     internal fun totalOrNull(): String? = total?.takeIf { it.isNotBlank() }
 
     /**
+     * The payer's message when a failure's category is `declined`, or null to use the resource.
+     *
+     * @return the message, or null to use the resource.
+     */
+    public fun declinedMessageOrNull(): String? = declinedMessage?.takeIf { it.isNotBlank() }
+
+    /**
+     * The payer's message when a failure's category is `retryLater`, or null to use the resource.
+     *
+     * @return the message, or null to use the resource.
+     */
+    public fun retryLaterMessageOrNull(): String? = retryLaterMessage?.takeIf { it.isNotBlank() }
+
+    /**
+     * The payer's message when a failure's category is `outcomeUnknown`, or null to use the
+     * resource.
+     *
+     * @return the message, or null to use the resource.
+     */
+    public fun outcomeUnknownMessageOrNull(): String? = outcomeUnknownMessage?.takeIf { it.isNotBlank() }
+
+    /**
+     * The payer's message for a failure of any other category, or null to use the resource.
+     *
+     * @return the message, or null to use the resource.
+     */
+    public fun otherMessageOrNull(): String? = otherMessage?.takeIf { it.isNotBlank() }
+
+    /**
      * As a `data class` would, over the copies rather than over what was handed in.
      *
      * @param title the heading, or null for none.
@@ -81,6 +114,12 @@ public class PayInFormLabels(
      * @param fieldLabels the caller's labels, or empty for the resources.
      * @param fieldPlaceholders the caller's placeholders, or empty for none.
      * @param total the label on the Total row, or null for the resource.
+     * @param declinedMessage the payer's message when a failure's category is `declined`, or null for the resource.
+     * @param retryLaterMessage the payer's message when a failure's category is `retryLater`, or null for the
+     * resource.
+     * @param outcomeUnknownMessage the payer's message when a failure's category is `outcomeUnknown`, or null for
+     * the resource.
+     * @param otherMessage the payer's message for a failure of any other category, or null for the resource.
      * @return the labels rebuilt from the named parts.
      */
     public fun copy(
@@ -90,7 +129,23 @@ public class PayInFormLabels(
         fieldLabels: Map<PayInField, String> = this.fieldLabels,
         fieldPlaceholders: Map<PayInField, String> = this.fieldPlaceholders,
         total: String? = this.total,
-    ): PayInFormLabels = PayInFormLabels(title, subtitle, submitButton, fieldLabels, fieldPlaceholders, total)
+        declinedMessage: String? = this.declinedMessage,
+        retryLaterMessage: String? = this.retryLaterMessage,
+        outcomeUnknownMessage: String? = this.outcomeUnknownMessage,
+        otherMessage: String? = this.otherMessage,
+    ): PayInFormLabels =
+        PayInFormLabels(
+            title,
+            subtitle,
+            submitButton,
+            fieldLabels,
+            fieldPlaceholders,
+            total,
+            declinedMessage,
+            retryLaterMessage,
+            outcomeUnknownMessage,
+            otherMessage,
+        )
 
     override fun equals(other: Any?): Boolean =
         this === other ||
@@ -101,14 +156,30 @@ public class PayInFormLabels(
                     submitButton == other.submitButton &&
                     fieldLabels == other.fieldLabels &&
                     fieldPlaceholders == other.fieldPlaceholders &&
-                    total == other.total
+                    total == other.total &&
+                    declinedMessage == other.declinedMessage &&
+                    retryLaterMessage == other.retryLaterMessage &&
+                    outcomeUnknownMessage == other.outcomeUnknownMessage &&
+                    otherMessage == other.otherMessage
             )
 
     override fun hashCode(): Int =
-        listOf(title, subtitle, submitButton, fieldLabels, fieldPlaceholders, total)
-            .fold(0) { hash, part -> 31 * hash + part.hashCode() }
+        listOf(
+            title,
+            subtitle,
+            submitButton,
+            fieldLabels,
+            fieldPlaceholders,
+            total,
+            declinedMessage,
+            retryLaterMessage,
+            outcomeUnknownMessage,
+            otherMessage,
+        ).fold(0) { hash, part -> 31 * hash + part.hashCode() }
 
     override fun toString(): String =
         "PayInFormLabels(title=$title, subtitle=$subtitle, submitButton=$submitButton, " +
-            "fieldLabels=$fieldLabels, fieldPlaceholders=$fieldPlaceholders, total=$total)"
+            "fieldLabels=$fieldLabels, fieldPlaceholders=$fieldPlaceholders, total=$total, " +
+            "declinedMessage=$declinedMessage, retryLaterMessage=$retryLaterMessage, " +
+            "outcomeUnknownMessage=$outcomeUnknownMessage, otherMessage=$otherMessage)"
 }
