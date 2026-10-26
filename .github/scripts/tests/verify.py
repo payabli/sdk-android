@@ -4249,6 +4249,23 @@ def test_workflows():
         check("W17 and it refuses the version below and passes the one above", (below, above) == (1, 0),
               f"below={below} above={above}")
 
+    # The merge-back check again, with refs fetched after the approval: a release cut while this one waited
+    # is in neither main nor this commit. Before the tag, on the run's approved commit, run on both fixtures.
+    regate = [i for i, step in enumerate(gate_steps)
+              if step.get("name") == "Check again that every earlier release is in main and in the commit"]
+    check("W17 and the release job checks every earlier release again, before it tags",
+          len(regate) == 1 and tag_at is not None and regate[0] < tag_at
+          and env_of(gate_steps[regate[0]], "VERSION") == approved_version
+          and env_of(gate_steps[regate[0]], "COMMIT") == approved,
+          f"at={regate} tag={tag_at}")
+    if len(regate) == 1:
+        step = gate_steps[regate[0]]
+        unmerged = ran(step, {"VERSION": "0.3.0", "COMMIT": shas["release/0.3.0"]}, repo)[0]
+        stale = ran(step, {"VERSION": "0.3.0", "COMMIT": merged_shas["release/0.3.0"]}, merged_repo)[0]
+        fresh = ran(step, {"VERSION": "0.3.0", "COMMIT": merged_shas["release/0.3.0+main"]}, merged_repo)[0]
+        check("W17 and it refuses an earlier release missing from main or the commit, and passes one in both",
+              (unmerged, stale, fresh) == (1, 1, 0), f"unmerged={unmerged} stale={stale} fresh={fresh}")
+
     # The subject, checked before the tag and before the assume. The role trusts the environment and the
     # setting that shapes the claim is GitHub's, so a mismatch found after the tag has spent the number.
     subject, expected = subject_checked(gate_steps, "release")

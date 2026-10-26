@@ -348,6 +348,28 @@ jobs:
             exit 1
           fi
 
+      # Again here, with refs fetched after the approval: an earlier release that was cut while this one
+      # waited is not in main yet, and this commit does not hold it.
+      - name: Check again that every earlier release is in main and in the commit
+        env:
+          COMMIT: ${{ needs.check.outputs.commit }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          release='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          for tag in $(git for-each-ref --format='%(refname:strip=2)' refs/tags | sed -nE "/$release/p"); do
+            tagged=$(git rev-parse "refs/tags/$tag^{commit}")
+            if [ "$tag" != "$VERSION" ] && [ "$(printf '%s\n%s\n' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then
+              if [ "$(git merge-base "$tagged" origin/main)" != "$tagged" ]; then
+                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."
+                exit 1
+              fi
+              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then
+                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."
+                exit 1
+              fi
+            fi
+          done
+
       # A tag already on this commit is a resumed release and is not pushed twice. One on another commit is
       # a number already spent.
       - name: Create the tag
