@@ -327,8 +327,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Again here, where the tag is created: a release cut while this one waited for approval has tagged
-      # a newer version since the check ran.
+      # Again here, where the tag is created: a release cut while this one waited for approval may have
+      # tagged a newer version since the check ran.
       - name: Check the version is not below the newest release
         env:
           VERSION: ${{ needs.check.outputs.version }}

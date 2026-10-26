@@ -4462,8 +4462,8 @@ def test_workflows():
           f"{[step.get('name') for step in release_build_steps]}")
 
 
-    # main takes pull requests from release and hotfix branches only. A ruleset cannot name a source branch,
-    # so this job is the rule, and it is run on the names it decides rather than read.
+    # main takes pull requests from release, hotfix and Dependabot branches only. A ruleset cannot name a
+    # source branch, so this job is the rule, and it is run on the names it decides rather than read.
     source_doc = workflow_doc(SOURCE_WORKFLOW)
     source_on = (source_doc.get(True) if True in source_doc else source_doc.get("on")) or {}
     source_pr = source_on.get("pull_request") or {}
@@ -4483,9 +4483,9 @@ def test_workflows():
           len(sourced) == 1 and " ".join(str((sourced[0].get("env") or {}).get("HEAD_REF", "")).split())
           == "${{ github.head_ref }}" and "${{" not in str(sourced[0].get("run", "")), f"{sourced[0] if sourced else ''}")
     if len(sourced) == 1:
-        for branch, status in (("release/0.2.0", 0), ("hotfix/0.2.1", 0), ("feat/PLA-3935-ci", 1),
-                               ("dependabot/github_actions/actions-1", 1), ("release", 1), ("release/", 1),
-                               ("main", 1), ("x/release/0.2.0", 1)):
+        for branch, status in (("release/0.2.0", 0), ("hotfix/0.2.1", 0), ("dependabot/github_actions/actions-1", 0),
+                               ("feat/ci-release-branches", 1), ("release", 1), ("release/", 1),
+                               ("dependabot/", 1), ("main", 1), ("x/release/0.2.0", 1)):
             ran = run_step(sourced[0], {"HEAD_REF": branch})[0]
             check(f"W18 and a pull request from {branch} is {'accepted' if status == 0 else 'refused'}",
                   ran == status, f"status={ran}")

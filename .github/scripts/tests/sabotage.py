@@ -91,8 +91,8 @@ CI = WORKFLOW_DIR / "ci.yml"
 # while the record goes unchecked.
 PUBLIC_SURFACE = WORKFLOW_DIR / "public-surface.yml"
 
-# The rule that main takes pull requests from release and hotfix branches only. Each mutation below is a
-# pull request into main that the job lets through, or one it refuses that it should not.
+# The rule that main takes pull requests from release, hotfix and Dependabot branches only. Each mutation
+# below is a pull request into main that the job lets through, or one it refuses that it should not.
 SOURCE_BRANCH = WORKFLOW_DIR / "source-branch.yml"
 
 # The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
@@ -155,8 +155,8 @@ RELEASE_SUBJECT_THEN_TAG = (
     '          fetch-depth: 0\n'
     '          persist-credentials: false\n'
     '\n'
-    '      # Again here, where the tag is created: a release cut while this one waited for approval has tagged\n'
-    '      # a newer version since the check ran.\n'
+    '      # Again here, where the tag is created: a release cut while this one waited for approval may have\n'
+    '      # tagged a newer version since the check ran.\n'
     '      - name: Check the version is not below the newest release\n'
     '        env:\n'
     '          VERSION: ${{ needs.check.outputs.version }}\n'
@@ -209,8 +209,8 @@ RELEASE_TAG_THEN_SUBJECT = (
     '          fetch-depth: 0\n'
     '          persist-credentials: false\n'
     '\n'
-    '      # Again here, where the tag is created: a release cut while this one waited for approval has tagged\n'
-    '      # a newer version since the check ran.\n'
+    '      # Again here, where the tag is created: a release cut while this one waited for approval may have\n'
+    '      # tagged a newer version since the check ran.\n'
     '      - name: Check the version is not below the newest release\n'
     '        env:\n'
     '          VERSION: ${{ needs.check.outputs.version }}\n'
@@ -2291,10 +2291,13 @@ MUTATIONS = [
 
     # The source branch. A ruleset cannot name it, so this job is the whole rule.
     ("Source branch refuses a hotfix branch", SOURCE_BRANCH, "workflows",
-     "            release/?*|hotfix/?*) ;;\n", "            release/?*) ;;\n"),
+     "            release/?*|hotfix/?*|dependabot/?*) ;;\n", "            release/?*|dependabot/?*) ;;\n"),
+
+    ("Source branch refuses a Dependabot branch", SOURCE_BRANCH, "workflows",
+     "            release/?*|hotfix/?*|dependabot/?*) ;;\n", "            release/?*|hotfix/?*) ;;\n"),
 
     ("Source branch accepts any branch with a slash in it", SOURCE_BRANCH, "workflows",
-     "            release/?*|hotfix/?*) ;;\n", "            */?*) ;;\n"),
+     "            release/?*|hotfix/?*|dependabot/?*) ;;\n", "            */?*) ;;\n"),
 
     ("Source branch reports the rule and passes anyway", SOURCE_BRANCH, "workflows",
      "'$HEAD_REF'.\"\n              exit 1\n", "'$HEAD_REF'.\"\n              exit 0\n"),
