@@ -55,7 +55,10 @@ class PayInPaymentFlowTest {
             val outcome = flow.capture(testOptions(), cardForm())
 
             assertEquals("A0000", outcome.getOrNull()?.code)
-            assertTrue("${flow.state.value}", flow.state.value is PayInSubmissionState.Succeeded.Payment)
+            assertTrue(
+                "${flow.submissionState.value}",
+                flow.submissionState.value is PayInSubmissionState.Succeeded.Payment,
+            )
         }
 
     @Test
@@ -137,39 +140,39 @@ class PayInPaymentFlowTest {
     fun `a host that collected the card captures without drawing a form`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
-            val flow: PayabliPayIn = flowOver(transport)
+            val flow = flowOver(transport)
 
             val outcome = flow.capture(cardRequest())
 
             assertEquals("A0000", outcome.getOrNull()?.code)
             assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
-            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+            assertEquals(PayInSubmissionState.Idle, flow.submissionState.value)
         }
 
     @Test
     fun `a host that collected the card authorizes without drawing a form`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
-            val flow: PayabliPayIn = flowOver(transport)
+            val flow = flowOver(transport)
 
             val outcome = flow.authorize(cardRequest())
 
             assertEquals("A0000", outcome.getOrNull()?.code)
             assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
-            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+            assertEquals(PayInSubmissionState.Idle, flow.submissionState.value)
         }
 
     @Test
     fun `a host that collected the card stores it without drawing a form`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(STORED_METHOD)
-            val flow: PayabliPayIn = flowOver(transport)
+            val flow = flowOver(transport)
 
             val outcome = flow.storeMethod(cardStoreRequest())
 
             assertEquals("tok-77", outcome.getOrNull()?.storedMethodId)
             assertEquals(PayInRoutes.STORE_METHOD, transport.request?.path)
-            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+            assertEquals(PayInSubmissionState.Idle, flow.submissionState.value)
         }
 
     @Test
@@ -324,11 +327,10 @@ class PayInPaymentFlowTest {
         }
 
     /**
-     * The reason the two calls above publish nothing to [PayabliPayIn.state].
+     * The reason the two calls above publish nothing to the state the form renders.
      *
      * A terminal state stands until the form consumes it, and nothing draws these, so a first call that
-     * published would leave the second refused with no public way to clear it. Asserted through the
-     * interface, because that is the surface a host holds.
+     * published would leave the second refused with no public way to clear it.
      */
     @Test
     fun `two calls in a row both reach the wire`() =
@@ -349,11 +351,11 @@ class PayInPaymentFlowTest {
     @Test
     fun `a void leaves the form's state alone`() =
         runTest(timeout = timeout) {
-            val flow: PayabliPayIn = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
+            val flow = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
 
             flow.voidTransaction("101-abc")
 
-            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+            assertEquals(PayInSubmissionState.Idle, flow.submissionState.value)
         }
 
     @Test
@@ -562,7 +564,7 @@ class PayInPaymentFlowTest {
             val flow = flowOver(transport)
 
             val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull()
-            val published = flow.state.value as PayInSubmissionState.Failed
+            val published = flow.submissionState.value as PayInSubmissionState.Failed
             val first = transport.request?.headers?.get("idempotencyKey")
             flow.consume()
             val reference = (cause as PayInException.Unsettled).paymentReference
@@ -602,7 +604,7 @@ class PayInPaymentFlowTest {
             val flow = flowOver(FakePayInTransport.answering("Duplicated idempotencyKey", statusCode = 409))
 
             val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull()
-            val published = flow.state.value as PayInSubmissionState.Failed
+            val published = flow.submissionState.value as PayInSubmissionState.Failed
 
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertEquals(PayabliErrorType.CONFLICT, (cause as PayInException.Unsettled).type)
@@ -653,19 +655,19 @@ class PayInPaymentFlowTest {
             transport.release()
             running.join()
             assertTrue(flow.consume())
-            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+            assertEquals(PayInSubmissionState.Idle, flow.submissionState.value)
         }
 
     @Test
-    fun `nothing the payer typed reaches the state a host reads`() =
+    fun `nothing the payer typed reaches the state the form renders`() =
         runTest(timeout = timeout) {
             val flow = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
 
             flow.capture(testOptions(), cardForm())
 
             assertFalse(
-                "${flow.state.value}",
-                flow.state.value
+                "${flow.submissionState.value}",
+                flow.submissionState.value
                     .toString()
                     .contains(TEST_PAN),
             )
@@ -676,16 +678,37 @@ class PayInPaymentFlowTest {
         runTest(timeout = timeout) {
             assertEquals(
                 PayInSubmissionState.Idle,
-                flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION)).state.value,
+                flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION)).submissionState.value,
             )
             assertNull(FakePayInTransport.answering(APPROVED_TRANSACTION).request)
+        }
+
+    @Test
+    fun `isSubmitting starts false, before anything has been submitted`() =
+        runTest(timeout = timeout) {
+            assertFalse(flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION)).isSubmitting.value)
+        }
+
+    @Test
+    fun `a form submission publishes isSubmitting true, and false once it has answered`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val flow = flowOver(transport)
+
+            val running = launch { flow.capture(testOptions(), cardForm()) }
+            transport.arrived.await()
+            assertTrue("the submission in flight was not reported", flow.isSubmitting.value)
+
+            transport.release()
+            running.join()
+            assertFalse("the ended submission was still reported as in flight", flow.isSubmitting.value)
         }
 
     @Test
     fun `the second start is refused without waiting for a dispatch`() =
         runTest(timeout = timeout) {
             // Two forms share one flow whenever a host mounts the sheet over the inline one. Launched
-            // dispatched, `start` returned before `Submitting` was published, so both callers were told their
+            // dispatched, `start` returned before the flight was published, so both callers were told their
             // submission was accepted and both then waited on one outcome.
             val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
             val flow = flowOver(transport)
@@ -695,7 +718,7 @@ class PayInPaymentFlowTest {
 
             assertTrue("the first start was refused", first)
             assertFalse("a second submission was accepted", second)
-            assertEquals(PayInSubmissionState.Submitting, flow.state.value)
+            assertTrue("the flight was not observable before start returned", flow.isSubmitting.value)
 
             transport.arrived.await()
             transport.release()
@@ -715,7 +738,7 @@ class PayInPaymentFlowTest {
 
             val collector =
                 launch(Dispatchers.Unconfined) {
-                    flow.state.collect { state ->
+                    flow.submissionState.collect { state ->
                         if (state is PayInSubmissionState.Succeeded && secondTap == null) {
                             secondTap = flow.start(captureOf(), cardForm())
                         }

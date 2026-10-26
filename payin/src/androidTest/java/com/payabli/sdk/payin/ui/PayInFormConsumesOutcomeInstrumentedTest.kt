@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.R
@@ -57,7 +58,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
     @Test
     fun anOutcomeIsConsumedOnceTheCallerHasHadIt() {
         val flow = flowAnswering()
-        var delivered: PayInSubmissionState.Succeeded? = null
+        var delivered: PayInFormSuccess? = null
 
         showForm(flow) { delivered = it }
         fillBank()
@@ -65,7 +66,11 @@ class PayInFormConsumesOutcomeInstrumentedTest {
 
         rule.waitForIdle()
         assertEquals("the caller was not given the outcome", "A0000", delivered?.let { code(it) })
-        assertEquals("the flow kept an outcome the caller already has", PayInSubmissionState.Idle, flow.state.value)
+        assertEquals(
+            "the flow kept an outcome the caller already has",
+            PayInSubmissionState.Idle,
+            flow.submissionState.value,
+        )
     }
 
     @Test
@@ -79,7 +84,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
         runCatching { submit() }
 
         rule.waitForIdle()
-        assertEquals("a throwing caller stranded the outcome", PayInSubmissionState.Idle, flow.state.value)
+        assertEquals("a throwing caller stranded the outcome", PayInSubmissionState.Idle, flow.submissionState.value)
     }
 
     @Test
@@ -97,7 +102,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
         val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
         val flow = flowOver(transport)
         val configuration = mutableStateOf(bankForm())
-        var delivered: PayInSubmissionState.Succeeded? = null
+        var delivered: PayInFormSuccess? = null
 
         showForm(flow, configuration) { delivered = it }
         fillBank()
@@ -110,11 +115,10 @@ class PayInFormConsumesOutcomeInstrumentedTest {
 
         rule.waitForIdle()
         assertEquals("a changed configuration lost the outcome", "A0000", delivered?.let { code(it) })
-        assertEquals("the flow was left holding an outcome", PayInSubmissionState.Idle, flow.state.value)
+        assertEquals("the flow was left holding an outcome", PayInSubmissionState.Idle, flow.submissionState.value)
     }
 
-    private fun code(state: PayInSubmissionState.Succeeded): String? =
-        (state as? PayInSubmissionState.Succeeded.Payment)?.result?.code
+    private fun code(state: PayInFormSuccess): String? = (state as? PayInFormSuccess.Payment)?.result?.code
 
     private fun flowAnswering(): PayInPaymentFlow = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
 
@@ -139,7 +143,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
     private fun showForm(
         flow: PayInPaymentFlow,
         configuration: State<PayInFormConfiguration> = mutableStateOf(bankForm()),
-        onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
+        onCompleted: (PayInFormSuccess) -> Unit,
     ) {
         rule.setContent {
             MaterialTheme {

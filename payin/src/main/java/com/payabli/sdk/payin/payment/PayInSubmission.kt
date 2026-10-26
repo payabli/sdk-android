@@ -110,6 +110,10 @@ internal class PayInSubmission(
 
     val state: StateFlow<PayInSubmissionState> = sink.asStateFlow()
 
+    private val busy = MutableStateFlow(false)
+
+    val isSubmitting: StateFlow<Boolean> = busy.asStateFlow()
+
     /**
      * Runs [operation] against what the payer entered, at [entryPoint].
      *
@@ -418,7 +422,10 @@ internal class PayInSubmission(
         val startedAt = elapsedRealtimeNanos()
         // Set by the transport as it hands the request over, so a failure before that is known not to have left.
         val sendMark = PayabliSendMark()
-        if (publishes) sink.value = PayInSubmissionState.Submitting
+        if (publishes) {
+            sink.value = PayInSubmissionState.Submitting
+            busy.value = true
+        }
         var outcome: PayInSubmissionState? = null
         // The failing type's name, read where the failure is caught: the wrapping below replaces the type
         // and keeps no copy of its name.
@@ -453,6 +460,9 @@ internal class PayInSubmission(
                 }
                 report(event, outcomeOf(finished), codeOf(finished), failingType, startedAt, entryPoint, publishes)
             }
+            // Before the unlock: after it, a submission that took the flight as this one ended would
+            // have its true erased by this clear.
+            busy.value = false
             inFlight.unlock()
         }
         return outcome

@@ -28,6 +28,9 @@ internal class FakePayInFlowHandle(
     @Composable
     override fun isSubmitting(): Boolean = false
 
+    /** The answer the test configured returns from the call, so nothing stands for a recheck to lose. */
+    override fun outcomeTaken() {}
+
     override suspend fun voidTransaction(transId: String): PayInOutcome {
         reversals += transId
         released.await()

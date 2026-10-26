@@ -291,12 +291,12 @@ is `null` when the platform gives no device identifier.
 `PayabliPayIn` runs on the session `initialize` returned. Show its form, or call it from your own UI:
 
 ```kotlin
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import java.math.BigDecimal
 
@@ -311,11 +311,11 @@ PayabliPayInForm(
     configuration = PayInFormConfiguration(),
     onCompleted = { succeeded ->
         when (succeeded) { // store the ID; don't log it
-            is PayInSubmissionState.Succeeded.Payment -> order.paymentTransId = succeeded.result.transaction?.paymentTransId
-            is PayInSubmissionState.Succeeded.Method -> order.storedMethodId = succeeded.storedMethod.storedMethodId
+            is PayInFormSuccess.Payment -> order.paymentTransId = succeeded.result.transaction?.paymentTransId
+            is PayInFormSuccess.Method -> order.storedMethodId = succeeded.storedMethod.storedMethodId
         }
     },
-    onFailed = { failed -> /* failed.cause says why; see Handle the outcome */ },
+    onFailed = { error -> /* error.type says why it failed; see Handle the outcome */ },
     onMethodChanged = { },
 )
 ```

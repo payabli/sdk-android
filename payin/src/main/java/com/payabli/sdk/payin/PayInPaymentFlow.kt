@@ -96,14 +96,16 @@ internal class PayInPaymentFlow private constructor(
         PayInFormReports(telemetry?.forEntryPoint(entryPoint)),
     )
 
+    override val isSubmitting: StateFlow<Boolean> get() = submission.isSubmitting
+
     /**
-     * Where the current submission has got to: what a form renders, and what a host reads for its own chrome.
+     * Where the current submission has got to, which the form renders. A terminal state stands until
+     * the form delivers it, so a rotation mid-flight still gets its outcome.
      *
-     * A terminal state stands until the form has delivered it, which is what lets a rotation mid-flight still
-     * deliver an outcome. The form consumes it immediately afterwards, so nothing here has to be cleared by
-     * whoever reads it.
+     * Not on the contract: a host reads [isSubmitting]; a direct call's outcome returns on its own value.
      */
-    override val state: StateFlow<PayInSubmissionState> get() = submission.state
+    @get:JvmSynthetic
+    internal val submissionState: StateFlow<PayInSubmissionState> get() = submission.state
 
     /**
      * Consumes a terminal state, returning to [PayInSubmissionState.Idle]. Called by `PayabliPayInForm`
@@ -118,7 +120,7 @@ internal class PayInPaymentFlow private constructor(
     /**
      * Whether the service may have acted on the request [outcome] answers, which is when a form lets the instrument go.
      *
-     * @param outcome a state read from [state].
+     * @param outcome a state read from [submissionState].
      * @return true when it may have; false otherwise.
      */
     @JvmSynthetic
@@ -126,8 +128,8 @@ internal class PayInPaymentFlow private constructor(
 
     /**
      * Runs [operation] on [scope], for a caller with no coroutine at the call site. What the SDK's
-     * own form calls: the outcome is readable through [state] alone, and the suspending members
-     * below return it instead.
+     * own form calls: the outcome is readable through [submissionState] alone, and the suspending
+     * members below return it instead.
      *
      * @param operation what the submission does.
      * @param values what the payer entered, and the instrument they entered it for.

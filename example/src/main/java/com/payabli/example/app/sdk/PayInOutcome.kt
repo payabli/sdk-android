@@ -4,15 +4,15 @@ import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInResult
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 
 /**
  * What a submission ended as, in this app's own words.
  *
- * The form calls back with the SDK's own state; this is what the screens are handed instead, so a view model
- * holds nothing it would have to update when the SDK's state type changes.
+ * The form calls back with the SDK's own outcome types; this is what the screens are handed instead, so a
+ * view model holds nothing it would have to update when the SDK's types change.
  */
 sealed class PayInOutcome {
     /** The service accepted it. */
@@ -43,8 +43,7 @@ sealed class PayInOutcome {
     ) : PayInOutcome()
 }
 
-internal fun PayInSubmissionState.Succeeded.toOutcome(): PayInOutcome.Approved =
-    PayInOutcome.Approved(toPaymentResult())
+internal fun PayInFormSuccess.toOutcome(): PayInOutcome.Approved = PayInOutcome.Approved(toPaymentResult())
 
 /**
  * The same two shapes for a call that returns rather than publishing to the form's state.
@@ -67,12 +66,12 @@ internal fun Result<PayInResult>.toOutcome(): PayInOutcome =
         },
     )
 
-internal fun PayInSubmissionState.Failed.toOutcome(): PayInOutcome.Refused =
+internal fun PayabliException.toOutcome(): PayInOutcome.Refused =
     PayInOutcome.Refused(
         error = toPaymentError(),
-        diagnostic = cause.toString(),
-        keepsItsPaymentReference = cause.keepsThePaymentOpen(),
-        isOutcomeUnknown = cause is PayInException.Unsettled,
+        diagnostic = toString(),
+        keepsItsPaymentReference = keepsThePaymentOpen(),
+        isOutcomeUnknown = this is PayInException.Unsettled,
     )
 
 /** Whether the payment this failure belongs to is still the one to retry. */

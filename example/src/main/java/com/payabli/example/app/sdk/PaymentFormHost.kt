@@ -36,8 +36,16 @@ fun PaymentFormHost(
         configuration = setup.configuration,
         modifier = modifier,
         labels = setup.labels,
-        onCompleted = { onCompleted(it.toOutcome()) },
-        onFailed = { onFailed(it.toOutcome()) },
+        // Delivery closes the busy window before the app's own handling runs, so a recheck cannot
+        // replace the flow between the two.
+        onCompleted = {
+            payments.outcomeTaken()
+            onCompleted(it.toOutcome())
+        },
+        onFailed = {
+            payments.outcomeTaken()
+            onFailed(it.toOutcome())
+        },
         // Nothing here follows the instrument on screen: the form fills its own boxes and submits them, and
         // no screen in this app asks which tab the payer is on.
         onMethodChanged = {},

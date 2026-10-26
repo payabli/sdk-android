@@ -24,6 +24,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldRules
@@ -74,8 +76,8 @@ internal fun PayInFormContent(
     labels: PayInFormLabels = PayInFormLabels(),
     style: PayInFormStyle? = null,
     onSubmit: (PayInFormValues) -> Boolean = { false },
-    onCompleted: (PayInSubmissionState.Succeeded) -> Unit = {},
-    onFailed: (PayInSubmissionState.Failed) -> Unit = {},
+    onCompleted: (PayInFormSuccess) -> Unit = {},
+    onFailed: (PayabliException) -> Unit = {},
     onMethodChanged: (PayInMethodType) -> Unit = {},
 ) {
     // The newest lambdas without re-registering anything. A host that writes them inline passes new objects
@@ -220,24 +222,35 @@ internal fun PayInFormContent(
  */
 private fun PayInSubmissionState.deliver(
     clearInstrument: () -> Unit,
-    onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
-    onFailed: (PayInSubmissionState.Failed) -> Unit,
+    onCompleted: (PayInFormSuccess) -> Unit,
+    onFailed: (PayabliException) -> Unit,
 ): Boolean =
     when (this) {
         is PayInSubmissionState.Succeeded -> {
             clearInstrument()
-            onCompleted(this)
+            onCompleted(asSuccess())
             false
         }
 
         is PayInSubmissionState.Failed -> {
             clearInstrument()
-            onFailed(this)
+            onFailed(cause)
             false
         }
 
         PayInSubmissionState.Idle -> false
         PayInSubmissionState.Submitting -> true
+    }
+
+/**
+ * The success the form holds, in the type the caller's callback takes.
+ *
+ * @return the payment, or the stored method.
+ */
+private fun PayInSubmissionState.Succeeded.asSuccess(): PayInFormSuccess =
+    when (this) {
+        is PayInSubmissionState.Succeeded.Payment -> PayInFormSuccess.Payment(result)
+        is PayInSubmissionState.Succeeded.Method -> PayInFormSuccess.Method(storedMethod)
     }
 
 /**
