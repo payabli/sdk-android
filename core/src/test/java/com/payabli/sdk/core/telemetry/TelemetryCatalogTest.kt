@@ -110,6 +110,46 @@ class TelemetryCatalogTest {
         }
     }
 
+    /** The failure events an entry point reports through, per the record's system and card-present rows. */
+    @Test
+    fun everyEntryPointFailureEventCarriesItsFailureType() {
+        listOf(
+            TelemetryEvents.SDK_INITIALIZE_FAILED,
+            TelemetryEvents.AUTH_TOKEN_FAILED,
+            TelemetryEvents.TTP_INITIALIZE_FAILED,
+            TelemetryEvents.TTP_CHARGE_FAILED,
+            TelemetryEvents.TTP_CLOSE_FAILED,
+        ).forEach { event ->
+            val scrubbed =
+                TelemetryCatalog.scrub(
+                    event,
+                    mapOf(TelemetryProperty.FAILURE_TYPE.key to "NullPointerException"),
+                )
+
+            assertEquals(event, mapOf(TelemetryProperty.FAILURE_TYPE.key to "NullPointerException"), scrubbed)
+        }
+    }
+
+    /**
+     * The record gives `ttp.attestation.failed` and `ttp.nfc.failed` no `failure_type`, so the catalog
+     * drops it there, which is why the widening above is per event rather than on the `FAILED` set.
+     */
+    @Test
+    fun theFailuresTheRecordGivesNoFailureTypeDropIt() {
+        listOf(
+            TelemetryEvents.TTP_ATTESTATION_FAILED,
+            TelemetryEvents.TTP_NFC_FAILED,
+        ).forEach { event ->
+            val scrubbed =
+                TelemetryCatalog.scrub(
+                    event,
+                    mapOf(TelemetryProperty.FAILURE_TYPE.key to "NullPointerException"),
+                )
+
+            assertEquals(event, emptyMap<String, String>(), scrubbed)
+        }
+    }
+
     @Test
     fun everyCloseEventCarriesItsOrigin() {
         listOf(

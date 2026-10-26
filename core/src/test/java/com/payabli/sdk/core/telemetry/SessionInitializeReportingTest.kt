@@ -7,11 +7,13 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.model.RedactedFailure
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.network.impl.AuthFailureListener
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.KSerializer
@@ -24,14 +26,12 @@ import org.junit.Test
 /**
  * What `initialize` reports, and what it does not.
  *
- * A start with no outcome after it is a funnel nobody can close, and the ordinary way to produce one is an
- * Application and an Activity both initializing: the second call changes nothing.
- *
- * Nothing is listening on a first install or after a reset, because the channel is what a successful install
- * creates, so what these cover is a repeat call against a live session.
+ * The reporting channel is what a successful install creates, so nothing is listening on a first
+ * install: what these cover is a repeat call against a live session, and the converted failure.
  */
 class SessionInitializeReportingTest {
     private val recorded = mutableListOf<String>()
+    private val recordedProperties = mutableListOf<Map<String, String>>()
 
     @Before
     fun listen() {
@@ -39,7 +39,10 @@ class SessionInitializeReportingTest {
         // starts, which would replace the one below. Pointed at a name that resolves to nothing, it does not.
         TelemetryBootstraps.implementation = "com.payabli.sdk.telemetry.NotOnThisClasspath"
         TelemetryBootstraps.forget()
-        TelemetryRecorders.install { event, _ -> recorded += event }
+        TelemetryRecorders.install { event, properties ->
+            recorded += event
+            recordedProperties += properties
+        }
     }
 
     @After
@@ -75,6 +78,69 @@ class SessionInitializeReportingTest {
                 listOf(TelemetryEvents.SDK_INITIALIZE_STARTED, TelemetryEvents.SDK_INITIALIZE_FAILED),
                 recorded,
             )
+        }
+
+    /**
+     * A failure outside the refusals converts, and the pair it reports names the type that failed.
+     *
+     * The converting catch sits in `install`, the half of `initialize` these tests reach without host
+     * bindings.
+     */
+    @Test
+    fun aFailureOutsideTheRefusalsIsConvertedAndItsPairNamesTheTypeThatFailed() =
+        runTest {
+            class Foreign : RuntimeException("a message the SDK must not carry out")
+
+            val foreign = Foreign()
+
+            val thrown =
+                runCatching {
+                    PayabliSession.initializeWith(configFor("an-entry-point")) { _ -> throw foreign }
+                }
+
+            val converted = thrown.exceptionOrNull()
+            assertTrue("the foreign failure reached the caller unconverted", converted is PayabliGenericException)
+            converted as PayabliGenericException
+            assertEquals(PayabliErrorType.UNKNOWN, converted.type)
+            assertEquals(PayabliErrorType.UNKNOWN.message, converted.reason)
+            assertTrue("the original is not kept as a redacted cause", converted.cause is RedactedFailure)
+            assertEquals(foreign.javaClass.name, converted.cause?.message)
+            assertEquals(
+                listOf(TelemetryEvents.SDK_INITIALIZE_STARTED, TelemetryEvents.SDK_INITIALIZE_FAILED),
+                recorded,
+            )
+            assertEquals(mapOf(TelemetryProperty.STATE.key to "uninitialized"), recordedProperties[0])
+            val reported = recordedProperties[1]
+            assertEquals(TelemetryProperties.Outcome.FAILED, reported[TelemetryProperty.OUTCOME.key])
+            assertEquals(PayabliErrorType.UNKNOWN.wireName, reported[TelemetryProperty.CODE.key])
+            assertEquals(PayabliErrorType.UNKNOWN.code.toString(), reported[TelemetryProperty.ERROR_NUMBER.key])
+            assertEquals(PayabliErrorType.UNKNOWN.message, reported[TelemetryProperty.REASON.key])
+            assertEquals("Foreign", reported[TelemetryProperty.FAILURE_TYPE.key])
+            assertTrue(
+                "duration_ms is missing or not a number",
+                reported[TelemetryProperty.DURATION_MS.key]?.toLongOrNull() != null,
+            )
+        }
+
+    /**
+     * A withdrawn initialize is not a failure: it passes through as `CancellationException` and reports
+     * nothing, because converting it would both hide the withdrawal from the caller that is unwinding
+     * and report an outcome for one.
+     */
+    @Test
+    fun aWithdrawnInitializePassesThroughUnconvertedAndReportsNothing() =
+        runTest {
+            // Raised by the attempt rather than the job being cancelled from outside, which reaches the
+            // converting catch as the same value either way.
+            val outcome =
+                runCatching {
+                    PayabliSession.initializeWith(configFor("an-entry-point")) { _ ->
+                        throw CancellationException("the host withdrew")
+                    }
+                }.exceptionOrNull()
+
+            assertTrue("a withdrawal was converted: $outcome", outcome is CancellationException)
+            assertEquals(emptyList<String>(), recorded)
         }
 
     /**

@@ -323,24 +323,44 @@ internal class PayInSubmission(
             )
             throw cancellation
         } catch (failure: Exception) {
-            val cause =
-                failure as? PayabliException
-                    ?: PayabliGenericException(
-                        PayabliErrorType.UNKNOWN,
-                        REASON_UNEXPECTED,
-                        cause = RedactedCause(failure),
-                    )
-            report(
-                event,
-                outcomeOf(cause),
-                cause.type,
-                failure.javaClass.simpleName,
-                startedAt,
-                entryPoint,
-                fromForm = false,
-            )
-            Result.failure(cause)
+            failure.asReadFailure(event, startedAt, entryPoint)
+        } catch (failure: LinkageError) {
+            failure.asReadFailure(event, startedAt, entryPoint)
         }
+    }
+
+    /**
+     * A read's failure, reported and answered: one the SDK did not classify arrives as the unknown
+     * failure, the original kept as its redacted cause, and the report names the type the entry point
+     * caught.
+     *
+     * @param event the catalog name of the read's completion event.
+     * @param startedAt when the read began, for the duration.
+     * @param entryPoint the partner integration point the read is attributed to.
+     * @return the failure the read answers with.
+     */
+    private fun Throwable.asReadFailure(
+        event: String,
+        startedAt: Long,
+        entryPoint: String,
+    ): Result<PayInTransaction> {
+        val cause =
+            this as? PayabliException
+                ?: PayabliGenericException(
+                    PayabliErrorType.UNKNOWN,
+                    PayabliErrorType.UNKNOWN.message,
+                    cause = RedactedCause(this),
+                )
+        report(
+            event,
+            outcomeOf(cause),
+            cause.type,
+            javaClass.simpleName,
+            startedAt,
+            entryPoint,
+            fromForm = false,
+        )
+        return Result.failure(cause)
     }
 
     /**
@@ -437,6 +457,9 @@ internal class PayInSubmission(
                 )
             throw cancellation
         } catch (failure: Exception) {
+            failingType = failure.javaClass.simpleName
+            outcome = failure.asFailed(retry, movesMoney, sendMark.mayHaveLeft)
+        } catch (failure: LinkageError) {
             failingType = failure.javaClass.simpleName
             outcome = failure.asFailed(retry, movesMoney, sendMark.mayHaveLeft)
         } finally {
@@ -591,7 +614,7 @@ internal class PayInSubmission(
      * @param mayHaveLeft whether this attempt's request passed the hand-off.
      * @return the failed state, with the field it blamed.
      */
-    private fun Exception.asFailed(
+    private fun Throwable.asFailed(
         retry: RetryKey,
         movesMoney: Boolean,
         mayHaveLeft: Boolean,
@@ -599,7 +622,11 @@ internal class PayInSubmission(
         val cause =
             when {
                 this !is PayabliException ->
-                    PayabliGenericException(PayabliErrorType.UNKNOWN, REASON_UNEXPECTED, cause = RedactedCause(this))
+                    PayabliGenericException(
+                        PayabliErrorType.UNKNOWN,
+                        PayabliErrorType.UNKNOWN.message,
+                        cause = RedactedCause(this),
+                    )
 
                 this is PayInKeyRefusal ->
                     if (retry.reused) {
@@ -833,7 +860,6 @@ internal class PayInSubmission(
     ): String? = reference?.let { "$route:$it" }
 
     internal companion object {
-        const val REASON_UNEXPECTED = "The payment could not be submitted"
         const val REASON_RETRY_REFUSED = "Retry refused (409)"
         const val FIELD_PAYMENT_REFERENCE = "paymentReference"
         const val REASON_BLANK_REFERENCE = "The paymentReference cannot be blank"

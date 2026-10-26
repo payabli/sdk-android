@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * Every call that fails fails with [TapToPayException], with two exceptions a caller has to know about:
  * a cancellation unwinds as `CancellationException`, because withdrawing is not a failure, and a JVM
- * `Error` is not caught at all.
+ * `Error` other than a linkage failure is not caught at all.
  *
  * **A withdrawn charge is the one place that is not the whole story.** Once the card has been taken, the
  * call that tells the service is uncancellable, so a cancellation arriving after that point can still end
@@ -48,6 +48,9 @@ public class PayabliTTP private constructor(
      * Spends the six-digit code the merchant was issued for this device.
      *
      * Leaves the session idle: the device is approved and nothing is set up, so [initialize] comes next.
+     *
+     * A failure the SDK did not classify converts to the SDK's own failure, as at every entry point, and
+     * is reported nowhere: no failure event exists for an activation.
      */
     public suspend fun activateDevice(activationCode: String): Unit =
         wrapping { coordinator.activateDevice(activationCode) }
@@ -116,16 +119,22 @@ public class PayabliTTP private constructor(
          * paypoint that is not enabled for card-present, a device the vendor has refused, or a reader that
          * fails once it is armed, so `false` is reliable and `true` is not a promise. The SDK does not
          * consult this: [create] and [initialize] run whatever it says, and report what actually happened.
+         *
+         * A failure the SDK did not classify converts to the SDK's own failure, as at every entry point,
+         * and is reported nowhere: no failure event exists for an eligibility answer.
          */
         @JvmStatic
         public fun isSupported(context: Context): Boolean =
-            CardReaderEligibility(context).isSatisfied() && !looksEmulated()
+            wrapping { CardReaderEligibility(context).isSatisfied() && !looksEmulated() }
 
         /**
          * Builds a terminal against [session].
          *
          * The entry point is the session's, read from what it publishes rather than taken again here, so a
          * terminal cannot be pointed at one the session was not configured with.
+         *
+         * A failure the SDK did not classify converts to the SDK's own failure, as at every entry point,
+         * and is reported nowhere: building a terminal belongs to no failure event.
          */
         public suspend fun create(
             session: PayabliSession,
@@ -148,15 +157,14 @@ public class PayabliTTP private constructor(
 }
 
 /**
- * A withdrawn caller passes through: it is not a failure and must not be reported as one.
+ * The entry points' one ladder: a withdrawal and a failure that already names its payment pass
+ * through, an unclassified exception or linkage failure converts, and any other `Error` is not caught;
+ * `inline` rather than `suspend`, so the non-suspending [PayabliTTP.isSupported] shares it too.
  *
- * A failure that already names its payment passes through too, since rebuilding it would drop what it
- * names.
- *
- * At file scope rather than on the instance because [PayabliTTP.create] needs it too, and a member of the
- * class is unreachable from the companion that builds one.
+ * @param block the call an entry point makes.
+ * @return what the call returns.
  */
-private suspend fun <T> wrapping(block: suspend () -> T): T =
+private inline fun <T> wrapping(block: () -> T): T =
     try {
         block()
     } catch (withdrawn: CancellationException) {
@@ -164,10 +172,16 @@ private suspend fun <T> wrapping(block: suspend () -> T): T =
     } catch (named: TapToPayException) {
         throw named
     } catch (failure: Exception) {
-        throw TapToPayErrorCodes.exceptionFor(
-            failure,
-            TapToPayErrorCodes.typeFor(failure),
-            paymentTransId = null,
-            capture = TapToPayCapture.NOT_CHARGED,
-        )
+        throw converted(failure)
+    } catch (failure: LinkageError) {
+        throw converted(failure)
     }
+
+/** The failure an entry point answers an unclassified original with, under the codes' classification. */
+private fun converted(failure: Throwable): TapToPayException =
+    TapToPayErrorCodes.exceptionFor(
+        failure,
+        TapToPayErrorCodes.typeFor(failure),
+        paymentTransId = null,
+        capture = TapToPayCapture.NOT_CHARGED,
+    )

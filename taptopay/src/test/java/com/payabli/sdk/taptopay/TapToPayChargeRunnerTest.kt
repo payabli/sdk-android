@@ -54,7 +54,6 @@ import kotlinx.serialization.KSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
@@ -285,6 +284,25 @@ class TapToPayChargeRunnerTest {
 
             assertEquals(TRANS_ID, fixture.reader.lastReadRequest?.merchantTransactionId)
             assertEquals(TRANS_ID, fixture.reader.lastReadRequest?.merchantOrderId)
+        }
+
+    @Test
+    fun `a linkage failure during a charge is converted where the payment is known`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Not left to the facade's own boundary, which knows no payment: the charge names the one it
+            // opened, so the conversion has to happen here to carry it.
+            val fixture = readyFixture()
+            fixture.reader.failNextRead(NoClassDefFoundError("a class the reader's native side needs"))
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+            assertEquals(TRANS_ID, thrown.paymentTransId)
         }
 
     @Test
@@ -1331,11 +1349,11 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a JVM error during the tap still closes the transaction, and reaches the caller unchanged`() =
+    fun `a JVM error during the tap still closes the transaction, and arrives converted`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The vendor loads native code, so a LinkageError from the reader is the reachable shape here.
-            // It is not an attestation outcome or a payment outcome and must not be converted into one, but
-            // the transaction it leaves open is a real payment at the paypoint with nothing to resolve it.
+            // It is no attestation outcome and no payment outcome, so it reaches a host as the SDK's own
+            // unknown failure, still naming the payment it left open and the capture nobody knows.
             val fixture = readyFixture()
             val raised = LinkageError("libmc3.so")
             fixture.reader.failNextRead(raised)
@@ -1345,7 +1363,11 @@ class TapToPayChargeRunnerTest {
                     runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
-            assertSame("the error was converted rather than rethrown", raised, failure)
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+            assertEquals(TRANS_ID, thrown.paymentTransId)
+            assertEquals(TapToPayCapture.UNKNOWN, thrown.capture)
             assertTrue("the opened payment was left standing", UPDATE in fixture.routes)
         }
 
@@ -2093,6 +2115,36 @@ class TapToPayChargeRunnerTest {
             val unknown = failure as TapToPayException
             assertTrue(unknown.cause.toString(), unknown.cause is PayabliException)
             assertEquals(TapToPayCapture.UNKNOWN, unknown.capture)
+        }
+
+    @Test
+    fun `a linkage failure during a close is converted, and the payment stays held`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Three answers for the close that gives up, which is what leaves a payment held to close
+            // later, and one for the close that lands after this one.
+            var closeFails = true
+            var failOnClose = false
+            val fixture =
+                SessionFixture(scriptWithCloseControl(closes = 4) { closeFails })
+                    .also { it.coordinator.initialize() }
+            val runner =
+                runnerGatedOnClose(fixture) {
+                    if (failOnClose) throw NoClassDefFoundError("a class the close needs")
+                }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            closeFails = false
+            failOnClose = true
+            val failure = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, thrown.type)
+            assertEquals(TRANS_ID, thrown.paymentTransId)
+
+            // Still held, so the close can be tried again.
+            failOnClose = false
+            runner.closeCaptured(TRANS_ID)
         }
 
     @Test

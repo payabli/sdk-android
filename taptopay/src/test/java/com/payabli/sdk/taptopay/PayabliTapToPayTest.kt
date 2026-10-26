@@ -146,6 +146,21 @@ class PayabliTapToPayTest {
         }
 
     @Test
+    fun `a linkage failure reaches a host as the SDK's own failure, converted`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A linkage failure is no Exception, so it crossed every catch here untouched and escaped raw.
+            val fixture =
+                SessionFixture(script(), eligibilityFailure = NoClassDefFoundError("a class the reader needs"))
+            val terminal = terminalOver(fixture)
+
+            val failure = runCatching { terminal.initialize() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+        }
+
+    @Test
     fun `a failure refused at the facade is a PayabliException carrying its classification, not its prose`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = SessionFixture(script())
