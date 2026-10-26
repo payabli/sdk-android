@@ -4,7 +4,8 @@ name: Release
 # opens a GitHub Release at the tag carrying notes and no assets. The artifacts are resolved from the Maven
 # origin only.
 #
-# Dispatched from main, naming the commit to release, in one run. The check reads the commit and its
+# Dispatched from main, naming the commit to release, in one run. The commit is on the release or hotfix
+# branch of the version it declares and passed CI there. The check reads the commit and its
 # `payabli.version`, the suites and the build run side by side at that commit, and then one job in the
 # `release` environment tags, uploads and writes the notes. Each is its own job so that "Re-run failed
 # jobs" repeats only what failed. That job is the approval, the only holder of the deploy
@@ -14,10 +15,10 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      # Named rather than taken from main's head, so a merge landing between the decision and the dispatch
-      # is not what gets released.
+      # Named rather than taken from a branch's head, so a merge landing between the decision and the
+      # dispatch is not what gets released.
       commit:
-        description: "Full 40-character SHA of the commit on main to release"
+        description: "Full 40-character SHA of the commit to release, on release/<version> or hotfix/<version>"
         required: true
         type: string
       release_notes:
@@ -69,34 +70,11 @@ jobs:
             exit 1
           fi
 
-      # The build runs the unit tier only. CI on main is what ran the instrumented tests, lint and
-      # formatting, so a release names a commit that passed it there or nothing is tagged.
-      - name: Check CI passed on main for this commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ inputs.commit }}
-        run: |
-          passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --event push \
-            --branch main --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
-          if [ "$passed" -lt 1 ]; then
-            echo "::error::no successful CI run on main for $SHA. Dispatch once CI on main has passed."
-            exit 1
-          fi
-
-      # All of history, so the check below can see main.
+      # All of history, so the checks below can see every branch and every tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.commit }}
           fetch-depth: 0
-
-      - name: Check the commit is on main
-        env:
-          COMMIT: ${{ inputs.commit }}
-        run: |
-          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then
-            echo "::error::$COMMIT is not on main."
-            exit 1
-          fi
 
       # A release version and nothing else. A candidate carries a qualifier and belongs on the mutable
       # channel; the release role would write it where it can never be replaced.
@@ -118,6 +96,71 @@ jobs:
             echo
             echo "The workflow and its uploader run from \`$GITHUB_SHA\` on main."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The branch is named by the version the commit declares, so a commit on another version's branch, or
+      # only on main, is refused rather than released under a number it was not worked as.
+      - name: Check the commit is on its release or hotfix branch
+        id: branch
+        env:
+          COMMIT: ${{ inputs.commit }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          branch=
+          for candidate in "release/$VERSION" "hotfix/$VERSION"; do
+            tip=$(git for-each-ref --format='%(objectname)' "refs/remotes/origin/$candidate")
+            if [ -n "$tip" ] && [ "$(git merge-base "$COMMIT" "$tip")" = "$COMMIT" ]; then
+              branch=$candidate
+              break
+            fi
+          done
+          if [ -z "$branch" ]; then
+            echo "::error::$COMMIT is not on release/$VERSION or hotfix/$VERSION, the branches of the version it declares."
+            exit 1
+          fi
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      # The build runs the unit tier only. CI on the branch is what ran the instrumented tests, lint and
+      # formatting, so a release names a commit that passed it there or nothing is tagged.
+      - name: Check CI passed on the branch for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.commit }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+        run: |
+          passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --event push \
+            --branch "$BRANCH" --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
+          if [ "$passed" -lt 1 ]; then
+            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch once CI on $BRANCH has passed."
+            exit 1
+          fi
+
+      # A version below the newest release would be published after it.
+      - name: Check the version is not below the newest release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          release='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          newest=$(git for-each-ref --format='%(refname:strip=2)' refs/tags | sed -nE "/$release/p" | sort -V | tail -n 1)
+          if [ -n "$newest" ] && [ "$(printf '%s\n%s\n' "$newest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then
+            echo "::error::the newest release is $newest, and $VERSION is lower."
+            exit 1
+          fi
+
+      # Every earlier release is merged back before the next is cut, so main holds each tagged commit and a
+      # later release is never cut without an earlier one's fixes.
+      - name: Check every earlier release is in main
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          release='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          for tag in $(git for-each-ref --format='%(refname:strip=2)' refs/tags | sed -nE "/$release/p"); do
+            tagged=$(git rev-parse "refs/tags/$tag^{commit}")
+            if [ "$tag" != "$VERSION" ] && [ "$(printf '%s\n%s\n' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ] \
+                && [ "$(git merge-base "$tagged" origin/main)" != "$tagged" ]; then
+              echo "::error::release $tag is not in main: its release or hotfix branch has not merged back."
+              exit 1
+            fi
+          done
 
   # The suites, on their own so a flaky one is re-run without rebuilding. Gradle and the card reader
   # credential, and no identity that can tag or write the origin.

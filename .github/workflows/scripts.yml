@@ -33,6 +33,7 @@ on:
       # The workflow file is in the filter so a change to it tests itself.
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
+      - '.github/workflows/source-branch.yml'
       # The harness reads the live workflows, so they have to be here or its assertions would not run on the
       # change that broke them. The nightly is here for the same reason: W8 asserts on its liveness-owner
       # expression, and a guard that does not run on the file it protects is not a guard. W11 is the card
@@ -46,10 +47,11 @@ on:
       - '.github/workflows/release.yml'
       - '.github/workflows/public-surface.yml'
   push:
-    branches: [main]
+    branches: [main, 'release/**', 'hotfix/**']
     paths:
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
+      - '.github/workflows/source-branch.yml'
       - '.github/workflows/live-*.yml'
       - '.github/workflows/nightly.yml'
       - '.github/workflows/card-reader-mirror.yml'

@@ -91,6 +91,10 @@ CI = WORKFLOW_DIR / "ci.yml"
 # while the record goes unchecked.
 PUBLIC_SURFACE = WORKFLOW_DIR / "public-surface.yml"
 
+# The rule that main takes pull requests from release and hotfix branches only. Each mutation below is a
+# pull request into main that the job lets through, or one it refuses that it should not.
+SOURCE_BRANCH = WORKFLOW_DIR / "source-branch.yml"
+
 # The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
 # no longer matches the file reports itself invalid rather than caught, and two copies drift apart silently.
 WALKTHROUGH_COMMAND = (
@@ -454,6 +458,7 @@ SOURCE = {
     PUBLISHER: SDK / ".github/scripts/publish_staging.py",
     CI: SDK / ".github/workflows/ci.yml",
     PUBLIC_SURFACE: SDK / ".github/workflows/public-surface.yml",
+    SOURCE_BRANCH: SDK / ".github/workflows/source-branch.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -610,16 +615,16 @@ MUTATIONS = [
      "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
      "          git ls-files --error-unmatch core/api/release.txt\n"),
 
-    # A release names a commit that passed CI on main, so a gate inside CI is one a release depends
+    # A release names a commit that passed CI on its release branch, so a gate inside CI is one a release depends
     # on through CI: this puts it back, rebuilding the coupling the separate workflow removed.
     ("CI carries the gate again, so a release depends on it through CI", CI, "workflows",
      "      # The public-surface gate runs in its own workflow, on the pull request: a release names a\n"
-     "      # commit that passed this workflow on main, so a gate inside it is one a release depends on\n"
-     "      # through CI.\n\n"
+     "      # commit that passed this workflow on its release branch, so a gate inside it is one a release\n"
+     "      # depends on through CI.\n\n"
      "      - name: Unit tests\n",
      "      # The public-surface gate runs in its own workflow, on the pull request: a release names a\n"
-     "      # commit that passed this workflow on main, so a gate inside it is one a release depends on\n"
-     "      # through CI.\n\n"
+     "      # commit that passed this workflow on its release branch, so a gate inside it is one a release\n"
+     "      # depends on through CI.\n\n"
      "      - name: Public surface\n"
      "        run: |\n"
      "          rm core/api/release.txt\n"
@@ -669,11 +674,11 @@ MUTATIONS = [
     ("A QA snapshot runs the suites under a shell without -e", QA, "workflows",
      "      - name: Unit tests\n        env:\n", "      - name: Unit tests\n        shell: bash {0}\n        env:\n"),
 
-    ("CI cancels a run on main, and with it a publish part way through its upload", CI, "workflows",
-     "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}", "  cancel-in-progress: true"),
+    ("CI cancels a run on a push, the run a release names", CI, "workflows",
+     "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}", "  cancel-in-progress: true"),
 
-    ("CI cancels a run on main through an expression that is not the word true", CI, "workflows",
-     "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}",
+    ("CI cancels a run on a push through an expression that is not the word true", CI, "workflows",
+     "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
      "  cancel-in-progress: ${{ github.ref == github.ref }}"),
 
     ("QA snapshot names the uploader in an echo, so its flags are read instead", QA, "workflows",
@@ -1698,20 +1703,20 @@ MUTATIONS = [
      "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          declare version=0.0.1\n          release="),
 
     ('Release overrides the CI count it read with command export', RELEASE, "workflows",
-     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
-     '          command export passed=1\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch',
+     '          command export passed=1\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch'),
 
     ("Release skips the check job's CI gate with a step condition", RELEASE, "workflows",
-     '      - name: Check CI passed on main for this commit\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n',
-     '      - name: Check CI passed on main for this commit\n        if: false\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n'),
+     '      - name: Check CI passed on the branch for this commit\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n',
+     '      - name: Check CI passed on the branch for this commit\n        if: false\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n'),
 
-    ('Release lets the on-main guard fail without failing the job', RELEASE, "workflows",
-     '      - name: Check the commit is on main\n',
-     '      - name: Check the commit is on main\n        continue-on-error: true\n'),
+    ('Release lets the on-branch guard fail without failing the job', RELEASE, "workflows",
+     '      - name: Check the commit is on its release or hotfix branch\n',
+     '      - name: Check the commit is on its release or hotfix branch\n        continue-on-error: true\n'),
 
     ("Release runs the check's CI gate under another shell", RELEASE, "workflows",
-     "      - name: Check CI passed on main for this commit\n        env:\n",
-     "      - name: Check CI passed on main for this commit\n        shell: sh {0}\n        env:\n"),
+     "      - name: Check CI passed on the branch for this commit\n        env:\n",
+     "      - name: Check CI passed on the branch for this commit\n        shell: sh {0}\n        env:\n"),
 
     ("Release runs the release job's steps under sh, without pipefail", RELEASE, "workflows",
      "    needs: [check, test, build]\n", "    needs: [check, test, build]\n    defaults:\n      run:\n        shell: sh\n"),
@@ -1727,8 +1732,8 @@ MUTATIONS = [
      '    permissions:\n      contents: write\n      # To read the CI runs for this commit.\n      actions: read\n    outputs:'),
 
     ("Release rewrites a later step's environment through GITHUB_ENV", RELEASE, "workflows",
-     '          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then\n',
-     '          echo "SHA=$GITHUB_SHA" >> "$GITHUB_ENV"\n          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then\n'),
+     '          if [ -z "$branch" ]; then\n',
+     '          echo "SHA=$GITHUB_SHA" >> "$GITHUB_ENV"\n          if [ -z "$branch" ]; then\n'),
 
     ("Release hands every secret to the whole build job through a job-level env", RELEASE, "workflows",
      "    name: Build the release\n    needs: [check]\n",
@@ -1763,8 +1768,8 @@ MUTATIONS = [
      'if [ -n "$tagged" ]; then'),
 
     ('Release takes a CI run from any branch, the branch filter echoed beside the query', RELEASE, "workflows",
-     '--event push \\\n            --branch main --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
-     '--event push \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          echo \'--branch main\'\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+     '--event push \\\n            --branch "$BRANCH" --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch',
+     '--event push \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          echo \'--branch "$BRANCH"\'\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch'),
 
     ('Release hard-codes the version it tags, the property name echoed beside it', RELEASE, "workflows",
      "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
@@ -1787,7 +1792,7 @@ MUTATIONS = [
      '            echo "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts"\n            git push'),
 
     ('Release echoes the CI guard instead of running it', RELEASE, "workflows",
-     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch once CI on main has passed."\n            exit 1\n          fi\n',
+     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch once CI on $BRANCH has passed."\n            exit 1\n          fi\n',
      "          echo 'if [ $passed -lt 1 ] ; then exit 1 ; fi'\n"),
 
     ("Release publishes main's head as the approved commit", RELEASE, "workflows",
@@ -1802,16 +1807,16 @@ MUTATIONS = [
      "and the check read '$CHECKED'.\"\n            exit 1\n", "and the check read '$CHECKED'.\"\n"),
 
     ('Release lets a commit with no successful CI through the check', RELEASE, "workflows",
-     '[ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
-     '[ "$passed" -lt 0 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+     '[ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch',
+     '[ "$passed" -lt 0 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch'),
 
     ('Release refuses a full SHA and accepts anything else', RELEASE, "workflows",
      'if [[ ! "$COMMIT" =~',
      'if [[ "$COMMIT" =~'),
 
-    ('Release refuses a commit on main and accepts one off it', RELEASE, "workflows",
-     '!= "$COMMIT" ]; then\n            echo "::error::$COMMIT is not on main.',
-     '= "$COMMIT" ]; then\n            echo "::error::$COMMIT is not on main.'),
+    ('Release refuses a commit on its branch and accepts one off it', RELEASE, "workflows",
+     '[ "$(git merge-base "$COMMIT" "$tip")" = "$COMMIT" ]; then',
+     '[ "$(git merge-base "$COMMIT" "$tip")" != "$COMMIT" ]; then'),
 
     ('Release refuses a release version and accepts a candidate', RELEASE, "workflows",
      'if [[ ! "$version" =~ $release ]]',
@@ -1857,13 +1862,13 @@ MUTATIONS = [
      '      - name: Check the commit is named in full\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
      '      - name: Check the commit is named in full\n        env:\n          COMMIT: ${{ github.sha }}\n'),
 
-    ("Release checks main's head is on main rather than the named commit", RELEASE, "workflows",
-     '      - name: Check the commit is on main\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
-     '      - name: Check the commit is on main\n        env:\n          COMMIT: ${{ github.sha }}\n'),
+    ("Release checks main's head is on the branch rather than the named commit", RELEASE, "workflows",
+     '        id: branch\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
+     '        id: branch\n        env:\n          COMMIT: ${{ github.sha }}\n'),
 
     ("Release takes main's head when no commit is named", RELEASE, "workflows",
-     '        description: "Full 40-character SHA of the commit on main to release"\n        required: true\n',
-     '        description: "Full 40-character SHA of the commit on main to release"\n        required: false\n'),
+     '        description: "Full 40-character SHA of the commit to release, on release/<version> or hotfix/<version>"\n        required: true\n',
+     '        description: "Full 40-character SHA of the commit to release, on release/<version> or hotfix/<version>"\n        required: false\n'),
 
     ("Release can be dispatched with no notes", RELEASE, "workflows",
      '        description: "Release notes (markdown), published as the release body"\n        required: true\n',
@@ -1888,8 +1893,8 @@ MUTATIONS = [
      '^[0-9a-f]{40}$',
      '^[0-9a-f]+$'),
 
-    ('Release tags a commit that is not on main', RELEASE, "workflows",
-     'git merge-base "$COMMIT" origin/main',
+    ('Release tags a commit that is not on its branch', RELEASE, "workflows",
+     'git merge-base "$COMMIT" "$tip"',
      'git merge-base "$COMMIT" HEAD'),
 
     ("Release checks CI for main's head rather than the named commit", RELEASE, "workflows",
@@ -1909,12 +1914,12 @@ MUTATIONS = [
      "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
 
     ('Release tags a commit whatever CI said about it', RELEASE, "workflows",
-     '--jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
-     '--jq \'length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+     '--jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch',
+     '--jq \'length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch'),
 
     ('Release tags a commit whose CI ran on any branch', RELEASE, "workflows",
-     ' \\\n            --branch main --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
-     ' \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+     ' \\\n            --branch "$BRANCH" --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch',
+     ' \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch'),
 
     ('Release tags from any branch', RELEASE, "workflows",
      "    if: github.ref == 'refs/heads/main'\n",
@@ -2188,6 +2193,72 @@ MUTATIONS = [
     ("QA publish uploads a tree other than the one the build kept", QA, "workflows",
      "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n          name: staging-repo\n",
      "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n          name: staging-repo-rebuilt\n"),
+
+    # Release and hotfix branches. CI and the gate run there, and a release is cut from a commit on its own
+    # version's branch, with every earlier release already in main. Each mutation below releases a commit
+    # nobody tested there, under a number it was not worked as, or ahead of a release main never received.
+    ("CI stops running on pushes to hotfix branches", CI, "workflows",
+     "  push:\n    branches: [main, 'release/**', 'hotfix/**']\n",
+     "  push:\n    branches: [main, 'release/**']\n"),
+
+    ("CI stops running on pull requests into release branches", CI, "workflows",
+     "  pull_request:\n    branches: [main, 'release/**', 'hotfix/**']\n",
+     "  pull_request:\n    branches: [main, 'hotfix/**']\n"),
+
+    ("The gate stops running on pull requests into release branches", PUBLIC_SURFACE, "workflows",
+     "    branches: [main, 'release/**', 'hotfix/**']\n", "    branches: [main]\n"),
+
+    ("Release no longer accepts a commit on its hotfix branch", RELEASE, "workflows",
+     'for candidate in "release/$VERSION" "hotfix/$VERSION"; do',
+     'for candidate in "release/$VERSION"; do'),
+
+    ("Release accepts a commit on one fixed release branch, whatever version it declares", RELEASE, "workflows",
+     'for candidate in "release/$VERSION" "hotfix/$VERSION"; do',
+     'for candidate in "release/0.2.0" "hotfix/$VERSION"; do'),
+
+    ("Release checks CI on main rather than on the branch the commit is on", RELEASE, "workflows",
+     "          BRANCH: ${{ steps.branch.outputs.branch }}\n", "          BRANCH: main\n"),
+
+    ("Release counts a tag that is not a release as the newest release", RELEASE, "workflows",
+     " refs/tags | sed -nE \"/$release/p\" | sort -V | tail -n 1)",
+     " refs/tags | sort -V | tail -n 1)"),
+
+    ("Release refuses a version above the newest release and accepts one below it", RELEASE, "workflows",
+     '| sort -V | tail -n 1)" != "$VERSION" ]; then', '| sort -V | tail -n 1)" = "$VERSION" ]; then'),
+
+    ("Release refuses an earlier release that is in main and accepts one that is not", RELEASE, "workflows",
+     '&& [ "$(git merge-base "$tagged" origin/main)" != "$tagged" ]; then',
+     '&& [ "$(git merge-base "$tagged" origin/main)" = "$tagged" ]; then'),
+
+    ("Release requires a later release in main as well as an earlier one", RELEASE, "workflows",
+     '| sort -V | head -n 1)" = "$tag" ]', '| sort -V | tail -n 1)" = "$tag" ]'),
+
+    ("Release lets the merge-back guard fail without failing the job", RELEASE, "workflows",
+     "      - name: Check every earlier release is in main\n",
+     "      - name: Check every earlier release is in main\n        continue-on-error: true\n"),
+
+    # The source branch. A ruleset cannot name it, so this job is the whole rule.
+    ("Source branch refuses a hotfix branch", SOURCE_BRANCH, "workflows",
+     "            release/?*|hotfix/?*) ;;\n", "            release/?*) ;;\n"),
+
+    ("Source branch accepts any branch with a slash in it", SOURCE_BRANCH, "workflows",
+     "            release/?*|hotfix/?*) ;;\n", "            */?*) ;;\n"),
+
+    ("Source branch reports the rule and passes anyway", SOURCE_BRANCH, "workflows",
+     "'$HEAD_REF'.\"\n              exit 1\n", "'$HEAD_REF'.\"\n              exit 0\n"),
+
+    ("Source branch parses the branch name as shell", SOURCE_BRANCH, "workflows",
+     '          case "$HEAD_REF" in\n', '          case "${{ github.head_ref }}" in\n'),
+
+    ("Source branch misses a pull request retargeted to main", SOURCE_BRANCH, "workflows",
+     "    types: [opened, synchronize, reopened, edited]\n", "    types: [opened, synchronize, reopened]\n"),
+
+    ("Source branch is handed a token", SOURCE_BRANCH, "workflows",
+     "permissions: {}\n", "permissions:\n  contents: read\n"),
+
+    ("The harness stops running when the source-branch rule changes", SCRIPTS, "workflows",
+     "      - '.github/workflows/source-branch.yml'\n      # The harness reads the live workflows",
+     "      # The harness reads the live workflows"),
 ]
 
 

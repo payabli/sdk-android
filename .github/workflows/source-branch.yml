@@ -1,0 +1,36 @@
+name: Source branch
+
+# main holds only what has been released, so it takes pull requests from release and hotfix branches and
+# nothing else. A ruleset can require a check but cannot name a pull request's source branch, so this job is
+# the mechanism, and it is a required check on main. It reads the event and nothing in the repository, so it
+# checks nothing out and holds no token.
+
+on:
+  pull_request:
+    branches: [main]
+    # `edited` as well, so a pull request retargeted to main is checked on the retarget.
+    types: [opened, synchronize, reopened, edited]
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  source:
+    name: Source branch
+    runs-on: ubuntu-latest
+    steps:
+      # Through the environment, so a branch name is never parsed as shell.
+      - name: Check the pull request comes from a release or hotfix branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            release/?*|hotfix/?*) ;;
+            *)
+              echo "::error::main takes pull requests from release/ and hotfix/ branches only, not '$HEAD_REF'."
+              exit 1
+              ;;
+          esac

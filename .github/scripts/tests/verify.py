@@ -1939,6 +1939,9 @@ MIRROR_WORKFLOW = "card-reader-mirror.yml"
 QA_WORKFLOW = "qa-snapshot.yml"
 RELEASE_WORKFLOW = "release.yml"
 GATE_WORKFLOW = "public-surface.yml"
+SOURCE_WORKFLOW = "source-branch.yml"
+# What CI and the gate run on: main, and every branch a release or hotfix is cut from.
+PROTECTED_BRANCHES = ["main", "release/**", "hotfix/**"]
 
 
 def workflow_text(name: str) -> str:
@@ -2371,9 +2374,10 @@ def step_text(step: dict) -> str:
     return yaml.safe_dump(step, default_flow_style=False, sort_keys=False)
 
 
-def run_step(step: dict, env: dict[str, str]) -> tuple[int, str, str]:
+def run_step(step: dict, env: dict[str, str], cwd: Path | None = None) -> tuple[int, str, str]:
     """Runs a step's script the way the runner does, `bash -e -o pipefail` from the repository root, and returns
-    its exit status, what it wrote to the run's page and what it wrote to its outputs.
+    its exit status, what it wrote to the run's page and what it wrote to its outputs. `cwd` is a synthetic
+    repository for a step whose answer depends on branches and tags.
 
     Run rather than read, because what a line prints is the shell's decision: a single-quoted or escaped
     variable, or an echo redirected elsewhere inside a group appended to the page, names the variable and
@@ -2385,7 +2389,7 @@ def run_step(step: dict, env: dict[str, str]) -> tuple[int, str, str]:
     outputs.touch()
     try:
         status = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", str(step.get("run", ""))],
-                                cwd=SDK, capture_output=True, text=True, timeout=60,
+                                cwd=cwd or SDK, capture_output=True, text=True, timeout=60,
                                 env={**os.environ, **env, "GITHUB_STEP_SUMMARY": str(page), "GITHUB_OUTPUT": str(outputs)}
                                 ).returncode
     except subprocess.TimeoutExpired:
@@ -2869,7 +2873,7 @@ def test_workflows():
     # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
     # its two mutations could not have run on the change that broke them.
     guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", MIRROR_WORKFLOW,
-               "ci.yml", QA_WORKFLOW, RELEASE_WORKFLOW, GATE_WORKFLOW)
+               "ci.yml", QA_WORKFLOW, RELEASE_WORKFLOW, GATE_WORKFLOW, SOURCE_WORKFLOW)
     harness = workflow_doc("scripts.yml")
     triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})
     for event in ("pull_request", "push"):
@@ -3978,7 +3982,7 @@ def test_workflows():
     check("W17 and carry no condition of their own", "if" not in test_job, condition(test_job))
 
     CI_QUERY = ["gh", "run", "list", "--repo", "$GITHUB_REPOSITORY", "--workflow", "ci.yml", "--commit", "$SHA",
-                "--event", "push", "--branch", "main", "--json", "conclusion",
+                "--event", "push", "--branch", "$BRANCH", "--json", "conclusion",
                 "--jq", '[.[] | select(.conclusion == "success")] | length']
     VERSION_READ = ["sed", "-n", "s/^payabli.version=//p", "gradle.properties"]
 
@@ -3993,20 +3997,121 @@ def test_workflows():
           f"{outputs} version step id={version_ids}")
     gated = next((i for i, step in enumerate(checker_steps)
                   if reads(step, "passed", CI_QUERY) and refuses(step, "[ $passed -lt 1 ]")), None)
-    check("W17 and the check refuses a commit that has not passed CI on main",
-          gated is not None and env_of(checker_steps[gated], "SHA") == "${{ inputs.commit }}",
+    branch_ids = [step.get("id") for step in checker_steps
+                  if step.get("name") == "Check the commit is on its release or hotfix branch"]
+    branch_out = "${{ steps." + str(branch_ids[0] if branch_ids else "") + ".outputs.branch }}"
+    check("W17 and the check refuses a commit that has not passed CI on the branch it is on",
+          gated is not None and env_of(checker_steps[gated], "SHA") == "${{ inputs.commit }}"
+          and len(branch_ids) == 1 and bool(branch_ids[0]) and env_of(checker_steps[gated], "BRANCH") == branch_out,
           str(checker_steps[gated].get("env")) if gated is not None else "")
     named = "${{ inputs.commit }}"
     in_full = [step for step in checker_steps if "^[0-9a-f]{40}$" in run_commands(step)]
-    on_main = [step for step in checker_steps if "git merge-base $COMMIT origin/main" in run_commands(step)]
     check("W17 and a commit named in full",
           len(in_full) == 1 and env_of(in_full[0], "COMMIT") == named
           and refuses(in_full[0], "[[ ! $COMMIT =~ ^[0-9a-f]{40}$ ]]"),
           f"{[env_of(step, 'COMMIT') for step in in_full]}")
-    check("W17 and one that is on main",
-          len(on_main) == 1 and env_of(on_main[0], "COMMIT") == named
-          and refuses(on_main[0], "[ $(git merge-base $COMMIT origin/main) != $COMMIT ]"),
-          f"{[env_of(step, 'COMMIT') for step in on_main]}")
+    # The guards that decide which commit may be released, run rather than read: each answer is the
+    # repository's, so they run against a synthetic one. main is at 0.1.1, tagged; release/0.2.0 and
+    # release/0.3.0 branch from it; hotfix/0.1.2 branches from the tag; main then moves on with a commit
+    # of its own. 0.2.0 is tagged on its branch and has not merged back. qa-probe-1 is a tag that is not a
+    # release, which a version comparison would otherwise sort above every number.
+    def release_repo() -> tuple[Path, dict[str, str]]:
+        root = Path(tempfile.mkdtemp(dir=SCRATCH))
+        env = {**os.environ, "GIT_AUTHOR_NAME": "Dana Rivera", "GIT_AUTHOR_EMAIL": "dana@payabli.com",
+               "GIT_COMMITTER_NAME": "Dana Rivera", "GIT_COMMITTER_EMAIL": "dana@payabli.com"}
+
+        def git(*args: str) -> str:
+            # Signing off, so a developer's global config cannot make a fixture tag or commit prompt or fail.
+            return subprocess.run(["git", "-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false", *args],
+                                  cwd=root, capture_output=True, text=True, env=env, check=True).stdout.strip()
+
+        # The message names the branch: two commits with one parent, tree and second are otherwise one SHA.
+        def commit(version: str, branch: str) -> str:
+            (root / "gradle.properties").write_text(f"payabli.version={version}\n")
+            git("add", "-A")
+            git("commit", "-qm", f"Work for {version} on {branch}")
+            return git("rev-parse", "HEAD")
+
+        git("init", "-q", "-b", "main")
+        shas = {"base": commit("0.1.1", "main")}
+        git("tag", "-a", "0.1.1", "-m", "0.1.1")
+        for branch, version in (("release/0.2.0", "0.2.0"), ("release/0.3.0", "0.3.0")):
+            git("checkout", "-q", "-b", branch, shas["base"])
+            shas[branch] = commit(version, branch)
+        git("tag", "-a", "0.2.0", "-m", "0.2.0", shas["release/0.2.0"])
+        git("tag", "qa-probe-1", shas["release/0.3.0"])
+        git("checkout", "-q", "-b", "hotfix/0.1.2", "0.1.1")
+        shas["hotfix/0.1.2"] = commit("0.1.2", "hotfix/0.1.2")
+        git("checkout", "-q", "main")
+        shas["main"] = commit("0.2.0", "main")
+        for branch in ("main", "release/0.2.0", "release/0.3.0", "hotfix/0.1.2"):
+            git("update-ref", f"refs/remotes/origin/{branch}", shas[branch])
+        return root, shas
+
+    def checker_step(name: str) -> dict | None:
+        return next((step for step in checker_steps if step.get("name") == name), None)
+
+    # A fixture that cannot be built fails a check rather than raising, so every check after it still runs.
+    try:
+        repo, shas = release_repo()
+    except (subprocess.CalledProcessError, OSError) as error:
+        check("W17 the release fixture repository builds", False, f"{error}: {getattr(error, 'stderr', '')}")
+        repo, shas = SCRATCH, dict.fromkeys(("base", "main", "release/0.2.0", "release/0.3.0", "hotfix/0.1.2"), "")
+    on_branch = checker_step("Check the commit is on its release or hotfix branch")
+    check("W17 and a commit on the branch of the version it declares",
+          on_branch is not None and env_of(on_branch, "COMMIT") == named
+          and env_of(on_branch, "VERSION") == "${{ steps." + str((version_ids or [""])[0]) + ".outputs.version }}",
+          f"{on_branch.get('env') if on_branch else None}")
+    if on_branch is not None:
+        def lands(sha: str, version: str) -> tuple[int, str]:
+            status, _, outputs = run_step(on_branch, {"COMMIT": sha, "VERSION": version}, cwd=repo)
+            return status, outputs.strip()
+        check("W17 and a commit on release/<version> is accepted, naming that branch",
+              lands(shas["release/0.2.0"], "0.2.0") == (0, "branch=release/0.2.0"),
+              f"{lands(shas['release/0.2.0'], '0.2.0')}")
+        check("W17 and a commit on hotfix/<version> is accepted, naming that branch",
+              lands(shas["hotfix/0.1.2"], "0.1.2") == (0, "branch=hotfix/0.1.2"),
+              f"{lands(shas['hotfix/0.1.2'], '0.1.2')}")
+        check("W17 and a commit on another version's branch is refused",
+              lands(shas["release/0.2.0"], "0.3.0")[0] == 1, f"{lands(shas['release/0.2.0'], '0.3.0')}")
+        check("W17 and a commit only on main is refused, though its version's branch exists",
+              lands(shas["main"], "0.2.0")[0] == 1, f"{lands(shas['main'], '0.2.0')}")
+        check("W17 and a version with no branch at all is refused",
+              lands(shas["release/0.3.0"], "0.4.0")[0] == 1, f"{lands(shas['release/0.3.0'], '0.4.0')}")
+
+    # A version below the newest release would be published after it. Equal is a resumed release, which the
+    # tag step answers. Each version is run as the step would be handed it.
+    newest = checker_step("Check the version is not below the newest release")
+    check("W17 and a version not below the newest release",
+          newest is not None and env_of(newest, "VERSION") == "${{ steps." + str((version_ids or [""])[0]) + ".outputs.version }}",
+          f"{newest.get('env') if newest else None}")
+    if newest is not None:
+        below = run_step(newest, {"VERSION": "0.1.2"}, cwd=repo)[0]
+        equal = run_step(newest, {"VERSION": "0.2.0"}, cwd=repo)[0]
+        above = run_step(newest, {"VERSION": "0.3.0"}, cwd=repo)[0]
+        check("W17 and a version below the newest release is refused", below == 1, f"{below}")
+        check("W17 and the newest release itself, a resume, is not", equal == 0, f"{equal}")
+        check("W17 and a tag that is not a release is not counted as one", above == 0, f"{above}")
+
+    # main holds every release before the next is cut. 0.2.0 is tagged and not merged back, so 0.3.0 is
+    # refused naming it; 0.2.0 itself and a hotfix below it are not, since nothing lower is outside main.
+    merged = checker_step("Check every earlier release is in main")
+    check("W17 and every earlier release is in main",
+          merged is not None and env_of(merged, "VERSION") == "${{ steps." + str((version_ids or [""])[0]) + ".outputs.version }}",
+          f"{merged.get('env') if merged else None}")
+    if merged is not None:
+        # Run directly rather than through run_step, which keeps the page and drops what the step printed.
+        refused = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c",
+                                  str(merged.get("run", ""))],
+                                 cwd=repo, capture_output=True, text=True, timeout=60,
+                                 env={**os.environ, "VERSION": "0.3.0"})
+        later, out = refused.returncode, refused.stdout
+        same = run_step(merged, {"VERSION": "0.2.0"}, cwd=repo)[0]
+        lower = run_step(merged, {"VERSION": "0.1.2"}, cwd=repo)[0]
+        check("W17 and a release is refused while an earlier one is not in main, naming it",
+              later == 1 and "release 0.2.0 is not in main" in out, f"status={later} out={out!r}")
+        check("W17 and the unmerged release itself is not refused for being unmerged", same == 0, f"{same}")
+        check("W17 and a lower version than the unmerged release is not either", lower == 0, f"{lower}")
     checked_out = [step.get("with") or {} for step in checker_steps if "actions/checkout" in str(step.get("uses", ""))]
     check("W17 and it reads the version at that commit",
           bool(checked_out) and " ".join(str(checked_out[0].get("ref", "")).split()) == "${{ inputs.commit }}",
@@ -4276,8 +4381,14 @@ def test_workflows():
     # `${{ github.ref == github.ref }}` both cancel and both survive an inequality. `concurrency` may also
     # be a bare string, which is a group with no cancellation to read.
     ci_cancels = cancels_of(ci_doc.get("concurrency"))
-    check("W17 and ci.yml cancels no run on main",
-          ci_cancels in ("", "False", "${{ github.ref != 'refs/heads/main' }}"), ci_cancels)
+    check("W17 and ci.yml cancels no run on a push, which is what a release names",
+          ci_cancels in ("", "False", "${{ github.event_name == 'pull_request' }}"), ci_cancels)
+    # A release is cut from its release or hotfix branch, so CI runs on pushes there as well as on main.
+    ci_on = (ci_doc.get(True) if True in ci_doc else ci_doc.get("on")) or {}
+    for event in ("push", "pull_request"):
+        check(f"W17 and ci.yml runs on {event} to main, release and hotfix branches",
+              ((ci_on.get(event) or {}).get("branches")) == PROTECTED_BRANCHES,
+              f"{(ci_on.get(event) or {}).get('branches')}")
     ci_shell = ((ci_doc.get("defaults") or {}).get("run") or {}).get("shell")
     check("W17 and ci.yml runs its steps under a shell with pipefail", ci_shell == "bash", f"{ci_shell}")
     # A skipped job is not a failed one, so the run concludes success with that job's suite never run. The
@@ -4311,9 +4422,9 @@ def test_workflows():
                  if isinstance(job, dict)}
     gate_steps = [step for job in gate_jobs.values() for step in job_steps(job)]
     gate = [step for step in gate_steps if step.get("name") == "Public surface"]
-    check("W17 the gate workflow runs on pull requests to main and nothing else",
+    check("W17 the gate workflow runs on pull requests to main, release and hotfix branches, and nothing else",
           set(gate_on) == {"pull_request"}
-          and (gate_on.get("pull_request") or {}).get("branches") == ["main"],
+          and (gate_on.get("pull_request") or {}).get("branches") == PROTECTED_BRANCHES,
           f"{sorted(gate_on)}")
     check("W17 and it is one job holding the gate as its one step",
           len(gate_jobs) == 1 and len(gate) == 1,
@@ -4336,6 +4447,34 @@ def test_workflows():
           and commands_of(release_build_steps[release_gate[0]]) == GATE_COMMANDS,
           f"{[step.get('name') for step in release_build_steps]}")
 
+
+    # main takes pull requests from release and hotfix branches only. A ruleset cannot name a source branch,
+    # so this job is the rule, and it is run on the names it decides rather than read.
+    source_doc = workflow_doc(SOURCE_WORKFLOW)
+    source_on = (source_doc.get(True) if True in source_doc else source_doc.get("on")) or {}
+    source_pr = source_on.get("pull_request") or {}
+    check("W18 the source-branch workflow runs on pull requests to main and nothing else",
+          set(source_on) == {"pull_request"} and source_pr.get("branches") == ["main"], f"{source_on}")
+    # The default types miss a pull request retargeted to main, which arrives as `edited`.
+    check("W18 and on a pull request retargeted to main",
+          {"opened", "synchronize", "reopened", "edited"} <= set(source_pr.get("types") or []),
+          f"{source_pr.get('types')}")
+    check("W18 and it holds no token", source_doc.get("permissions") == {}, f"{source_doc.get('permissions')}")
+    source_steps = steps_of(source_doc)
+    sourced = [step for step in source_steps if step.get("run")]
+    check("W18 and it is one step, with no checkout", len(source_steps) == 1 and len(sourced) == 1,
+          f"{[step.get('name') or step.get('uses') for step in source_steps]}")
+    # Through the environment: a branch name interpolated into the script is parsed as shell.
+    check("W18 and the branch reaches the script through the environment",
+          len(sourced) == 1 and " ".join(str((sourced[0].get("env") or {}).get("HEAD_REF", "")).split())
+          == "${{ github.head_ref }}" and "${{" not in str(sourced[0].get("run", "")), f"{sourced[0] if sourced else ''}")
+    if len(sourced) == 1:
+        for branch, status in (("release/0.2.0", 0), ("hotfix/0.2.1", 0), ("feat/PLA-3935-ci", 1),
+                               ("dependabot/github_actions/actions-1", 1), ("release", 1), ("release/", 1),
+                               ("main", 1), ("x/release/0.2.0", 1)):
+            ran = run_step(sourced[0], {"HEAD_REF": branch})[0]
+            check(f"W18 and a pull request from {branch} is {'accepted' if status == 0 else 'refused'}",
+                  ran == status, f"status={ran}")
 
 
 def load_publisher():

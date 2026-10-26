@@ -1,13 +1,13 @@
 name: Public surface
 
 # The signature gate, on the pull request and separate from CI: a release names a commit that passed
-# CI on main, so a gate inside CI is one a release depends on through CI. This workflow holds what a
-# pull request owes, and the release workflow checks what it ships. The job needs no credential,
+# CI on its release branch, so a gate inside CI is one a release depends on through CI. This workflow
+# holds what a pull request owes, and the release workflow checks what it ships. The job needs no credential,
 # because :core resolves nothing outside the project, so a fork's pull request gets the same signal.
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**', 'hotfix/**']
 
 concurrency:
   group: public-surface-${{ github.ref }}
