@@ -4444,10 +4444,11 @@ def test_workflows():
     check("W17 and ci.yml cancels no running push, which is what a release names",
           ci_cancels in ("", "False", "${{ github.event_name == 'pull_request' }}"), ci_cancels)
     # A group holds one waiting run and a newer one replaces it, whatever cancel-in-progress says, so a
-    # push run grouped with the next push can be dropped before it runs. Each push is its own group.
+    # push run grouped with another push can be dropped before it runs. The same commit pushed to two
+    # branches is two pushes, so the group is the run itself.
     ci_group = " ".join(group_of(ci_doc.get("concurrency")).split())
-    check("W17 and ci.yml groups each push run by its own commit, so none is replaced while it waits",
-          ci_group == "ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}", ci_group)
+    check("W17 and ci.yml puts each push run in a group of its own, so none is replaced while it waits",
+          ci_group == "ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}", ci_group)
     # A release is cut from its release or hotfix branch, so CI runs on pushes there as well as on main.
     ci_on = (ci_doc.get(True) if True in ci_doc else ci_doc.get("on")) or {}
     for event in ("push", "pull_request"):

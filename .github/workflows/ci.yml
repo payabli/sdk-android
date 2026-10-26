@@ -7,10 +7,11 @@ on:
     branches: [main, 'release/**', 'hotfix/**']
 
 concurrency:
-  # A pull request's runs share a group and the newest replaces the rest. A push run is grouped by its own
-  # commit: a release names a commit that passed this workflow on a push to its release or hotfix branch, and
-  # a group holds one waiting run, which the next push would replace before it ever ran.
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  # A pull request's runs share a group and the newest replaces the rest. A push run is a group of its own: a
+  # release names a commit that passed this workflow on a push to its release or hotfix branch, and a group
+  # holds one waiting run, which another push would replace before it ever ran. One commit pushed to main
+  # and to a new release branch is two pushes, so not even the commit can be shared.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
