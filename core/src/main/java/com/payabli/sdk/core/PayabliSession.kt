@@ -196,10 +196,9 @@ public class PayabliSession private constructor(
         }
 
         /**
-         * Same, against an explicit [baseUrl] and with no host bindings, for `:core`'s own JVM tests, which
-         * skip the host-log-level derivation. A failure the SDK did not classify converts here as in
-         * [initialize]. `internal` because a member left public in bytecode for testing is an origin
-         * override in a shipped artifact.
+         * Same, against an explicit [baseUrl] and with no host bindings, for `:core`'s own JVM tests. A
+         * failure the SDK did not classify converts here as in [initialize]. `internal`, because a member
+         * left public in bytecode for testing is an origin override in a shipped artifact.
          *
          * @param baseUrl the origin every request goes to.
          * @param config the configuration to install.
@@ -400,10 +399,8 @@ public class PayabliSession private constructor(
         }
 
         /**
-         * Runs an initialize's body, letting the failures the SDK itself classified through unchanged and
-         * converting everything else: no failure outside the SDK's own vocabulary crosses an entry point.
-         * A withdrawn caller passes through too, because withdrawing is not a failure and converting it
-         * would hide the withdrawal from the caller that is unwinding.
+         * Runs an initialize's body, passing the SDK's own failures and a withdrawal through
+         * unchanged and converting everything else.
          *
          * @param startedAt when the initialize began, for the duration a converted failure reports.
          * @param attempt the initialize's body: the log-level derivation and the install, or a test's

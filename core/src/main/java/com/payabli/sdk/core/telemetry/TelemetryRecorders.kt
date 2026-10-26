@@ -33,13 +33,10 @@ public object TelemetryRecorders {
     private var installed: TelemetryRecorder? = null
 
     /**
-     * Installs [recorder], replacing whatever was there.
+     * Installs [recorder], replacing whatever was there: a session re-initialized after a terminal
+     * failure installs again, and a refusal would leave the new session on the dead one's queue.
      *
-     * Replacing rather than refusing: a session re-initialized after a terminal failure installs again, and
-     * refusing the second install would leave the new session reporting through the dead one's queue.
-     *
-     * A failure the SDK did not classify converts to its unknown failure, as at every entry point, and is
-     * reported nowhere: no failure event exists for the install.
+     * An unclassified failure converts here and reports nothing.
      *
      * @param recorder the recorder to install, replacing whatever was there.
      */
@@ -56,8 +53,7 @@ public object TelemetryRecorders {
     /**
      * Removes the installed recorder, so [record] goes back to costing nothing.
      *
-     * A failure the SDK did not classify converts to its unknown failure, as at every entry point, and is
-     * reported nowhere: no failure event exists for the removal.
+     * An unclassified failure converts here and reports nothing.
      */
     public fun clear() {
         try {

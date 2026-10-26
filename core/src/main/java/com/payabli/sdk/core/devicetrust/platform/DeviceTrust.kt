@@ -74,13 +74,10 @@ public class DeviceTrust private constructor(
 
     public companion object {
         /**
-         * Opens the store and provisions the key, on the dispatcher the session picked.
+         * Opens the store and provisions the key, on the dispatcher the session picked. No dispatcher
+         * parameter, or the calling capability would name a second place the SDK picks one.
          *
-         * No dispatcher parameter, because that would move the choice into the calling capability and there
-         * would then be two places in the SDK that name one.
-         *
-         * A failure the SDK did not classify converts to its unknown failure, as at every entry point, and
-         * is reported nowhere: no failure event exists for opening the store.
+         * An unclassified failure converts here and reports nothing.
          *
          * @param context the host context, normalised to the application context and dropped.
          * @return the key and the store, provisioned.
@@ -89,11 +86,10 @@ public class DeviceTrust private constructor(
         public suspend fun open(context: Context): DeviceTrust = openWith(context, PayabliSession.IO_DISPATCHER)
 
         /**
-         * [open] with the dispatcher stated, so a test can hand in one it can recognise. Required and
-         * undefaulted because a default would be invisible at the call site, and a test that substituted a
-         * dispatcher would measure a thread the code never used.
+         * [open] with the dispatcher stated, so a test can hand in one it can recognise. Required,
+         * because a substituted dispatcher would measure a thread the code never used.
          *
-         * A failure the SDK did not classify converts and is reported nowhere, as [open] states.
+         * An unclassified failure converts here and reports nothing, as [open] states.
          *
          * @param context the host context, normalised to the application context and dropped.
          * @param dispatcher where the provisioning runs.

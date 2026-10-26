@@ -255,13 +255,10 @@ internal class PayInPaymentFlow private constructor(
         private val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
 
         /**
-         * Builds one, and is the only way to: a factory rather than a constructor because `internal` is
-         * a Kotlin boundary and not a JVM one, and a function can be `@JvmSynthetic` where a constructor
-         * cannot, so construction goes through here and the constructors are private.
+         * Builds one, and is the only way to: a factory because `internal` is a Kotlin boundary and not
+         * a JVM one, and `@JvmSynthetic` cannot mark a constructor.
          *
-         * A failure the SDK did not classify converts to its unknown failure here, as at every entry
-         * point; construction belongs to no failure event, so the converted failure is thrown and
-         * nothing is reported.
+         * An unclassified failure converts to the SDK's unknown failure here and reports nothing.
          *
          * @param session an initialized session.
          * @param entryPoint the partner integration point every request is sent to.
@@ -285,12 +282,10 @@ internal class PayInPaymentFlow private constructor(
             }
 
         /**
-         * The seam a test builds over, which takes a transport rather than a session.
-         * [elapsedRealtimeNanos] defaults to the production clock; a JVM test has to pass one, because
-         * `SystemClock` does not exist there and the default throws rather than measuring anything.
+         * The seam a test builds over, which takes a transport rather than a session. A JVM test has
+         * to pass [elapsedRealtimeNanos], because `SystemClock` does not exist there.
          *
-         * A failure the SDK did not classify converts here as in the session factory above: the
-         * converted failure is thrown and nothing is reported.
+         * An unclassified failure converts here as in the session factory above and reports nothing.
          *
          * @param transport the transport every request goes through.
          * @param entryPoint the partner integration point every request is sent to.

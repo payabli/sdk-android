@@ -157,19 +157,12 @@ public class PayabliTTP private constructor(
 }
 
 /**
- * A withdrawn caller passes through: it is not a failure and must not be reported as one.
+ * The entry points' one ladder: a withdrawal and a failure that already names its payment pass
+ * through, an unclassified exception or linkage failure converts, and any other `Error` is not caught;
+ * `inline` rather than `suspend`, so the non-suspending [PayabliTTP.isSupported] shares it too.
  *
- * A failure that already names its payment passes through too, since rebuilding it would drop what it
- * names.
- *
- * A linkage failure converts here as an exception does, so nothing outside the SDK's own failure
- * vocabulary crosses an entry point; every other JVM `Error` still passes through unwrapped.
- *
- * `inline` rather than `suspend`, so the one ladder serves the non-suspending [PayabliTTP.isSupported]
- * as well: the block is compiled into its caller, which is where a suspending call in it belongs.
- *
- * At file scope rather than on the instance because [PayabliTTP.create] needs it too, and a member of the
- * class is unreachable from the companion that builds one.
+ * @param block the call an entry point makes.
+ * @return what the call returns.
  */
 private inline fun <T> wrapping(block: () -> T): T =
     try {

@@ -26,12 +26,8 @@ import org.junit.Test
 /**
  * What `initialize` reports, and what it does not.
  *
- * A start with no outcome after it is a funnel nobody can close, and the ordinary way to produce one is an
- * Application and an Activity both initializing: the second call changes nothing.
- *
- * Nothing is listening on a first install or after a reset, because the channel is what a successful install
- * creates, so what these cover is a repeat call against a live session — and the converted failure, which a
- * first install reports only to the recorder a test installs itself.
+ * The reporting channel is what a successful install creates, so nothing is listening on a first
+ * install: what these cover is a repeat call against a live session, and the converted failure.
  */
 class SessionInitializeReportingTest {
     private val recorded = mutableListOf<String>()
@@ -88,9 +84,7 @@ class SessionInitializeReportingTest {
      * A failure outside the refusals converts, and the pair it reports names the type that failed.
      *
      * The converting catch sits in `install`, the half of `initialize` these tests reach without host
-     * bindings; `initialize` wraps the same conversion around the log-level derivation too. The converted
-     * failure carries the SDK's words alone, keeps the original as a redacted cause, and the report tells
-     * it from a refusal by `outcome` and by `failure_type`.
+     * bindings.
      */
     @Test
     fun aFailureOutsideTheRefusalsIsConvertedAndItsPairNamesTheTypeThatFailed() =
