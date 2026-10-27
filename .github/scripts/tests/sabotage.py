@@ -106,20 +106,6 @@ WALKTHROUGH_COMMAND = (
 INSTRUMENTED_MODULES_LINE = "          INSTRUMENTED_MODULES: core,payin"
 # Spans of release.yml for the rows that remove or reorder whole steps. Written out rather than built
 # from the file, so W15 can read each one and report it the moment the workflow moves under it.
-RELEASE_BUILD_VERSION_CHECK = (
-    "      # The build's Gradle carries no override, so the committed property is what it publishes.\n"
-    '      - name: Check the commit carries the version the check read\n'
-    '        env:\n'
-    '          CHECKED: ${{ needs.check.outputs.version }}\n'
-    '        run: |\n'
-    '          # Empty rather than a failed grep when the line is missing, so the refusal below says why.\n'
-    "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n"
-    '          if [ "$CHECKED" != "$version" ]; then\n'
-    '            echo "::error::payabli.version is \'$version\' here, and the check read \'$CHECKED\'."\n'
-    '            exit 1\n'
-    '          fi\n'
-    '\n'
-)
 RELEASE_KEEP_TREE = (
     '      # Kept for as long as GitHub allows. A rebuild produces different bytes, so this tree is the only\n'
     '      # one a half-finished upload can be completed from, by re-running the failed job.\n'
@@ -1859,10 +1845,6 @@ MUTATIONS = [
      "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
      '          echo payabli.version=; version=0.0.1\n          release='),
 
-    ("Release builds against a hard-coded version, the property name echoed beside it", RELEASE, "workflows",
-     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          if [ \"$CHECKED\"",
-     "          echo payabli.version=; version=0.0.1\n          if [ \"$CHECKED\""),
-
     ("Release fetches GitHub's host keys without a token", RELEASE, "workflows",
      '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          tagged=',
      '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n        run: |\n          tagged='),
@@ -1887,9 +1869,6 @@ MUTATIONS = [
      '      version: ${{ steps.version.outputs.version }}\n      commit:',
      '      version: 0.0.1\n      commit:'),
 
-    ("Release keeps the build's version guard but drops its exit", RELEASE, "workflows",
-     "and the check read '$CHECKED'.\"\n            exit 1\n", "and the check read '$CHECKED'.\"\n"),
-
     ('Release lets a commit with no successful CI through the check', RELEASE, "workflows",
      '[ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch',
      '[ "$passed" -lt 0 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
@@ -1909,9 +1888,6 @@ MUTATIONS = [
     ('Release reads any version as a release version', RELEASE, "workflows",
      'release=\'^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$\'\n          if [[ ! "$version"',
      'release=\'^.*$\'\n          if [[ ! "$version"'),
-
-    ("Release builds when the commit and the check disagree on the version", RELEASE, "workflows",
-     'if [ "$CHECKED" != "$version" ]; then', 'if [ "$CHECKED" = "$version" ] && false; then'),
 
     ("Release builds before the commit is checked", RELEASE, "workflows",
      "    name: Build the release\n    needs: [check]\n", "    name: Build the release\n"),
@@ -2054,9 +2030,6 @@ MUTATIONS = [
 
     ("Release tags and uploads through a failed check, a red suite or a failed build", RELEASE, "workflows",
      "    needs: [check, test, build]\n", "    needs: [check, test, build]\n    if: always()\n"),
-
-    ("Release builds without checking the commit carries the version the check read", RELEASE, "workflows",
-     RELEASE_BUILD_VERSION_CHECK, ""),
 
     ('Release publishes a version other than the committed one', RELEASE, "workflows",
      '        run: ./gradlew publish\n',
@@ -2754,6 +2727,10 @@ MUTATIONS = [
      '          if [ -n "$tagged" ] && [ "$tagged" = "$COMMIT" ]; then\n'
      '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
      '            exit 1\n'),
+
+    ("Release's build reads the version again, a check that cannot fail", RELEASE, "workflows",
+     "      - name: Public surface\n",
+     "      - name: Read the version again\n        run: sed -n 's/^payabli.version=//p' gradle.properties\n\n      - name: Public surface\n"),
 
     ("Release lets the merge-back guard fail without failing the job", RELEASE, "workflows",
      "      - name: Check every earlier release is in main and in the commit\n",

@@ -4189,13 +4189,12 @@ def test_workflows():
     check("W17 the build checks out the commit the check passed",
           [" ".join(str(w.get("ref", "")).split()) for w in build_checkouts] == [approved]
           and not any(w.get("repository") for w in build_checkouts), f"{build_checkouts}")
-    first_gradle = next((i for i, step in enumerate(build_steps) if "gradlew" in run_commands(step)), None)
-    carries = next((i for i, step in enumerate(build_steps)
-                    if reads(step, "version", VERSION_READ) and env_of(step, "CHECKED") == approved_version
-                    and refuses(step, "[ $CHECKED != $version ]")), None)
-    check("W17 and refuses a commit that does not carry the version the check read, before it builds",
-          carries is not None and first_gradle is not None and carries < first_gradle,
-          f"check={carries} first gradle={first_gradle}")
+    # The version is read once, in the check, at the full SHA every later job checks out. A file at one commit
+    # cannot change, so a later job re-reading it is a check that cannot fail. The artifact is what can differ,
+    # and the uploader checks that.
+    rereads = [f"{name}: {step.get('name')}" for name, job in rel_jobs.items() if name != checker_name
+               for step in job_steps(job) if "payabli.version=" in run_commands(step)]
+    check("W17 and no job after the check reads the version again", not rereads, f"{rereads}")
     test_checkouts = [step.get("with") or {} for step in test_steps if "actions/checkout" in str(step.get("uses", ""))]
     check("W17 the suites check out the commit the check passed",
           [" ".join(str(w.get("ref", "")).split()) for w in test_checkouts] == [approved]

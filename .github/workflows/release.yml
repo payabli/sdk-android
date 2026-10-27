@@ -243,18 +243,6 @@ jobs:
         with:
           ref: ${{ needs.check.outputs.commit }}
 
-      # The build's Gradle carries no override, so the committed property is what it publishes.
-      - name: Check the commit carries the version the check read
-        env:
-          CHECKED: ${{ needs.check.outputs.version }}
-        run: |
-          # Empty rather than a failed grep when the line is missing, so the refusal below says why.
-          version=$(sed -n 's/^payabli.version=//p' gradle.properties)
-          if [ "$CHECKED" != "$version" ]; then
-            echo "::error::payabli.version is '$version' here, and the check read '$CHECKED'."
-            exit 1
-          fi
-
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
