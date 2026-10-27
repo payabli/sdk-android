@@ -70,12 +70,9 @@ permissions:
 env:
   # Never --info or --debug here: verbose Gradle logs can print repository credentials.
   GRADLE_OPTS: -Dorg.gradle.console=plain
-  # Leads every Slack message. Workflow level rather than job level because both jobs need it: the collector
-  # stamps it into the facts, and the report job has to name the platform even when no facts arrived. Scoped
-  # to the test job it was invisible to the reporter, so the one message sent when the test job dies said
-  # only "Nightly · no report" into a channel both platform SDKs post into.
-  #
-  # Stated rather than inferred, because a script that guesses the platform would eventually guess wrong.
+  # Leads every Slack message: the collector stamps it into the facts. `nightly-report.yml`, which posts
+  # them, states it too, for the message sent when no facts arrived. Stated rather than inferred, because a
+  # script that guesses the platform would eventually guess wrong.
   PLATFORM: Android
 
 jobs:
@@ -450,100 +447,3 @@ jobs:
             exit 1
           fi
           echo "All suites passed."
-
-  # Everything that touches Slack, and nothing else. Separate from the tests for three reasons, in the order
-  # they matter:
-  #
-  #   * the bot token never shares a job with a third-party action, which is what closed the exposure that
-  #     made a commit pin on the emulator action look necessary
-  #   * a test job that times out, or dies before the gate, still gets announced. Posting used to live inside
-  #     that job behind `if: always()`, and a job timeout takes such a step with it, so the channel went
-  #     quiet on exactly the nights that most needed a message
-  #   * the report is decoupled from the test job's lifetime, so a slow Slack cannot hold an emulator runner
-  #
-  # It cannot redden a green run, and `continue-on-error` is what makes that true rather than the poster's
-  # own discipline. The poster warning and exiting zero covers Slack failures only, and this job has steps
-  # that are not Slack: a transient `actions/checkout` failure, or any uncaught exception in the poster,
-  # fails the step, and a failed job fails the workflow run. GitHub's syntax reference is explicit that this
-  # setting "prevents a workflow run from failing when a job fails".
-  #
-  # Which matters most in the case the ordering was chosen for. The summary posts first, so a crash after it
-  # lands would leave Slack saying "Nightly green" while the run went red, and a run disagreeing with the
-  # notification it just sent is the single failure this workflow is built to avoid.
-  #
-  # Failures here stay visible: the job itself is still marked failed on the run, so a reporter that breaks
-  # is not silent, it just stops being the suite's problem. Same trade as the artifact upload above.
-  report:
-    name: Report to Slack
-    needs: verdict
-    continue-on-error: true
-    # Not `always()`, which is the form GitHub recommends against. `cancelled()` is scoped to the whole run
-    # rather than to the needed job, and the consequences are worth stating exactly rather than summarising,
-    # because the useful case and the unwanted one look alike from here:
-    #
-    #   * test job exceeded `timeout-minutes`, or failed: the run is not cancelled, so this reports. That is
-    #     the case the old single-job arrangement could not report at all
-    #   * `cancel-in-progress` superseded this nightly with a manual dispatch: silent, which is the point.
-    #     `always()` would post a "no report" message for every superseded run
-    #   * somebody cancelled the run by hand: also silent, and deliberately. A run nobody wanted to finish is
-    #     not a nightly failure, and there is no way to tell it apart from supersession here in any case,
-    #     since both arrive as a cancelled run
-    #
-    # So the guarantee is that a test job which dies on its own gets announced. A cancelled *run* does not,
-    # and the poster's `cancelled` branch is reached through a job-level timeout rather than through this.
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # `actions: read` so the report can ask the API when this workflow last went green on this branch, which
-    # turns the culprit line from a per-file guess into the bounded set of commits since the suite was known
-    # good. Granted here and nowhere else: the test job runs a third-party action and must keep holding no
-    # credential it does not need.
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      # Only the poster script is wanted, so the default shallow fetch is right: the git history the culprit
-      # lookup needs was read in the test job, and its answers travel in the facts file. persist-credentials
-      # is off because this job holds a Slack token and has nothing to push, so leaving a GITHUB_TOKEN in
-      # .git/config would be surface for no benefit.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # Same run, so no extra permission is needed. Non-blocking: a missing facts file is a case the poster
-      # reports rather than a reason to fail, and it is the case that arises when the test job never finished.
-      - name: Download the report facts
-        continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: nightly-facts
-          path: ${{ runner.temp }}/nightly-facts
-
-      # Posts to #mobile-sdk-nightly-build: a summary in the channel, the failure detail in its thread.
-      #
-      # chat.postMessage with a bot token rather than the incoming webhook this replaced, because threading
-      # needs the parent's `ts` and a webhook's response body is the literal string `ok`. Absent credentials
-      # warn and skip, so the suite result is never lost to a reporting problem, and the channel ID is a
-      # variable rather than a secret because it is not one.
-      #
-      # SLACK_MENTION_CULPRITS is off unless set to `true`. Turning it on makes the report @-mention the
-      # author of a probable-culprit commit, which is a team-norm decision and not a technical one: the
-      # culprit is a labelled heuristic and it has been wrong before. It also needs `users:read.email` on the
-      # bot. Agree the norm before setting the variable.
-      - name: Post the nightly report
-        timeout-minutes: 5
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
-          SLACK_MENTION_CULPRITS: ${{ vars.SLACK_MENTION_CULPRITS }}
-          # For the last-green lookup only. The job-scoped token above is read-only on Actions.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Only the scheduled run on the default branch owns the liveness switch, because the switch answers
-          # "is the scheduled nightly still alive". Letting a manual dispatch or a probe branch reset it would
-          # measure "somebody ran this at some point" instead, and a dead schedule could then be masked
-          # indefinitely by occasional dispatches, which is the exact failure the switch exists to catch.
-          # Non-owning runs still report; they just do not vouch for a schedule they are not evidence of.
-          LIVENESS_OWNER: ${{ github.event_name == 'schedule' && github.ref_name == github.event.repository.default_branch }}
-          # So a run with no facts file can say what became of the job instead of guessing.
-          NIGHTLY_JOB_RESULT: ${{ needs.verdict.result }}
-        run: python3 .github/scripts/nightly_slack.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"

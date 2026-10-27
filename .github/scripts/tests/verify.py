@@ -642,7 +642,8 @@ def run_poster(mod, facts, **env_extra):
     saved = {k: os.environ.get(k) for k in ("SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID", "SLACK_MENTION_CULPRITS",
                                             "NIGHTLY_JOB_RESULT", "GITHUB_SERVER_URL", "GITHUB_REPOSITORY",
                                             "GITHUB_RUN_ID", "PLATFORM", "GITHUB_TOKEN", "GITHUB_SHA",
-                                            "LIVENESS_OWNER", "GITHUB_API_URL", "GITHUB_REF_NAME")}
+                                            "LIVENESS_OWNER", "GITHUB_API_URL", "GITHUB_REF_NAME",
+                                            "NIGHTLY_RUN_ID", "NIGHTLY_SHA", "NIGHTLY_REF_NAME")}
     for k in saved:
         os.environ.pop(k, None)
     os.environ.update({k: v for k, v in env.items() if v is not None})
@@ -1067,6 +1068,19 @@ def test_poster(mod):
     check("P18 the trusted sha is rendered", "045eebf" in ctx, ctx)
     check("P18 the trusted ref is rendered", "on `main`" in ctx, ctx)
     check("P18 the poisoned sha is not rendered", "aaa" not in ctx, ctx)
+
+    # P18b the report runs from `workflow_run`, where GITHUB_* describe the reporting run and cannot be
+    # overwritten, so the nightly's id, commit and branch arrive as NIGHTLY_*. Both are set here and differ,
+    # so a poster reading GITHUB_* links the wrong run and fails each check.
+    FakeSlack.behaviour = {"chat.postMessage": ok_parent}
+    code, out, calls = run_poster(mod, FACTS_RED, GITHUB_RUN_ID="11111111111", GITHUB_SHA="ffff000ffff0",
+                                  GITHUB_REF_NAME="main", NIGHTLY_RUN_ID="22222222222",
+                                  NIGHTLY_SHA="0a1b2c3d4e5f", NIGHTLY_REF_NAME="release/0.2.0")
+    ctx = posts(calls)[0]["payload"]["blocks"][1]["elements"][0]["text"]
+    check("P18b the nightly's run is linked, not the reporting run",
+          "22222222222" in ctx and "11111111111" not in ctx, ctx)
+    check("P18b and the nightly's commit and branch are rendered",
+          "0a1b2c3" in ctx and "release/0.2.0" in ctx and "ffff000" not in ctx, ctx)
 
     # P19 the notification fallback is escaped too. It is rendered as mrkdwn, so a control sequence there
     # broadcasts even when every visible block is clean.
@@ -2854,25 +2868,51 @@ def test_workflows():
     # `schedule || default_branch`, which makes every dispatch on the default branch an owner: a manual run
     # would then push the alarm out over a schedule that had already stopped, which is the one thing this
     # flag exists to prevent. Checked for the nightly too, whose identical expression had no assertion.
-    for name in ("live-flows.yml", "nightly.yml"):
-        owner = liveness_owner(name)
+    # The nightly's report runs on `workflow_run`, so it reads the triggering run's event and branch.
+    for name, event, branch in (("live-flows.yml", "github.event_name", "github.ref_name"),
+                                ("nightly-report.yml", "github.event.workflow_run.event",
+                                 "github.event.workflow_run.head_branch")):
+        owner = " ".join(liveness_owner(name).split())
         check(f"W8 {name} names who owns the liveness alarm", bool(owner), str(owner))
         operands = [part.strip() for part in owner.replace("${{", "").replace("}}", "").split("&&")]
         check(f"W8 {name} requires both conditions rather than either",
               "||" not in owner and len(operands) == 2, owner)
         check(f"W8 {name} owns it only on a scheduled run",
-              any("github.event_name == 'schedule'" in part for part in operands), owner)
+              any(f"{event} == 'schedule'" in part for part in operands), owner)
         check(f"W8 {name} owns it only on the default branch",
-              any("github.ref_name ==" in part and "default_branch" in part for part in operands), owner)
+              any(f"{branch} ==" in part and "default_branch" in part for part in operands), owner)
         # Spelled out because the operator is the whole meaning: `!=` on both sides passes every check above
         # while making each non-scheduled run an owner, which is the inversion of what the flag is for.
         check(f"W8 {name} compares for equality rather than inequality", "!=" not in owner, owner)
+
+    # W8b the nightly's report is main's: it runs on `workflow_run` after the Nightly, downloads that run's
+    # facts, and hands the poster that run's id, commit and branch, since GITHUB_* describe the report's own run.
+    report_doc = workflow_doc("nightly-report.yml")
+    report_on = (report_doc.get(True) if True in report_doc else report_doc.get("on")) or {}
+    check("W8b nightly-report.yml runs after the Nightly completes, and on nothing else",
+          set(report_on) == {"workflow_run"}
+          and (report_on.get("workflow_run") or {}).get("workflows") == ["Nightly"]
+          and (report_on.get("workflow_run") or {}).get("types") == ["completed"], f"{report_on}")
+    report_steps = steps_of(report_doc)
+    fetched = [step.get("with") or {} for step in report_steps if "download-artifact" in str(step.get("uses", ""))]
+    check("W8b and downloads the facts of the run that triggered it",
+          len(fetched) == 1 and " ".join(str(fetched[0].get("run-id", "")).split())
+          == "${{ github.event.workflow_run.id }}", f"{fetched}")
+    posting = [step for step in report_steps if "nightly_slack.py" in run_commands(step)]
+    handed = {key: " ".join(str(value).split()) for key, value in ((posting[0].get("env") or {}) if posting else {}).items()}
+    check("W8b and hands the poster the nightly's run, commit and branch",
+          handed.get("NIGHTLY_RUN_ID") == "${{ github.event.workflow_run.id }}"
+          and handed.get("NIGHTLY_SHA") == "${{ github.event.workflow_run.head_sha }}"
+          and handed.get("NIGHTLY_REF_NAME") == "${{ github.event.workflow_run.head_branch }}"
+          and handed.get("NIGHTLY_JOB_RESULT") == "${{ github.event.workflow_run.conclusion }}", f"{handed}")
+    check("W8b and nightly.yml no longer posts to Slack itself",
+          "SLACK_BOT_TOKEN" not in workflow_text("nightly.yml"), "")
 
     # A check that never runs on the file it guards is not a check. `scripts.yml` is path-filtered, so
     # every workflow asserted about above has to match one of those patterns, on both the pull request and
     # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
     # its two mutations could not have run on the change that broke them.
-    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", MIRROR_WORKFLOW,
+    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", "nightly-report.yml", MIRROR_WORKFLOW,
                "ci.yml", QA_WORKFLOW, RELEASE_WORKFLOW, GATE_WORKFLOW, SOURCE_WORKFLOW)
     harness = workflow_doc("scripts.yml")
     triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})

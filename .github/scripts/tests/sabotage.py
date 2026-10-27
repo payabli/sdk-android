@@ -95,6 +95,9 @@ PUBLIC_SURFACE = WORKFLOW_DIR / "public-surface.yml"
 # below is a pull request into main that the job lets through, or one it refuses that it should not.
 SOURCE_BRANCH = WORKFLOW_DIR / "source-branch.yml"
 
+# The nightly's Slack post, on `workflow_run` from main's copy, which is what owns the liveness alarm.
+NIGHTLY_REPORT = WORKFLOW_DIR / "nightly-report.yml"
+
 # The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
 # no longer matches the file reports itself invalid rather than caught, and two copies drift apart silently.
 WALKTHROUGH_COMMAND = (
@@ -533,6 +536,7 @@ SOURCE = {
     CI: SDK / ".github/workflows/ci.yml",
     PUBLIC_SURFACE: SDK / ".github/workflows/public-surface.yml",
     SOURCE_BRANCH: SDK / ".github/workflows/source-branch.yml",
+    NIGHTLY_REPORT: SDK / ".github/workflows/nightly-report.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -1507,9 +1511,9 @@ MUTATIONS = [
      "github.event_name == 'schedule' && github.ref_name",
      "github.event_name == 'schedule' || github.ref_name"),
 
-    ("Any default-branch run owns the nightly alarm, not only a scheduled one", NIGHTLY, "workflows",
-     "github.event_name == 'schedule' && github.ref_name",
-     "github.event_name == 'schedule' || github.ref_name"),
+    ("Any default-branch run owns the nightly alarm, not only a scheduled one", NIGHTLY_REPORT, "workflows",
+     "== 'schedule'\n              && github.event.workflow_run.head_branch",
+     "== 'schedule'\n              || github.event.workflow_run.head_branch"),
 
     # The operator carries the whole meaning, and inverting it reads as a typo rather than as a change of
     # policy: every run that is not the scheduled one would then own the alarm.
@@ -1517,9 +1521,15 @@ MUTATIONS = [
      "github.event_name == 'schedule' && github.ref_name ==",
      "github.event_name != 'schedule' && github.ref_name !="),
 
-    ("The nightly alarm is owned by every run except the scheduled one", NIGHTLY, "workflows",
-     "github.event_name == 'schedule' && github.ref_name ==",
-     "github.event_name != 'schedule' && github.ref_name !="),
+    ("The nightly alarm is owned by every run except the scheduled one", NIGHTLY_REPORT, "workflows",
+     "github.event.workflow_run.event == 'schedule'\n              && github.event.workflow_run.head_branch ==",
+     "github.event.workflow_run.event != 'schedule'\n              && github.event.workflow_run.head_branch !="),
+
+    ("The nightly report reads the reporting run's own identity, not the nightly's", NIGHTLY_REPORT, "workflows",
+     "          NIGHTLY_RUN_ID: ${{ github.event.workflow_run.id }}\n", ""),
+
+    ("The nightly report posts without its environment, so the token is a repository secret again", NIGHTLY_REPORT, "workflows",
+     "    environment: ci-protected\n", ""),
 
     ("A green dispatch resets the live alarm, masking a schedule that has stopped", LIVE_POSTER, "live",
      "    if not red and not owns_liveness_switch():", "    if False:"),
