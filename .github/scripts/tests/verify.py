@@ -3517,9 +3517,6 @@ def test_workflows():
     # a near name is an environment with no reviewer and a subject the role refuses.
     check("W16 the publishing job runs in the qa-snapshot environment",
           str(qa_job.get("environment", "")) == "qa-snapshot", str(qa_job.get("environment", "")))
-    check("W16 and no other job names an environment",
-          [name for name, job in qa_jobs.items() if job.get("environment")] == [qa_job_name],
-          f"{[(name, job.get('environment')) for name, job in qa_jobs.items()]}")
     # A condition on the publish is how the check's refusal is stepped around: `always()` publishes through it.
     check("W16 and it carries no condition of its own", "if" not in qa_job, condition(qa_job))
 
@@ -3534,6 +3531,12 @@ def test_workflows():
                            if any(re.search(r":[A-Za-z0-9_-]+:test\b", gradle_arguments(step)) for step in job_steps(job))), "")
     qa_builder_name = next((name for name, job in qa_jobs.items()
                             if any("gradlew publish" in run_commands(step) for step in job_steps(job))), "")
+    # The suites and the build hold the Maven credential, which is released only to a run on main or
+    # release/*. The check holds nothing and names nothing.
+    check("W16 and the suites and the build run in ci-protected, and no other job names an environment",
+          {name: job.get("environment") for name, job in qa_jobs.items() if job.get("environment")}
+          == {qa_job_name: "qa-snapshot", qa_tester_name: "ci-protected", qa_builder_name: "ci-protected"},
+          f"{[(name, job.get('environment')) for name, job in qa_jobs.items()]}")
     qa_tester, qa_builder = qa_jobs.get(qa_tester_name, {}), qa_jobs.get(qa_builder_name, {})
     qa_builder_steps = job_steps(qa_builder)
     check("W16 the suites and the build are separate jobs, neither of them the publish",
@@ -3687,8 +3690,8 @@ def test_workflows():
     # `container` or a `services` block runs an image of somebody else's beside the token.
     qa_shape = {
         qa_checker_name: ({"concurrency", "name", "outputs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
-        qa_tester_name: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
-        qa_builder_name: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        qa_tester_name: ({"environment", "name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        qa_builder_name: ({"environment", "name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
         qa_job_name: ({"concurrency", "environment", "name", "needs", "permissions", "runs-on", "steps"},
                       {"contents": "read", "id-token": "write"}),
     }
@@ -3919,8 +3922,10 @@ def test_workflows():
     # trusts, so every authority that can publish is held by that one job and none by any other.
     gate = {name: job for name, job in rel_jobs.items() if str(job.get("environment", "")) == "release"}
     check("W17 exactly one job runs in the release environment", len(gate) == 1, f"{sorted(gate)}")
-    check("W17 and no other job names an environment",
-          [name for name, job in rel_jobs.items() if job.get("environment")] == sorted(gate),
+    # The suites and the build hold the Maven credential, released only to a run on main or release/*.
+    check("W17 and the suites and the build run in ci-protected, and no other job names an environment",
+          {name: job.get("environment") for name, job in rel_jobs.items() if job.get("environment")}
+          == {**{name: "release" for name in gate}, "test": "ci-protected", "build": "ci-protected"},
           f"{[(name, job.get('environment')) for name, job in rel_jobs.items()]}")
     gate_name = next(iter(gate), "")
     gate_job = gate.get(gate_name, {})
@@ -4437,8 +4442,8 @@ def test_workflows():
     shape = {
         checker_name: ({"name", "outputs", "permissions", "runs-on", "steps"},
                        {"contents": "read", "actions": "read"}),
-        tester: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
-        builder: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        tester: ({"environment", "name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        builder: ({"environment", "name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
         gate_name: ({"concurrency", "environment", "name", "needs", "permissions", "runs-on", "steps"},
                     {"contents": "write", "id-token": "write"}),
     }
@@ -4594,6 +4599,29 @@ def test_workflows():
                                         "GITHUB_REPOSITORY": "payabli/sdk-android"})[0]
             check(f"W18 and a pull request from {branch} is {'accepted' if status == 0 else 'refused'}",
                   ran == status, f"status={ran}")
+
+    # W19 no secret reaches code nobody has reviewed. A pull request runs its own copy of a workflow and a
+    # dispatch runs the chosen branch's, so a job that names a secret is one a branch author can rewrite to
+    # print it. Every secret is an environment secret, and a job reads one only from an environment that
+    # releases it to main and release/* (ci-protected), to the release or the mirror after a reviewer, or,
+    # for the one job that builds a pull request's code with the card reader credential, after a reviewer
+    # approves that run (ci-pull-request). A job calling a reusable workflow cannot name an environment, so
+    # it passes no secret either: the called job reads its own.
+    CARD_PRESENT_ENV = "${{ github.event_name == 'pull_request' && 'ci-pull-request' || 'ci-protected' }}"
+    allowed = {"ci-protected", "release", "card-reader-mirror"}
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        doc = workflow_doc(path.name)
+        for name, job in ((doc.get("jobs") or {}).items()):
+            if not isinstance(job, dict):
+                continue
+            held = sorted(set(re.findall(r"secrets\.([A-Za-z0-9_]+)", yaml.safe_dump(job))) - {"GITHUB_TOKEN"})
+            if not held and job.get("secrets") != "inherit":
+                continue
+            environment = " ".join(str(job.get("environment", "")).split())
+            expected = (CARD_PRESENT_ENV if (path.name, name) == ("ci.yml", "card-present") else None)
+            check(f"W19 {path.name} {name} reads {', '.join(held) or 'inherited secrets'} only from an environment",
+                  environment == expected if expected else environment in allowed,
+                  f"environment={environment or 'none'}")
 
 
 def load_publisher():

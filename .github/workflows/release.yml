@@ -202,6 +202,9 @@ jobs:
     name: Test the release
     needs: [check]
     runs-on: ubuntu-latest
+    # The Maven credential is an environment secret, released only to a run on main or release/*. A
+    # dispatch from any other branch is refused at the environment.
+    environment: ci-protected
     permissions:
       contents: read
     steps:
@@ -236,6 +239,9 @@ jobs:
     name: Build the release
     needs: [check]
     runs-on: ubuntu-latest
+    # The Maven credential is an environment secret, released only to a run on main or release/*. A
+    # dispatch from any other branch is refused at the environment.
+    environment: ci-protected
     permissions:
       contents: read
     steps:
