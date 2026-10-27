@@ -130,12 +130,17 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Files only, by path: a module's `build/reports` or compiled classes, which is all the analysis reads.
+      # `cp --parents` follows a link anywhere on the destination path, so the checkout may carry none either.
       - name: Take the reports and classes in
         env:
           STAGED: ${{ runner.temp }}/artifacts
         run: |
           if [ -n "$(find "$STAGED" -type l -print -quit)" ]; then
             echo "::error::an artifact carries a symbolic link"
+            exit 1
+          fi
+          if [ -n "$(find "$GITHUB_WORKSPACE" -path "$GITHUB_WORKSPACE/.git" -prune -o -type l -print -quit)" ]; then
+            echo "::error::the checkout carries a symbolic link"
             exit 1
           fi
           cd "$STAGED"

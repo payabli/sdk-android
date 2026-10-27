@@ -1339,6 +1339,12 @@ MUTATIONS = [
      '            exit 1\n'
      '          fi\n', ""),
 
+    ("Sonar copies through a symbolic link the checkout carries", SONAR, "workflows",
+     '          if [ -n "$(find "$GITHUB_WORKSPACE" -path "$GITHUB_WORKSPACE/.git" -prune -o -type l -print -quit)" ]; then\n'
+     '            echo "::error::the checkout carries a symbolic link"\n'
+     '            exit 1\n'
+     '          fi\n', ""),
+
     ("Sonar copies in any path an artifact carries", SONAR, "workflows",
      "^[A-Za-z0-9_-]+/build/(reports|intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes)/ ]]",
      ". ]]"),

@@ -4735,6 +4735,9 @@ def test_workflows():
     intake_run = run_commands(intake)
     check("W20 and the intake refuses a symbolic link",
           "find $STAGED -type l -print -quit" in intake_run and "exit 1" in intake_run, intake_run[:200])
+    check("W20 and refuses a symbolic link anywhere in the checkout it copies into",
+          "find $GITHUB_WORKSPACE -path $GITHUB_WORKSPACE/.git -prune -o -type l -print -quit" in intake_run
+          and intake_run.index("$GITHUB_WORKSPACE -path") < intake_run.index("cp --parents"), intake_run[:300])
     check("W20 and copies only a module's reports and classes, file by file",
           "find . -type f -printf %P\\0" in intake_run
           and "^[A-Za-z0-9_-]+/build/ ( reports | intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes ) /"
