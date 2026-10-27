@@ -4579,12 +4579,17 @@ def test_workflows():
     # in a workflow of its own, CI carries none of it, and the release carries its own copy before
     # the publish. The four commands are compared parsed and in order, because a flattened
     # substring match passes an echo carrying the words and a diff run before the regeneration.
-    GATE_COMMANDS = [
-        ["rm", "core/api/release.txt"],
-        ["./gradlew", ":core:metalavaGenerateSignatureRelease"],
-        ["git", "ls-files", "--error-unmatch", "core/api/release.txt"],
-        ["git", "diff", "--exit-code", "--", "core/api/release.txt"],
-    ]
+    def gate_commands(modules):
+        records = [f"{module}/api/release.txt" for module in modules]
+        return [["rm", *records],
+                ["./gradlew", *[f":{module}:metalavaGenerateSignatureRelease" for module in modules]],
+                ["git", "ls-files", "--error-unmatch", *records],
+                ["git", "diff", "--exit-code", "--", *records]]
+    # Every published module that declares code. :taptopay needs the card reader credential to compile, so
+    # the pull request checks it in a job of its own; the release, which holds the credential, checks all four.
+    GATE_FREE = gate_commands(["core", "payin", "telemetry"])
+    GATE_CARD = gate_commands(["taptopay"])
+    GATE_COMMANDS = gate_commands(["core", "payin", "taptopay", "telemetry"])
     gate_doc = workflow_doc(GATE_WORKFLOW)
     gate_on = (gate_doc.get(True) if True in gate_doc else gate_doc.get("on")) or {}
     gate_jobs = {name: job for name, job in (gate_doc.get("jobs") or {}).items()
@@ -4595,12 +4600,17 @@ def test_workflows():
           set(gate_on) == {"pull_request"}
           and (gate_on.get("pull_request") or {}).get("branches") == PROTECTED_BRANCHES,
           f"{sorted(gate_on)}")
-    check("W17 and it is one job holding the gate as its one step",
-          len(gate_jobs) == 1 and len(gate) == 1,
+    check("W17 and it is two jobs, each holding the gate as its one step",
+          set(gate_jobs) == {"gate", "card-present"} and len(gate) == 2
+          and all([step.get("name") for step in job_steps(job) if step.get("run")] == ["Public surface"]
+                  for job in gate_jobs.values()),
           f"{sorted(gate_jobs)} {[step.get('name') for step in gate_steps]}")
-    check("W17 and the gate runs the record's four commands in order",
-          commands_of(gate[0]) == GATE_COMMANDS if len(gate) == 1 else False,
-          f"{commands_of(gate[0]) if gate else ''}")
+    def gate_of(job_name):
+        return next((step for step in job_steps(gate_jobs.get(job_name, {})) if step.get("name") == "Public surface"), {})
+    check("W17 and the credential-free job checks :core, :payin and :telemetry",
+          commands_of(gate_of("gate")) == GATE_FREE, f"{commands_of(gate_of('gate'))}")
+    check("W17 and the card-present job checks :taptopay",
+          commands_of(gate_of("card-present")) == GATE_CARD, f"{commands_of(gate_of('card-present'))}")
     check("W17 and CI carries no gate, so a release never depends on it through CI",
           not [step for job in ci_jobs.values() for step in job_steps(job)
                if step.get("name") == "Public surface"], "")
@@ -4682,7 +4692,9 @@ def test_workflows():
             if not held and job.get("secrets") != "inherit":
                 continue
             environment = " ".join(str(job.get("environment", "")).split())
-            expected = (CARD_PRESENT_ENV if (path.name, name) == ("ci.yml", "card-present") else None)
+            # The two jobs that build a pull request's code with the card reader credential.
+            expected = (CARD_PRESENT_ENV if (path.name, name) in (("ci.yml", "card-present"),
+                                                                ("public-surface.yml", "card-present")) else None)
             check(f"W19 {path.name} {name} reads {', '.join(held) or 'inherited secrets'} only from an environment",
                   environment == expected if expected else environment in allowed,
                   f"environment={environment or 'none'}")

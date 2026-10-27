@@ -657,45 +657,45 @@ MUTATIONS = [
     # named and the rest of its lines where a reader sees them.
     ("The pull-request gate drops its step, so the committed signature goes unchecked",
      PUBLIC_SURFACE, "workflows",
-     "      - name: Public surface\n        run: |\n          rm core/api/release.txt\n"
-     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n",
+     "      - name: Public surface\n        run: |\n          rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n",
      ""),
 
     ("The pull-request gate regenerates the signature without deleting it, so a skipped generation"
-     " passes", PUBLIC_SURFACE, "workflows", "          rm core/api/release.txt\n", ""),
+     " passes", PUBLIC_SURFACE, "workflows", "          rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n", ""),
 
     ("The pull-request gate drops the tracked-path guard, so a signature nothing commits reads as"
      " clean", PUBLIC_SURFACE, "workflows",
-     "          git ls-files --error-unmatch core/api/release.txt\n", ""),
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n", ""),
 
     ("The pull-request gate drops the diff, so the regenerated signature is never compared",
-     PUBLIC_SURFACE, "workflows", "          git diff --exit-code -- core/api/release.txt\n", ""),
+     PUBLIC_SURFACE, "workflows", "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n", ""),
 
     # Every command word survives in an echo, so a flattened read of the step passes while the shell
     # runs no command of the gate at all.
     ("The pull-request gate echoes its commands, so every word is present and nothing runs",
      PUBLIC_SURFACE, "workflows",
-     "          rm core/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n",
-     "          echo rm core/api/release.txt\n"
-     "          echo ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          echo git ls-files --error-unmatch core/api/release.txt\n"
-     "          echo git diff --exit-code -- core/api/release.txt\n"),
+     "          rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n",
+     "          echo rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          echo ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          echo git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          echo git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"),
 
     # Every command runs, each intact, but the diff is first: it compares the checkout's committed
     # record against itself, and the regeneration's drift lands after nothing compares it again.
     ("The pull-request gate diffs the record before regenerating it, so the comparison reads the"
      " checkout", PUBLIC_SURFACE, "workflows",
-     "          rm core/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n",
-     "          git diff --exit-code -- core/api/release.txt\n"
-     "          rm core/api/release.txt\n"
-     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"),
+     "          rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n",
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"),
 
     # A release names a commit that passed CI on its release branch, so a gate inside CI is one a release depends
     # on through CI: this puts it back, rebuilding the coupling the separate workflow removed.
@@ -720,10 +720,10 @@ MUTATIONS = [
     ("The release drops its gate, so a corrupted record publishes", RELEASE, "workflows",
      "      - name: Public surface\n"
      "        run: |\n"
-     "          rm core/api/release.txt\n"
-     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n\n"
+     "          rm core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :taptopay:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n\n"
      "      - name: Publish to the staging directory\n",
      "      - name: Publish to the staging directory\n"),
 
@@ -732,10 +732,10 @@ MUTATIONS = [
     ("The release checks the record after publishing it", RELEASE, "workflows",
      "      - name: Public surface\n"
      "        run: |\n"
-     "          rm core/api/release.txt\n"
-     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n\n"
+     "          rm core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :taptopay:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n\n"
      "      - name: Publish to the staging directory\n"
      "        env:\n"
      "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
@@ -748,10 +748,21 @@ MUTATIONS = [
      "        run: ./gradlew publish\n\n"
      "      - name: Public surface\n"
      "        run: |\n"
-     "          rm core/api/release.txt\n"
-     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n"),
+     "          rm core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :taptopay:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"),
+
+    ("The pull-request gate leaves :payin's record out, so its public members change unchecked", PUBLIC_SURFACE, "workflows",
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n",
+     "          git diff --exit-code -- core/api/release.txt telemetry/api/release.txt\n"),
+
+    ("The release leaves :payin out of the records it checks", RELEASE, "workflows",
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n",
+     "          git diff --exit-code -- core/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"),
+
+    ("The pull-request gate stops checking :taptopay", PUBLIC_SURFACE, "workflows",
+     "          rm taptopay/api/release.txt\n", ""),
 
     ("A QA snapshot runs the suites under a shell without -e", QA, "workflows",
      "      - name: Unit tests\n        env:\n", "      - name: Unit tests\n        shell: bash {0}\n        env:\n"),
