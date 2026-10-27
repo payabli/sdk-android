@@ -58,6 +58,9 @@ public enum class TelemetryProperty {
      * R8 minifies library classes when the host app is minified, so the name is a hint rather than a diagnosis.
      */
     FAILURE_TYPE,
+
+    /** How many events the queue evicted, as text. */
+    DROPPED,
     ;
 
     /** The key as it goes on the wire. */

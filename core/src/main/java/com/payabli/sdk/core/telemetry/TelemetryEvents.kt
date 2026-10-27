@@ -154,4 +154,7 @@ public object TelemetryEvents {
 
     /** A rejected credential was replaced. */
     public const val AUTH_TOKEN_REFRESHED: String = "auth.tokenRefreshed"
+
+    /** The queue evicted events since the last batch was accepted. Carries how many, and waits for its batch. */
+    public const val TELEMETRY_OVERFLOW: String = "sdk.telemetryOverflow"
 }
