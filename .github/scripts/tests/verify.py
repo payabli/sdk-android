@@ -2912,7 +2912,8 @@ def test_workflows():
     # every workflow asserted about above has to match one of those patterns, on both the pull request and
     # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
     # its two mutations could not have run on the change that broke them.
-    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", "nightly-report.yml", MIRROR_WORKFLOW,
+    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", "nightly-report.yml", "sonar.yml",
+               MIRROR_WORKFLOW,
                "ci.yml", QA_WORKFLOW, RELEASE_WORKFLOW, GATE_WORKFLOW, SOURCE_WORKFLOW)
     harness = workflow_doc("scripts.yml")
     triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})
@@ -4674,6 +4675,34 @@ def test_workflows():
             check(f"W19 {path.name} {name} reads {', '.join(held) or 'inherited secrets'} only from an environment",
                   environment == expected if expected else environment in allowed,
                   f"environment={environment or 'none'}")
+
+    # W20 the analysis runs from main's copy on `workflow_run`, builds and runs nothing from the tree it reads,
+    # and forces where the token goes: a branch's `sonar-project.properties` chooses what is measured, never
+    # the server, the organization or the project.
+    sonar_doc = workflow_doc("sonar.yml")
+    sonar_on = (sonar_doc.get(True) if True in sonar_doc else sonar_doc.get("on")) or {}
+    check("W20 sonar.yml runs after CI completes, and on nothing else",
+          set(sonar_on) == {"workflow_run"} and (sonar_on.get("workflow_run") or {}).get("workflows") == ["CI"]
+          and (sonar_on.get("workflow_run") or {}).get("types") == ["completed"], f"{sonar_on}")
+    sonar_steps = steps_of(sonar_doc)
+    ran_tree = [str(step.get("name") or step.get("uses")) for step in sonar_steps
+                if any(word in run_commands(step) for word in ("gradlew", "./", "bash .", "python3 ."))]
+    check("W20 and no step builds or runs anything from the tree", not ran_tree, f"{ran_tree}")
+    sonar_checkouts = [step.get("with") or {} for step in sonar_steps if "actions/checkout" in str(step.get("uses", ""))]
+    check("W20 and it checks out the revision the triggering run tested",
+          [" ".join(str(w.get("ref", "")).split()) for w in sonar_checkouts] == ["${{ github.event.workflow_run.head_sha }}"],
+          f"{sonar_checkouts}")
+    identify = next((step for step in sonar_steps if step.get("id") == "pr"), {})
+    forced = run_commands(identify)
+    check("W20 and the server, organization and project are forced on the command line",
+          "-Dsonar.host.url=https://sonarcloud.io" in forced and "-Dsonar.organization=payabli" in forced
+          and "-Dsonar.projectKey=payabli_sdk-android" in forced, forced[:200])
+    scanning = [step for step in sonar_steps if "sonarqube-scan-action" in str(step.get("uses", ""))]
+    check("W20 and the scanner is handed exactly those arguments, once the revision is still the newest",
+          len(scanning) == 1 and " ".join(str((scanning[0].get("with") or {}).get("args", "")).split())
+          == "${{ steps.pr.outputs.args }}" and " ".join(str(scanning[0].get("if", "")).split())
+          == "steps.newest.outputs.newest == 'true'", f"{scanning}")
+    check("W20 and ci.yml no longer holds SONAR_TOKEN", "SONAR_TOKEN" not in workflow_text("ci.yml"), "")
 
 
 def load_publisher():

@@ -98,6 +98,9 @@ SOURCE_BRANCH = WORKFLOW_DIR / "source-branch.yml"
 # The nightly's Slack post, on `workflow_run` from main's copy, which is what owns the liveness alarm.
 NIGHTLY_REPORT = WORKFLOW_DIR / "nightly-report.yml"
 
+# The analysis, on `workflow_run` from main's copy, holding SONAR_TOKEN.
+SONAR = WORKFLOW_DIR / "sonar.yml"
+
 # The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
 # no longer matches the file reports itself invalid rather than caught, and two copies drift apart silently.
 WALKTHROUGH_COMMAND = (
@@ -537,6 +540,7 @@ SOURCE = {
     PUBLIC_SURFACE: SDK / ".github/workflows/public-surface.yml",
     SOURCE_BRANCH: SDK / ".github/workflows/source-branch.yml",
     NIGHTLY_REPORT: SDK / ".github/workflows/nightly-report.yml",
+    SONAR: SDK / ".github/workflows/sonar.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -559,8 +563,8 @@ MUTATIONS = [
      "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
 
     ("CI calls the publisher again, so a merge to main publishes", CI, "workflows",
-     "  sonar:\n    name: SonarCloud\n",
-     "  qa-snapshot:\n    uses: ./.github/workflows/qa-snapshot.yml\n\n  sonar:\n    name: SonarCloud\n"),
+     "  card-present:\n    name: Build & Test (card-present)\n",
+     "  qa-snapshot:\n    uses: ./.github/workflows/qa-snapshot.yml\n\n  card-present:\n    name: Build & Test (card-present)\n"),
 
     ("CI grants the publishing token at the workflow level, so every job inherits it", CI, "workflows",
      "permissions:\n  contents: read\n", "permissions:\n  contents: read\n  id-token: write\n"),
@@ -2768,6 +2772,25 @@ MUTATIONS = [
 
     ("The live flows read their credentials without the environment", LIVE_FLOWS, "workflows",
      "    # The client credentials are environment secrets, released only to a run on main or release/*.\n    environment: ci-protected\n", ""),
+
+    ("The analysis lets the branch's properties choose the server", SONAR, "workflows",
+     '          trusted="-Dsonar.host.url=https://sonarcloud.io"\n', '          trusted=""\n'),
+
+    ("The analysis builds the tree it reads", SONAR, "workflows",
+     "      - name: Check the instrumented coverage arrived\n",
+     "      - name: Build\n        run: ./gradlew assembleDebug\n\n      - name: Check the instrumented coverage arrived\n"),
+
+    ("The analysis checks out main rather than the revision CI tested", SONAR, "workflows",
+     "          ref: ${{ github.event.workflow_run.head_sha }}\n          fetch-depth: 0\n          persist-credentials: false\n",
+     "          fetch-depth: 0\n          persist-credentials: false\n"),
+
+    ("The analysis scans a revision that is no longer the newest", SONAR, "workflows",
+     "        if: steps.newest.outputs.newest == 'true'\n        uses: SonarSource",
+     "        uses: SonarSource"),
+
+    ("CI runs the analysis itself again, with the token", CI, "workflows",
+     "  card-present:\n    name: Build & Test (card-present)\n",
+     "  sonar:\n    runs-on: ubuntu-latest\n    env:\n      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}\n    steps:\n      - run: ./gradlew sonar\n\n  card-present:\n    name: Build & Test (card-present)\n"),
 
     ("Release lets the merge-back guard fail without failing the job", RELEASE, "workflows",
      "      - name: Check every earlier release is in main and in the commit\n",
