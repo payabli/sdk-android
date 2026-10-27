@@ -4697,6 +4697,21 @@ def test_workflows():
     check("W20 and the server, organization and project are forced on the command line",
           "-Dsonar.host.url=https://sonarcloud.io" in forced and "-Dsonar.organization=payabli" in forced
           and "-Dsonar.projectKey=payabli_sdk-android" in forced, forced[:200])
+    # The configuration is main's: written from the commit this workflow was read from to a path outside the
+    # workspace, with every copy the branch carries deleted, and handed to the scanner by name.
+    config = next((step for step in sonar_steps if step.get("name") == "Take the configuration from main"), {})
+    check("W20 and the scanner's configuration is read from main, outside the workspace",
+          (config.get("env") or {}).get("MAIN_SHA") == "${{ github.sha }}"
+          and "git show $MAIN_SHA:sonar-project.properties > $RUNNER_TEMP/sonar-project.properties"
+          in run_commands(config), f"{config}")
+    check("W20 and every copy the branch carries is deleted before the scan",
+          "find . -name sonar-project.properties -not -path */.git/* -delete" in run_commands(config),
+          run_commands(config)[:200])
+    check("W20 and the scanner is pointed at that copy",
+          "-Dproject.settings=$RUNNER_TEMP/sonar-project.properties" in forced, forced[:300])
+    check("W20 and the configuration is taken before the arguments are built",
+          config in sonar_steps and identify in sonar_steps
+          and sonar_steps.index(config) < sonar_steps.index(identify), "")
     scanning = [step for step in sonar_steps if "sonarqube-scan-action" in str(step.get("uses", ""))]
     check("W20 and the scanner is handed exactly those arguments, once the revision is still the newest",
           len(scanning) == 1 and " ".join(str((scanning[0].get("with") or {}).get("args", "")).split())

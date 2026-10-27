@@ -127,11 +127,19 @@ jobs:
             fi
           done
 
-      # Where the analysis goes is decided here, not by the branch. The scanner reads
-      # `sonar-project.properties` from the revision it analyses, and a branch could point `sonar.host.url`
-      # at a server of its own and be handed SONAR_TOKEN, or publish into another project. A property on the
-      # command line wins over the file, and this file is one a pull request cannot edit. The pull request is
-      # taken from the event, never from an artifact, and each ref is checked rather than pasted.
+      # The scanner's configuration is main's, never the analysed revision's: a branch could set a property that
+      # runs a binary of its own beside SONAR_TOKEN. `github.sha` is the main commit this workflow was read from.
+      # Every copy in the workspace goes too, since the scanner also loads one from each module's directory.
+      - name: Take the configuration from main
+        env:
+          MAIN_SHA: ${{ github.sha }}
+        run: |
+          git show "$MAIN_SHA:sonar-project.properties" > "$RUNNER_TEMP/sonar-project.properties"
+          find . -name sonar-project.properties -not -path '*/.git/*' -delete
+
+      # Where the analysis goes and which configuration it reads are forced here, and a property on the command
+      # line wins over the file. The pull request is taken from the event, never from an artifact, and each ref
+      # is checked rather than pasted.
       - name: Identify the pull request
         id: pr
         env:
@@ -143,6 +151,7 @@ jobs:
           trusted="-Dsonar.host.url=https://sonarcloud.io"
           trusted="$trusted -Dsonar.organization=payabli"
           trusted="$trusted -Dsonar.projectKey=payabli_sdk-android"
+          trusted="$trusted -Dproject.settings=$RUNNER_TEMP/sonar-project.properties"
           if [ -z "$PR" ]; then
             head=$(printf '%s' "$HEAD_BRANCH" | sed -nE '/^[A-Za-z0-9._/-]+$/p')
             if [ -z "$head" ]; then

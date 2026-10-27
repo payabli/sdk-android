@@ -1319,6 +1319,22 @@ MUTATIONS = [
      LIVE_SANDBOX, "workflows",
      "on:\n  workflow_dispatch:", "on:\n  pull_request_target:\n  workflow_dispatch:"),
 
+    # The scanner's configuration is main's. Each of these hands a branch the file that can run a binary
+    # beside SONAR_TOKEN again.
+    ("Sonar reads the analysed revision's configuration, not main's", SONAR, "workflows",
+     "          MAIN_SHA: ${{ github.sha }}\n",
+     "          MAIN_SHA: ${{ github.event.workflow_run.head_sha }}\n"),
+
+    ("Sonar leaves the branch's module configuration files in place", SONAR, "workflows",
+     "          find . -name sonar-project.properties -not -path '*/.git/*' -delete\n", ""),
+
+    ("Sonar stops pointing the scanner at main's configuration", SONAR, "workflows",
+     '          trusted="$trusted -Dproject.settings=$RUNNER_TEMP/sonar-project.properties"\n', ""),
+
+    ("Sonar writes main's configuration into the workspace, where the branch's checkout lives", SONAR, "workflows",
+     'git show "$MAIN_SHA:sonar-project.properties" > "$RUNNER_TEMP/sonar-project.properties"',
+     'git show "$MAIN_SHA:sonar-project.properties" > "./main-sonar-project.properties"'),
+
     ("The emulator step is handed the client secret again", LIVE_FLOWS, "workflows",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787\n"
