@@ -103,7 +103,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 
 ## CI
 
-`.github/workflows/ci.yml`, on push and pull request to `main`. Three jobs:
+`.github/workflows/ci.yml`, on push and pull request to `main`, `release/**` and `hotfix/**`. Three jobs:
 
 - **build** - the modules that need no credentials. Runs for everyone, forks included.
 - **card-present** - `:taptopay`. Skipped on pull requests from forks, which never receive secrets, so a fork sees it skipped rather than failing on an authentication error.

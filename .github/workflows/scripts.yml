@@ -14,7 +14,7 @@ name: Nightly reporter tests
 # runs the whole nightly including the emulator suite and its report job posts to the team channel, which is
 # a great deal of machinery and noise for a change to a Python script. So the practical options were a
 # short-lived probe branch with a temporary push trigger, or merging and waiting for morning. These run on
-# the pull request itself, in about a minute, and post nothing.
+# the pull request itself, in about ten minutes, and post nothing.
 #
 # Path-filtered, so an ordinary pull request pays nothing for it. That also means it must not be made a
 # required check: a required check that never runs blocks a merge rather than passing it. Neither is
@@ -33,6 +33,7 @@ on:
       # The workflow file is in the filter so a change to it tests itself.
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
+      - '.github/workflows/source-branch.yml'
       # The harness reads the live workflows, so they have to be here or its assertions would not run on the
       # change that broke them. The nightly is here for the same reason: W8 asserts on its liveness-owner
       # expression, and a guard that does not run on the file it protects is not a guard. W11 is the card
@@ -46,10 +47,11 @@ on:
       - '.github/workflows/release.yml'
       - '.github/workflows/public-surface.yml'
   push:
-    branches: [main]
+    branches: [main, 'release/**', 'hotfix/**']
     paths:
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
+      - '.github/workflows/source-branch.yml'
       - '.github/workflows/live-*.yml'
       - '.github/workflows/nightly.yml'
       - '.github/workflows/card-reader-mirror.yml'
@@ -71,8 +73,9 @@ jobs:
     runs-on: ubuntu-latest
     # The sabotage half runs deliberately corrupted copies of the reporter, and neither it nor the collector
     # subprocesses impose a timeout of their own, so a mutation that produces a loop would otherwise sit on
-    # the six-hour default. The documented run is about a minute.
-    timeout-minutes: 10
+    # the six-hour default. A clean run took 9m41s on 2026-10-27 at about 400 mutations, each one a full
+    # verify, so the bound leaves room to grow and still stops a loop.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 

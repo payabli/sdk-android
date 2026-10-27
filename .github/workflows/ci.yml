@@ -2,15 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**', 'hotfix/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**', 'hotfix/**']
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # Not on main: a release names a commit that passed this workflow on main, and a run cancelled by the
-  # next merge is one that never passed.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # A pull request's runs share a group and the newest replaces the rest. A push run is a group of its own: a
+  # release names a commit that passed this workflow on a push to its release or hotfix branch, and a group
+  # holds one waiting run, which another push would replace before it ever ran. One commit pushed to main
+  # and to a new release branch is two pushes, so not even the commit can be shared.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -68,8 +70,8 @@ jobs:
           :testutils:assembleDebug
 
       # The public-surface gate runs in its own workflow, on the pull request: a release names a
-      # commit that passed this workflow on main, so a gate inside it is one a release depends on
-      # through CI.
+      # commit that passed this workflow on its release branch, so a gate inside it is one a release
+      # depends on through CI.
 
       - name: Unit tests
         run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test
@@ -284,9 +286,9 @@ jobs:
     # secrets at all, and a Dependabot pull request reads a separate secret store this repository does not
     # populate. Measured on #57, where the card reader resolved as `401 Unauthorized`.
     #
-    # The Dependabot half is deliberately inside the pull-request clause. A push to main runs this job
-    # whoever pushed it, including a merge auto-completed on Dependabot's behalf, and that push is where a
-    # bumped action is actually tested against :taptopay.
+    # The Dependabot half is deliberately inside the pull-request clause. A push to a protected branch runs
+    # this job whoever pushed it, including a merge auto-completed on Dependabot's behalf, and that push is
+    # where a bumped action is actually tested against :taptopay.
     #
     # Giving Dependabot the credential instead was considered and rejected. Its `github_actions` ecosystem
     # edits workflow files, and a pull_request run uses the workflow from the head, so the run would execute
