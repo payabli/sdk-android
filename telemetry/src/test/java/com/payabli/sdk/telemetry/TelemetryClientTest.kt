@@ -479,11 +479,8 @@ class TelemetryClientTest {
         }
 
     /**
-     * A refused batch goes back without its overflow event, and the next accepted batch carries one event
-     * with the running total.
-     *
-     * The count is restored beside the events, so evictions after the refusal add to it rather than
-     * becoming an event of their own.
+     * The count is restored beside a refused batch's events, so evictions after the refusal add to it
+     * rather than becoming an event of their own.
      */
     @Test
     fun aRefusedBatchGoesBackWithoutTheOverflowEventAndTheNextCarriesTheRunningTotal() =
