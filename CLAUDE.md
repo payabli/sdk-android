@@ -106,7 +106,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 `.github/workflows/ci.yml`, on push and pull request to `main`, `release/**` and `hotfix/**`. The jobs that matter here:
 
 - **build** - the modules that need no credentials. Runs for everyone, forks included.
-- **card-present** - `:taptopay`. It reads the card reader credential from an environment: `ci-pull-request` on a pull request, which waits for a reviewer's approval because the run builds the pull request's code, and `ci-protected` on a push. Skipped on pull requests from forks and from Dependabot.
+- **card-present** - `:taptopay`. It reads the card reader credential from an environment: `ci-pull-request` on a pull request and `ci-protected` on a push. Skipped on pull requests from forks and from Dependabot.
 - **sonar** is not here: `sonar.yml` runs on `workflow_run` from main's copy, in the `ci-protected` environment, and reads the reports and classes `build`, `card-present` and `instrumented` upload.
 
 `.github/workflows/nightly.yml`, on schedule and manual dispatch only, never on a pull request and not a

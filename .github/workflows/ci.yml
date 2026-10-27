@@ -283,8 +283,8 @@ jobs:
   card-present:
     name: Build & Test (card-present)
     runs-on: ubuntu-latest
-    # The card reader credential is an environment secret. A pull request's run waits for a reviewer before
-    # it is released, since the run builds the pull request's own code; a push runs on main, release/* or hotfix/*.
+    # The card reader credential is an environment secret: `ci-pull-request` on a pull request, `ci-protected` on
+    # a push to main, release/* or hotfix/*.
     environment: ${{ github.event_name == 'pull_request' && 'ci-pull-request' || 'ci-protected' }}
     # Skipped wherever the run has no secrets to build :taptopay with, so it reports skipped rather than
     # dying on an auth error. Two such runs, and GitHub decides both: a fork's pull request never receives
