@@ -1322,14 +1322,14 @@ MUTATIONS = [
     ("The emulator step is handed the client secret again", LIVE_FLOWS, "workflows",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787\n"
-     "          PAYABLI_LIVETEST_CLIENT_SECRET: ${{ secrets.client-secret }}"),
+     "          PAYABLI_LIVETEST_CLIENT_SECRET: ${{ secrets[format('PAYABLI_CLIENT_SECRET_{0}', inputs.secrets-suffix)] }}"),
 
     # Only the other half of the credential. Worth its own row because a check written for the secret alone
     # passes this, which is what the review found.
     ("The emulator step is handed the client id, and only that", LIVE_FLOWS, "workflows",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787\n"
-     "          PAYABLI_LIVETEST_CLIENT_ID: ${{ secrets.client-id }}"),
+     "          PAYABLI_LIVETEST_CLIENT_ID: ${{ secrets[format('PAYABLI_CLIENT_ID_{0}', inputs.secrets-suffix)] }}"),
 
     ("The token host is dropped, so the tests fall back to the compiled-in address", LIVE_FLOWS, "workflows",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
@@ -2070,8 +2070,12 @@ MUTATIONS = [
      ''),
 
     ("Release builds in the release environment too, beside Gradle", RELEASE, "workflows",
-     "    name: Build the release\n    needs: [check]\n",
-     "    name: Build the release\n    needs: [check]\n    environment: release\n"),
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n"
+     "    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n"
+     "    # dispatch from any other branch is refused at the environment.\n"
+     "    environment: ci-protected\n",
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n"
+     "    environment: release\n"),
 
     ('Release grants the publishing token to every job', RELEASE, "workflows",
      'permissions:\n  contents: read\n\n#',
