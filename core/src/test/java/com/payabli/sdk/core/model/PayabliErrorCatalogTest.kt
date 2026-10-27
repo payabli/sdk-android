@@ -255,6 +255,12 @@ class PayabliErrorCatalogTest {
                 "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes.",
             ),
             Row(
+                "PAYMENT_NOT_TAKEN",
+                3035,
+                PayabliErrorCategory.RETRY_LATER,
+                "The payment was not taken, and the card was not charged. Try again.",
+            ),
+            Row(
                 "CONTACTLESS_DISABLED",
                 3036,
                 PayabliErrorCategory.CONFIGURATION,
@@ -305,8 +311,8 @@ class PayabliErrorCatalogTest {
     }
 
     private companion object {
-        /** Numbers no member takes: 3032 is reserved, and 3035 is held for a code not declared yet. */
-        val reserved = setOf(3032, 3035)
+        /** Numbers no member takes: 3032 is reserved. */
+        val reserved = setOf(3032)
     }
 
     @Test

@@ -362,8 +362,12 @@ public enum class PayabliErrorType(
         PayabliErrorCategory.OUTCOME_UNKNOWN,
         "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes.",
     ),
-
-    // 3035 is held for a code not declared yet, and no member takes it.
+    PAYMENT_NOT_TAKEN(
+        3035,
+        "PAYMENT_NOT_TAKEN",
+        PayabliErrorCategory.RETRY_LATER,
+        "The payment was not taken, and the card was not charged. Try again.",
+    ),
 
     /**
      * The device's contactless radio is switched off. No card was read, so nothing can have been charged,
