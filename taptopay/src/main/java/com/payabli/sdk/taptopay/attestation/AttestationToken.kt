@@ -1,7 +1,5 @@
 package com.payabli.sdk.taptopay.attestation
 
-import androidx.annotation.RestrictTo
-
 /**
  * An attestation token, carried from the platform to a server and **not read on the way**.
  *
@@ -13,11 +11,10 @@ import androidx.annotation.RestrictTo
  * So the only operations are "carry it" and "hand it over". [value] is what goes on the wire, byte for
  * byte as the platform produced it.
  */
-@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 @JvmInline
-public value class AttestationToken(
+internal value class AttestationToken(
     /** The opaque token, verbatim. */
-    public val value: String,
+    internal val value: String,
 ) {
     /**
      * Never the token.

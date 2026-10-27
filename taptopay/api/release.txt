@@ -48,66 +48,6 @@ package com.payabli.sdk.taptopay {
 
 }
 
-package com.payabli.sdk.taptopay.attestation {
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public interface AppAttestor {
-    method @KotlinOnly public suspend Object? attest(com.payabli.sdk.taptopay.attestation.AttestationChallenge challenge, kotlin.coroutines.Continuation<? super com.payabli.sdk.taptopay.attestation.AttestationToken>);
-    method public suspend Object? warmUp(kotlin.coroutines.Continuation<? super kotlin.Unit>);
-  }
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class AttestationChallenge {
-    method @InaccessibleFromKotlin public com.payabli.sdk.taptopay.attestation.VerdictClass getVerdictClass();
-    property public com.payabli.sdk.taptopay.attestation.VerdictClass verdictClass;
-    field public static final com.payabli.sdk.taptopay.attestation.AttestationChallenge.Companion Companion;
-  }
-
-  public static final class AttestationChallenge.Companion {
-    method public com.payabli.sdk.taptopay.attestation.AttestationChallenge classic(String nonce);
-    method public com.payabli.sdk.taptopay.attestation.AttestationChallenge standard(String requestHash);
-  }
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public abstract sealed exhaustive class AttestationException extends java.lang.Exception {
-    method @InaccessibleFromKotlin public final Integer? getErrorCode();
-    property public final Integer? errorCode;
-  }
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class AttestationException.ChallengeReused extends com.payabli.sdk.taptopay.attestation.AttestationException {
-    ctor public AttestationException.ChallengeReused();
-  }
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class AttestationException.IntegrityFailed extends com.payabli.sdk.taptopay.attestation.AttestationException {
-    ctor public AttestationException.IntegrityFailed(int errorCode, optional Throwable? cause);
-  }
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class AttestationException.Misconfigured extends com.payabli.sdk.taptopay.attestation.AttestationException {
-    ctor public AttestationException.Misconfigured(Integer? errorCode, optional Throwable? cause, optional String message);
-  }
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class AttestationException.RemediationRequired extends com.payabli.sdk.taptopay.attestation.AttestationException {
-    ctor public AttestationException.RemediationRequired(int errorCode, optional Throwable? cause);
-  }
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class AttestationException.Retryable extends com.payabli.sdk.taptopay.attestation.AttestationException {
-    ctor public AttestationException.Retryable(Integer? errorCode, optional Throwable? cause);
-  }
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public static final class AttestationException.Throttled extends com.payabli.sdk.taptopay.attestation.AttestationException {
-    ctor public AttestationException.Throttled(int errorCode, optional Throwable? cause);
-  }
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) @kotlin.jvm.JvmInline public final value class AttestationToken {
-    ctor @KotlinOnly public AttestationToken(String value);
-    method @InaccessibleFromKotlin public String getValue();
-    property public String value;
-  }
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public enum VerdictClass {
-    enum_constant public static final com.payabli.sdk.taptopay.attestation.VerdictClass CLASSIC;
-    enum_constant public static final com.payabli.sdk.taptopay.attestation.VerdictClass STANDARD;
-  }
-
-}
-
 package com.payabli.sdk.taptopay.model {
 
   public final class TapToPayCustomerData {
