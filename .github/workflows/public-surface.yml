@@ -70,9 +70,9 @@ jobs:
   card-present:
     name: Public surface (card-present)
     runs-on: ubuntu-latest
-    # The card reader credential is an environment secret: a pull request's run waits for a reviewer
-    # before it is released, since the run builds the pull request's code. Skipped where no credential can
-    # be had, a fork's pull request and Dependabot's, exactly as ci.yml's card-present job is.
+    # The card reader credential is an environment secret: `ci-pull-request` on a pull request, `ci-protected` on
+    # a push. Skipped where no credential can be had, a fork's pull request and Dependabot's, exactly as
+    # ci.yml's card-present job is.
     environment: ${{ github.event_name == 'pull_request' && 'ci-pull-request' || 'ci-protected' }}
     if: >-
       github.event_name != 'pull_request'
