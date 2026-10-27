@@ -43,6 +43,10 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
  * different amount is not what to send next. There is no call that resolves such an attempt yet.
  *
  * [retryAfterMillis] is the wait the service asked for on the failure this wraps, or null when it asked for none.
+ *
+ * [refusal] is the charge's own refusal when this failure refused the charge, and null when it did not.
+ * It does not change the [type]: the classification is read exactly as for every other failure, and
+ * [refusal] is what a host branches on for what this one asks them to do.
  */
 public class TapToPayException private constructor(
     type: PayabliErrorType,
@@ -52,6 +56,7 @@ public class TapToPayException private constructor(
     public val paymentTransId: String?,
     public val capture: TapToPayCapture,
     override val retryAfterMillis: Long?,
+    public val refusal: TapToPayChargeRefusal? = null,
 ) : PayabliException(type, reason, detail, cause),
     PayabliRetryAfter {
     internal companion object {
@@ -70,6 +75,8 @@ public class TapToPayException private constructor(
             paymentTransId: String? = null,
             capture: TapToPayCapture = TapToPayCapture.NOT_CHARGED,
             retryAfterMillis: Long? = null,
-        ): TapToPayException = TapToPayException(type, reason, detail, cause, paymentTransId, capture, retryAfterMillis)
+            refusal: TapToPayChargeRefusal? = null,
+        ): TapToPayException =
+            TapToPayException(type, reason, detail, cause, paymentTransId, capture, retryAfterMillis, refusal)
     }
 }
