@@ -2842,6 +2842,19 @@ MUTATIONS = [
      "      - uses: actions/checkout@PIN\n\n      # The workflow checks parse YAML",
      "      - uses: actions/checkout@v7\n\n      # The workflow checks parse YAML"),
 
+    ("The build job tests the merge commit again, so Sonar reads other source than it built", CI,
+     "workflows",
+     "fetch-depth: 0\n          # A pull request builds its head, not GitHub's merge commit: Sonar is handed only the head, and the\n          # classes and coverage it reads have to come from the tree it analyses.\n          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n",
+     "fetch-depth: 0\n"),
+
+    ("The instrumented job tests the merge commit again", CI, "workflows",
+     "      EMULATOR_ARCH: x86_64\n    steps:\n      - uses: actions/checkout@PIN\n        with:\n          fetch-depth: 0\n          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n",
+     "      EMULATOR_ARCH: x86_64\n    steps:\n      - uses: actions/checkout@PIN\n        with:\n          fetch-depth: 0\n"),
+
+    ("The card-present job tests the merge commit again", CI, "workflows",
+     "PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@PIN\n        with:\n          fetch-depth: 0\n          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n",
+     "PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@PIN\n        with:\n          fetch-depth: 0\n"),
+
     ("Sabotage shards are numbered by hand, so a shard listed twice leaves another's rows untested", SCRIPTS,
      "workflows",
      "--shard ${{ strategy.job-index }}/${{ strategy.job-total }}",

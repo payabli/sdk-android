@@ -4784,6 +4784,16 @@ def test_workflows():
     check("W22 each sabotage job runs the shard of its own index",
           runs == ["python3 .github/scripts/tests/sabotage.py --shard ${{ strategy.job-index }}/${{ strategy.job-total }}"],
           f"{runs}")
+    # W23 a pull request's CI builds the pull request's head, which is the one revision the Sonar run is
+    # handed, so the classes and coverage it reads come from the tree it analyses. A push run has no merge
+    # commit and builds `github.sha`.
+    ci_checkouts = [(jn, step.get("with") or {}) for jn, job in (workflow_doc("ci.yml").get("jobs") or {}).items()
+                    for step in job_steps(job) if "actions/checkout" in str(step.get("uses", ""))]
+    check("W23 every ci.yml checkout builds a pull request's head",
+          bool(ci_checkouts) and all(str(with_.get("ref", "")).strip()
+                                     == "${{ github.event.pull_request.head.sha || github.sha }}"
+                                     for _, with_ in ci_checkouts), f"{ci_checkouts}")
+
     # The split itself is sabotage.py's own, compiled from its source as W15 does the pin resolver.
     shard_nodes = [node for node in ast.parse(SABOTAGE.read_text()).body
                    if isinstance(node, ast.FunctionDef) and node.name == "shard"]
