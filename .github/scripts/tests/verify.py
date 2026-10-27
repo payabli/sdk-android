@@ -642,7 +642,8 @@ def run_poster(mod, facts, **env_extra):
     saved = {k: os.environ.get(k) for k in ("SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID", "SLACK_MENTION_CULPRITS",
                                             "NIGHTLY_JOB_RESULT", "GITHUB_SERVER_URL", "GITHUB_REPOSITORY",
                                             "GITHUB_RUN_ID", "PLATFORM", "GITHUB_TOKEN", "GITHUB_SHA",
-                                            "LIVENESS_OWNER", "GITHUB_API_URL", "GITHUB_REF_NAME")}
+                                            "LIVENESS_OWNER", "GITHUB_API_URL", "GITHUB_REF_NAME",
+                                            "NIGHTLY_RUN_ID", "NIGHTLY_SHA", "NIGHTLY_REF_NAME")}
     for k in saved:
         os.environ.pop(k, None)
     os.environ.update({k: v for k, v in env.items() if v is not None})
@@ -1067,6 +1068,19 @@ def test_poster(mod):
     check("P18 the trusted sha is rendered", "045eebf" in ctx, ctx)
     check("P18 the trusted ref is rendered", "on `main`" in ctx, ctx)
     check("P18 the poisoned sha is not rendered", "aaa" not in ctx, ctx)
+
+    # P18b the report runs from `workflow_run`, where GITHUB_* describe the reporting run and cannot be
+    # overwritten, so the nightly's id, commit and branch arrive as NIGHTLY_*. Both are set here and differ,
+    # so a poster reading GITHUB_* links the wrong run and fails each check.
+    FakeSlack.behaviour = {"chat.postMessage": ok_parent}
+    code, out, calls = run_poster(mod, FACTS_RED, GITHUB_RUN_ID="11111111111", GITHUB_SHA="ffff000ffff0",
+                                  GITHUB_REF_NAME="main", NIGHTLY_RUN_ID="22222222222",
+                                  NIGHTLY_SHA="0a1b2c3d4e5f", NIGHTLY_REF_NAME="release/0.2.0")
+    ctx = posts(calls)[0]["payload"]["blocks"][1]["elements"][0]["text"]
+    check("P18b the nightly's run is linked, not the reporting run",
+          "22222222222" in ctx and "11111111111" not in ctx, ctx)
+    check("P18b and the nightly's commit and branch are rendered",
+          "0a1b2c3" in ctx and "release/0.2.0" in ctx and "ffff000" not in ctx, ctx)
 
     # P19 the notification fallback is escaped too. It is rendered as mrkdwn, so a control sequence there
     # broadcasts even when every visible block is clean.
@@ -2854,25 +2868,52 @@ def test_workflows():
     # `schedule || default_branch`, which makes every dispatch on the default branch an owner: a manual run
     # would then push the alarm out over a schedule that had already stopped, which is the one thing this
     # flag exists to prevent. Checked for the nightly too, whose identical expression had no assertion.
-    for name in ("live-flows.yml", "nightly.yml"):
-        owner = liveness_owner(name)
+    # The nightly's report runs on `workflow_run`, so it reads the triggering run's event and branch.
+    for name, event, branch in (("live-flows.yml", "github.event_name", "github.ref_name"),
+                                ("nightly-report.yml", "github.event.workflow_run.event",
+                                 "github.event.workflow_run.head_branch")):
+        owner = " ".join(liveness_owner(name).split())
         check(f"W8 {name} names who owns the liveness alarm", bool(owner), str(owner))
         operands = [part.strip() for part in owner.replace("${{", "").replace("}}", "").split("&&")]
         check(f"W8 {name} requires both conditions rather than either",
               "||" not in owner and len(operands) == 2, owner)
         check(f"W8 {name} owns it only on a scheduled run",
-              any("github.event_name == 'schedule'" in part for part in operands), owner)
+              any(f"{event} == 'schedule'" in part for part in operands), owner)
         check(f"W8 {name} owns it only on the default branch",
-              any("github.ref_name ==" in part and "default_branch" in part for part in operands), owner)
+              any(f"{branch} ==" in part and "default_branch" in part for part in operands), owner)
         # Spelled out because the operator is the whole meaning: `!=` on both sides passes every check above
         # while making each non-scheduled run an owner, which is the inversion of what the flag is for.
         check(f"W8 {name} compares for equality rather than inequality", "!=" not in owner, owner)
+
+    # W8b the nightly's report is main's: it runs on `workflow_run` after the Nightly, downloads that run's
+    # facts, and hands the poster that run's id, commit and branch, since GITHUB_* describe the report's own run.
+    report_doc = workflow_doc("nightly-report.yml")
+    report_on = (report_doc.get(True) if True in report_doc else report_doc.get("on")) or {}
+    check("W8b nightly-report.yml runs after the Nightly completes, and on nothing else",
+          set(report_on) == {"workflow_run"}
+          and (report_on.get("workflow_run") or {}).get("workflows") == ["Nightly"]
+          and (report_on.get("workflow_run") or {}).get("types") == ["completed"], f"{report_on}")
+    report_steps = steps_of(report_doc)
+    fetched = [step.get("with") or {} for step in report_steps if "download-artifact" in str(step.get("uses", ""))]
+    check("W8b and downloads the facts of the run that triggered it",
+          len(fetched) == 1 and " ".join(str(fetched[0].get("run-id", "")).split())
+          == "${{ github.event.workflow_run.id }}", f"{fetched}")
+    posting = [step for step in report_steps if "nightly_slack.py" in run_commands(step)]
+    handed = {key: " ".join(str(value).split()) for key, value in ((posting[0].get("env") or {}) if posting else {}).items()}
+    check("W8b and hands the poster the nightly's run, commit and branch",
+          handed.get("NIGHTLY_RUN_ID") == "${{ github.event.workflow_run.id }}"
+          and handed.get("NIGHTLY_SHA") == "${{ github.event.workflow_run.head_sha }}"
+          and handed.get("NIGHTLY_REF_NAME") == "${{ github.event.workflow_run.head_branch }}"
+          and handed.get("NIGHTLY_JOB_RESULT") == "${{ github.event.workflow_run.conclusion }}", f"{handed}")
+    check("W8b and nightly.yml no longer posts to Slack itself",
+          "SLACK_BOT_TOKEN" not in workflow_text("nightly.yml"), "")
 
     # A check that never runs on the file it guards is not a check. `scripts.yml` is path-filtered, so
     # every workflow asserted about above has to match one of those patterns, on both the pull request and
     # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
     # its two mutations could not have run on the change that broke them.
-    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", MIRROR_WORKFLOW,
+    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", "nightly-report.yml", "sonar.yml",
+               MIRROR_WORKFLOW,
                "ci.yml", QA_WORKFLOW, RELEASE_WORKFLOW, GATE_WORKFLOW, SOURCE_WORKFLOW)
     harness = workflow_doc("scripts.yml")
     triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})
@@ -2939,8 +2980,10 @@ def test_workflows():
     # Both halves, because the credential is the pair: a regression that moved only the client id would
     # otherwise pass, and an id alone is enough to matter beside a secret that leaks another way.
     rendered = [(step, step_text(step)) for step in steps]
-    for half in ("client-secret", "client-id"):
-        holding = [step for step, body in rendered if f"secrets.{half}" in body]
+    # The credential is read from ci-protected under the run's suffix, `PAYABLI_CLIENT_SECRET_<suffix>`.
+    for half, read in (("client-secret", "secrets[format('PAYABLI_CLIENT_SECRET_"),
+                       ("client-id", "secrets[format('PAYABLI_CLIENT_ID_")):
+        holding = [step for step, body in rendered if read in body]
         check(f"W2 exactly one step is given the {half}", len(holding) == 1,
               f"{len(holding)} steps: " + " | ".join(str(step.get('name', '?')) for step in holding))
         if holding:
@@ -2951,7 +2994,7 @@ def test_workflows():
                 if "android-emulator-runner" in str(step.get("uses", ""))]
     check("W3 the emulator steps are found", len(emulator) == 2, f"{len(emulator)}")
     check("W3 no emulator step is given the client secret",
-          not any("secrets.client-secret" in body or "secrets.client-id" in body for _, body in emulator))
+          not any("PAYABLI_CLIENT_SECRET" in body or "PAYABLI_CLIENT_ID" in body for _, body in emulator))
     # The address is what replaced the credential, so its absence would mean the tests fall back to whatever
     # the build compiled in rather than reaching the server this workflow started. Read as a key of the step's
     # environment, so renaming it to anything else is an absence rather than a near miss.
@@ -3314,6 +3357,15 @@ def test_workflows():
                 if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
                 and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)}
 
+    # The pin resolver is sabotage.py's own, compiled from its source rather than copied, so the two cannot
+    # disagree about what an anchor reads.
+    pin_nodes = [node for node in sab.body
+                 if (isinstance(node, ast.FunctionDef) and node.name == "with_pins")
+                 or (isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "PIN_TOKEN")]
+    pin_scope = {"re": re}
+    exec(compile(ast.Module(body=pin_nodes, type_ignores=[]), str(SABOTAGE), "exec"), pin_scope)
+    with_pins = pin_scope.get("with_pins", lambda text, source: text)
+
     def text_of(node):
         if isinstance(node, ast.Name):
             return literals.get(node.id)
@@ -3337,7 +3389,9 @@ def test_workflows():
             # A target the tree under test does not carry is reported rather than raised: a raised
             # check stops the run before every later one, which reads like a clean run.
             try:
-                found = (SDK / sources[key]).read_text().count(before)
+                target = (SDK / sources[key]).read_text()
+                before, after = with_pins(before, target), with_pins(after, target)
+                found = target.count(before)
             except OSError:
                 broken.append(f"{desc or '<unnamed>'}: target {sources[key]} unreadable")
                 continue
@@ -3517,9 +3571,6 @@ def test_workflows():
     # a near name is an environment with no reviewer and a subject the role refuses.
     check("W16 the publishing job runs in the qa-snapshot environment",
           str(qa_job.get("environment", "")) == "qa-snapshot", str(qa_job.get("environment", "")))
-    check("W16 and no other job names an environment",
-          [name for name, job in qa_jobs.items() if job.get("environment")] == [qa_job_name],
-          f"{[(name, job.get('environment')) for name, job in qa_jobs.items()]}")
     # A condition on the publish is how the check's refusal is stepped around: `always()` publishes through it.
     check("W16 and it carries no condition of its own", "if" not in qa_job, condition(qa_job))
 
@@ -3534,6 +3585,12 @@ def test_workflows():
                            if any(re.search(r":[A-Za-z0-9_-]+:test\b", gradle_arguments(step)) for step in job_steps(job))), "")
     qa_builder_name = next((name for name, job in qa_jobs.items()
                             if any("gradlew publish" in run_commands(step) for step in job_steps(job))), "")
+    # The suites and the build hold the Maven credential, which is released only to a run on main or
+    # release/*. The check holds nothing and names nothing.
+    check("W16 and the suites and the build run in ci-protected, and no other job names an environment",
+          {name: job.get("environment") for name, job in qa_jobs.items() if job.get("environment")}
+          == {qa_job_name: "qa-snapshot", qa_tester_name: "ci-protected", qa_builder_name: "ci-protected"},
+          f"{[(name, job.get('environment')) for name, job in qa_jobs.items()]}")
     qa_tester, qa_builder = qa_jobs.get(qa_tester_name, {}), qa_jobs.get(qa_builder_name, {})
     qa_builder_steps = job_steps(qa_builder)
     check("W16 the suites and the build are separate jobs, neither of them the publish",
@@ -3687,8 +3744,8 @@ def test_workflows():
     # `container` or a `services` block runs an image of somebody else's beside the token.
     qa_shape = {
         qa_checker_name: ({"concurrency", "name", "outputs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
-        qa_tester_name: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
-        qa_builder_name: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        qa_tester_name: ({"environment", "name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        qa_builder_name: ({"environment", "name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
         qa_job_name: ({"concurrency", "environment", "name", "needs", "permissions", "runs-on", "steps"},
                       {"contents": "read", "id-token": "write"}),
     }
@@ -3919,8 +3976,10 @@ def test_workflows():
     # trusts, so every authority that can publish is held by that one job and none by any other.
     gate = {name: job for name, job in rel_jobs.items() if str(job.get("environment", "")) == "release"}
     check("W17 exactly one job runs in the release environment", len(gate) == 1, f"{sorted(gate)}")
-    check("W17 and no other job names an environment",
-          [name for name, job in rel_jobs.items() if job.get("environment")] == sorted(gate),
+    # The suites and the build hold the Maven credential, released only to a run on main, release/* or hotfix/*.
+    check("W17 and the suites and the build run in ci-protected, and no other job names an environment",
+          {name: job.get("environment") for name, job in rel_jobs.items() if job.get("environment")}
+          == {**{name: "release" for name in gate}, "test": "ci-protected", "build": "ci-protected"},
           f"{[(name, job.get('environment')) for name, job in rel_jobs.items()]}")
     gate_name = next(iter(gate), "")
     gate_job = gate.get(gate_name, {})
@@ -4437,8 +4496,8 @@ def test_workflows():
     shape = {
         checker_name: ({"name", "outputs", "permissions", "runs-on", "steps"},
                        {"contents": "read", "actions": "read"}),
-        tester: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
-        builder: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        tester: ({"environment", "name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        builder: ({"environment", "name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
         gate_name: ({"concurrency", "environment", "name", "needs", "permissions", "runs-on", "steps"},
                     {"contents": "write", "id-token": "write"}),
     }
@@ -4594,6 +4653,168 @@ def test_workflows():
                                         "GITHUB_REPOSITORY": "payabli/sdk-android"})[0]
             check(f"W18 and a pull request from {branch} is {'accepted' if status == 0 else 'refused'}",
                   ran == status, f"status={ran}")
+
+    # W19 no secret reaches code nobody has reviewed. A pull request runs its own copy of a workflow and a
+    # dispatch runs the chosen branch's, so a job that names a secret is one a branch author can rewrite to
+    # print it. Every secret is an environment secret, and a job reads one only from an environment that
+    # releases it to main, release/* and hotfix/* (ci-protected), to the release or the mirror after a reviewer, or,
+    # for the one job that builds a pull request's code with the card reader credential, after a reviewer
+    # approves that run (ci-pull-request). A job calling a reusable workflow cannot name an environment, so
+    # it passes no secret either: the called job reads its own.
+    # The live callers pass no secret and name the credential set the called jobs read from ci-protected:
+    # a qa run reading the sandbox credentials would authenticate against the wrong service.
+    for name, job_name, suffix in (("live-qa.yml", "qa", "QA"), ("live-sandbox.yml", "sandbox", "SBX")):
+        caller = ((workflow_doc(name).get("jobs") or {}).get(job_name) or {})
+        check(f"W19 {name} passes no secret and reads the {suffix} credentials",
+              "secrets" not in caller and (caller.get("with") or {}).get("secrets-suffix") == suffix,
+              f"secrets={caller.get('secrets')} suffix={(caller.get('with') or {}).get('secrets-suffix')}")
+    CARD_PRESENT_ENV = "${{ github.event_name == 'pull_request' && 'ci-pull-request' || 'ci-protected' }}"
+    allowed = {"ci-protected", "release", "card-reader-mirror"}
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        doc = workflow_doc(path.name)
+        for name, job in ((doc.get("jobs") or {}).items()):
+            if not isinstance(job, dict):
+                continue
+            dumped = yaml.safe_dump(job)
+            # A secret named by expression, `secrets[format(...)]`, is still a secret this job reads.
+            held = sorted((set(re.findall(r"secrets\.([A-Za-z0-9_]+)", dumped)) - {"GITHUB_TOKEN"})
+                          | ({"secrets[...]"} if "secrets[" in dumped else set()))
+            if not held and job.get("secrets") != "inherit":
+                continue
+            environment = " ".join(str(job.get("environment", "")).split())
+            expected = (CARD_PRESENT_ENV if (path.name, name) == ("ci.yml", "card-present") else None)
+            check(f"W19 {path.name} {name} reads {', '.join(held) or 'inherited secrets'} only from an environment",
+                  environment == expected if expected else environment in allowed,
+                  f"environment={environment or 'none'}")
+
+    # W20 the analysis runs from main's copy on `workflow_run`, builds and runs nothing from the tree it reads,
+    # and forces where the token goes: a branch's `sonar-project.properties` chooses what is measured, never
+    # the server, the organization or the project.
+    sonar_doc = workflow_doc("sonar.yml")
+    sonar_on = (sonar_doc.get(True) if True in sonar_doc else sonar_doc.get("on")) or {}
+    check("W20 sonar.yml runs after CI completes, and on nothing else",
+          set(sonar_on) == {"workflow_run"} and (sonar_on.get("workflow_run") or {}).get("workflows") == ["CI"]
+          and (sonar_on.get("workflow_run") or {}).get("types") == ["completed"], f"{sonar_on}")
+    sonar_steps = steps_of(sonar_doc)
+    ran_tree = [str(step.get("name") or step.get("uses")) for step in sonar_steps
+                if any(word in run_commands(step) for word in ("gradlew", "./", "bash .", "python3 ."))]
+    check("W20 and no step builds or runs anything from the tree", not ran_tree, f"{ran_tree}")
+    sonar_checkouts = [step.get("with") or {} for step in sonar_steps if "actions/checkout" in str(step.get("uses", ""))]
+    check("W20 and it checks out the revision the triggering run tested",
+          [" ".join(str(w.get("ref", "")).split()) for w in sonar_checkouts] == ["${{ github.event.workflow_run.head_sha }}"],
+          f"{sonar_checkouts}")
+    # CI skips card-present by the pull request's author, so the analysis has to refuse by the same field: a
+    # maintainer's push to a Dependabot pull request is triggered by the maintainer, and its card-present
+    # reports were never built.
+    newest_run = " ".join(str(next((step for step in sonar_steps if step.get("id") == "newest"), {}).get("run", "")).split())
+    check("W20 and a Dependabot pull request is refused by its author, the field CI skips card-present by",
+          "--jq '\"\\(.head.sha) \\(.user.login)\"'" in newest_run
+          and 'if [ "$author" = "dependabot[bot]" ]; then echo "newest=false" >> "$GITHUB_OUTPUT"' in newest_run
+          and "github.event.pull_request.user.login != 'dependabot[bot]'"
+          in " ".join(str((((workflow_doc("ci.yml").get("jobs") or {}).get("card-present")) or {}).get("if", "")).split()),
+          newest_run[:300])
+    identify = next((step for step in sonar_steps if step.get("id") == "pr"), {})
+    forced = run_commands(identify)
+    check("W20 and the server, organization and project are forced on the command line",
+          "-Dsonar.host.url=https://sonarcloud.io" in forced and "-Dsonar.organization=payabli" in forced
+          and "-Dsonar.projectKey=payabli_sdk-android" in forced, forced[:200])
+    # The configuration is main's: written from the commit this workflow was read from to a path outside the
+    # workspace, with every copy the branch carries deleted, and handed to the scanner by name.
+    config = next((step for step in sonar_steps if step.get("name") == "Take the configuration from main"), {})
+    check("W20 and the scanner's configuration is read from main, outside the workspace",
+          (config.get("env") or {}).get("MAIN_SHA") == "${{ github.sha }}"
+          and "git --no-replace-objects show $MAIN_SHA:sonar-project.properties > $RUNNER_TEMP/sonar-project.properties"
+          in run_commands(config), f"{config}")
+    check("W20 and every copy the branch carries is deleted before the scan",
+          "find . -name sonar-project.properties -not -path */.git/* -delete" in run_commands(config),
+          run_commands(config)[:200])
+    check("W20 and the scanner is pointed at that copy",
+          "-Dproject.settings=$RUNNER_TEMP/sonar-project.properties" in forced, forced[:300])
+    # The artifacts were built by the pull request's own CI. They unpack outside the workspace, after the
+    # configuration is read, and only files under a module's reports or classes are copied in, so nothing in
+    # one reaches `.git` or a configuration file.
+    downloads = [step for step in sonar_steps if "download-artifact" in str(step.get("uses", ""))]
+    check("W20 and the configuration is read before any artifact arrives",
+          config in sonar_steps and bool(downloads)
+          and all(sonar_steps.index(config) < sonar_steps.index(step) for step in downloads), "")
+    check("W20 and every artifact unpacks outside the workspace",
+          bool(downloads) and all(" ".join(str((step.get("with") or {}).get("path", "")).split())
+                                  == "${{ runner.temp }}/artifacts" for step in downloads),
+          f"{[(step.get('with') or {}).get('path') for step in downloads]}")
+    intake = next((step for step in sonar_steps if step.get("name") == "Take the reports and classes in"), {})
+    intake_run = run_commands(intake)
+    check("W20 and the intake refuses a symbolic link",
+          "find $STAGED -type l -print -quit" in intake_run and "exit 1" in intake_run, intake_run[:200])
+    check("W20 and refuses a symbolic link anywhere in the checkout it copies into",
+          "find $GITHUB_WORKSPACE -path $GITHUB_WORKSPACE/.git -prune -o -type l -print -quit" in intake_run
+          and intake_run.index("$GITHUB_WORKSPACE -path") < intake_run.index("cp --parents"), intake_run[:300])
+    check("W20 and copies only a module's reports and classes, file by file",
+          "find . -type f -printf %P\\0" in intake_run
+          and "^[A-Za-z0-9_-]+/build/ ( reports | intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes ) /"
+          in intake_run and "cp --parents $file $GITHUB_WORKSPACE" in intake_run, intake_run[:400])
+    check("W20 and the intake runs after every download and before anything reads the workspace",
+          intake in sonar_steps and bool(downloads) and identify in sonar_steps
+          and all(sonar_steps.index(step) < sonar_steps.index(intake) for step in downloads)
+          and sonar_steps.index(intake) < sonar_steps.index(identify), "")
+    scanning = [step for step in sonar_steps if "sonarqube-scan-action" in str(step.get("uses", ""))]
+    check("W20 and the scanner is handed exactly those arguments, once the revision is still the newest",
+          len(scanning) == 1 and " ".join(str((scanning[0].get("with") or {}).get("args", "")).split())
+          == "${{ steps.pr.outputs.args }}" and " ".join(str(scanning[0].get("if", "")).split())
+          == "steps.newest.outputs.newest == 'true'", f"{scanning}")
+    check("W20 and ci.yml no longer holds SONAR_TOKEN", "SONAR_TOKEN" not in workflow_text("ci.yml"), "")
+
+    # W21 every third-party action is pinned to a full commit SHA, with the version it stands for in a
+    # trailing comment, and every workflow declares its own token and its own shell. A tag runs whatever its
+    # owner points it at on the day; `defaults: run: shell: bash` is what turns on pipefail. Read off the text,
+    # since YAML drops the comment. Local `./` actions are exempt.
+    PINNED = re.compile(r"^\s*(?:-\s*)?uses:\s*[^\s.][^\s@]*@[0-9a-f]{40} # v\d+(?:\.\d+)*\s*$")
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        text = workflow_text(path.name)
+        loose = [line.strip() for line in text.splitlines()
+                 if re.match(r"^\s*(?:-\s*)?uses:\s*[^\s.]", line) and not PINNED.match(line)]
+        check(f"W21 {path.name} pins every third-party action to a commit, its version in a comment",
+              not loose, " | ".join(loose))
+        doc = workflow_doc(path.name)
+        check(f"W21 {path.name} declares its own token", "permissions" in doc, f"{sorted(map(str, doc))}")
+        shell = ((doc.get("defaults") or {}).get("run") or {}).get("shell")
+        check(f"W21 {path.name} runs its steps under bash, so pipefail is on", shell == "bash", f"{shell}")
+    # The matcher, both ways: a tag fails it and a pin with its version passes, so the check is not vacuous.
+    check("W21 the pin matcher refuses a tag", not PINNED.match("      - uses: actions/checkout@v7"))
+    check("W21 and refuses a pin with no version comment",
+          not PINNED.match("      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"))
+    check("W21 and accepts a pin with its version",
+          bool(PINNED.match("      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1")))
+
+    # W22 the sabotage run is split across a matrix, and each job takes the shard of its own index, so the
+    # jobs cover every row whatever the matrix lists. A shard numbered by hand can be listed twice and leave
+    # another's rows untested while every job passes.
+    sabotage_job = (workflow_doc("scripts.yml").get("jobs") or {}).get("sabotage") or {}
+    runs = [" ".join(str(step.get("run", "")).split()) for step in job_steps(sabotage_job)
+            if "sabotage.py" in str(step.get("run", ""))]
+    check("W22 each sabotage job runs the shard of its own index",
+          runs == ["python3 .github/scripts/tests/sabotage.py --shard ${{ strategy.job-index }}/${{ strategy.job-total }}"],
+          f"{runs}")
+    # W23 a pull request's CI builds the pull request's head, which is the one revision the Sonar run is
+    # handed, so the classes and coverage it reads come from the tree it analyses. A push run has no merge
+    # commit and builds `github.sha`.
+    ci_checkouts = [(jn, step.get("with") or {}) for jn, job in (workflow_doc("ci.yml").get("jobs") or {}).items()
+                    for step in job_steps(job) if "actions/checkout" in str(step.get("uses", ""))]
+    check("W23 every ci.yml checkout builds a pull request's head",
+          bool(ci_checkouts) and all(str(with_.get("ref", "")).strip()
+                                     == "${{ github.event.pull_request.head.sha || github.sha }}"
+                                     for _, with_ in ci_checkouts), f"{ci_checkouts}")
+
+    # The split itself is sabotage.py's own, compiled from its source as W15 does the pin resolver.
+    shard_nodes = [node for node in ast.parse(SABOTAGE.read_text()).body
+                   if isinstance(node, ast.FunctionDef) and node.name == "shard"]
+    shard_scope = {"re": re}
+    exec(compile(ast.Module(body=shard_nodes, type_ignores=[]), str(SABOTAGE), "exec"), shard_scope)
+    split = shard_scope.get("shard", lambda rows, spec: None)
+    rows = list(range(23))
+    covered = [sorted(sum((split(rows, f"{i}/{n}") or [] for i in range(n)), [])) for n in range(1, 8)]
+    check("W22 and the shards together take every row exactly once", all(c == rows for c in covered), "")
+    check("W22 and a shard past the total, or a malformed one, is refused",
+          all(split(rows, spec) is None for spec in ("6/6", "1/0", "x", "1", "-1/3", "")), "")
 
 
 def load_publisher():

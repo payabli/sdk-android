@@ -22,7 +22,7 @@
 - `./gradlew ktlintFormat --no-configuration-cache` - Fix formatting (the flag is required)
 - `./gradlew lint` - Android Lint
 - `./gradlew createDebugUnitTestCoverageReport` - Coverage, `build/reports/coverage/test/debug/report.xml`
-- `./gradlew sonar` - Static analysis (needs `SONAR_TOKEN`; add `--dry-run` to check config only)
+- Static analysis is `sonar.yml`, the standalone scanner over `sonar-project.properties` and the reports CI uploads; it runs from main on `workflow_run`, so a branch cannot change it
 - `./gradlew publishToMavenLocal` - Exercise the publish convention
 
 **Setup**: three things a fresh clone lacks, in the order they break. `ANDROID_HOME`, or `sdk.dir` in the gitignored `local.properties`. Then `payabli.maven.user` and `payabli.maven.password` in `~/.gradle/gradle.properties` (never in this repo) for the card reader repository that `:taptopay` resolves from; a maintainer supplies the pair, and the one to ask for is the release identity, which is what every build reads `/maven` with. Only `:taptopay` needs it, and the build says so if it is missing. Then, for the attestation tests that make a real Play Integrity request, `payabli.cloudProjectNumber` in the same file: a Google Cloud project number with the Play Integrity API enabled, which a maintainer can supply. It is **not a secret** — every app shipping Play Integrity carries its project number in the binary — but it is environment-scoped and it is the shared daily quota target, so it is configured rather than hard-coded; `taptopay/build.gradle.kts` carries the full reasoning. Without it, `PlayIntegrityRealProjectTest` is filtered out of the run and everything else is unaffected.
@@ -103,11 +103,11 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 
 ## CI
 
-`.github/workflows/ci.yml`, on push and pull request to `main`, `release/**` and `hotfix/**`. Three jobs:
+`.github/workflows/ci.yml`, on push and pull request to `main`, `release/**` and `hotfix/**`. The jobs that matter here:
 
 - **build** - the modules that need no credentials. Runs for everyone, forks included.
-- **card-present** - `:taptopay`. Skipped on pull requests from forks, which never receive secrets, so a fork sees it skipped rather than failing on an authentication error.
-- **sonar** - analysis after `build`, producing the reports it consumes first.
+- **card-present** - `:taptopay`. It reads the card reader credential from an environment: `ci-pull-request` on a pull request and `ci-protected` on a push. Skipped on pull requests from forks and from Dependabot.
+- **sonar** is not here: `sonar.yml` runs on `workflow_run` from main's copy, in the `ci-protected` environment, and reads the reports and classes `build`, `card-present` and `instrumented` upload.
 
 `.github/workflows/nightly.yml`, on schedule and manual dispatch only, never on a pull request and not a
 required check. Four jobs, and the split is a security boundary rather than organisation: the third-party
