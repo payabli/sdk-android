@@ -2842,6 +2842,15 @@ MUTATIONS = [
      "      - uses: actions/checkout@PIN\n\n      # The workflow checks parse YAML",
      "      - uses: actions/checkout@v7\n\n      # The workflow checks parse YAML"),
 
+    ("A Dependabot pull request is analysed when a maintainer pushes to it, and its card-present reports are missing",
+     SONAR, "workflows",
+     '            if [ "$author" = "dependabot[bot]" ]; then\n',
+     '            if false; then\n'),
+
+    ("The analysis takes the pull request's author from the wrong field", SONAR, "workflows",
+     "--jq '\"\\(.head.sha) \\(.user.login)\"'",
+     "--jq '\"\\(.head.sha) \\(.head.user.login)\"'"),
+
     ("The build job tests the merge commit again, so Sonar reads other source than it built", CI,
      "workflows",
      "fetch-depth: 0\n          # A pull request builds its head, not GitHub's merge commit: Sonar is handed only the head, and the\n          # classes and coverage it reads have to come from the tree it analyses.\n          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n",

@@ -4703,6 +4703,16 @@ def test_workflows():
     check("W20 and it checks out the revision the triggering run tested",
           [" ".join(str(w.get("ref", "")).split()) for w in sonar_checkouts] == ["${{ github.event.workflow_run.head_sha }}"],
           f"{sonar_checkouts}")
+    # CI skips card-present by the pull request's author, so the analysis has to refuse by the same field: a
+    # maintainer's push to a Dependabot pull request is triggered by the maintainer, and its card-present
+    # reports were never built.
+    newest_run = " ".join(str(next((step for step in sonar_steps if step.get("id") == "newest"), {}).get("run", "")).split())
+    check("W20 and a Dependabot pull request is refused by its author, the field CI skips card-present by",
+          "--jq '\"\\(.head.sha) \\(.user.login)\"'" in newest_run
+          and 'if [ "$author" = "dependabot[bot]" ]; then echo "newest=false" >> "$GITHUB_OUTPUT"' in newest_run
+          and "github.event.pull_request.user.login != 'dependabot[bot]'"
+          in " ".join(str((((workflow_doc("ci.yml").get("jobs") or {}).get("card-present")) or {}).get("if", "")).split()),
+          newest_run[:300])
     identify = next((step for step in sonar_steps if step.get("id") == "pr"), {})
     forced = run_commands(identify)
     check("W20 and the server, organization and project are forced on the command line",

@@ -24,13 +24,10 @@ jobs:
     name: Newest revision
     runs-on: ubuntu-latest
     # A failed run produces no reports worth reading. Same repository only: a fork's pull request has no entry
-    # in `pull_requests`, so there is nothing trustworthy to decorate. Dependabot's pull requests skip the
-    # card-present job, which has no credential for them, so their analysis would under-report :taptopay.
+    # in `pull_requests`, so there is nothing trustworthy to decorate.
     if: >-
       github.event.workflow_run.conclusion == 'success'
       && github.event.workflow_run.head_repository.full_name == github.repository
-      && !(github.event.workflow_run.event == 'pull_request'
-           && github.event.workflow_run.actor.login == 'dependabot[bot]')
     # Outside the analysis's concurrency group, so a stale run is turned away before it can take the pending
     # place in it: GitHub keeps one pending job per group, and a later arrival replaces it.
     permissions:
@@ -40,7 +37,8 @@ jobs:
       newest: ${{ steps.newest.outputs.newest }}
     steps:
       # Only the newest revision of a pull request or branch is analysed. An older one's numbers would replace
-      # the newer analysis on the server.
+      # the newer analysis on the server. A Dependabot pull request is not analysed: CI skips card-present by
+      # the pull request's author, so its card-present reports never exist, whoever pushed the revision.
       - name: Check the revision is the newest
         id: newest
         env:
@@ -52,7 +50,13 @@ jobs:
         run: |
           if [ -n "$PR" ]; then
             number=$(printf '%s' "$PR" | grep -E '^[0-9]+$')
-            tip=$(gh api "repos/$REPO/pulls/$number" --jq .head.sha)
+            pr=$(gh api "repos/$REPO/pulls/$number" --jq '"\(.head.sha) \(.user.login)"')
+            read -r tip author <<< "$pr"
+            if [ "$author" = "dependabot[bot]" ]; then
+              echo "newest=false" >> "$GITHUB_OUTPUT"
+              echo "not analysing $SHA: a Dependabot pull request has no card-present reports"
+              exit 0
+            fi
           else
             head=$(printf '%s' "$HEAD_BRANCH" | grep -E '^[A-Za-z0-9._/-]+$')
             tip=$(gh api "repos/$REPO/branches/$head" --jq .commit.sha)
