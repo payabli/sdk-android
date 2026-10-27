@@ -368,6 +368,17 @@ public enum class PayabliErrorType(
         PayabliErrorCategory.RETRY_LATER,
         "The payment was not taken, and the card was not charged. Try again.",
     ),
+
+    /**
+     * The device's contactless radio is switched off. No card was read, so nothing can have been charged,
+     * and the remedy is the merchant's alone: turning the radio on in Settings.
+     */
+    CONTACTLESS_DISABLED(
+        3036,
+        "CONTACTLESS_DISABLED",
+        PayabliErrorCategory.CONFIGURATION,
+        "Contactless (NFC) is turned off on this device. Turn it on in Settings.",
+    ),
 }
 
 /**

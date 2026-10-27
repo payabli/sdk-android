@@ -260,6 +260,12 @@ class PayabliErrorCatalogTest {
                 PayabliErrorCategory.RETRY_LATER,
                 "The payment was not taken, and the card was not charged. Try again.",
             ),
+            Row(
+                "CONTACTLESS_DISABLED",
+                3036,
+                PayabliErrorCategory.CONFIGURATION,
+                "Contactless (NFC) is turned off on this device. Turn it on in Settings.",
+            ),
         )
 
     @Test
@@ -305,7 +311,7 @@ class PayabliErrorCatalogTest {
     }
 
     private companion object {
-        /** Numbers no member may take. */
+        /** Numbers no member takes: 3032 is reserved. */
         val reserved = setOf(3032)
     }
 

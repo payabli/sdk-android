@@ -7,7 +7,7 @@ package com.payabli.sdk.taptopay {
 
   public final class PayabliTTP {
     method public suspend Object? activateDevice(String activationCode, kotlin.coroutines.Continuation<? super kotlin.Unit>);
-    method public suspend Object? charge(com.payabli.sdk.taptopay.model.TapToPayPaymentDetails paymentDetails, com.payabli.sdk.taptopay.model.TapToPayCustomerData customer, optional com.payabli.sdk.taptopay.model.TapToPayInvoiceData invoice, optional String? orderDescription, optional com.payabli.sdk.core.model.PayabliAttempt attempt, kotlin.coroutines.Continuation<? super com.payabli.sdk.taptopay.TapToPayResult>);
+    method public suspend Object? charge(com.payabli.sdk.taptopay.model.TapToPayPaymentDetails paymentDetails, optional com.payabli.sdk.taptopay.model.TapToPayCustomerData customer, optional com.payabli.sdk.taptopay.model.TapToPayInvoiceData invoice, optional String? orderDescription, optional com.payabli.sdk.core.model.PayabliAttempt attempt, kotlin.coroutines.Continuation<? super com.payabli.sdk.taptopay.TapToPayResult>);
     method public suspend Object? closeCapturedCharge(String paymentTransId, kotlin.coroutines.Continuation<? super kotlin.Unit>);
     method @InaccessibleFromKotlin public kotlinx.coroutines.flow.StateFlow<com.payabli.sdk.taptopay.session.TapToPaySessionState> getSessionState();
     method public suspend Object? initialize(kotlin.coroutines.Continuation<? super kotlin.Unit>);
@@ -29,12 +29,23 @@ package com.payabli.sdk.taptopay {
     enum_constant public static final com.payabli.sdk.taptopay.TapToPayCapture UNKNOWN;
   }
 
+  public abstract sealed exhaustive class TapToPayChargeRefusal {
+  }
+
+  public static final class TapToPayChargeRefusal.CustomerDataRefused extends com.payabli.sdk.taptopay.TapToPayChargeRefusal {
+    ctor public TapToPayChargeRefusal.CustomerDataRefused(java.util.List<java.lang.String> requiredFields);
+    method @InaccessibleFromKotlin public java.util.List<java.lang.String> getRequiredFields();
+    property public java.util.List<java.lang.String> requiredFields;
+  }
+
   public final class TapToPayException extends com.payabli.sdk.core.model.PayabliException implements com.payabli.sdk.core.model.PayabliRetryAfter {
     method @InaccessibleFromKotlin public com.payabli.sdk.taptopay.TapToPayCapture getCapture();
     method @InaccessibleFromKotlin public String? getPaymentTransId();
+    method @InaccessibleFromKotlin public com.payabli.sdk.taptopay.TapToPayChargeRefusal? getRefusal();
     method @InaccessibleFromKotlin public Long? getRetryAfterMillis();
     property public com.payabli.sdk.taptopay.TapToPayCapture capture;
     property public String? paymentTransId;
+    property public com.payabli.sdk.taptopay.TapToPayChargeRefusal? refusal;
     property public Long? retryAfterMillis;
   }
 
@@ -128,6 +139,7 @@ package com.payabli.sdk.taptopay.session {
 
   public enum TapToPayFailureReason {
     enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason CONFIGURATION_REJECTED;
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason CONTACTLESS_DISABLED;
     enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason DEVICE_INELIGIBLE;
     enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason DEVICE_KEY_UNAVAILABLE;
     enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason DEVICE_SETUP_REQUIRED;

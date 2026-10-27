@@ -190,6 +190,7 @@ class TapToPayTerminal(
             TapToPayFailureReason.CONFIGURATION_REJECTED -> TerminalFailureReason.ConfigurationRejected
             TapToPayFailureReason.SERVICE_UNAVAILABLE -> TerminalFailureReason.ServiceUnavailable
             TapToPayFailureReason.DEVICE_INELIGIBLE -> TerminalFailureReason.DeviceIneligible
+            TapToPayFailureReason.CONTACTLESS_DISABLED -> TerminalFailureReason.ContactlessDisabled
             TapToPayFailureReason.SDK_INTERNAL_ERROR -> TerminalFailureReason.SdkInternalError
             TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE -> TerminalFailureReason.DeviceKeyUnavailable
             TapToPayFailureReason.SESSION_ENDED -> TerminalFailureReason.SessionEnded

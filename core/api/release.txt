@@ -318,6 +318,7 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CARD_PRESENT_NOT_ENABLED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CHARGE_NOT_FINISHED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CONFLICT;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CONTACTLESS_DISABLED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DECODING_ERROR;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_HARDWARE_UNSUPPORTED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_IDENTITY_UNAVAILABLE;
@@ -340,6 +341,7 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_CLOSED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_HELD;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_OPENED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_TAKEN;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_OUTCOME_UNKNOWN;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_REFERENCE_OPEN;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PERMISSION_DENIED;
