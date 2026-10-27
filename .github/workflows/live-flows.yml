@@ -69,7 +69,7 @@ env:
 jobs:
   live:
     name: ${{ inputs.environment }}
-    # The client credentials are environment secrets, released only to a run on main or release/*.
+    # The client credentials are environment secrets, released only to a run on main, release/* or hotfix/*.
     environment: ci-protected
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -292,7 +292,7 @@ jobs:
   report:
     name: Report ${{ inputs.environment }} to Slack
     needs: live
-    # The bot token is an environment secret, released only to a run on main or release/*.
+    # The bot token is an environment secret, released only to a run on main, release/* or hotfix/*.
     environment: ci-protected
     continue-on-error: true
     # Not `always()`. A superseded or hand-cancelled run is silent on purpose; a job that died on its own is

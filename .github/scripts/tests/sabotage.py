@@ -552,15 +552,15 @@ MUTATIONS = [
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
 
     ("QA snapshot builds a ref other than the commit the check passed", QA, "workflows",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: main\n"),
 
     ("QA snapshot tests the branch's head rather than the commit the check passed", QA, "workflows",
-     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
 
     ("CI calls the publisher again, so a merge to main publishes", CI, "workflows",
      "  card-present:\n    name: Build & Test (card-present)\n",
@@ -816,9 +816,9 @@ MUTATIONS = [
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  pull_request:\n"),
 
     ("QA snapshot builds another repository", QA, "workflows",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n          repository: other/repo\n"),
 
     ("QA snapshot runs an action on a moving tag", QA, "workflows",
@@ -2071,7 +2071,7 @@ MUTATIONS = [
 
     ("Release builds in the release environment too, beside Gradle", RELEASE, "workflows",
      "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n"
-     "    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n"
+     "    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n"
      "    # dispatch from any other branch is refused at the environment.\n"
      "    environment: ci-protected\n",
      "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n"
@@ -2131,14 +2131,14 @@ MUTATIONS = [
      "          ref: ${{ needs.check.outputs.commit }}\n          fetch-depth: 0\n          persist-credentials: false\n"),
 
     ("Release builds main's head rather than the commit the check passed", RELEASE, "workflows",
-     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
 
     ("Release tests main's head rather than the commit the check passed", RELEASE, "workflows",
-     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main or release/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
 
     ("Release tests before the commit is checked", RELEASE, "workflows",
      "    name: Test the release\n    needs: [check]\n", "    name: Test the release\n"),
@@ -2773,7 +2773,7 @@ MUTATIONS = [
      "      secrets-suffix: SBX\n", "      secrets-suffix: SBX\n    secrets:\n      client-secret: ${{ secrets.PAYABLI_CLIENT_SECRET_SBX }}\n"),
 
     ("The live flows read their credentials without the environment", LIVE_FLOWS, "workflows",
-     "    # The client credentials are environment secrets, released only to a run on main or release/*.\n    environment: ci-protected\n", ""),
+     "    # The client credentials are environment secrets, released only to a run on main, release/* or hotfix/*.\n    environment: ci-protected\n", ""),
 
     ("The analysis lets the branch's properties choose the server", SONAR, "workflows",
      '          trusted="-Dsonar.host.url=https://sonarcloud.io"\n', '          trusted=""\n'),

@@ -68,7 +68,7 @@ jobs:
     name: SonarCloud
     needs: newest
     if: needs.newest.outputs.newest == 'true'
-    # The analysis token is an environment secret, released only to a run on main or release/*. A
+    # The analysis token is an environment secret, released only to a run on main, release/* or hotfix/*. A
     # `workflow_run` run is main's.
     environment: ci-protected
     runs-on: ubuntu-latest

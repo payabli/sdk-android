@@ -3965,7 +3965,7 @@ def test_workflows():
     # trusts, so every authority that can publish is held by that one job and none by any other.
     gate = {name: job for name, job in rel_jobs.items() if str(job.get("environment", "")) == "release"}
     check("W17 exactly one job runs in the release environment", len(gate) == 1, f"{sorted(gate)}")
-    # The suites and the build hold the Maven credential, released only to a run on main or release/*.
+    # The suites and the build hold the Maven credential, released only to a run on main, release/* or hotfix/*.
     check("W17 and the suites and the build run in ci-protected, and no other job names an environment",
           {name: job.get("environment") for name, job in rel_jobs.items() if job.get("environment")}
           == {**{name: "release" for name in gate}, "test": "ci-protected", "build": "ci-protected"},
@@ -4646,7 +4646,7 @@ def test_workflows():
     # W19 no secret reaches code nobody has reviewed. A pull request runs its own copy of a workflow and a
     # dispatch runs the chosen branch's, so a job that names a secret is one a branch author can rewrite to
     # print it. Every secret is an environment secret, and a job reads one only from an environment that
-    # releases it to main and release/* (ci-protected), to the release or the mirror after a reviewer, or,
+    # releases it to main, release/* and hotfix/* (ci-protected), to the release or the mirror after a reviewer, or,
     # for the one job that builds a pull request's code with the card reader credential, after a reviewer
     # approves that run (ci-pull-request). A job calling a reusable workflow cannot name an environment, so
     # it passes no secret either: the called job reads its own.
