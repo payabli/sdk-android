@@ -4256,11 +4256,16 @@ def test_workflows():
           joined[:len(lookup)] == lookup and assigned == ["tagged=", "tagged=$"], f"{joined[:6]} {assigned}")
     # The named commit, never the run's own: the run's is main's head when the dispatch was made. Each
     # step's own env, because one step's correct value would otherwise stand in for another's.
-    check("W17 and it tags the commit and version the check approved, not the run's",
+    # The tag names the SDK, the version and the run, and no person: the repository is public and a tag is
+    # permanent. The message is compared whole below; this says why when it fails.
+    check("W17 and the tag names no person", "ACTOR" not in " ".join(" ".join(c) for c in tag_commands),
+          f"{[c for c in tag_commands if c[:2] == ['git', 'tag']]}")
+    check("W17 and it tags the commit and version the check approved, with the SDK, the version and the run",
           len(tagging) == 1 and env_of(tagging[0], "COMMIT") == approved
           and env_of(tagging[0], "VERSION") == approved_version
-          and [command[:5] + command[6:] for command in tag_commands if command[:2] == ["git", "tag"]]
-          == [["git", "tag", "-a", "$VERSION", "-m", "$COMMIT"]],
+          and [command for command in tag_commands if command[:2] == ["git", "tag"]]
+          == [["git", "tag", "-a", "$VERSION", "-m", "Payabli Android SDK $VERSION",
+               "-m", "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID", "$COMMIT"]],
           f"{[(env_of(step, 'COMMIT'), env_of(step, 'VERSION')) for step in tagging]}")
     # `gh` authenticates from GH_TOKEN and nothing else, so without it the host keys are never fetched.
     token = "${{ github.token }}"

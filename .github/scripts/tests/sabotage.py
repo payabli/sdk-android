@@ -207,7 +207,10 @@ RELEASE_SUBJECT_THEN_TAG = (
     '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
     '            git config user.name "github-actions[bot]"\n'
     '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
-    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            # The SDK, the version and the run that made it. No person: the repository is public and a tag is\n'
+    '            # permanent, and the run records who dispatched and who approved.\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION" \\\n'
+    '              -m "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$COMMIT"\n'
     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
     '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
     '          fi\n'
@@ -286,7 +289,10 @@ RELEASE_TAG_THEN_SUBJECT = (
     '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
     '            git config user.name "github-actions[bot]"\n'
     '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
-    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            # The SDK, the version and the run that made it. No person: the repository is public and a tag is\n'
+    '            # permanent, and the run records who dispatched and who approved.\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION" \\\n'
+    '              -m "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$COMMIT"\n'
     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
     '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
     '          fi\n'
@@ -338,7 +344,10 @@ RELEASE_TAG_THEN_UPLOAD = (
     '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
     '            git config user.name "github-actions[bot]"\n'
     '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
-    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            # The SDK, the version and the run that made it. No person: the repository is public and a tag is\n'
+    '            # permanent, and the run records who dispatched and who approved.\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION" \\\n'
+    '              -m "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$COMMIT"\n'
     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
     '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
     '          fi\n'
@@ -425,7 +434,10 @@ RELEASE_UPLOAD_THEN_TAG = (
     '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
     '            git config user.name "github-actions[bot]"\n'
     '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
-    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            # The SDK, the version and the run that made it. No person: the repository is public and a tag is\n'
+    '            # permanent, and the run records who dispatched and who approved.\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION" \\\n'
+    '              -m "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$COMMIT"\n'
     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
     '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
     '          fi\n'
@@ -1966,8 +1978,14 @@ MUTATIONS = [
      '          fetch-depth: 0\n'),
 
     ("Release tags main's head rather than the approved commit", RELEASE, "workflows",
-     'dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"',
-     'dispatched by $GITHUB_TRIGGERING_ACTOR" "$GITHUB_SHA"'),
+     'actions/runs/$GITHUB_RUN_ID" "$COMMIT"',
+     'actions/runs/$GITHUB_RUN_ID" "$GITHUB_SHA"'),
+
+    ("Release writes the dispatcher's handle into the permanent tag", RELEASE, "workflows",
+     '-m "Payabli Android SDK $VERSION" \\\n', '-m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" \\\n'),
+
+    ("Release's tag no longer links the run that made it", RELEASE, "workflows",
+     '-m "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"', '-m "Released"'),
 
     ('Release starts on a tag push, so a person creates the release', RELEASE, "workflows",
      'on:\n  workflow_dispatch:\n',

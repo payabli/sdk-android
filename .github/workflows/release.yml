@@ -415,7 +415,10 @@ jobs:
             gh api meta --jq '.ssh_keys[] | "github.com " + .' > "$hosts"
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"
+            # The SDK, the version and the run that made it. No person: the repository is public and a tag is
+            # permanent, and the run records who dispatched and who approved.
+            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION" \
+              -m "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$COMMIT"
             GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \
               git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"
           fi
