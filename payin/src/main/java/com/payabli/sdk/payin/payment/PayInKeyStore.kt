@@ -137,7 +137,7 @@ internal class PayInKeyStore(
         private val SHARED_LOCK = Any()
         private val SHARED_HELD: MutableList<HeldKey> = ArrayList()
 
-        /** The entry points that have already said they are full, so each says so once until it has room again. */
+        /** The entry points, per environment, that have said they are full, so each says so once until it has room. */
         private val SHARED_REPORTED_FULL: MutableSet<String> = HashSet()
 
         /** Drops every held key under the same lock the submissions take. Process state for tests. */
