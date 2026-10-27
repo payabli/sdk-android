@@ -50,6 +50,11 @@ internal class TelemetryClient(
     private val maxDrainRequests: Int = DEFAULT_MAX_DRAIN_REQUESTS,
 ) : TelemetryRecorder,
     SessionScopedRecorder {
+    init {
+        // The overflow event takes one of a request's places, so a request needs one left for anything else.
+        require(maxEventsPerRequest >= 2) { "maxEventsPerRequest must be at least 2" }
+    }
+
     private val sending = Mutex()
 
     /** Requests to flush. Conflated, so one made while a flush runs is kept rather than dropped. */

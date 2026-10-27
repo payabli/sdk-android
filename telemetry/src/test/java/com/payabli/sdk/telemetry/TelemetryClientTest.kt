@@ -460,7 +460,7 @@ class TelemetryClientTest {
         }
 
     /**
-     * A refused batch keeps its overflow event, and the next accepted batch delivers it once.
+     * The overflow event goes back with a refused batch, and the next accepted batch carries it a single time.
      *
      * The event goes back to the front of the queue with the rest of the batch. Putting it back into a full
      * queue evicts the oldest event in turn, and that eviction is counted by an event of its own.
@@ -484,6 +484,16 @@ class TelemetryClientTest {
                 )
                 assertEquals("the refused batch's events did not go back: $body", 5, eventsIn(body))
             }
+        }
+
+    /**
+     * A request that holds one event has no place for the overflow event beside anything else, so it is
+     * refused at construction rather than sending nothing once a count is waiting.
+     */
+    @Test(expected = IllegalArgumentException::class)
+    fun aRequestTooSmallForTheOverflowEventIsRefused() =
+        runTest(timeout = TEST_TIMEOUT) {
+            withClient(FakeTransport(), batchSize = 1, maxEventsPerRequest = 1) { }
         }
 
     // ---- a batch that was not accepted goes back to the front of the queue ------------------------
