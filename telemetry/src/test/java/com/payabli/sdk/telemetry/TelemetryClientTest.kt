@@ -3,6 +3,7 @@
 package com.payabli.sdk.telemetry
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
@@ -460,29 +461,61 @@ class TelemetryClientTest {
         }
 
     /**
-     * The overflow event goes back with a refused batch, and the next accepted batch carries it a single time.
+     * A refused batch goes back without its overflow event, and the next accepted batch carries one event
+     * with the running total.
      *
-     * The event goes back to the front of the queue with the rest of the batch. Putting it back into a full
-     * queue evicts the oldest event in turn, and that eviction is counted by an event of its own.
+     * The count is restored beside the events, so evictions after the refusal add to it rather than
+     * becoming an event of their own.
      */
     @Test
-    fun aRefusedBatchKeepsTheOverflowEventAndTheNextDeliversItOnce() =
+    fun aRefusedBatchGoesBackWithoutTheOverflowEventAndTheNextCarriesTheRunningTotal() =
         runTest(timeout = TEST_TIMEOUT) {
             val transport = FakeTransport.refusingOnce(500)
 
             withClient(transport, batchSize = 1_000, maxEventsPerRequest = 1_000, capacity = 4) { client ->
                 repeat(10) { record(client) }
                 client.flush()
+                repeat(2) { record(client) }
 
                 client.flush()
 
                 val body = transport.bodyAsText(1)
-                assertEquals(
-                    "the refused batch's overflow event was lost or doubled: $body",
-                    listOf("6", "1"),
-                    overflowCounts(body),
-                )
-                assertEquals("the refused batch's events did not go back: $body", 5, eventsIn(body))
+                assertEquals("the count was lost, doubled or not totalled: $body", listOf("8"), overflowCounts(body))
+                assertEquals("the queue's events and one overflow event: $body", 5, eventsIn(body))
+            }
+        }
+
+    /**
+     * A refused batch that goes back into a queue refilled during its send still reports every eviction.
+     *
+     * Events offered while the request is in flight fill the queue, so putting the batch back evicts all of
+     * it. The count it carried survives that, so every event lost is reported.
+     */
+    @Test
+    fun aRefusedBatchEvictedOnItsWayBackKeepsItsCount() =
+        runTest(timeout = TEST_TIMEOUT) {
+            lateinit var client: TelemetryClient
+            var refused = false
+            val transport =
+                FakeTransport {
+                    if (refused) {
+                        FakeTransport.accepted()
+                    } else {
+                        refused = true
+                        repeat(4) { record(client) }
+                        PayabliResponse(statusCode = 500, headers = emptyMap(), body = ByteArray(0))
+                    }
+                }
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 1_000, capacity = 4) {
+                client = it
+                repeat(10) { record(client) }
+                client.flush()
+
+                client.flush()
+
+                val body = transport.bodyAsText(1)
+                assertEquals("evictions went unreported: $body", listOf("10"), overflowCounts(body))
             }
         }
 

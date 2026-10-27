@@ -213,15 +213,17 @@ internal class TelemetryClient(
             when (uploader.send(batch)) {
                 SendOutcome.SENT -> true
                 SendOutcome.KEEP -> {
-                    // The overflow event goes back with the batch, so the count is not restored as well.
-                    // A channel stopped mid-send refuses the batch, and its events are lost with it.
-                    val requeued = queue.pushFront(batch)
+                    // The count goes back beside the events rather than as an event among them, so the
+                    // events offered during the send can evict the batch but never the count. A channel
+                    // stopped mid-send refuses the batch, and its events are lost with it.
+                    val requeued = queue.pushFront(drained)
+                    queue.restoreDropCount(dropped)
                     if (requeued) {
                         false
                     } else {
                         logger.debug(
                             LogField.safe("event", "telemetry_batch_after_stop"),
-                            LogField.safe("count", batch.size),
+                            LogField.safe("count", drained.size),
                         ) { "the channel stopped while the batch was being sent; dropped" }
                         true
                     }

@@ -117,7 +117,7 @@ internal class TelemetryQueue(
      * How many events have been evicted since this was last asked, and resets the count.
      *
      * A queue that discards silently is how a gap in a chart gets mistaken for a quiet period, so the count
-     * becomes an event in the next batch. [restoreDropCount] puts it back when no event carried it.
+     * becomes an event in the next batch. [restoreDropCount] puts it back when no accepted batch carried it.
      */
     fun takeDropCount(): Int =
         synchronized(lock) {
