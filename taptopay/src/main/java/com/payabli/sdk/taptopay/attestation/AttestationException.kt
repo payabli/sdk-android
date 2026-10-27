@@ -1,7 +1,5 @@
 package com.payabli.sdk.taptopay.attestation
 
-import androidx.annotation.RestrictTo
-
 /**
  * Failures from [AppAttestor].
  *
@@ -23,8 +21,7 @@ import androidx.annotation.RestrictTo
  *
  * No message here carries a challenge or a token.
  */
-@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public sealed class AttestationException(
+internal sealed class AttestationException(
     message: String,
     /**
      * The platform's own error constant, or null where the failure never reached the platform.
@@ -48,8 +45,7 @@ public sealed class AttestationException(
      *
      * Throttling is **not** here; see [Throttled].
      */
-    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public class Retryable(
+    internal class Retryable(
         errorCode: Int?,
         cause: Throwable? = null,
     ) : AttestationException("the integrity request failed transiently and may be retried", errorCode, cause)
@@ -70,8 +66,7 @@ public sealed class AttestationException(
      *
      * Card-present callers halt the flow.
      */
-    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public class Throttled(
+    internal class Throttled(
         errorCode: Int,
         cause: Throwable? = null,
     ) : AttestationException(
@@ -87,8 +82,7 @@ public sealed class AttestationException(
      * unchanged produces the same answer forever, so this is the case that has to reach a human: either a
      * remediation prompt or a message. It is **not** evidence of tampering.
      */
-    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public class RemediationRequired(
+    internal class RemediationRequired(
         errorCode: Int,
         cause: Throwable? = null,
     ) : AttestationException(
@@ -104,8 +98,7 @@ public sealed class AttestationException(
      * understands it, or its UID does not match. Both are what an attack looks like from here, and neither
      * has a remedy to offer. Do not retry and do not degrade to trusting the caller.
      */
-    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public class IntegrityFailed(
+    internal class IntegrityFailed(
         errorCode: Int,
         cause: Throwable? = null,
     ) : AttestationException("the integrity check failed and the caller must be treated as untrusted", errorCode, cause)
@@ -119,8 +112,7 @@ public sealed class AttestationException(
      * should be unreachable, since [AttestationChallenge] rejects a malformed value at construction; if
      * it arrives anyway, the two validations disagree and that is worth knowing rather than retrying.
      */
-    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public class Misconfigured(
+    internal class Misconfigured(
         errorCode: Int?,
         cause: Throwable? = null,
         message: String = "the integrity request was configured wrongly by this SDK",
@@ -133,7 +125,6 @@ public sealed class AttestationException(
      * over a value a verifier has already retired. The verifier would reject the result, so the request is
      * refused here instead: the caller needs a new challenge, not another attempt at this one.
      */
-    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public class ChallengeReused :
+    internal class ChallengeReused :
         AttestationException("this challenge has already been attested; obtain a new one", null)
 }
