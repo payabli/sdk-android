@@ -2,15 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**', 'hotfix/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**', 'hotfix/**']
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # Not on main: a release names a commit that passed this workflow on main, and a run cancelled by the
-  # next merge is one that never passed.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # A pull request's runs share a group and the newest replaces the rest. A push run is a group of its own: a
+  # release names a commit that passed this workflow on a push to its release or hotfix branch, and a group
+  # holds one waiting run, which another push would replace before it ever ran. One commit pushed to main
+  # and to a new release branch is two pushes, so not even the commit can be shared.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -31,24 +33,24 @@ jobs:
     name: Build & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history so analysis can attribute new code.
           fetch-depth: 0
+          # A pull request builds its head, not GitHub's merge commit: Sonar is handed only the head, and the
+          # classes and coverage it reads have to come from the tree it analyses.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '21'
 
-      # Left on the moving tag, as nightly.yml is and for the reason recorded there: this job holds no
-      # credential, and the action is the one most coupled to Android tooling churn.
-      #
-      # card-present and sonar hold the card reader credential, so every action in them is pinned to a
-      # commit, not only this one. A job-level secret is readable by everything that runs in the job, so
-      # one moving tag among the pins is the whole exposure back: a retag reaches the credential through
-      # whichever action was left.
-      - uses: gradle/actions/setup-gradle@v6
+      # Pinned to a commit, as every third-party action in this repository is, and Dependabot keeps the pin
+      # current: a tag runs whatever its owner points it at on the day, and a commit names one snapshot.
+      # A job-level secret is readable by everything that runs in the job, so in card-present one tag
+      # among the pins would be the whole exposure back.
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           # v6 moved caching into `gradle-actions-caching`, which is proprietary and not covered by the
           # MIT licence: its release note says upgrading to the default `enhanced` provider accepts a
@@ -68,8 +70,8 @@ jobs:
           :testutils:assembleDebug
 
       # The public-surface gate runs in its own workflow, on the pull request: a release names a
-      # commit that passed this workflow on main, so a gate inside it is one a release depends on
-      # through CI.
+      # commit that passed this workflow on its release branch, so a gate inside it is one a release
+      # depends on through CI.
 
       - name: Unit tests
         run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test
@@ -114,12 +116,11 @@ jobs:
       # Cost, measured on the four-module step with every task re-run and all 940 tests running: 9 and 11
       # seconds unserialised against 16 and 17. Across a whole ci.yml run it does not separate from
       # run-to-run noise, 491 to 558 seconds with the flag against 458 to 580 before it, because the step
-      # here builds one module and the sonar job's lint and format tasks stay parallel.
+      # here builds one module.
       #
       # **Every invocation that runs a coverage task carries this flag**, here, in the card-present
-      # job, in both of the sonar job's report steps, and in nightly.yml. A mitigation on one of five
-      # leaves the same race reachable from the other four, which is where the first version of this
-      # left it. When adding a coverage task anywhere, add the flag with it.
+      # job, and in nightly.yml. A mitigation on one leaves the same race reachable from the others, which
+      # is where the first version of this left it. When adding a coverage task anywhere, add the flag with it.
       #
       # What would falsify it: this failing again with --max-workers=1 in effect. Then the sharing is
       # not between concurrent workers and the next thing to try is --no-daemon for this step alone.
@@ -132,12 +133,17 @@ jobs:
           :telemetry:createDebugUnitTestCoverageReport
           :testutils:createDebugUnitTestCoverageReport
 
+      # What `sonar.yml` reads, besides the instrumented coverage: every module's ktlint, Lint and JaCoCo
+      # reports and its compiled classes. Relative to the workspace, so the download restores them where
+      # `sonar-project.properties` looks.
       - name: Upload reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: reports
-          path: '**/build/reports/**'
+          path: |
+            **/build/reports/**
+            **/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/**
           retention-days: 7
 
   instrumented:
@@ -151,9 +157,8 @@ jobs:
     # It also holds no credential for the third-party emulator action to reach, which is what allows that
     # action here at all. nightly.yml's header has the full argument; the short version is that
     # step-scoping a secret does not isolate it from code that ran earlier in the same job, so the only
-    # way the action cannot reach a token is for the token to live in another job. The `sonar` job holds
-    # the card reader credential and SONAR_TOKEN, which is why the coverage this job produces reaches it
-    # as an artifact: the emulator cannot run here.
+    # way the action cannot reach a token is for the token to live in another job. The analysis runs in
+    # `sonar.yml`, from main's copy, which is why the coverage this job produces reaches it as an artifact.
     #
     # :taptopay is absent for that same reason and not because of hardware: building it resolves the card
     # reader from a credentialed repository, so including it would hand that credential to this action.
@@ -168,18 +173,17 @@ jobs:
       EMULATOR_TARGET: google_apis
       EMULATOR_ARCH: x86_64
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '21'
 
-      # Left on the moving tag for the reason the build job's is: this job holds no credential. It is
-      # pinned in card-present and sonar, which hold one.
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           # See the note on the first setup-gradle in this file.
           cache-provider: basic
@@ -193,7 +197,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: AVD cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: avd-cache
         with:
           path: |
@@ -205,7 +209,7 @@ jobs:
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
         timeout-minutes: 15
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
@@ -217,7 +221,7 @@ jobs:
 
       - name: Instrumented tests and coverage
         timeout-minutes: 25
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
@@ -254,12 +258,12 @@ jobs:
             :payin:createDebugAndroidTestCoverageReport
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest
 
-      # What the sonar job reads. Paths are kept relative to the workspace so the download restores them
+      # What `sonar.yml` reads. Paths are kept relative to the workspace so the download restores them
       # into the module build trees the analysis already looks in, rather than somewhere it has to be
       # pointed at separately.
       - name: Upload instrumented coverage
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: instrumented-coverage
           path: '*/build/reports/coverage/androidTest/**'
@@ -270,7 +274,7 @@ jobs:
 
       - name: Upload instrumented results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: instrumented-results
           path: '*/build/reports/androidTests/**'
@@ -279,14 +283,17 @@ jobs:
   card-present:
     name: Build & Test (card-present)
     runs-on: ubuntu-latest
+    # The card reader credential is an environment secret: `ci-pull-request` on a pull request, `ci-protected` on
+    # a push to main, release/* or hotfix/*.
+    environment: ${{ github.event_name == 'pull_request' && 'ci-pull-request' || 'ci-protected' }}
     # Skipped wherever the run has no secrets to build :taptopay with, so it reports skipped rather than
     # dying on an auth error. Two such runs, and GitHub decides both: a fork's pull request never receives
     # secrets at all, and a Dependabot pull request reads a separate secret store this repository does not
     # populate. Measured on #57, where the card reader resolved as `401 Unauthorized`.
     #
-    # The Dependabot half is deliberately inside the pull-request clause. A push to main runs this job
-    # whoever pushed it, including a merge auto-completed on Dependabot's behalf, and that push is where a
-    # bumped action is actually tested against :taptopay.
+    # The Dependabot half is deliberately inside the pull-request clause. A push to a protected branch runs
+    # this job whoever pushed it, including a merge auto-completed on Dependabot's behalf, and that push is
+    # where a bumped action is actually tested against :taptopay.
     #
     # Giving Dependabot the credential instead was considered and rejected. Its `github_actions` ecosystem
     # edits workflow files, and a pull_request run uses the workflow from the head, so the run would execute
@@ -303,6 +310,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -341,94 +349,14 @@ jobs:
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
           :example:createDebugUnitTestCoverageReport
 
-  sonar:
-    name: SonarCloud
-    runs-on: ubuntu-latest
-    # instrumented is here for its artifact, not for ordering: this job's coverage on new code is wrong
-    # without it, and wrong in the direction that fails the gate. build stays for the ordering it always
-    # had.
-    needs: [build, instrumented]
-    # Same condition as card-present, for the same reason: this job builds :taptopay too.
-    if: >-
-      github.event_name != 'pull_request'
-      || (github.event.pull_request.head.repo.full_name == github.repository
-          && github.event.pull_request.user.login != 'dependabot[bot]')
-    env:
-      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
-      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The card-present modules' reports and classes, for `sonar.yml`, as the build job uploads its own.
+      - name: Upload card-present reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          fetch-depth: 0
-
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-        with:
-          # See the note on the first setup-gradle in this file.
-          cache-provider: basic
-
-      # Analysis reads these reports, so they run first. Scoped to the modules that build
-      # without a credential. :example is absent because the root build skips it in the
-      # analysis, so nothing here would read its reports. The card-present job builds, tests,
-      # lints and formats it.
-      - name: Produce reports
-        run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
-          :payabli-bom:ktlintCheck :testutils:ktlintCheck
-          :core:lint :payin:lint :telemetry:lint :testutils:lint
-
-      # Split from the step above so the serialising flag reaches the coverage tasks without also
-      # serialising nine lint and format tasks. See the note in the build job.
-      - name: Produce coverage reports
-        run: ./gradlew --max-workers=1
-          :core:createDebugUnitTestCoverageReport
-          :payin:createDebugUnitTestCoverageReport
-          :telemetry:createDebugUnitTestCoverageReport
-          :testutils:createDebugUnitTestCoverageReport
-
-      # The release identity, because every build reads /maven whatever environment it targets. The QA pair
-      # publishes QA binaries to /maven-qa and is not a reader anywhere. The build's own property names do not
-      # change, because the run supplies the identity and the build does not choose it.
-      #
-      # Card-present reports, only when the credential is available.
-      - name: Produce card-present reports
-        if: env.PAYABLI_MAVEN_PASSWORD != ''
-        run: ./gradlew :taptopay:ktlintCheck :taptopay:lint
-          :payabli-android:ktlintCheck :payabli-android:lint
-
-      - name: Produce card-present coverage report
-        if: env.PAYABLI_MAVEN_PASSWORD != ''
-        run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
-
-      # Last, and after every step that writes into build/reports, so nothing this job regenerates lands
-      # on top of it. The emulator that produced this cannot run here: this job holds the card reader
-      # credential and SONAR_TOKEN, and the instrumented job holds neither, which is the whole reason the
-      # coverage travels as an artifact. See that job for the argument.
-      #
-      # The paths inside the artifact are workspace-relative, so this restores them into the same module
-      # build trees build.gradle.kts already points the analysis at.
-      - name: Download instrumented coverage
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: instrumented-coverage
-
-      # The failure this guards against is silent: a missing report is a Sonar warning, not an error, so a
-      # broken hand-off analyses cleanly and reports the device-covered lines as uncovered. That reads as a
-      # coverage regression with no cause, on a pull request that changed none of it.
-      - name: Check the instrumented coverage arrived
-        run: |
-          for module in core payin; do
-            report="$module/build/reports/coverage/androidTest/debug/connected/report.xml"
-            if [ ! -s "$report" ]; then
-              echo "::error::$report is missing or empty; the analysis would under-report $module"
-              exit 1
-            fi
-          done
-
-      # The scanner indexes .github as well as the modules, so these workflow files are analysed.
-      - name: Analyze
-        run: ./gradlew sonar
+          name: card-present-reports
+          path: |
+            taptopay/build/reports/**
+            taptopay/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/**
+            payabli-android/build/reports/**
+          retention-days: 7

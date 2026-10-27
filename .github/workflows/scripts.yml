@@ -14,7 +14,7 @@ name: Nightly reporter tests
 # runs the whole nightly including the emulator suite and its report job posts to the team channel, which is
 # a great deal of machinery and noise for a change to a Python script. So the practical options were a
 # short-lived probe branch with a temporary push trigger, or merging and waiting for morning. These run on
-# the pull request itself, in about a minute, and post nothing.
+# the pull request itself, in a few minutes, and post nothing.
 #
 # Path-filtered, so an ordinary pull request pays nothing for it. That also means it must not be made a
 # required check: a required check that never runs blocks a merge rather than passing it. Neither is
@@ -33,6 +33,9 @@ on:
       # The workflow file is in the filter so a change to it tests itself.
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
+      - '.github/workflows/nightly-report.yml'
+      - '.github/workflows/sonar.yml'
+      - '.github/workflows/source-branch.yml'
       # The harness reads the live workflows, so they have to be here or its assertions would not run on the
       # change that broke them. The nightly is here for the same reason: W8 asserts on its liveness-owner
       # expression, and a guard that does not run on the file it protects is not a guard. W11 is the card
@@ -46,10 +49,13 @@ on:
       - '.github/workflows/release.yml'
       - '.github/workflows/public-surface.yml'
   push:
-    branches: [main]
+    branches: [main, 'release/**', 'hotfix/**']
     paths:
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
+      - '.github/workflows/nightly-report.yml'
+      - '.github/workflows/sonar.yml'
+      - '.github/workflows/source-branch.yml'
       - '.github/workflows/live-*.yml'
       - '.github/workflows/nightly.yml'
       - '.github/workflows/card-reader-mirror.yml'
@@ -65,16 +71,20 @@ concurrency:
 permissions:
   contents: read
 
+# `bash` turns on pipefail, so a failure left of a `|` fails the step.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   harness:
     name: Harness
     runs-on: ubuntu-latest
-    # The sabotage half runs deliberately corrupted copies of the reporter, and neither it nor the collector
-    # subprocesses impose a timeout of their own, so a mutation that produces a loop would otherwise sit on
-    # the six-hour default. The documented run is about a minute.
+    # The collector subprocesses impose no timeout of their own, so a change that produces a loop would
+    # otherwise sit on the six-hour default.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The workflow checks parse YAML, so the module has to be there. Measured on this image rather than
       # assumed: `ubuntu-latest` carries PyYAML 6.0.1 in the runner's own python3, so nothing is installed
@@ -89,8 +99,26 @@ jobs:
       - name: Verify
         run: python3 .github/scripts/tests/verify.py
 
+  sabotage:
+    name: Sabotage
+    runs-on: ubuntu-latest
+    # Each mutation is a full verify, run one after another: one job took 15 minutes at about 420 rows on
+    # 2026-10-27. Each shard takes every TOTAL-th row, and the shard is the job's own index, so the shards
+    # cover every row whatever the matrix lists.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    # A mutation that produces a loop would otherwise sit on the six-hour default.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: A YAML parser is present
+        run: python3 -c "import yaml; print('yaml', yaml.__version__)"
+
       # Each break is confirmed to turn a check red. Rewrites copies in a scratch directory and never the
       # files in the tree, so an interrupted run leaves nothing behind. An edit that moves a mutation anchor
       # reports INVALID and fails here; re-point the anchor in the same change.
       - name: Sabotage
-        run: python3 .github/scripts/tests/sabotage.py
+        run: python3 .github/scripts/tests/sabotage.py --shard ${{ strategy.job-index }}/${{ strategy.job-total }}

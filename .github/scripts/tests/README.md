@@ -17,7 +17,7 @@ the textual reader it forced missed, and each one a guard silently examining not
 
 ```bash
 python3 .github/scripts/tests/verify.py     # about 4 seconds
-python3 .github/scripts/tests/sabotage.py   # about a minute
+python3 .github/scripts/tests/sabotage.py   # every row; --shard INDEX/TOTAL takes every TOTAL-th, as CI does
 ```
 
 Both run in CI through `.github/workflows/scripts.yml`, but only when `.github/scripts/**` or that

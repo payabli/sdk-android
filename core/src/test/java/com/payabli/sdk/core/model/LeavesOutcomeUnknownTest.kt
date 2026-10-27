@@ -79,6 +79,7 @@ class LeavesOutcomeUnknownTest {
             PayabliErrorType.PAYMENT_NOT_HELD,
             PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE,
             PayabliErrorType.PAYMENT_NOT_TAKEN,
+            PayabliErrorType.CONTACTLESS_DISABLED,
         )
 
     @Test
