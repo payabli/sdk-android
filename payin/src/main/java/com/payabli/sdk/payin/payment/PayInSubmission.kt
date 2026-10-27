@@ -44,17 +44,9 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 /**
- * One payment form's submission: what state it is in, and the one call that changes it.
- *
- * **The caller owns the scope.** Every entry point suspends, so whoever calls decides whether a capture dies
- * with the screen. Canceling does not un-charge a card.
- *
- * **One holder per form, and no singleton.** A holder keeps its terminal state — a result, or an exception
- * carrying wording from the wire — for as long as it lives, so its lifetime is a screen's. A host holds
- * it wherever its own screen state lives. The keys it holds are the process's, in [PayInKeyStore].
- *
- * [state] is a `StateFlow`, which replays its latest value, so a collector arriving after a configuration
- * change sees `Submitting` or the outcome immediately.
+ * One payment form's submission and its [state], which replays its latest value. Every call suspends in the
+ * caller's scope, and canceling does not un-charge a card. One per form: its state lives as long as a screen,
+ * and the keys it holds outlive it in [PayInKeyStore].
  */
 internal class PayInSubmission(
     private val moneyIn: MoneyInClient,

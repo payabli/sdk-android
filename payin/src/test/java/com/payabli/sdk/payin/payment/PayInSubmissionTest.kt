@@ -658,7 +658,7 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
-    /** The keys are the process's, not the holder's: one held by a holder is handed to the next. */
+    /** A key one holder kept is handed to the next, because every holder in the process reads the same keys. */
     @Test
     fun `a key held by one holder is resent by another for the same entry point`() =
         runTest(timeout = timeout) {

@@ -67,7 +67,7 @@ internal class PayInKeyStore(
             when {
                 same >= 0 -> {
                     val existing = SHARED_HELD[same]
-                    // Replaced rather than changed, so a key read outside the lock never changes under its reader.
+                    // Replaced, never changed in place: a caller reads the key after the lock is released.
                     // The first description stays: it is the payment the key was minted for.
                     SHARED_HELD[same] =
                         HeldKey(
@@ -157,7 +157,11 @@ internal class PayInKeyStore(
  * `data class`: the synthesized `toString` would put the key into any assertion failure or crash report that
  * renders one.
  *
+ * @property entry the entry point the payment is sent to.
+ * @property environment the name of the environment the payment is sent to.
  * @property payment what names the payment: its route, and its transaction or payment reference.
+ * @property key the idempotency key a repeat of the payment carries.
+ * @property reservedAt when the key's window started, on a monotonic clock that counts device sleep.
  * @property description the payment the key was first sent for, or null on a route that names a transaction.
  */
 internal class HeldKey(
