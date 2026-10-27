@@ -719,6 +719,9 @@ MUTATIONS = [
     # green build is all it sees.
     ("The release drops its gate, so a corrupted record publishes", RELEASE, "workflows",
      "      - name: Public surface\n"
+     "        env:\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
      "        run: |\n"
      "          rm core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
      "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :taptopay:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
@@ -731,6 +734,9 @@ MUTATIONS = [
     # tree: a red gate cancels the upload of a tree the run already built.
     ("The release checks the record after publishing it", RELEASE, "workflows",
      "      - name: Public surface\n"
+     "        env:\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
      "        run: |\n"
      "          rm core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
      "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :taptopay:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
@@ -747,6 +753,9 @@ MUTATIONS = [
      "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
      "        run: ./gradlew publish\n\n"
      "      - name: Public surface\n"
+     "        env:\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
      "        run: |\n"
      "          rm core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
      "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :taptopay:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
@@ -756,6 +765,15 @@ MUTATIONS = [
     ("The pull-request gate leaves :payin's record out, so its public members change unchecked", PUBLIC_SURFACE, "workflows",
      "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n",
      "          git diff --exit-code -- core/api/release.txt telemetry/api/release.txt\n"),
+
+    # :taptopay resolves the card reader from a credentialed repository, so a gate step without the pair
+    # fails on a clean runner and the release stops before it publishes.
+    ("The release gate loses the card reader credential, so :taptopay cannot resolve", RELEASE, "workflows",
+     "      - name: Public surface\n"
+     "        env:\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n",
+     "      - name: Public surface\n"),
 
     ("The release leaves :payin out of the records it checks", RELEASE, "workflows",
      "          git diff --exit-code -- core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n",

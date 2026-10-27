@@ -4625,6 +4625,15 @@ def test_workflows():
           and release_gate[0] < release_publish[0]
           and commands_of(release_build_steps[release_gate[0]]) == GATE_COMMANDS,
           f"{[step.get('name') for step in release_build_steps]}")
+    # Every Gradle step in the suites and the build resolves :taptopay, which needs the card reader credential,
+    # so one that lacks the pair fails on a clean runner and stops the release.
+    release_jobs = workflow_doc(RELEASE_WORKFLOW).get("jobs") or {}
+    release_gradle = [step for name in ("test", "build") for step in job_steps(release_jobs.get(name) or {})
+                      if "gradlew" in run_commands(step)]
+    lacking = [str(step.get("name", "")) for step in release_gradle
+               if not {"PAYABLI_MAVEN_USER", "PAYABLI_MAVEN_PASSWORD"} <= set(step.get("env") or {})]
+    check("W17 and every Gradle step in the suites and the build holds the card reader credential",
+          bool(release_gradle) and not lacking, " | ".join(lacking))
 
 
     # main takes pull requests from release, hotfix and Dependabot branches only. A ruleset cannot name a

@@ -264,6 +264,9 @@ jobs:
       # without the record, refuses the publish before a version number is spent. Nothing else in the build reads
       # the signature: assembling and publishing work with the plugin absent.
       - name: Public surface
+        env:
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
         run: |
           rm core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt
           ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :taptopay:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease
