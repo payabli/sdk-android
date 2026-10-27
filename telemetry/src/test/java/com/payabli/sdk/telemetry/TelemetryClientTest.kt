@@ -461,6 +461,24 @@ class TelemetryClientTest {
         }
 
     /**
+     * A signal sends everything that was waiting when the queue holds an exact number of requests' worth and
+     * a count is waiting, because the overflow event takes one of the first request's places.
+     */
+    @Test
+    fun oneSignalDrainsAFullQueueAndItsOverflowEvent() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 2, capacity = 4) { client ->
+                repeat(6) { record(client) }
+
+                client.flushAsync()
+
+                assertEquals("an event was left for the timer", 5, transport.eventsSent())
+            }
+        }
+
+    /**
      * A refused batch goes back without its overflow event, and the next accepted batch carries one event
      * with the running total.
      *

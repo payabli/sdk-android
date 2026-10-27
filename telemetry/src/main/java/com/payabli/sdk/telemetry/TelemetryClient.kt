@@ -169,7 +169,9 @@ internal class TelemetryClient(
      * by the queue emptying: what arrives during these requests carries its own signal.
      */
     private suspend fun drainWhatWasWaiting() {
-        val waiting = queue.size()
+        // One place more than is queued, for an overflow event. A flush left with nothing to send makes no
+        // request and ends the loop, so the place costs nothing when no count is waiting.
+        val waiting = queue.size() + 1
         var requests = ((waiting + maxEventsPerRequest - 1) / maxEventsPerRequest).coerceIn(1, maxDrainRequests)
         while (requests > 0 && flush()) {
             requests--
@@ -238,7 +240,7 @@ internal class TelemetryClient(
     /**
      * The event that reports [dropped] evictions, last in its batch and timed when the flush noticed them.
      *
-     * Built through the catalog's gate like any recorded event, so it carries only what the catalog declares.
+     * Its properties pass through the catalog's scrub, so it carries only what the catalog declares.
      *
      * @param dropped how many events the queue evicted, more than zero.
      * @return the event to append to the batch.
