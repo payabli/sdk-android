@@ -260,6 +260,7 @@ These Tap to Pay causes are ones your app handles, with their codes:
 | `PAYMENT_NOT_HELD` | 3031 | `INVALID_REQUEST` | No captured payment is held under that identifier. |
 | `CHARGE_NOT_FINISHED` | 3034 | `OUTCOME_UNKNOWN` | An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes. |
 | `PAYMENT_NOT_TAKEN` | 3035 | `RETRY_LATER` | The payment was not taken, and the card was not charged. Try again. |
+| `CONTACTLESS_DISABLED` | 3036 | `CONFIGURATION` | Contactless (NFC) is turned off on this device. Turn it on in Settings. |
 
 It also carries `capture` and `paymentTransId`:
 
@@ -299,6 +300,7 @@ lookup.
 | `DEVICE_SETUP_REQUIRED` | This device's setup was refused or revoked. Call `initialize()`, which sets the device up again. If it lands here again, check that the app came from Google Play. |
 | `SERVICE_UNAVAILABLE` | The service or the reader wasn't available. Try again later. |
 | `DEVICE_INELIGIBLE` | This phone can't take Tap to Pay payments: the hardware or Android version is missing something, or the card reader refused the phone. Check developer options and restart the phone. If a phone that meets the requirements still lands here, contact Payabli before replacing it. |
+| `CONTACTLESS_DISABLED` | Contactless (NFC) is turned off on the phone. Turn it on in Settings, then charge again. |
 | `SDK_INTERNAL_ERROR` | Report it to Payabli. |
 | `DEVICE_KEY_UNAVAILABLE` | The phone's key facility or secure storage failed, so the SDK can't tell whether the device's keys still work. Initialize again. If it keeps failing, the phone is the cause. |
 | `SESSION_ENDED` | This `PayabliTTP`'s `PayabliSession` was replaced or ended; create a new one with `PayabliTTP.create(session, context)` from the current session. |

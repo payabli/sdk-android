@@ -120,6 +120,7 @@ class ChargeWithoutTapLiveTest {
                         coordinator = coordinator,
                         manager = manager,
                         reader = StubReader(),
+                        contactlessEnabled = { true },
                         client = TTPTransactionClient(transport),
                         store = AttestedDeviceStore(DeviceTrust.open(context).store),
                         keys = ChargeKeyStore(elapsedRealtimeNanos = android.os.SystemClock::elapsedRealtimeNanos),

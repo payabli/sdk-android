@@ -170,15 +170,15 @@ private fun ChargesResponse.toRecord(): ChargeRecord =
  * a service that was briefly away and invites a retry that cannot work. Unhandled, it lands on
  * `SDK_INTERNAL_ERROR`, which is the reason for a failure whose remedy is unknown.
  */
-private suspend fun <T> mappingFailures(block: suspend () -> T): T =
+internal suspend fun <T> mappingFailures(block: suspend () -> T): T =
     try {
         block()
     } catch (uninitialized: FSSDKInternalSDKUninitializedException) {
         throw uninitialized.asFailure(ReaderFailureKind.SESSION_UNUSABLE)
     } catch (disabled: FSSDKNFCDisabledSDKException) {
-        throw disabled.asFailure(ReaderFailureKind.CONTACTLESS_UNAVAILABLE)
+        throw disabled.asFailure(ReaderFailureKind.CONTACTLESS_DISABLED)
     } catch (disabled: FSSDKNFCDisabledInternalException) {
-        throw disabled.asFailure(ReaderFailureKind.CONTACTLESS_UNAVAILABLE)
+        throw disabled.asFailure(ReaderFailureKind.CONTACTLESS_DISABLED)
     } catch (unsupported: FSSDKNFCNotSupportSDKException) {
         throw unsupported.asFailure(ReaderFailureKind.CONTACTLESS_UNAVAILABLE)
     } catch (unsupported: FSSDKNFCNotSupportedInternalException) {

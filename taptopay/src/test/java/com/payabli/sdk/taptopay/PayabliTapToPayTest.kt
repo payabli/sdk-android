@@ -59,6 +59,7 @@ class PayabliTapToPayTest {
                     coordinator = fixture.coordinator,
                     manager = fixture.manager,
                     reader = fixture.reader,
+                    contactlessEnabled = { true },
                     client = TTPTransactionClient(fixture.enrollment.transport, fixture.enrollment.logger),
                     store = fixture.enrollment.store,
                     keys = fixture.keys,

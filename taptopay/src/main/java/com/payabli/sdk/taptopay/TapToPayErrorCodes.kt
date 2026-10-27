@@ -177,6 +177,7 @@ internal object TapToPayErrorCodes {
             is CardReaderException.DeviceDenied -> PayabliErrorType.READER_DEVICE_REFUSED
             is CardReaderException.SessionUnusable -> PayabliErrorType.READER_SESSION_EXPIRED
             is CardReaderException.ReadFailed -> PayabliErrorType.TAP_NOT_COMPLETED
+            is CardReaderException.ContactlessDisabled -> PayabliErrorType.CONTACTLESS_DISABLED
         }
 
     private fun transactionCode(failure: TTPTransactionException): PayabliErrorType =

@@ -67,6 +67,9 @@ public class PayabliTTP private constructor(
      * sent under a new key. A retry the service refuses because the earlier sale reached it fails as
      * [com.payabli.sdk.core.model.PayabliErrorType.CHARGE_NOT_FINISHED].
      *
+     * A charge made with the device's contactless radio switched off is refused with
+     * [com.payabli.sdk.core.model.PayabliErrorType.CONTACTLESS_DISABLED] before anything is sent.
+     *
      * @param attempt whether this is a new sale or a retry of the most recent sale whose outcome is not known.
      */
     public suspend fun charge(

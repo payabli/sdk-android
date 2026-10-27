@@ -83,6 +83,25 @@ internal class ChargeKeyStore(
         }
 
     /**
+     * Whether a [PayabliAttempt.Retry] for [description] would be handed a held key, without reserving one.
+     *
+     * @param entry the entry point the charge is for.
+     * @param environment the environment the charge is sent to.
+     * @param description the sale the retry describes.
+     * @return true when [reserve] would resend a held key for this sale.
+     */
+    suspend fun holdsRetryOf(
+        entry: String,
+        environment: PayabliEnvironment,
+        description: ChargeDescription,
+    ): Boolean =
+        lock.withLock {
+            sweep(elapsedRealtimeNanos())
+            val existing = held.firstOrNull { it.matches(entry, environment) } ?: return@withLock false
+            existing.description?.matches(description) != false
+        }
+
+    /**
      * A reserved key, whether it was already held, and when this send reserved it. Not a `data class`, and the
      * key's getter is `@get:JvmSynthetic`, so neither a `toString` nor Java reaches the key.
      */

@@ -12,6 +12,7 @@ import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.enrollment.StoredRegistration
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONTACTLESS_DISABLED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_INELIGIBLE
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_SETUP_REQUIRED
@@ -116,6 +117,7 @@ class TapToPaySessionFailuresTest {
             CardReaderException.SessionUnusable(null) to TapToPaySessionState.SessionExpired,
             // A tap that did not complete says nothing about the session it ran on.
             CardReaderException.ReadFailed(null) to null,
+            CardReaderException.ContactlessDisabled(null) to failed(CONTACTLESS_DISABLED),
             PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, REASON) to
                 TapToPaySessionState.PendingActivation(ACTIVATION_ID),
             PayabliGenericException(PayabliErrorType.INVALID_CONFIGURATION, REASON) to

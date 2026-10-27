@@ -140,6 +140,7 @@ internal class FiservAndroidCardReader(
         when (kind) {
             ReaderFailureKind.SESSION_UNUSABLE -> CardReaderException.SessionUnusable(this)
             ReaderFailureKind.CONTACTLESS_UNAVAILABLE -> CardReaderException.ReadFailed(this)
+            ReaderFailureKind.CONTACTLESS_DISABLED -> CardReaderException.ContactlessDisabled(this)
             ReaderFailureKind.TIMED_OUT -> CardReaderException.ReadFailed(this)
             ReaderFailureKind.UNCLASSIFIED -> CardReaderException.ReadFailed(this)
             // A denial is terminal: the vendor refuses the handset, not the call. The session expires
