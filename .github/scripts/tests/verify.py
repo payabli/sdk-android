@@ -2979,8 +2979,10 @@ def test_workflows():
     # Both halves, because the credential is the pair: a regression that moved only the client id would
     # otherwise pass, and an id alone is enough to matter beside a secret that leaks another way.
     rendered = [(step, step_text(step)) for step in steps]
-    for half in ("client-secret", "client-id"):
-        holding = [step for step, body in rendered if f"secrets.{half}" in body]
+    # The credential is read from ci-protected under the run's suffix, `PAYABLI_CLIENT_SECRET_<suffix>`.
+    for half, read in (("client-secret", "secrets[format('PAYABLI_CLIENT_SECRET_"),
+                       ("client-id", "secrets[format('PAYABLI_CLIENT_ID_")):
+        holding = [step for step, body in rendered if read in body]
         check(f"W2 exactly one step is given the {half}", len(holding) == 1,
               f"{len(holding)} steps: " + " | ".join(str(step.get('name', '?')) for step in holding))
         if holding:
@@ -2991,7 +2993,7 @@ def test_workflows():
                 if "android-emulator-runner" in str(step.get("uses", ""))]
     check("W3 the emulator steps are found", len(emulator) == 2, f"{len(emulator)}")
     check("W3 no emulator step is given the client secret",
-          not any("secrets.client-secret" in body or "secrets.client-id" in body for _, body in emulator))
+          not any("PAYABLI_CLIENT_SECRET" in body or "PAYABLI_CLIENT_ID" in body for _, body in emulator))
     # The address is what replaced the credential, so its absence would mean the tests fall back to whatever
     # the build compiled in rather than reaching the server this workflow started. Read as a key of the step's
     # environment, so renaming it to anything else is an absence rather than a near miss.
@@ -4647,6 +4649,13 @@ def test_workflows():
     # for the one job that builds a pull request's code with the card reader credential, after a reviewer
     # approves that run (ci-pull-request). A job calling a reusable workflow cannot name an environment, so
     # it passes no secret either: the called job reads its own.
+    # The live callers pass no secret and name the credential set the called jobs read from ci-protected:
+    # a qa run reading the sandbox credentials would authenticate against the wrong service.
+    for name, job_name, suffix in (("live-qa.yml", "qa", "QA"), ("live-sandbox.yml", "sandbox", "SBX")):
+        caller = ((workflow_doc(name).get("jobs") or {}).get(job_name) or {})
+        check(f"W19 {name} passes no secret and reads the {suffix} credentials",
+              "secrets" not in caller and (caller.get("with") or {}).get("secrets-suffix") == suffix,
+              f"secrets={caller.get('secrets')} suffix={(caller.get('with') or {}).get('secrets-suffix')}")
     CARD_PRESENT_ENV = "${{ github.event_name == 'pull_request' && 'ci-pull-request' || 'ci-protected' }}"
     allowed = {"ci-protected", "release", "card-reader-mirror"}
     for path in sorted(WORKFLOWS.glob("*.yml")):
@@ -4654,7 +4663,10 @@ def test_workflows():
         for name, job in ((doc.get("jobs") or {}).items()):
             if not isinstance(job, dict):
                 continue
-            held = sorted(set(re.findall(r"secrets\.([A-Za-z0-9_]+)", yaml.safe_dump(job))) - {"GITHUB_TOKEN"})
+            dumped = yaml.safe_dump(job)
+            # A secret named by expression, `secrets[format(...)]`, is still a secret this job reads.
+            held = sorted((set(re.findall(r"secrets\.([A-Za-z0-9_]+)", dumped)) - {"GITHUB_TOKEN"})
+                          | ({"secrets[...]"} if "secrets[" in dumped else set()))
             if not held and job.get("secrets") != "inherit":
                 continue
             environment = " ".join(str(job.get("environment", "")).split())

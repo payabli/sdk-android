@@ -22,8 +22,4 @@ jobs:
     uses: ./.github/workflows/live-flows.yml
     with:
       environment: sandbox
-    secrets:
-      client-id: ${{ secrets.PAYABLI_CLIENT_ID_SBX }}
-      client-secret: ${{ secrets.PAYABLI_CLIENT_SECRET_SBX }}
-      entry-point: ${{ secrets.PAYABLI_ENTRY_SBX }}
-      slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+      secrets-suffix: SBX

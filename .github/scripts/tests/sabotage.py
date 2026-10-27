@@ -2760,6 +2760,15 @@ MUTATIONS = [
      "      - name: Public surface\n",
      "      - name: Read the version again\n        run: sed -n 's/^payabli.version=//p' gradle.properties\n\n      - name: Public surface\n"),
 
+    ("The qa live run reads the sandbox credentials", LIVE_QA, "workflows",
+     "      secrets-suffix: QA\n", "      secrets-suffix: SBX\n"),
+
+    ("The sandbox live caller passes a repository secret again", LIVE_SANDBOX, "workflows",
+     "      secrets-suffix: SBX\n", "      secrets-suffix: SBX\n    secrets:\n      client-secret: ${{ secrets.PAYABLI_CLIENT_SECRET_SBX }}\n"),
+
+    ("The live flows read their credentials without the environment", LIVE_FLOWS, "workflows",
+     "    # The client credentials are environment secrets, released only to a run on main or release/*.\n    environment: ci-protected\n", ""),
+
     ("Release lets the merge-back guard fail without failing the job", RELEASE, "workflows",
      "      - name: Check every earlier release is in main and in the commit\n",
      "      - name: Check every earlier release is in main and in the commit\n        continue-on-error: true\n"),
