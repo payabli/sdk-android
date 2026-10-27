@@ -61,9 +61,9 @@ internal object TapToPaySessionFailures {
         }
 
     /**
-     * The failure a caller is given for [failure], so its code agrees with the state [landingFor] published.
-     * A registration that cannot be read raises its storage refusal. Otherwise the original is the cause,
-     * which keeps any text the service sent.
+     * The failure a caller is given for [failure]. Only a device the configuration found owing its code, with a
+     * registration held, is reported pending: any other refusal here is not known to be one a code repairs, so
+     * it is not permitted. A registration that cannot be read raises its storage refusal.
      */
     fun raisedFor(
         failure: Exception,
@@ -71,10 +71,9 @@ internal object TapToPaySessionFailures {
     ): Exception =
         when {
             !owesActivation(failure) -> failure
-            registration is StoredRegistration.Held ->
-                failure as? TapToPaySessionException.PendingActivation
-                    ?: TapToPaySessionException.PendingActivation(failure)
             registration is StoredRegistration.Unreadable -> registration.refusal
+            registration is StoredRegistration.Held && failure is TapToPaySessionException.PendingActivation ->
+                failure
             // Already the code the configuration landing is reported under.
             failure is PayabliException -> failure
             else -> TapToPaySessionException.NotPermitted(failure)
