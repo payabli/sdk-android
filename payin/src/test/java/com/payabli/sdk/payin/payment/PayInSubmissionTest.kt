@@ -733,6 +733,28 @@ class PayInSubmissionTest {
             )
         }
 
+    /** Another entry point finding room does not make a full one say so again. */
+    @Test
+    fun `a key held at another entry point does not repeat a full entry point's report`() =
+        runTest(timeout = timeout) {
+            val logger = RecordingSdkLogger()
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()), logger)
+            repeat(PayInKeyStore.HELD_KEYS_MAX + 1) {
+                submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
+            }
+
+            submission.captureAuthorized(OTHER_ENTRY_POINT, PayInAuthorizedRequest("101-other", testDetails()))
+            submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-still-full", testDetails()))
+
+            assertEquals(
+                "the full entry point said so again",
+                1,
+                logger.records.count {
+                    it.level == LogLevel.WARN && it.message.contains("too many are unresolved")
+                },
+            )
+        }
+
     /** A refused repeat does not restart the key's clock, and a later resend that ends unknown does. */
     @Test
     fun `an unknown outcome after a refused repeat restarts the key's clock`() =
