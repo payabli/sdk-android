@@ -1321,6 +1321,28 @@ MUTATIONS = [
 
     # The scanner's configuration is main's. Each of these hands a branch the file that can run a binary
     # beside SONAR_TOKEN again.
+    # The artifacts come from the pull request's own CI. Each of these lets one reach `.git` or the configuration.
+    ("Sonar reads main's configuration after an artifact has arrived", SONAR, "workflows",
+     '      # The scanner\'s configuration is main\'s, never the analysed revision\'s: a branch could set a property that\n      # runs a binary of its own beside SONAR_TOKEN. `github.sha` is the main commit this workflow was read from,\n      # read before any artifact arrives and with replace refs off. The scanner also loads each module\'s copy.\n      - name: Take the configuration from main\n        env:\n          MAIN_SHA: ${{ github.sha }}\n        run: |\n          git --no-replace-objects show "$MAIN_SHA:sonar-project.properties" > "$RUNNER_TEMP/sonar-project.properties"\n          find . -name sonar-project.properties -not -path \'*/.git/*\' -delete\n\n      # The pull request\'s own CI built these, so they unpack outside the workspace, where nothing in them can\n      # reach `.git` or a configuration file, and only module reports and classes are copied in.\n      - name: Download the reports\n        uses: actions/download-artifact@PIN\n        with:\n          name: reports\n          path: ${{ runner.temp }}/artifacts\n          run-id: ${{ github.event.workflow_run.id }}\n          github-token: ${{ secrets.GITHUB_TOKEN }}\n\n',
+     '      # The pull request\'s own CI built these, so they unpack outside the workspace, where nothing in them can\n      # reach `.git` or a configuration file, and only module reports and classes are copied in.\n      - name: Download the reports\n        uses: actions/download-artifact@PIN\n        with:\n          name: reports\n          path: ${{ runner.temp }}/artifacts\n          run-id: ${{ github.event.workflow_run.id }}\n          github-token: ${{ secrets.GITHUB_TOKEN }}\n\n      # The scanner\'s configuration is main\'s, never the analysed revision\'s: a branch could set a property that\n      # runs a binary of its own beside SONAR_TOKEN. `github.sha` is the main commit this workflow was read from,\n      # read before any artifact arrives and with replace refs off. The scanner also loads each module\'s copy.\n      - name: Take the configuration from main\n        env:\n          MAIN_SHA: ${{ github.sha }}\n        run: |\n          git --no-replace-objects show "$MAIN_SHA:sonar-project.properties" > "$RUNNER_TEMP/sonar-project.properties"\n          find . -name sonar-project.properties -not -path \'*/.git/*\' -delete\n\n'),
+
+    ("Sonar unpacks the reports into the workspace again", SONAR, "workflows",
+     "          name: reports\n          path: ${{ runner.temp }}/artifacts\n",
+     "          name: reports\n"),
+
+    ("Sonar honours replace refs when it reads main's configuration", SONAR, "workflows",
+     "git --no-replace-objects show", "git show"),
+
+    ("Sonar takes in an artifact's symbolic links", SONAR, "workflows",
+     '          if [ -n "$(find "$STAGED" -type l -print -quit)" ]; then\n'
+     '            echo "::error::an artifact carries a symbolic link"\n'
+     '            exit 1\n'
+     '          fi\n', ""),
+
+    ("Sonar copies in any path an artifact carries", SONAR, "workflows",
+     "^[A-Za-z0-9_-]+/build/(reports|intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes)/ ]]",
+     ". ]]"),
+
     ("Sonar reads the analysed revision's configuration, not main's", SONAR, "workflows",
      "          MAIN_SHA: ${{ github.sha }}\n",
      "          MAIN_SHA: ${{ github.event.workflow_run.head_sha }}\n"),
@@ -1332,8 +1354,8 @@ MUTATIONS = [
      '          trusted="$trusted -Dproject.settings=$RUNNER_TEMP/sonar-project.properties"\n', ""),
 
     ("Sonar writes main's configuration into the workspace, where the branch's checkout lives", SONAR, "workflows",
-     'git show "$MAIN_SHA:sonar-project.properties" > "$RUNNER_TEMP/sonar-project.properties"',
-     'git show "$MAIN_SHA:sonar-project.properties" > "./main-sonar-project.properties"'),
+     'git --no-replace-objects show "$MAIN_SHA:sonar-project.properties" > "$RUNNER_TEMP/sonar-project.properties"',
+     'git --no-replace-objects show "$MAIN_SHA:sonar-project.properties" > "./main-sonar-project.properties"'),
 
     ("The emulator step is handed the client secret again", LIVE_FLOWS, "workflows",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",

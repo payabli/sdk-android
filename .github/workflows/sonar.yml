@@ -93,11 +93,23 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Workspace-relative, so each restores into the module build trees `sonar-project.properties` reads.
+      # The scanner's configuration is main's, never the analysed revision's: a branch could set a property that
+      # runs a binary of its own beside SONAR_TOKEN. `github.sha` is the main commit this workflow was read from,
+      # read before any artifact arrives and with replace refs off. The scanner also loads each module's copy.
+      - name: Take the configuration from main
+        env:
+          MAIN_SHA: ${{ github.sha }}
+        run: |
+          git --no-replace-objects show "$MAIN_SHA:sonar-project.properties" > "$RUNNER_TEMP/sonar-project.properties"
+          find . -name sonar-project.properties -not -path '*/.git/*' -delete
+
+      # The pull request's own CI built these, so they unpack outside the workspace, where nothing in them can
+      # reach `.git` or a configuration file, and only module reports and classes are copied in.
       - name: Download the reports
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: reports
+          path: ${{ runner.temp }}/artifacts
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -105,6 +117,7 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: card-present-reports
+          path: ${{ runner.temp }}/artifacts
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -112,8 +125,25 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: instrumented-coverage
+          path: ${{ runner.temp }}/artifacts
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Files only, by path: a module's `build/reports` or compiled classes, which is all the analysis reads.
+      - name: Take the reports and classes in
+        env:
+          STAGED: ${{ runner.temp }}/artifacts
+        run: |
+          if [ -n "$(find "$STAGED" -type l -print -quit)" ]; then
+            echo "::error::an artifact carries a symbolic link"
+            exit 1
+          fi
+          cd "$STAGED"
+          find . -type f -printf '%P\0' | while IFS= read -r -d '' file; do
+            if [[ "$file" =~ ^[A-Za-z0-9_-]+/build/(reports|intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes)/ ]]; then
+              cp --parents "$file" "$GITHUB_WORKSPACE"
+            fi
+          done
 
       # A missing report is a Sonar warning, not an error, so a broken hand-off would analyse cleanly and
       # report the device-covered lines as uncovered: a coverage regression with no cause.
@@ -126,16 +156,6 @@ jobs:
               exit 1
             fi
           done
-
-      # The scanner's configuration is main's, never the analysed revision's: a branch could set a property that
-      # runs a binary of its own beside SONAR_TOKEN. `github.sha` is the main commit this workflow was read from.
-      # Every copy in the workspace goes too, since the scanner also loads one from each module's directory.
-      - name: Take the configuration from main
-        env:
-          MAIN_SHA: ${{ github.sha }}
-        run: |
-          git show "$MAIN_SHA:sonar-project.properties" > "$RUNNER_TEMP/sonar-project.properties"
-          find . -name sonar-project.properties -not -path '*/.git/*' -delete
 
       # Where the analysis goes and which configuration it reads are forced here, and a property on the command
       # line wins over the file. The pull request is taken from the event, never from an artifact, and each ref

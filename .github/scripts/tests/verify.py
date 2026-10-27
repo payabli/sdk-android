@@ -4713,16 +4713,36 @@ def test_workflows():
     config = next((step for step in sonar_steps if step.get("name") == "Take the configuration from main"), {})
     check("W20 and the scanner's configuration is read from main, outside the workspace",
           (config.get("env") or {}).get("MAIN_SHA") == "${{ github.sha }}"
-          and "git show $MAIN_SHA:sonar-project.properties > $RUNNER_TEMP/sonar-project.properties"
+          and "git --no-replace-objects show $MAIN_SHA:sonar-project.properties > $RUNNER_TEMP/sonar-project.properties"
           in run_commands(config), f"{config}")
     check("W20 and every copy the branch carries is deleted before the scan",
           "find . -name sonar-project.properties -not -path */.git/* -delete" in run_commands(config),
           run_commands(config)[:200])
     check("W20 and the scanner is pointed at that copy",
           "-Dproject.settings=$RUNNER_TEMP/sonar-project.properties" in forced, forced[:300])
-    check("W20 and the configuration is taken before the arguments are built",
-          config in sonar_steps and identify in sonar_steps
-          and sonar_steps.index(config) < sonar_steps.index(identify), "")
+    # The artifacts were built by the pull request's own CI. They unpack outside the workspace, after the
+    # configuration is read, and only files under a module's reports or classes are copied in, so nothing in
+    # one reaches `.git` or a configuration file.
+    downloads = [step for step in sonar_steps if "download-artifact" in str(step.get("uses", ""))]
+    check("W20 and the configuration is read before any artifact arrives",
+          config in sonar_steps and bool(downloads)
+          and all(sonar_steps.index(config) < sonar_steps.index(step) for step in downloads), "")
+    check("W20 and every artifact unpacks outside the workspace",
+          bool(downloads) and all(" ".join(str((step.get("with") or {}).get("path", "")).split())
+                                  == "${{ runner.temp }}/artifacts" for step in downloads),
+          f"{[(step.get('with') or {}).get('path') for step in downloads]}")
+    intake = next((step for step in sonar_steps if step.get("name") == "Take the reports and classes in"), {})
+    intake_run = run_commands(intake)
+    check("W20 and the intake refuses a symbolic link",
+          "find $STAGED -type l -print -quit" in intake_run and "exit 1" in intake_run, intake_run[:200])
+    check("W20 and copies only a module's reports and classes, file by file",
+          "find . -type f -printf %P\\0" in intake_run
+          and "^[A-Za-z0-9_-]+/build/ ( reports | intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes ) /"
+          in intake_run and "cp --parents $file $GITHUB_WORKSPACE" in intake_run, intake_run[:400])
+    check("W20 and the intake runs after every download and before anything reads the workspace",
+          intake in sonar_steps and bool(downloads) and identify in sonar_steps
+          and all(sonar_steps.index(step) < sonar_steps.index(intake) for step in downloads)
+          and sonar_steps.index(intake) < sonar_steps.index(identify), "")
     scanning = [step for step in sonar_steps if "sonarqube-scan-action" in str(step.get("uses", ""))]
     check("W20 and the scanner is handed exactly those arguments, once the revision is still the newest",
           len(scanning) == 1 and " ".join(str((scanning[0].get("with") or {}).get("args", "")).split())
