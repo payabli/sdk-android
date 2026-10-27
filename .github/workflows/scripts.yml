@@ -14,7 +14,7 @@ name: Nightly reporter tests
 # runs the whole nightly including the emulator suite and its report job posts to the team channel, which is
 # a great deal of machinery and noise for a change to a Python script. So the practical options were a
 # short-lived probe branch with a temporary push trigger, or merging and waiting for morning. These run on
-# the pull request itself, in about ten minutes, and post nothing.
+# the pull request itself, in a few minutes, and post nothing.
 #
 # Path-filtered, so an ordinary pull request pays nothing for it. That also means it must not be made a
 # required check: a required check that never runs blocks a merge rather than passing it. Neither is
@@ -80,11 +80,9 @@ jobs:
   harness:
     name: Harness
     runs-on: ubuntu-latest
-    # The sabotage half runs deliberately corrupted copies of the reporter, and neither it nor the collector
-    # subprocesses impose a timeout of their own, so a mutation that produces a loop would otherwise sit on
-    # the six-hour default. A clean run took 9m41s on 2026-10-27 at about 400 mutations, each one a full
-    # verify, so the bound leaves room to grow and still stops a loop.
-    timeout-minutes: 20
+    # The collector subprocesses impose no timeout of their own, so a change that produces a loop would
+    # otherwise sit on the six-hour default.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -101,8 +99,26 @@ jobs:
       - name: Verify
         run: python3 .github/scripts/tests/verify.py
 
+  sabotage:
+    name: Sabotage
+    runs-on: ubuntu-latest
+    # Each mutation is a full verify, run one after another: one job took 15 minutes at about 420 rows on
+    # 2026-10-27. Each shard takes every TOTAL-th row, and the shard is the job's own index, so the shards
+    # cover every row whatever the matrix lists.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    # A mutation that produces a loop would otherwise sit on the six-hour default.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: A YAML parser is present
+        run: python3 -c "import yaml; print('yaml', yaml.__version__)"
+
       # Each break is confirmed to turn a check red. Rewrites copies in a scratch directory and never the
       # files in the tree, so an interrupted run leaves nothing behind. An edit that moves a mutation anchor
       # reports INVALID and fails here; re-point the anchor in the same change.
       - name: Sabotage
-        run: python3 .github/scripts/tests/sabotage.py
+        run: python3 .github/scripts/tests/sabotage.py --shard ${{ strategy.job-index }}/${{ strategy.job-total }}

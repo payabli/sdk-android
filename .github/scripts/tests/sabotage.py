@@ -2839,8 +2839,16 @@ MUTATIONS = [
      "  sonar:\n    runs-on: ubuntu-latest\n    env:\n      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}\n    steps:\n      - run: ./gradlew sonar\n\n  card-present:\n    name: Build & Test (card-present)\n"),
 
     ("The harness checks out on a moving tag", SCRIPTS, "workflows",
-     "      - uses: actions/checkout@PIN\n",
-     "      - uses: actions/checkout@v7\n"),
+     "      - uses: actions/checkout@PIN\n\n      # The workflow checks parse YAML",
+     "      - uses: actions/checkout@v7\n\n      # The workflow checks parse YAML"),
+
+    ("Sabotage shards are numbered by hand, so a shard listed twice leaves another's rows untested", SCRIPTS,
+     "workflows",
+     "--shard ${{ strategy.job-index }}/${{ strategy.job-total }}",
+     "--shard ${{ matrix.shard }}/6"),
+
+    ("The sabotage jobs drop their shard, so each runs every row", SCRIPTS, "workflows",
+     " --shard ${{ strategy.job-index }}/${{ strategy.job-total }}\n", "\n"),
 
     ("The source-branch workflow drops its declared shell", SOURCE_BRANCH, "workflows",
      "defaults:\n  run:\n    shell: bash\n", ""),
@@ -2957,7 +2965,33 @@ def with_pins(text: str, source: str) -> str:
     return PIN_TOKEN.sub(pin, text)
 
 
+def shard(rows: list, spec: str) -> list | None:
+    """The rows this run takes under `--shard INDEX/TOTAL`, or None when the spec is malformed.
+
+    Row k goes to shard k % TOTAL, so shards 0 to TOTAL-1 together take every row exactly once.
+
+    @param rows every mutation
+    @param spec INDEX/TOTAL, zero-based, as `strategy.job-index` and `strategy.job-total` give it
+    @return the rows for that shard, or None
+    """
+    match = re.fullmatch(r"(\d+)/(\d+)", spec)
+    if not match:
+        return None
+    index, total = int(match.group(1)), int(match.group(2))
+    if index >= total:
+        return None
+    return [row for k, row in enumerate(rows) if k % total == index]
+
+
 def main() -> int:
+    # A malformed spec runs nothing, which would pass with no row tested, so it is refused.
+    spec = sys.argv[2] if len(sys.argv) == 3 and sys.argv[1] == "--shard" else "0/1" if len(sys.argv) == 1 else ""
+    selected = shard(MUTATIONS, spec)
+    if not selected:
+        print(f"usage: sabotage.py [--shard INDEX/TOTAL], INDEX below TOTAL; got {sys.argv[1:]}")
+        return 2
+    print(f"Shard {spec}: {len(selected)} of {len(MUTATIONS)} rows")
+
     # The file in the working tree is the pristine copy: it is read for every anchor and is what each
     # mutated copy is restored from, and it is never written. Proving a fix red before it is green is a
     # separate exercise and belongs to verify.py, which takes NIGHTLY_COLLECTOR and NIGHTLY_POSTER for
@@ -2975,7 +3009,7 @@ def main() -> int:
             return 1
 
     rows, invalid = [], []
-    for description, path, half, anchor, replacement in MUTATIONS:
+    for description, path, half, anchor, replacement in selected:
         source = pristine[path].read_text()
         anchor, replacement = with_pins(anchor, source), with_pins(replacement, source)
         occurrences = source.count(anchor)

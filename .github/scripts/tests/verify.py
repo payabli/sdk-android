@@ -4775,6 +4775,27 @@ def test_workflows():
     check("W21 and accepts a pin with its version",
           bool(PINNED.match("      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1")))
 
+    # W22 the sabotage run is split across a matrix, and each job takes the shard of its own index, so the
+    # jobs cover every row whatever the matrix lists. A shard numbered by hand can be listed twice and leave
+    # another's rows untested while every job passes.
+    sabotage_job = (workflow_doc("scripts.yml").get("jobs") or {}).get("sabotage") or {}
+    runs = [" ".join(str(step.get("run", "")).split()) for step in job_steps(sabotage_job)
+            if "sabotage.py" in str(step.get("run", ""))]
+    check("W22 each sabotage job runs the shard of its own index",
+          runs == ["python3 .github/scripts/tests/sabotage.py --shard ${{ strategy.job-index }}/${{ strategy.job-total }}"],
+          f"{runs}")
+    # The split itself is sabotage.py's own, compiled from its source as W15 does the pin resolver.
+    shard_nodes = [node for node in ast.parse(SABOTAGE.read_text()).body
+                   if isinstance(node, ast.FunctionDef) and node.name == "shard"]
+    shard_scope = {"re": re}
+    exec(compile(ast.Module(body=shard_nodes, type_ignores=[]), str(SABOTAGE), "exec"), shard_scope)
+    split = shard_scope.get("shard", lambda rows, spec: None)
+    rows = list(range(23))
+    covered = [sorted(sum((split(rows, f"{i}/{n}") or [] for i in range(n)), [])) for n in range(1, 8)]
+    check("W22 and the shards together take every row exactly once", all(c == rows for c in covered), "")
+    check("W22 and a shard past the total, or a malformed one, is refused",
+          all(split(rows, spec) is None for spec in ("6/6", "1/0", "x", "1", "-1/3", "")), "")
+
 
 def load_publisher():
     """The uploader, imported from the working tree."""
