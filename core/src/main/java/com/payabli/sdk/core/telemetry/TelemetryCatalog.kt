@@ -129,6 +129,7 @@ public object TelemetryCatalog {
                 ),
             TelemetryEvents.AUTH_TOKEN_REFRESHED to
                 setOf(TelemetryProperty.DURATION_MS.key, TelemetryProperty.ATTEMPT.key),
+            TelemetryEvents.TELEMETRY_OVERFLOW to setOf(TelemetryProperty.DROPPED.key),
         )
 
     /** The events whose name already means a failure, and which carry no outcome for [forcesSend] to read. */

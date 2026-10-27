@@ -6,6 +6,8 @@ import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.telemetry.SessionScopedRecorder
 import com.payabli.sdk.core.telemetry.TelemetryCatalog
+import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorder
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import kotlinx.coroutines.CoroutineScope
@@ -102,8 +104,8 @@ internal class TelemetryClient(
         // A reporting thread can read this client from the registry and be descheduled before it gets here,
         // and a replacement in that window stops this one first. The queue refuses under the same lock it
         // appends with, so the answer cannot be overtaken by the drain that follows.
-        val queued = queue.offer(QueuedTelemetryEvent(event, scrubbed, now(), session))
-        if (queued == null) {
+        val offered = queue.offer(QueuedTelemetryEvent(event, scrubbed, now(), session))
+        if (offered == null) {
             logger.debug(
                 LogField.safe("event", "telemetry_event_after_stop"),
                 LogField.safe("name", event),
@@ -111,7 +113,9 @@ internal class TelemetryClient(
             return
         }
 
-        if (queued >= batchSize || TelemetryCatalog.forcesSend(event, scrubbed)) flushAsync()
+        // Counts what was offered since the last send attempt, so a refused batch back on the queue does not
+        // make every later event a full batch.
+        if (offered >= batchSize || TelemetryCatalog.forcesSend(event, scrubbed)) flushAsync()
     }
 
     /** Starts the periodic flush. Idempotent: a second call leaves the running timer alone. */
@@ -181,26 +185,32 @@ internal class TelemetryClient(
      */
     suspend fun flush(): Boolean =
         sending.withLock {
-            val batch = queue.drain(maxEventsPerRequest)
-
-            // Taken only when something is going out: `takeDropCount` resets as it reads, so a count taken
-            // with nothing to send is a count nobody sees.
-            if (batch.isEmpty()) return@withLock false
-
             val dropped = queue.takeDropCount()
+            // The overflow event takes one of the request's places, so a request never carries more than
+            // `maxEventsPerRequest` events.
+            val drained = queue.drain(if (dropped > 0) maxEventsPerRequest - 1 else maxEventsPerRequest)
+
+            // `takeDropCount` resets as it reads, so a count taken with nothing to send goes back for the
+            // batch that has something.
+            if (drained.isEmpty()) {
+                queue.restoreDropCount(dropped)
+                return@withLock false
+            }
+
             if (dropped > 0) {
                 logger.warn(
                     LogField.safe("event", "telemetry_queue_overflow"),
                     LogField.safe("dropped", dropped),
                 ) { "queue was full; oldest events evicted" }
             }
+            val batch = if (dropped > 0) drained + overflowEvent(dropped) else drained
 
-            when (uploader.send(batch, dropped)) {
+            when (uploader.send(batch)) {
                 SendOutcome.SENT -> true
                 SendOutcome.KEEP -> {
+                    // The overflow event goes back with the batch, so the count is not restored as well.
                     // A channel stopped mid-send refuses the batch, and its events are lost with it.
                     val requeued = queue.pushFront(batch)
-                    queue.restoreDropCount(dropped)
                     if (requeued) {
                         false
                     } else {
@@ -217,6 +227,24 @@ internal class TelemetryClient(
                 }
             }
         }
+
+    /**
+     * The event that reports [dropped] evictions, last in its batch and timed when the flush noticed them.
+     *
+     * Built through the catalog's gate like any recorded event, so it carries only what the catalog declares.
+     *
+     * @param dropped how many events the queue evicted, more than zero.
+     * @return the event to append to the batch.
+     */
+    private fun overflowEvent(dropped: Int): QueuedTelemetryEvent {
+        val properties = mapOf(TelemetryProperty.DROPPED.key to dropped.toString())
+        return QueuedTelemetryEvent(
+            name = TelemetryEvents.TELEMETRY_OVERFLOW,
+            properties = TelemetryCatalog.scrub(TelemetryEvents.TELEMETRY_OVERFLOW, properties).orEmpty(),
+            occurredAtMillis = now(),
+            session = context,
+        )
+    }
 }
 
 /** Enough requests to empty a full queue at this module's sizes, with room to spare. */

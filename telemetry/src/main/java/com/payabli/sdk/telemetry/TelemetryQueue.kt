@@ -32,6 +32,7 @@ internal class TelemetryQueue(
     private val lock = Any()
     private val events = ArrayDeque<QueuedTelemetryEvent>()
     private var droppedSinceLastDrain = 0
+    private var offeredSinceLastDrain = 0
     private var closed = false
 
     init {
@@ -39,11 +40,17 @@ internal class TelemetryQueue(
     }
 
     /**
-     * Adds [event] and returns the size afterwards, or null once [close] has been called.
+     * Adds [event] and answers how many events have been offered since the last [drain], or null once [close]
+     * has been called.
+     *
+     * The count is of offers, not of what is waiting: a batch returned by [pushFront] is not counted.
      *
      * The refusal is inside the lock with the append, because the two cannot be separated: a caller that
      * tested a flag outside it could be overtaken by the shutdown drain and land afterwards, leaving the
      * event in a queue nothing will read again. This lock is the one every enqueue already takes.
+     *
+     * @param event the scrubbed event to queue.
+     * @return the events offered since the last drain, this one included, or null once closed.
      */
     fun offer(event: QueuedTelemetryEvent): Int? =
         synchronized(lock) {
@@ -53,10 +60,14 @@ internal class TelemetryQueue(
                 droppedSinceLastDrain++
             }
             events.addLast(event)
-            events.size
+            ++offeredSinceLastDrain
         }
 
-    /** Removes and returns at most [max] events, oldest first. */
+    /**
+     * Removes and returns at most [max] events, oldest first, and restarts the count [offer] answers.
+     *
+     * Only the client's send drains, so a drain that took anything is a send attempt.
+     */
     fun drain(max: Int): List<QueuedTelemetryEvent> =
         synchronized(lock) {
             if (events.isEmpty()) {
@@ -67,6 +78,7 @@ internal class TelemetryQueue(
                 while (taken.size < max && events.isNotEmpty()) {
                     taken.add(events.removeFirst())
                 }
+                if (taken.isNotEmpty()) offeredSinceLastDrain = 0
                 taken
             }
         }
@@ -105,7 +117,7 @@ internal class TelemetryQueue(
      * How many events have been evicted since this was last asked, and resets the count.
      *
      * A queue that discards silently is how a gap in a chart gets mistaken for a quiet period, so the count
-     * rides the next batch that is accepted. [restoreDropCount] puts it back when that batch is not.
+     * becomes an event in the next batch. [restoreDropCount] puts it back when no event carried it.
      */
     fun takeDropCount(): Int =
         synchronized(lock) {
@@ -115,7 +127,7 @@ internal class TelemetryQueue(
         }
 
     /**
-     * Returns an unreported count to the queue, to travel with the next batch that is accepted.
+     * Returns an unreported count to the queue, for the next batch to carry.
      *
      * Added rather than assigned, under the same lock: evictions carry on during a send, and overwriting
      * would discard whatever was counted while the request was in flight.
