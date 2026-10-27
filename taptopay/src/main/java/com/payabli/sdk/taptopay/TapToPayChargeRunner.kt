@@ -303,6 +303,13 @@ internal class TapToPayChargeRunner(
                         }
                     }
                 }
+                // A retry refused before its key was reserved still describes the held sale, whose outcome is unknown.
+                if (reserved == null && attempt == PayabliAttempt.Retry) {
+                    val described = ChargeDescription.of(paymentDetails, invoice)
+                    if (withContext(NonCancellable) { keys.holdsRetryOf(entry, environment, described) }) {
+                        capture = TapToPayCapture.UNKNOWN
+                    }
+                }
                 val type = hostTypeFor(failure, unclosed = failure === unclosed, cardWasAsked = askedForCard, resentKey)
                 // Before wrapping: the report classifies by the failure's own type.
                 TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard, type = type)

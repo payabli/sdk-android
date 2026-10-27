@@ -286,6 +286,47 @@ class TapToPayChargeRunnerTest {
             }
         }
 
+    /** The retry describes the held sale, so the radio refusing it does not answer whether that sale was charged. */
+    @Test
+    fun `a retry of an unknown charge refused for the radio stays unknown and keeps its key`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2, opens = 2)
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            val openings = fixture.requests.count { it.path == INITIATE }
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture, contactlessEnabled = { false })
+                        .charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+                }.exceptionOrNull() as TapToPayException
+            val openingsAfterRefusal = fixture.requests.count { it.path == INITIATE }
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+
+            assertEquals(PayabliErrorType.CONTACTLESS_DISABLED, failure.type)
+            assertEquals("the unknown sale was reported as not charged", TapToPayCapture.UNKNOWN, failure.capture)
+            assertEquals("a payment was opened with the radio off", openings, openingsAfterRefusal)
+            assertEquals("the held sale's key was lost", "$MINTED_KEY-1", fixture.keySent(1))
+        }
+
+    /** With nothing held, a retry is a sale of its own, so the radio refusing it charged nothing. */
+    @Test
+    fun `a retry refused for the radio with nothing held is not charged`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture, contactlessEnabled = { false })
+                        .charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+                }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.CONTACTLESS_DISABLED, failure.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, failure.capture)
+        }
+
     @Test
     fun `a charge with the radio on behaves as before`() =
         runTest(timeout = TEST_TIMEOUT) {
