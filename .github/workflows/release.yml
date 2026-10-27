@@ -138,6 +138,22 @@ jobs:
             exit 1
           fi
 
+      # A tag already on another commit is a spent number. Refused here, before anyone is asked to approve a
+      # run that was going to fail; the release job asks again just before it tags.
+      - name: Check the version's tag, if it exists, names this commit
+        env:
+          COMMIT: ${{ inputs.commit }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tagged=
+          if [ -n "$(git tag --list "$VERSION")" ]; then
+            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")
+          fi
+          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then
+            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."
+            exit 1
+          fi
+
       # A version below the newest release would be published after it.
       - name: Check the version is not below the newest release
         env:

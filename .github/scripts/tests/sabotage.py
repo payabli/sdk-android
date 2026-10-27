@@ -2022,8 +2022,24 @@ MUTATIONS = [
      '-o StrictHostKeyChecking=no'),
 
     ('Release pushes over a version already tagged on another commit', RELEASE, "workflows",
-     '[ "$tagged" != "$COMMIT" ]',
-     '[ "$tagged" = "$COMMIT" ]'),
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n',
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" = "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n'),
 
     # The release is one run. A dispatch from inside it is a second run nobody approved.
     ("Release starts another run", RELEASE, "workflows",
@@ -2140,11 +2156,45 @@ MUTATIONS = [
 
 
     # What the tag guard compares. Each keeps every word of the guard and refuses nothing.
-    ("Release compares the named commit with itself rather than with the tag", RELEASE, "workflows",
-     'tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")', "tagged=$COMMIT"),
+    ('Release compares the named commit with itself rather than with the tag', RELEASE, "workflows",
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n',
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$COMMIT\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n'),
 
-    ("Release looks the tag up under another name, so a resume pushes it again", RELEASE, "workflows",
-     'git tag --list "$VERSION"', 'git tag --list "v$VERSION"'),
+    ('Release looks the tag up under another name, so a resume pushes it again', RELEASE, "workflows",
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n',
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "v$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n'),
 
     # Any other depth fetches no tags, so the lookup finds none and a spent number is a refused push.
     ("Release checks out without the tags", RELEASE, "workflows",
@@ -2674,6 +2724,32 @@ MUTATIONS = [
     ("Release passes a commit on any earlier green run, though its latest run on the branch failed", RELEASE, "workflows",
      '--branch "$BRANCH" --limit 1 --json conclusion',
      '--branch "$BRANCH" --json conclusion'),
+
+    ("Release's check lets a spent version through to the approval", RELEASE, "workflows",
+     "          COMMIT: ${{ inputs.commit }}\n          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n          tagged=\n",
+     "          COMMIT: ${{ inputs.commit }}\n          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n          exit 0\n          tagged=\n"),
+
+    ("Release's check lets a version tagged on another commit through", RELEASE, "workflows",
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n',
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" = "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n'),
 
     ("Release lets the merge-back guard fail without failing the job", RELEASE, "workflows",
      "      - name: Check every earlier release is in main and in the commit\n",

@@ -4105,6 +4105,21 @@ def test_workflows():
         check("W17 and a version with no branch of its own is refused, beside one whose name starts with it",
               lands(shas["release/0.3.0"], "0.4.0")[0] == 1, f"{lands(shas['release/0.3.0'], '0.4.0')}")
 
+    # A spent number is refused before the approval: the version's tag names another commit. The same commit
+    # is a resumed release and passes. 0.2.0 is tagged on release/0.2.0's commit in the fixture.
+    spent = checker_step("Check the version's tag, if it exists, names this commit")
+    check("W17 and the check refuses a version whose tag names another commit, before the suites run",
+          spent is not None and env_of(spent, "COMMIT") == named
+          and env_of(spent, "VERSION") == "${{ steps." + str((version_ids or [""])[0]) + ".outputs.version }}",
+          f"{spent.get('env') if spent else None}")
+    if spent is not None:
+        other = ran(spent, {"VERSION": "0.2.0", "COMMIT": shas["release/0.3.0"]}, repo)
+        resumed = ran(spent, {"VERSION": "0.2.0", "COMMIT": shas["release/0.2.0"]}, repo)[0]
+        fresh = ran(spent, {"VERSION": "0.4.0", "COMMIT": shas["release/0.3.0"]}, repo)[0]
+        check("W17 and refuses it naming the tag, while the same commit and an untagged version pass",
+              other[0] == 1 and "tag 0.2.0 already names" in other[1] and (resumed, fresh) == (0, 0),
+              f"other={other} resumed={resumed} fresh={fresh}")
+
     # A version below the newest release would be published after it. Equal is a resumed release, which the
     # tag step answers. Each version is run as the step would be handed it.
     newest = checker_step("Check the version is not below the newest release")
