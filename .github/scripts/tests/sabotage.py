@@ -115,7 +115,7 @@ INSTRUMENTED_MODULES_LINE = "          INSTRUMENTED_MODULES: core,payin"
 RELEASE_KEEP_TREE = (
     '      # Kept for as long as GitHub allows. A rebuild produces different bytes, so this tree is the only\n'
     '      # one a half-finished upload can be completed from, by re-running the failed job.\n'
-    '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n'
+    '      - uses: actions/upload-artifact@PIN\n'
     '        with:\n'
     '          name: staging-repo\n'
     '          path: build/staging-repo\n'
@@ -144,7 +144,7 @@ RELEASE_SUBJECT_THEN_TAG = (
     '      # For the uploader, and the tags and main the steps below read. Named by SHA: a branch ref makes the\n'
     '      # checkout pin origin/main back to the dispatch-time commit when main has moved since, and the checks\n'
     '      # below need main as it is now.\n'
-    '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n'
+    '      - uses: actions/checkout@PIN\n'
     '        with:\n'
     '          ref: ${{ github.sha }}\n'
     '          fetch-depth: 0\n'
@@ -226,7 +226,7 @@ RELEASE_TAG_THEN_SUBJECT = (
     '      # For the uploader, and the tags and main the steps below read. Named by SHA: a branch ref makes the\n'
     '      # checkout pin origin/main back to the dispatch-time commit when main has moved since, and the checks\n'
     '      # below need main as it is now.\n'
-    '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n'
+    '      - uses: actions/checkout@PIN\n'
     '        with:\n'
     '          ref: ${{ github.sha }}\n'
     '          fetch-depth: 0\n'
@@ -358,13 +358,13 @@ RELEASE_TAG_THEN_UPLOAD = (
     '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
     '          fi\n'
     '\n'
-    '      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n'
+    '      - uses: actions/download-artifact@PIN\n'
     '        with:\n'
     '          name: staging-repo\n'
     '          path: build/staging-repo\n'
     '\n'
     '      - name: Authenticate to AWS\n'
-    '        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0\n'
+    '        uses: aws-actions/configure-aws-credentials@PIN\n'
     '        with:\n'
     '          role-to-assume: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}\n'
     '          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}\n'
@@ -386,13 +386,13 @@ RELEASE_TAG_THEN_UPLOAD = (
     '\n'
 )
 RELEASE_UPLOAD_THEN_TAG = (
-    '      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n'
+    '      - uses: actions/download-artifact@PIN\n'
     '        with:\n'
     '          name: staging-repo\n'
     '          path: build/staging-repo\n'
     '\n'
     '      - name: Authenticate to AWS\n'
-    '        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0\n'
+    '        uses: aws-actions/configure-aws-credentials@PIN\n'
     '        with:\n'
     '          role-to-assume: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}\n'
     '          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}\n'
@@ -552,15 +552,15 @@ MUTATIONS = [
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
 
     ("QA snapshot builds a ref other than the commit the check passed", QA, "workflows",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: main\n"),
 
     ("QA snapshot tests the branch's head rather than the commit the check passed", QA, "workflows",
-     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"),
 
     ("CI calls the publisher again, so a merge to main publishes", CI, "workflows",
      "  card-present:\n    name: Build & Test (card-present)\n",
@@ -816,13 +816,13 @@ MUTATIONS = [
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  pull_request:\n"),
 
     ("QA snapshot builds another repository", QA, "workflows",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n          repository: other/repo\n"),
 
     ("QA snapshot runs an action on a moving tag", QA, "workflows",
-     "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8", "actions/download-artifact@v8"),
+     "actions/download-artifact@PIN", "actions/download-artifact@v8"),
 
     ("A ci.yml job is granted the publishing token", CI, "workflows",
      "  build:\n    name: Build & Test\n    runs-on: ubuntu-latest\n",
@@ -1685,8 +1685,8 @@ MUTATIONS = [
      "        env:\n          READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}"),
 
     ("The emulator action is handed a secret through its inputs", NIGHTLY, "workflows",
-     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0\n        with:\n',
-     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0\n        with:\n          repository-password: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@PIN\n        with:\n',
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@PIN\n        with:\n          repository-password: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
 
     # Job level, which every step inherits while none of them names it.
     ("The emulator job inherits a secret from its own env", NIGHTLY, "workflows",
@@ -1736,11 +1736,11 @@ MUTATIONS = [
 
     # A job holding a secret, even on one step, lets every earlier action write what that step reads.
     ("An action in the nightly card-present job is left on a moving tag", NIGHTLY, "workflows",
-     "      # step leaves behind.\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n",
+     "      # step leaves behind.\n      - uses: actions/checkout@PIN\n",
      "      # step leaves behind.\n      - uses: actions/checkout@v7\n"),
 
     ("An action in the ci.yml card-present job is left on a moving tag", CI, "workflows",
-     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@PIN',
      '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@v7'),
 
     # W13. A results directory left out of the archive reaches `verdict` as a suite that wrote nothing.
@@ -2125,7 +2125,7 @@ MUTATIONS = [
      '      group: maven-release\n      cancel-in-progress: true\n'),
 
     ('Release runs an action on a moving tag', RELEASE, "workflows",
-     'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8',
+     'actions/download-artifact@PIN',
      'actions/download-artifact@v8'),
 
     ("Release attaches the staging tree to the GitHub Release", RELEASE, "workflows",
@@ -2147,14 +2147,14 @@ MUTATIONS = [
      "          ref: ${{ needs.check.outputs.commit }}\n          fetch-depth: 0\n          persist-credentials: false\n"),
 
     ("Release builds main's head rather than the commit the check passed", RELEASE, "workflows",
-     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"),
 
     ("Release tests main's head rather than the commit the check passed", RELEASE, "workflows",
-     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"),
 
     ("Release tests before the commit is checked", RELEASE, "workflows",
      "    name: Test the release\n    needs: [check]\n", "    name: Test the release\n"),
@@ -2164,9 +2164,9 @@ MUTATIONS = [
      RELEASE_KEEP_TREE, ""),
 
     ("Release uploads a tree other than the one the build kept", RELEASE, "workflows",
-     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n"
+     "      - uses: actions/download-artifact@PIN\n        with:\n"
      "          name: staging-repo\n",
-     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n"
+     "      - uses: actions/download-artifact@PIN\n        with:\n"
      "          name: staging-repo-rebuilt\n"),
 
     # Three reorderings, each of which leaves every step intact and correct. The subject check after the
@@ -2314,9 +2314,9 @@ MUTATIONS = [
 
     ("QA publish leaves the checkout's credential beside the token", QA, "workflows",
      "      # For the uploader alone: this workflow's own commit, not the one being published.\n"
-     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n        with:\n          persist-credentials: false\n",
+     "      - uses: actions/checkout@PIN\n        with:\n          persist-credentials: false\n",
      "      # For the uploader alone: this workflow's own commit, not the one being published.\n"
-     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "      - uses: actions/checkout@PIN\n"),
 
     ("QA upload is handed a literal version rather than the check's stamp", QA, "workflows",
      "          VERSION: ${{ needs.check.outputs.version }}\n          ROLE_ARN",
@@ -2352,8 +2352,8 @@ MUTATIONS = [
      "      version: ${{ steps.name.outputs.version }}\n", "      version: 0.0.2-QA.20260101000000\n"),
 
     ("QA publish uploads a tree other than the one the build kept", QA, "workflows",
-     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n          name: staging-repo\n",
-     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n          name: staging-repo-rebuilt\n"),
+     "      - uses: actions/download-artifact@PIN\n        with:\n          name: staging-repo\n",
+     "      - uses: actions/download-artifact@PIN\n        with:\n          name: staging-repo-rebuilt\n"),
 
     # Release and hotfix branches. CI and the gate run there, and a release is cut from a commit on its own
     # version's branch, with every earlier release already in main. Each mutation below releases a commit
@@ -2811,7 +2811,7 @@ MUTATIONS = [
      "  sonar:\n    runs-on: ubuntu-latest\n    env:\n      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}\n    steps:\n      - run: ./gradlew sonar\n\n  card-present:\n    name: Build & Test (card-present)\n"),
 
     ("The harness checks out on a moving tag", SCRIPTS, "workflows",
-     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n",
+     "      - uses: actions/checkout@PIN\n",
      "      - uses: actions/checkout@v7\n"),
 
     ("The source-branch workflow drops its declared shell", SOURCE_BRANCH, "workflows",
@@ -2915,6 +2915,20 @@ def run_verify(half: str) -> tuple[int, int, str]:
     return int(match.group(1)), int(match.group(2)), proc.stdout
 
 
+# A row names a pinned action as `owner/action@PIN`, and the pin is read from the file the row targets. Quoting
+# the SHA would leave every anchor matching nothing after a Dependabot bump. A pin that resolves to nothing leaves
+# the token in place, so the anchor misses and the row reports itself invalid.
+PIN_TOKEN = re.compile(r"([\w./-]+)@PIN")
+
+
+def with_pins(text: str, source: str) -> str:
+    def pin(match: re.Match) -> str:
+        found = set(re.findall(rf"{re.escape(match.group(1))}@([0-9a-f]{{40}} # v[0-9.]+)", source))
+        return f"{match.group(1)}@{found.pop()}" if len(found) == 1 else match.group(0)
+
+    return PIN_TOKEN.sub(pin, text)
+
+
 def main() -> int:
     # The file in the working tree is the pristine copy: it is read for every anchor and is what each
     # mutated copy is restored from, and it is never written. Proving a fix red before it is green is a
@@ -2935,6 +2949,7 @@ def main() -> int:
     rows, invalid = [], []
     for description, path, half, anchor, replacement in MUTATIONS:
         source = pristine[path].read_text()
+        anchor, replacement = with_pins(anchor, source), with_pins(replacement, source)
         occurrences = source.count(anchor)
         if occurrences != 1:
             invalid.append((description, f"anchor matched {occurrences} times, expected exactly 1"))

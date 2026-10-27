@@ -3357,6 +3357,15 @@ def test_workflows():
                 if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
                 and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)}
 
+    # The pin resolver is sabotage.py's own, compiled from its source rather than copied, so the two cannot
+    # disagree about what an anchor reads.
+    pin_nodes = [node for node in sab.body
+                 if (isinstance(node, ast.FunctionDef) and node.name == "with_pins")
+                 or (isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "PIN_TOKEN")]
+    pin_scope = {"re": re}
+    exec(compile(ast.Module(body=pin_nodes, type_ignores=[]), str(SABOTAGE), "exec"), pin_scope)
+    with_pins = pin_scope.get("with_pins", lambda text, source: text)
+
     def text_of(node):
         if isinstance(node, ast.Name):
             return literals.get(node.id)
@@ -3380,7 +3389,9 @@ def test_workflows():
             # A target the tree under test does not carry is reported rather than raised: a raised
             # check stops the run before every later one, which reads like a clean run.
             try:
-                found = (SDK / sources[key]).read_text().count(before)
+                target = (SDK / sources[key]).read_text()
+                before, after = with_pins(before, target), with_pins(after, target)
+                found = target.count(before)
             except OSError:
                 broken.append(f"{desc or '<unnamed>'}: target {sources[key]} unreadable")
                 continue
