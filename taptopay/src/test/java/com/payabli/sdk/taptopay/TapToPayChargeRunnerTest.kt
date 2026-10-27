@@ -1429,11 +1429,11 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a contactless-disabled read is 3036, not an unknown outcome`() =
+    fun `a contactless-disabled read is 3036, and whether the card was charged stays unknown`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The vendor raises its own exception when the switch goes off while the reader waits. Left
-            // unclassified it lands as a tap that did not complete, which sends a merchant to a lookup
-            // before charging again — for a payment that never reached a card.
+            // unclassified it lands as 3018, which names no remedy. 3036 names it, turning the radio on, and
+            // the capture still says the outcome is unknown: a card may have been presented first.
             val fixture = readyFixture()
             fixture.reader.failNextRead(CardReaderException.ContactlessDisabled(null))
 
@@ -1443,6 +1443,7 @@ class TapToPayChargeRunnerTest {
                 }.exceptionOrNull() as TapToPayException
 
             assertEquals(PayabliErrorType.CONTACTLESS_DISABLED, failure.type)
+            assertEquals("a mid-read failure was reported as settled", TapToPayCapture.UNKNOWN, failure.capture)
             assertEquals(TRANS_ID, failure.paymentTransId)
             assertTrue("the failed read was not closed", UPDATE in fixture.routes)
             assertEquals(
