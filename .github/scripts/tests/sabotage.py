@@ -2006,8 +2006,12 @@ MUTATIONS = [
      ' \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
 
     ('Release tags from any branch', RELEASE, "workflows",
-     "    if: github.ref == 'refs/heads/main'\n",
-     ''),
+     'if [ "$GITHUB_REF" != "refs/heads/main" ]; then',
+     'if [ "$GITHUB_REF" = "" ]; then'),
+
+    ('Release skips a dispatch off main in silence instead of failing it', RELEASE, "workflows",
+     "    name: Check the commit can be released\n",
+     "    name: Check the commit can be released\n    if: github.ref == 'refs/heads/main'\n"),
 
     ("Release builds only on a tag ref, which a dispatch from main never is", RELEASE, "workflows",
      "    name: Build the release\n    needs: [check]\n",

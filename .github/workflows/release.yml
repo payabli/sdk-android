@@ -39,7 +39,6 @@ jobs:
   # Reads the commit and the property, and holds nothing that can tag or publish.
   check:
     name: Check the commit can be released
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -49,6 +48,15 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       commit: ${{ inputs.commit }}
     steps:
+      # The workflow, the uploader and the release environment's approval all come from main. A dispatch
+      # from anything else fails here, first, and says why, rather than skipping the run in silence.
+      - name: Check the run was dispatched from main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::a release is dispatched from refs/heads/main, not $GITHUB_REF."
+            exit 1
+          fi
+
       # Notes are written for the release, because pull request titles carry tracker references no release
       # page should name. Checked here, so a blank body stops the run before anything is tagged.
       - name: Check the release notes are written

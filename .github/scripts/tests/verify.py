@@ -3975,8 +3975,21 @@ def test_workflows():
           sorted(needs_of(gate_job)) == sorted([checker_name, tester, builder]) and bool(builder) and bool(tester),
           f"{gate_job.get('needs')}")
     check("W17 and carries no condition of its own", "if" not in gate_job, condition(gate_job))
-    check("W17 the check runs only on main",
-          bool(checker) and condition(checker) == "github.ref == 'refs/heads/main'", condition(checker))
+    # A dispatch off main fails as the check's first step, saying why. A job condition would skip the whole
+    # run with no reason given, which reads as nothing having been asked.
+    check("W17 the check carries no condition", bool(checker) and "if" not in checker, condition(checker))
+    dispatched = job_steps(checker)[:1]
+    check("W17 and its first step refuses a dispatch from any ref but main",
+          len(dispatched) == 1 and refuses(dispatched[0], "[ $GITHUB_REF != refs/heads/main ]"),
+          f"{[step.get('name') for step in job_steps(checker)[:1]]}")
+    if dispatched:
+        off = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", str(dispatched[0].get("run", ""))],
+                             capture_output=True, text=True, timeout=60,
+                             env={**os.environ, "GITHUB_REF": "refs/heads/feat/x"})
+        on = run_step(dispatched[0], {"GITHUB_REF": "refs/heads/main"})[0]
+        check("W17 and names the ref it refused, while main passes",
+              off.returncode == 1 and "refs/heads/feat/x" in off.stdout and on == 0,
+              f"off={off.returncode} {off.stdout!r} on={on}")
     check("W17 the build needs the check and nothing else, so it builds what the check passed",
           needs_of(build_job) == [checker_name], f"{build_job.get('needs')}")
     check("W17 and carries no condition of its own", "if" not in build_job, condition(build_job))
@@ -4418,7 +4431,7 @@ def test_workflows():
     # another runner changes what the job can do, and `$GITHUB_ENV` rewrites a later step's environment.
     # So a change to any of these is made here as well as in the workflow.
     shape = {
-        checker_name: ({"if", "name", "outputs", "permissions", "runs-on", "steps"},
+        checker_name: ({"name", "outputs", "permissions", "runs-on", "steps"},
                        {"contents": "read", "actions": "read"}),
         tester: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
         builder: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
