@@ -1787,8 +1787,8 @@ MUTATIONS = [
      "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          declare version=0.0.1\n          release="),
 
     ('Release overrides the CI count it read with command export', RELEASE, "workflows",
-     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch',
-     '          command export passed=1\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch'),
+     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch',
+     '          command export passed=1\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
 
     ("Release skips the check job's CI gate with a step condition", RELEASE, "workflows",
      '      - name: Check CI passed on the branch for this commit\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n',
@@ -1852,8 +1852,8 @@ MUTATIONS = [
      'if [ -n "$tagged" ]; then'),
 
     ('Release takes a CI run from any branch, the branch filter echoed beside the query', RELEASE, "workflows",
-     '--event push \\\n            --branch "$BRANCH" --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch',
-     '--event push \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          echo \'--branch "$BRANCH"\'\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch'),
+     '--event push \\\n            --branch "$BRANCH" --limit 1 --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch',
+     '--event push \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          echo \'--branch "$BRANCH"\'\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
 
     ('Release hard-codes the version it tags, the property name echoed beside it', RELEASE, "workflows",
      "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
@@ -1876,7 +1876,7 @@ MUTATIONS = [
      '            echo "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts"\n            git push'),
 
     ('Release echoes the CI guard instead of running it', RELEASE, "workflows",
-     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch once CI on $BRANCH has passed."\n            exit 1\n          fi\n',
+     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch once CI on $BRANCH has passed."\n            exit 1\n          fi\n',
      "          echo 'if [ $passed -lt 1 ] ; then exit 1 ; fi'\n"),
 
     ("Release publishes main's head as the approved commit", RELEASE, "workflows",
@@ -1891,8 +1891,8 @@ MUTATIONS = [
      "and the check read '$CHECKED'.\"\n            exit 1\n", "and the check read '$CHECKED'.\"\n"),
 
     ('Release lets a commit with no successful CI through the check', RELEASE, "workflows",
-     '[ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch',
-     '[ "$passed" -lt 0 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch'),
+     '[ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch',
+     '[ "$passed" -lt 0 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
 
     ('Release refuses a full SHA and accepts anything else', RELEASE, "workflows",
      'if [[ ! "$COMMIT" =~',
@@ -1998,12 +1998,12 @@ MUTATIONS = [
      "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
 
     ('Release tags a commit whatever CI said about it', RELEASE, "workflows",
-     '--jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch',
-     '--jq \'length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch'),
+     '--jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch',
+     '--jq \'length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
 
     ('Release tags a commit whose CI ran on any branch', RELEASE, "workflows",
-     ' \\\n            --branch "$BRANCH" --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch',
-     ' \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch'),
+     ' \\\n            --branch "$BRANCH" --limit 1 --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch',
+     ' \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
 
     ('Release tags from any branch', RELEASE, "workflows",
      "    if: github.ref == 'refs/heads/main'\n",
@@ -2670,6 +2670,10 @@ MUTATIONS = [
     ("Release's second newest-release check drifts from the first", RELEASE, "workflows",
      "        env:\n          VERSION: ${{ needs.check.outputs.version }}\n        run: |\n          release=",
      "        env:\n          VERSION: ${{ needs.check.outputs.version }}\n        run: |\n          # drifted\n          release="),
+
+    ("Release passes a commit on any earlier green run, though its latest run on the branch failed", RELEASE, "workflows",
+     '--branch "$BRANCH" --limit 1 --json conclusion',
+     '--branch "$BRANCH" --json conclusion'),
 
     ("Release lets the merge-back guard fail without failing the job", RELEASE, "workflows",
      "      - name: Check every earlier release is in main and in the commit\n",

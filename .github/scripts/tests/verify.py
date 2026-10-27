@@ -3985,7 +3985,7 @@ def test_workflows():
     check("W17 and carry no condition of their own", "if" not in test_job, condition(test_job))
 
     CI_QUERY = ["gh", "run", "list", "--repo", "$GITHUB_REPOSITORY", "--workflow", "ci.yml", "--commit", "$SHA",
-                "--event", "push", "--branch", "$BRANCH", "--json", "conclusion",
+                "--event", "push", "--branch", "$BRANCH", "--limit", "1", "--json", "conclusion",
                 "--jq", '[.[] | select(.conclusion == "success")] | length']
     VERSION_READ = ["sed", "-n", "s/^payabli.version=//p", "gradle.properties"]
 

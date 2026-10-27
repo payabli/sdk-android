@@ -122,7 +122,9 @@ jobs:
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
 
       # The build runs the unit tier only. CI on the branch is what ran the instrumented tests, lint and
-      # formatting, so a release names a commit that passed it there or nothing is tagged.
+      # formatting, so a release names a commit whose latest push run there passed, or nothing is tagged. The
+      # latest only: a red re-run means the commit is not known to be good, and one still running has no
+      # conclusion yet.
       - name: Check CI passed on the branch for this commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -130,9 +132,9 @@ jobs:
           BRANCH: ${{ steps.branch.outputs.branch }}
         run: |
           passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --event push \
-            --branch "$BRANCH" --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
+            --branch "$BRANCH" --limit 1 --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
           if [ "$passed" -lt 1 ]; then
-            echo "::error::no successful CI run on $BRANCH for $SHA. Dispatch once CI on $BRANCH has passed."
+            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch once CI on $BRANCH has passed."
             exit 1
           fi
 
