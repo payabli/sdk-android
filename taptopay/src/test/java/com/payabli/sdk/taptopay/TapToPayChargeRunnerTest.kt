@@ -1620,6 +1620,26 @@ class TapToPayChargeRunnerTest {
             ),
         ).also { it.coordinator.initialize() }
 
+    /**
+     * A failed-tap script whose first close lands and every later one is refused as unknown to the
+     * processor. A close that lands releases nothing, so the first charge's key stays held: the setup
+     * a resent run needs.
+     */
+    private suspend fun firstCloseLandsThenNoRecord(opens: Int = 3): SessionFixture {
+        var closes = 0
+        return SessionFixture(
+            RouteScript(
+                RouteScript.CHALLENGE to listOf(challengeBody()),
+                RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                RouteScript.ATTEST to listOf(attestBody()),
+                RouteScript.CONFIG to listOf(configBody()),
+                INITIATE to List(opens) { approved("""{"paymentTransId":"$TRANS_ID"}""") },
+                UPDATE to List(opens) { index -> if (index == 0) "{}" else problemBody(NOT_AT_PROCESSOR) },
+                statusFor = { if (it == UPDATE && ++closes > 1) 400 else 200 },
+            ),
+        ).also { it.coordinator.initialize() }
+    }
+
     private fun problemBody(detail: String) =
         """{"type":"https://docs.payabli.com/","title":"Bad Request","status":400,"detail":"$detail","code":"400","errors":{}}"""
 
@@ -1638,6 +1658,22 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `an indeterminate tap the processor has no record of keeps its attempt held`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching {
+                runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(0))
+            assertEquals("the retry resent the held key", "$MINTED_KEY-1", fixture.keySent(1))
+        }
+
+    @Test
     fun `a failed tap whose close is refused for any other reason keeps its attempt`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = failedTapClosedWith(400, problemBody("The request was not valid"))
@@ -1653,7 +1689,7 @@ class TapToPayChargeRunnerTest {
     @Test
     fun `a resent attempt the processor never saw stays unsettled, because it names an earlier opening`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR), opens = 3)
+            val fixture = firstCloseLandsThenNoRecord(opens = 3)
             fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
             val runner = runnerOver(fixture)
 
@@ -1665,6 +1701,157 @@ class TapToPayChargeRunnerTest {
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(1))
             assertEquals("the earlier opening's key was let go", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
+    @Test
+    fun `a failed tap the processor has no record of says the payment was not taken`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val notTaken = failure as TapToPayException
+            assertEquals(PayabliErrorType.PAYMENT_NOT_TAKEN, notTaken.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, notTaken.capture)
+            assertEquals(TRANS_ID, notTaken.paymentTransId)
+            assertEquals(NOT_AT_PROCESSOR, notTaken.detail)
+        }
+
+    @Test
+    fun `a failed tap whose close is refused for any other reason stays tap not completed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody("The request was not valid"))
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            val tapFailure = failure as? TapToPayException
+            assertEquals(PayabliErrorType.TAP_NOT_COMPLETED, tapFailure?.type)
+            assertEquals(TapToPayCapture.UNKNOWN, tapFailure?.capture)
+        }
+
+    @Test
+    fun `an indeterminate tap whose close the processor has no record of says the payment was not closed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val notClosed = failure as TapToPayException
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, notClosed.type)
+            assertEquals(TapToPayCapture.UNKNOWN, notClosed.capture)
+            assertEquals(TRANS_ID, notClosed.paymentTransId)
+            assertEquals(NOT_AT_PROCESSOR, notClosed.detail)
+        }
+
+    @Test
+    fun `an approved tap whose close the processor has no record of is still charged`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            fixture.reader.answerReadWith(cardRead())
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            val tapFailure = failure as? TapToPayException
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, tapFailure?.type)
+            assertEquals(TapToPayCapture.CHARGED, tapFailure?.capture)
+            assertEquals(TRANS_ID, tapFailure?.paymentTransId)
+        }
+
+    @Test
+    fun `a failed tap on a key this SDK resent keeps tap not completed whatever the close answers`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = firstCloseLandsThenNoRecord(opens = 3)
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+            val failure =
+                runCatching {
+                    runnerOver(
+                        fixture,
+                    ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+                }.exceptionOrNull()
+
+            assertEquals("the retry resent the held key", "$MINTED_KEY-1", fixture.keySent(1))
+            val tapFailure = failure as? TapToPayException
+            assertEquals(PayabliErrorType.TAP_NOT_COMPLETED, tapFailure?.type)
+            assertEquals(TapToPayCapture.UNKNOWN, tapFailure?.capture)
+            assertEquals(TRANS_ID, tapFailure?.paymentTransId)
+            fixture.reader.answerReadWith(cardRead())
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
+            assertEquals("the key is still held", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
+    @Test
+    fun `an indeterminate tap on a key this SDK resent keeps payment not closed when the processor has no record`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = firstCloseLandsThenNoRecord(opens = 3)
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            val failure =
+                runCatching {
+                    runnerOver(
+                        fixture,
+                    ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+                }.exceptionOrNull()
+
+            assertEquals("the retry resent the held key", "$MINTED_KEY-1", fixture.keySent(1))
+            val tapFailure = failure as? TapToPayException
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, tapFailure?.type)
+            assertEquals(TapToPayCapture.UNKNOWN, tapFailure?.capture)
+            assertEquals(TRANS_ID, tapFailure?.paymentTransId)
+            runCatching {
+                runnerOver(
+                    fixture,
+                ).charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
+            assertEquals("the key is still held", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
+    @Test
+    fun `a JVM error during the tap keeps its place when the close says the processor has no record`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The vendor loads native code, so a LinkageError from the reader is the reachable shape here. The
+            // close's refusal naming a payment the processor holds no record of is about the charge, but an
+            // `Error` is the caller's to see: the refusal rides suppressed, never in the error's place.
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            val raised = LinkageError("libmc3.so")
+            fixture.reader.failNextRead(raised)
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertSame("the error was converted rather than rethrown", raised, failure)
+            val suppressed = failure?.suppressed.orEmpty()
+            assertTrue(
+                "the close's refusal was dropped: ${suppressed.toList()}",
+                suppressed.singleOrNull() is PayabliException,
+            )
+            assertTrue("the opened payment was left standing", UPDATE in fixture.routes)
         }
 
     @Test
