@@ -4704,6 +4704,28 @@ def test_workflows():
           == "steps.newest.outputs.newest == 'true'", f"{scanning}")
     check("W20 and ci.yml no longer holds SONAR_TOKEN", "SONAR_TOKEN" not in workflow_text("ci.yml"), "")
 
+    # W21 every third-party action is pinned to a full commit SHA, with the version it stands for in a
+    # trailing comment, and every workflow declares its own token and its own shell. A tag runs whatever its
+    # owner points it at on the day; `defaults: run: shell: bash` is what turns on pipefail. Read off the text,
+    # since YAML drops the comment. Local `./` actions are exempt.
+    PINNED = re.compile(r"^\s*(?:-\s*)?uses:\s*[^\s.][^\s@]*@[0-9a-f]{40} # v\d+(?:\.\d+)*\s*$")
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        text = workflow_text(path.name)
+        loose = [line.strip() for line in text.splitlines()
+                 if re.match(r"^\s*(?:-\s*)?uses:\s*[^\s.]", line) and not PINNED.match(line)]
+        check(f"W21 {path.name} pins every third-party action to a commit, its version in a comment",
+              not loose, " | ".join(loose))
+        doc = workflow_doc(path.name)
+        check(f"W21 {path.name} declares its own token", "permissions" in doc, f"{sorted(map(str, doc))}")
+        shell = ((doc.get("defaults") or {}).get("run") or {}).get("shell")
+        check(f"W21 {path.name} runs its steps under bash, so pipefail is on", shell == "bash", f"{shell}")
+    # The matcher, both ways: a tag fails it and a pin with its version passes, so the check is not vacuous.
+    check("W21 the pin matcher refuses a tag", not PINNED.match("      - uses: actions/checkout@v7"))
+    check("W21 and refuses a pin with no version comment",
+          not PINNED.match("      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"))
+    check("W21 and accepts a pin with its version",
+          bool(PINNED.match("      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1")))
+
 
 def load_publisher():
     """The uploader, imported from the working tree."""

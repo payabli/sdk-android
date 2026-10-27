@@ -18,6 +18,11 @@ concurrency:
 permissions:
   contents: read
 
+# `bash` turns on pipefail, so a failure left of a `|` fails the step.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   qa:
     uses: ./.github/workflows/live-flows.yml

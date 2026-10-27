@@ -1579,8 +1579,8 @@ MUTATIONS = [
     # The mirror's permission split. The token is what turns repository-controlled code into an identity
     # that can write the origin, and every one of these hands it to a run that publishes nothing.
     ("The mirror grants the OIDC token at the top, so both jobs inherit it", MIRROR, "workflows",
-     "permissions:\n  contents: read\n\nconcurrency:",
-     "permissions:\n  contents: read\n  id-token: write\n\nconcurrency:"),
+     "permissions:\n  contents: read\n\n# `bash` turns on pipefail, so a failure left of a `|` fails the step.\ndefaults:",
+     "permissions:\n  contents: read\n  id-token: write\n\n# `bash` turns on pipefail, so a failure left of a `|` fails the step.\ndefaults:"),
 
     ("The fetch job is granted the token it has no use for", MIRROR, "workflows",
      "      id-token: none", "      id-token: write"),
@@ -1669,8 +1669,8 @@ MUTATIONS = [
      "        env:\n          READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}"),
 
     ("The emulator action is handed a secret through its inputs", NIGHTLY, "workflows",
-     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n',
-     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n          repository-password: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0\n        with:\n',
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0\n        with:\n          repository-password: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
 
     # Job level, which every step inherits while none of them names it.
     ("The emulator job inherits a secret from its own env", NIGHTLY, "workflows",
@@ -1720,10 +1720,8 @@ MUTATIONS = [
 
     # A job holding a secret, even on one step, lets every earlier action write what that step reads.
     ("An action in the nightly card-present job is left on a moving tag", NIGHTLY, "workflows",
-     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n\n"
-     "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6",
-     "      - uses: actions/checkout@v7\n\n"
-     "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6"),
+     "      # step leaves behind.\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n",
+     "      # step leaves behind.\n      - uses: actions/checkout@v7\n"),
 
     ("An action in the ci.yml card-present job is left on a moving tag", CI, "workflows",
      '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
@@ -2791,6 +2789,16 @@ MUTATIONS = [
     ("CI runs the analysis itself again, with the token", CI, "workflows",
      "  card-present:\n    name: Build & Test (card-present)\n",
      "  sonar:\n    runs-on: ubuntu-latest\n    env:\n      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}\n    steps:\n      - run: ./gradlew sonar\n\n  card-present:\n    name: Build & Test (card-present)\n"),
+
+    ("The harness checks out on a moving tag", SCRIPTS, "workflows",
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n",
+     "      - uses: actions/checkout@v7\n"),
+
+    ("The source-branch workflow drops its declared shell", SOURCE_BRANCH, "workflows",
+     "defaults:\n  run:\n    shell: bash\n", ""),
+
+    ("The nightly report drops its workflow-wide token, so it inherits the repository default", NIGHTLY_REPORT, "workflows",
+     "permissions: {}\n", ""),
 
     ("Release lets the merge-back guard fail without failing the job", RELEASE, "workflows",
      "      - name: Check every earlier release is in main and in the commit\n",

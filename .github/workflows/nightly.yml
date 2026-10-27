@@ -67,6 +67,11 @@ concurrency:
 permissions:
   contents: read
 
+# `bash` turns on pipefail, so a failure left of a `|` fails the step.
+defaults:
+  run:
+    shell: bash
+
 env:
   # Never --info or --debug here: verbose Gradle logs can print repository credentials.
   GRADLE_OPTS: -Dorg.gradle.console=plain
@@ -104,14 +109,14 @@ jobs:
       EMULATOR_TARGET: google_apis
       EMULATOR_ARCH: x86_64
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           # `basic` keeps caching on the open-source implementation; ci.yml carries why.
           cache-provider: basic
@@ -150,7 +155,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: AVD cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: avd-cache
         with:
           path: |
@@ -163,27 +168,16 @@ jobs:
       #
       # Note what is absent: no -no-snapshot-save, and disable-animations left false. Both are deliberate,
       # because this step exists to write the snapshot rather than to run anything.
-      # Left on @v2 deliberately, and the reasoning is recorded because review asked for a commit pin
-      # twice. It covers every action in this workflow, all of which are on moving tags, rather than
-      # this one: what the argument turns on is the job, not which action is being named.
+      # Pinned to a commit, as every third-party action in this repository is, and Dependabot keeps the pin
+      # current: a tag runs whatever its owner points it at on the day, and a commit names one snapshot.
       #
-      # A pin is brittle here. This action is the one most coupled to Android tooling churn, with two to six
-      # releases a year, so the trade is a low-probability tag compromise against a nightly that stops
-      # receiving upstream fixes. That argument used to rest on there being no Dependabot configuration at
-      # all; `.github/dependabot.yml` now exists for the live workflows' pins, so a pin here would be bumped.
-      # The decision stands on what is below instead: this job holds no payment credential.
-      #
-      # What made the pin worth arguing about was the secret this job used to hold: step-scoping a credential
-      # does not isolate it from code that ran earlier in the same job, so this action could have tampered
-      # with runner state and read the Slack webhook when the reporting step ran. The Slack half of that is
-      # closed structurally: reporting is a separate job, so no Slack credential exists here at all.
-      #
-      # The card reader credential is closed off the same way: it lives in the `card-present` job, and this
-      # job takes nothing from that one.
+      # The job split still matters: step-scoping a credential does not isolate it from code that ran earlier
+      # in the same job, so this job holds none. The Slack post runs in `nightly-report.yml`, and the card
+      # reader credential lives in the `card-present` job, which this job takes nothing from.
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
         timeout-minutes: 15
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
@@ -206,7 +200,7 @@ jobs:
         #
         # Card-present instrumented coverage needs an arm64 runner or a wired handset, which is the job it
         # is waiting on rather than something this one can be talked into.
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
@@ -272,7 +266,7 @@ jobs:
       - name: Upload the results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nightly-results-tests
           path: ${{ runner.temp }}/nightly-results
@@ -349,14 +343,14 @@ jobs:
       # Full history, because the Slack report attributes each failure with `git log -1 -- <file>`. On the
       # action's default depth of 1 git attributes the single grafted commit to every path, so every failure
       # would name whatever landed last.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       # A missing archive is a job that wrote nothing, which the collector reports as red.
       - name: Download the results
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: nightly-results-*
           path: ${{ runner.temp }}/nightly-results
@@ -404,7 +398,7 @@ jobs:
       - name: Upload the report facts
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nightly-facts
           path: ${{ runner.temp }}/nightly-facts
@@ -415,7 +409,7 @@ jobs:
       - name: Upload reports
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nightly-reports
           path: |

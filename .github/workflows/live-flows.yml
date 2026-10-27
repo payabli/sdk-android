@@ -18,13 +18,10 @@ name: Live flows
 # app asks an integrator's backend. They are separate `gradlew` calls because asking for the walkthrough
 # narrows `:example` to it, and because each installs a session in its own process.
 #
-# ## Every action is pinned here, and none is in the nightly
+# ## Every action is pinned
 #
-# The difference is the credential. A step cannot be isolated from code that ran earlier in the same job, so
-# every action in this job is one that could reach the client secret, whoever publishes it. `nightly.yml`
-# records why it stays on moving tags and that reasoning holds there, since it holds no payment credential.
-#
-# Its premise was that nothing bumps a pin, which `.github/dependabot.yml` now answers.
+# As in every workflow here. It matters most in this job: a step cannot be isolated from code that ran
+# earlier in the same job, so every action in it is one that could reach the client secret.
 #
 # ## What the credential can do
 #
@@ -59,6 +56,11 @@ on:
 
 permissions:
   contents: read
+
+# `bash` turns on pipefail, so a failure left of a `|` fails the step.
+defaults:
+  run:
+    shell: bash
 
 env:
   # Never --info or --debug here: verbose Gradle logs can print repository credentials.
@@ -98,7 +100,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: AVD cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: avd-cache
         with:
           path: |

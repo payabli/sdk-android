@@ -71,6 +71,11 @@ concurrency:
 permissions:
   contents: read
 
+# `bash` turns on pipefail, so a failure left of a `|` fails the step.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   harness:
     name: Harness
@@ -81,7 +86,7 @@ jobs:
     # verify, so the bound leaves room to grow and still stops a loop.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The workflow checks parse YAML, so the module has to be there. Measured on this image rather than
       # assumed: `ubuntu-latest` carries PyYAML 6.0.1 in the runner's own python3, so nothing is installed
