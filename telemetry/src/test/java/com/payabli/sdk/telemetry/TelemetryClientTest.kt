@@ -479,6 +479,25 @@ class TelemetryClientTest {
         }
 
     /**
+     * A discarded batch gives its count back, so every request of the drain carries an overflow event and
+     * the signal still reaches everything that was waiting.
+     */
+    @Test
+    fun oneSignalDrainsEverythingWhenEachRequestIsDiscarded() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport.refusing(413)
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 4, capacity = 7) { client ->
+                repeat(9) { record(client) }
+
+                client.flushAsync()
+
+                val queuedEventsSent = transport.bodiesAsText().sumOf { eventsIn(it) - overflowCounts(it).size }
+                assertEquals("an event was left for the timer", 7, queuedEventsSent)
+            }
+        }
+
+    /**
      * The count is restored beside a refused batch's events, so evictions after the refusal add to it
      * rather than becoming an event of their own.
      */

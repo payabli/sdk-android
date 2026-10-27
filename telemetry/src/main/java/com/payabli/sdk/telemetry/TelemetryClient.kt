@@ -169,10 +169,11 @@ internal class TelemetryClient(
      * by the queue emptying: what arrives during these requests carries its own signal.
      */
     private suspend fun drainWhatWasWaiting() {
-        // One place more than is queued, for an overflow event. A flush left with nothing to send makes no
-        // request and ends the loop, so the place costs nothing when no count is waiting.
-        val waiting = queue.size() + 1
-        var requests = ((waiting + maxEventsPerRequest - 1) / maxEventsPerRequest).coerceIn(1, maxDrainRequests)
+        // Every request may carry an overflow event, since a discarded batch gives its count back. A flush left
+        // with nothing to send makes no request and ends the loop, so the spare places cost nothing.
+        val waiting = queue.size()
+        val perRequest = maxEventsPerRequest - 1
+        var requests = ((waiting + perRequest - 1) / perRequest).coerceIn(1, maxDrainRequests)
         while (requests > 0 && flush()) {
             requests--
         }
