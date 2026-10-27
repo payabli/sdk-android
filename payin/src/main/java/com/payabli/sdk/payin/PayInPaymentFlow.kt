@@ -2,6 +2,7 @@ package com.payabli.sdk.payin
 
 import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
@@ -64,6 +65,7 @@ internal class PayInPaymentFlow private constructor(
         scope: CoroutineScope,
     ) : this(
         session.transport,
+        session.telemetry.environment,
         entryPoint,
         scope,
         IO_DISPATCHER,
@@ -75,6 +77,7 @@ internal class PayInPaymentFlow private constructor(
 
     private constructor(
         transport: PayabliTransport,
+        environment: PayabliEnvironment,
         entryPoint: String,
         scope: CoroutineScope,
         dispatcher: CoroutineDispatcher,
@@ -88,6 +91,7 @@ internal class PayInPaymentFlow private constructor(
             moneyIn = if (logger == null) MoneyInClient(transport) else MoneyInClient(transport, logger),
             storage = if (logger == null) TokenStorageClient(transport) else TokenStorageClient(transport, logger),
             dispatcher = dispatcher,
+            environment = environment,
             // Random per attempt, so two payments from one screen are never one request to the service.
             newIdempotencyKey = { UUID.randomUUID().toString() },
             elapsedRealtimeNanos = elapsedRealtimeNanos,
@@ -279,6 +283,7 @@ internal class PayInPaymentFlow private constructor(
          * @param elapsedRealtimeNanos the clock a retry key's window is measured on.
          * @param logger where the submissions are logged, or null for none.
          * @param telemetry the session the reports are attributed to, or null for none.
+         * @param environment the environment the held keys are kept under.
          * @return the flow, as a [PayabliPayIn].
          */
         @JvmSynthetic
@@ -290,7 +295,17 @@ internal class PayInPaymentFlow private constructor(
             elapsedRealtimeNanos: () -> Long = SystemClock::elapsedRealtimeNanos,
             logger: SdkLogger? = null,
             telemetry: TelemetrySessionContext? = null,
+            environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
         ): PayInPaymentFlow =
-            PayInPaymentFlow(transport, entryPoint, scope, dispatcher, elapsedRealtimeNanos, logger, telemetry)
+            PayInPaymentFlow(
+                transport,
+                environment,
+                entryPoint,
+                scope,
+                dispatcher,
+                elapsedRealtimeNanos,
+                logger,
+                telemetry,
+            )
     }
 }

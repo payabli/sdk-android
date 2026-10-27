@@ -1,10 +1,16 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
+import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.client.FakePayInTransport
@@ -24,18 +30,27 @@ import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionStatus
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.KSerializer
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -46,6 +61,10 @@ import kotlin.time.Duration.Companion.seconds
  */
 class PayInPaymentFlowTest {
     private val timeout = 5.seconds
+
+    @Before
+    @After
+    fun forgetHeld() = PayInKeyStore.forgetHeld()
 
     @Test
     fun `a capture answers with the transaction the service approved`() =
@@ -741,7 +760,7 @@ class PayInPaymentFlowTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.failingWith(dropped())
             val flow = flowOver(transport)
-            repeat(PayInSubmission.HELD_KEYS_MAX) {
+            repeat(PayInKeyStore.HELD_KEYS_MAX) {
                 flow.captureAuthorizedTransaction(PayInAuthorizedRequest("101-$it", testDetails()))
             }
 
@@ -772,6 +791,132 @@ class PayInPaymentFlowTest {
             assertFalse("$failure", failure is PayInException.Unsettled)
         }
 
+    /** A host builds a new facade after its session is replaced, and the retry still repeats the payment. */
+    @Test
+    fun `a declared retry on a facade rebuilt for the same entry point and environment resends the held key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val unknown = flowOver(transport).capture(cardRequest()).exceptionOrNull() as PayInException.Unsettled
+            val first = transport.sentKey()
+
+            flowOver(transport).capture(cardRequest(unknown.paymentReference, attempt = PayabliAttempt.Retry))
+
+            assertNotNull(first)
+            assertEquals("the retry was not sent", 2, transport.count)
+            assertEquals(first, transport.sentKey())
+        }
+
+    /** A key belongs to the merchant it was sent for, so another entry point's retry never carries it. */
+    @Test
+    fun `a declared retry on a facade for another entry point mints a new key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val unknown = flowOver(transport).capture(cardRequest()).exceptionOrNull() as PayInException.Unsettled
+            val first = transport.sentKey()
+
+            flowOver(transport, entryPoint = OTHER_ENTRY_POINT)
+                .capture(cardRequest(unknown.paymentReference, attempt = PayabliAttempt.Retry))
+
+            assertEquals("the retry was not sent", 2, transport.count)
+            assertNotEquals(first, transport.sentKey())
+        }
+
+    /** Each environment's service knows only the keys sent to it. */
+    @Test
+    fun `a declared retry on a facade for another environment mints a new key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val unknown = flowOver(transport).capture(cardRequest()).exceptionOrNull() as PayInException.Unsettled
+            val first = transport.sentKey()
+
+            flowOver(transport, environment = PayabliEnvironment.PRODUCTION)
+                .capture(cardRequest(unknown.paymentReference, attempt = PayabliAttempt.Retry))
+
+            assertEquals("the retry was not sent", 2, transport.count)
+            assertNotEquals(first, transport.sentKey())
+        }
+
+    /** A rebuilt facade reads the held key on the same clock, so the key ages out on the service's window. */
+    @Test
+    fun `a key held by one facade ages out for the next on the service's window`() =
+        runTest(timeout = timeout) {
+            val clock = AtomicLong(0)
+            val transport = FakePayInTransport.failingWith(dropped())
+            val first = flowOver(transport, clock = clock::get)
+            first.captureAuthorizedTransaction(PayInAuthorizedRequest("101-young", testDetails()))
+            val youngKey = transport.sentKey()
+            first.captureAuthorizedTransaction(PayInAuthorizedRequest("101-old", testDetails()))
+            val oldKey = transport.sentKey()
+            val rebuilt = flowOver(transport, clock = clock::get)
+
+            clock.set(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds - 1)
+            rebuilt.captureAuthorizedTransaction(PayInAuthorizedRequest("101-young", testDetails()))
+            val resent = transport.sentKey()
+            clock.set(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
+            rebuilt.captureAuthorizedTransaction(PayInAuthorizedRequest("101-old", testDetails()))
+
+            // The premise: inside the window the rebuilt facade has the key, so the age is what drops the other.
+            assertEquals("a key inside the window was not handed over", youngKey, resent)
+            assertNotEquals("a key past the window was resent", oldKey, transport.sentKey())
+        }
+
+    /** The capacity is each entry point's, so one merchant's open payments leave room for another's. */
+    @Test
+    fun `a full entry point leaves room for another entry point's key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val full = flowOver(transport)
+            repeat(PayInKeyStore.HELD_KEYS_MAX) {
+                full.captureAuthorizedTransaction(PayInAuthorizedRequest("101-$it", testDetails()))
+            }
+            val pastTheCap = PayInAuthorizedRequest("101-past-the-cap", testDetails())
+            full.captureAuthorizedTransaction(pastTheCap)
+            val notHeld = transport.sentKey()
+            full.captureAuthorizedTransaction(pastTheCap)
+            val reminted = transport.sentKey()
+            val other = flowOver(transport, entryPoint = OTHER_ENTRY_POINT)
+            val request = PayInAuthorizedRequest("101-other", testDetails())
+
+            other.captureAuthorizedTransaction(request)
+            val held = transport.sentKey()
+            other.captureAuthorizedTransaction(request)
+
+            // The premise: the first entry point is full, so the room the other finds is its own.
+            assertNotEquals("the full entry point held a key past the cap", notHeld, reminted)
+            assertEquals("the other entry point's key was not held", held, transport.sentKey())
+        }
+
+    /** Two facades settling at once on real threads both keep their keys. */
+    @Test
+    fun `two facades holding keys at once both keep them`() =
+        runTest(timeout = timeout) {
+            val transport = ConcurrentFailingTransport()
+            val flows =
+                listOf(TEST_ENTRY_POINT, OTHER_ENTRY_POINT).map {
+                    flowOver(transport, entryPoint = it, dispatcher = Dispatchers.Default)
+                }
+            val requests =
+                (0 until PayInKeyStore.HELD_KEYS_MAX).map {
+                    PayInAuthorizedRequest(
+                        "101-$it",
+                        testDetails(),
+                    )
+                }
+
+            flows
+                .map { flow ->
+                    async(Dispatchers.Default) { requests.forEach { flow.captureAuthorizedTransaction(it) } }
+                }.awaitAll()
+            val minted = transport.keys.toSet()
+            flows
+                .map { flow ->
+                    async(Dispatchers.Default) { requests.forEach { flow.captureAuthorizedTransaction(it) } }
+                }.awaitAll()
+
+            assertEquals("a first attempt was lost", 2 * requests.size, minted.size)
+            assertEquals("a resend minted instead of repeating", minted, transport.keys.drop(minted.size).toSet())
+        }
+
     private fun dropped(): PayabliGenericException =
         PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)
 
@@ -794,17 +939,45 @@ class PayInPaymentFlowTest {
 
     private fun FakePayInTransport.sentKey(): String? = request?.headers?.get(PayInRoutes.HEADER_IDEMPOTENCY_KEY)
 
-    private fun TestScope.flowOver(transport: PayabliTransport): PayInPaymentFlow =
+    private fun TestScope.flowOver(
+        transport: PayabliTransport,
+        entryPoint: String = TEST_ENTRY_POINT,
+        environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
+        clock: () -> Long = { 0 },
+        logger: RecordingSdkLogger = RecordingSdkLogger(),
+        dispatcher: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
+    ): PayInPaymentFlow =
         PayInPaymentFlow.over(
             transport = transport,
-            entryPoint = TEST_ENTRY_POINT,
+            entryPoint = entryPoint,
             scope = this,
-            dispatcher = StandardTestDispatcher(testScheduler),
-            elapsedRealtimeNanos = { 0 },
-            logger = RecordingSdkLogger(),
+            dispatcher = dispatcher,
+            elapsedRealtimeNanos = clock,
+            logger = logger,
+            environment = environment,
         )
 
+    /** Fails every call as dropped after the hand-off, and records each key in the order it was sent. */
+    private class ConcurrentFailingTransport : PayabliTransport {
+        private val sent = ConcurrentLinkedQueue<String>()
+
+        val keys: List<String> get() = sent.toList()
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            currentCoroutineContext()[PayabliSendMark]?.mark()
+            request.headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY]?.let(sent::add)
+            throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("no route here decodes a v2 envelope")
+    }
+
     private companion object {
+        const val OTHER_ENTRY_POINT = "another-merchant-entry"
+
         /** Stands in for text a real failure would carry from the wire, so a test can assert it is withheld. */
         const val DROPPED_DETAIL = "the link dropped"
 
