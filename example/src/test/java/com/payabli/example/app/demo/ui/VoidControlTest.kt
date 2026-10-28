@@ -5,6 +5,7 @@ import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
 import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
+import com.payabli.example.app.sdk.PayInOutcome
 import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.interruptedOutcome
 import com.payabli.example.app.sdk.readyStartup
@@ -158,7 +159,8 @@ class VoidControlTest {
         assertNull("the void was offered again under doubt", after.voidableTransactionId)
         assertNull("an unknown outcome recorded the transaction as reversed", after.voidedTransactionId)
         assertEquals("101-abc", after.readableTransactionId)
-        assertTrue(after.resultText, after.resultText.contains("Check this transaction's status"))
+        // The SDK's reason already says to read the transaction back, so the panel adds nothing beneath it.
+        assertEquals("✗ ${(unsettledOutcome() as PayInOutcome.Refused).error.displayMessage}", after.resultText)
     }
 
     @Test
