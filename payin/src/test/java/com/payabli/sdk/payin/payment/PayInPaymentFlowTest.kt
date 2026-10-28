@@ -1053,7 +1053,6 @@ class PayInPaymentFlowTest {
         entryPoint: String = TEST_ENTRY_POINT,
         environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
         clock: () -> Long = { 0 },
-        logger: RecordingSdkLogger = RecordingSdkLogger(),
         dispatcher: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
     ): PayInPaymentFlow =
         PayInPaymentFlow.over(
@@ -1062,7 +1061,7 @@ class PayInPaymentFlowTest {
             scope = this,
             dispatcher = dispatcher,
             elapsedRealtimeNanos = clock,
-            logger = logger,
+            logger = RecordingSdkLogger(),
             environment = environment,
         )
 

@@ -18,8 +18,8 @@ internal class PayInKeyStore(
 ) {
     /**
      * The key [payment]'s send carries: the one recorded for it, otherwise a new one, recorded as it is minted.
-     * Reading and recording are one operation under one lock, so two facades sending one payment at once cannot
-     * each find nothing and mint.
+     * Reading and recording are one operation under one lock, so below the capacity two facades sending one payment
+     * at once cannot each find nothing and mint.
      *
      * A new payment whose reference has a recorded key is refused before anything is sent, and a declared retry
      * describing a different payment from the recorded one is refused too. The recorded key stays.
@@ -59,7 +59,7 @@ internal class PayInKeyStore(
                     )
                 }
                 held.sending++
-                return@synchronized Reserved(held.key, reused = true, held.reservedAt, held.description ?: description)
+                return@synchronized Reserved(held.key, reused = true, held.description ?: description)
             }
             val minted = mint()
             val partition = partitionOf(entry, environment)
@@ -76,7 +76,7 @@ internal class PayInKeyStore(
                     HeldKey(entry, environment.name, payment, minted, now, description).apply { sending = 1 },
                 )
             }
-            Reserved(minted, reused = false, now, description)
+            Reserved(minted, reused = false, description)
         }
 
     /**
@@ -138,14 +138,12 @@ internal class PayInKeyStore(
     ): String = "${environment.name}/$entry"
 
     /**
-     * A key [reserve] chose, whether it was already recorded, when its window started, and the payment it was first
-     * sent for. Not a `data class`, and the key's getter is `@get:JvmSynthetic`, so neither a `toString` nor Java
-     * reaches the key.
+     * A key [reserve] chose, whether it was already recorded, and the payment it was first sent for. Not a
+     * `data class`, and the key's getter is `@get:JvmSynthetic`, so neither a `toString` nor Java reaches the key.
      */
     internal class Reserved(
         @get:JvmSynthetic val key: String,
         val reused: Boolean,
-        val reservedAt: Long,
         val description: PayInPaymentDescription?,
     )
 

@@ -648,16 +648,6 @@ internal class PayInSubmission(
         var key: String? = null
             private set
 
-        /**
-         * When the key this attempt sends was reserved, read as the key is chosen rather than as the call
-         * began: encoding and dispatch sit between the two and would spend part of the window.
-         *
-         * A reused key keeps the reservation it already had; [sentAt] is this send's, which restarts the clock
-         * when the send may have reached the service and was not refused as a repeat.
-         */
-        var reservedAt: Long = 0
-            private set
-
         /** When this send reserved its key, whether or not the key was already held. */
         var sentAt: Long = 0
             private set
@@ -692,12 +682,10 @@ internal class PayInSubmission(
             sentAt = now
             this.description = description
             if (payment == null) {
-                reservedAt = now
                 return newIdempotencyKey().also { key = it }
             }
             val reserved =
                 keys.reserve(entryPoint, environment, payment, now, claimsHeldKey, description, newIdempotencyKey)
-            reservedAt = reserved.reservedAt
             reused = reserved.reused
             // Carried with the key, so the payment it was minted for outlives a sweep of its record.
             this.description = reserved.description
