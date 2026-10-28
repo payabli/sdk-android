@@ -1027,6 +1027,24 @@ class PayInPaymentFlowTest {
             assertEquals(2, transport.count)
         }
 
+    /** A void after a capture of its authorization ended unknown carries its own key, not the capture's. */
+    @Test
+    fun `a void after another facade's capture ended unknown sends a key of its own`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val captured =
+                flowOver(transport).captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+            val captureKey = transport.sentKey()
+
+            flowOver(transport).voidTransaction("101-abc")
+
+            // The premise: the capture's key is held, because its outcome is unknown.
+            assertTrue("${captured.exceptionOrNull()}", captured.exceptionOrNull() is PayInException.Unsettled)
+            assertNotNull(captureKey)
+            assertEquals("the void was not sent", 2, transport.count)
+            assertNotEquals(captureKey, transport.sentKey())
+        }
+
     /** A send still under way can reach the service, so its key is kept past the window until it is answered. */
     @Test
     fun `a key mid-send outlives the service's window until its send is answered`() =
