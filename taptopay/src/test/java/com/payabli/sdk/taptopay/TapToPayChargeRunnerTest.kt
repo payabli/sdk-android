@@ -6,6 +6,7 @@ import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliRetryAfter
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
@@ -1483,6 +1484,117 @@ class TapToPayChargeRunnerTest {
             }
 
             assertEquals(TapToPaySessionState.SessionExpired, fixture.state)
+        }
+
+    /**
+     * A session that can be set up [builds] times, so a charge after a dead reader's expiry repairs it first.
+     *
+     * @param opens how many openings are answered.
+     * @param noRecordFrom the first close, counted from zero, refused because the processor has no record of
+     *   the payment; every close before it lands.
+     * @param builds how many setups are answered.
+     * @return the fixture, set up once.
+     */
+    private suspend fun rebuildableFixture(
+        opens: Int = 2,
+        noRecordFrom: Int = Int.MAX_VALUE,
+        builds: Int = 3,
+    ): SessionFixture {
+        var closes = 0
+        return SessionFixture(
+            RouteScript(
+                RouteScript.CHALLENGE to List(builds) { challengeBody() },
+                RouteScript.REGISTER to List(builds) { registerBody(status = "active") },
+                RouteScript.ATTEST to List(builds) { attestBody() },
+                RouteScript.CONFIG to List(builds) { configBody() },
+                INITIATE to List(opens) { approved("""{"paymentTransId":"$TRANS_ID"}""") },
+                UPDATE to List(opens) { index -> if (index < noRecordFrom) "{}" else problemBody(NOT_AT_PROCESSOR) },
+                statusFor = { if (it == UPDATE && closes++ >= noRecordFrom) 400 else 200 },
+            ),
+        ).also { it.coordinator.initialize() }
+    }
+
+    @Test
+    fun `a reader gone before the read reports the session expired and nothing charged`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = rebuildableFixture(opens = 1)
+            fixture.reader.failNextRead(CardReaderException.SessionUnusable(null))
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            val expired = failure as? TapToPayException
+            assertEquals(failure.toString(), PayabliErrorType.READER_SESSION_EXPIRED, expired?.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, expired?.capture)
+            assertEquals(TRANS_ID, expired?.paymentTransId)
+            assertTrue("the opened payment was closed", UPDATE in fixture.routes)
+        }
+
+    @Test
+    fun `a reader gone before the read lets its attempt go`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = rebuildableFixture()
+            fixture.reader.failNextRead(CardReaderException.SessionUnusable(null))
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            fixture.reader.answerReadWith(cardRead())
+            runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(0))
+            assertEquals("the retry named a new attempt", "$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    @Test
+    fun `a reader gone before the read stays session expired when the processor has no record of its close`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = rebuildableFixture(noRecordFrom = 0)
+            fixture.reader.failNextRead(CardReaderException.SessionUnusable(null))
+            val runner = runnerOver(fixture)
+
+            val failure =
+                runCatching {
+                    runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            val expired = failure as? TapToPayException
+            assertEquals(failure.toString(), PayabliErrorType.READER_SESSION_EXPIRED, expired?.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, expired?.capture)
+            assertEquals(TapToPaySessionState.SessionExpired, fixture.state)
+            val refusal = expired?.cause?.suppressed?.singleOrNull() as? PayabliValidationException
+            assertEquals("the close's refusal rides on the expiry", NOT_AT_PROCESSOR, refusal?.detail)
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+            runCatching {
+                runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
+            assertEquals("the retry named a new attempt", "$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    @Test
+    fun `a reader gone before the read on a resent key keeps its outcome unknown and its attempt held`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = rebuildableFixture(opens = 3, noRecordFrom = 1)
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            val runner = runnerOver(fixture)
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            fixture.reader.failNextRead(CardReaderException.SessionUnusable(null))
+
+            val failure =
+                runCatching {
+                    runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+                }.exceptionOrNull()
+
+            assertEquals("the retry resent the held key", "$MINTED_KEY-1", fixture.keySent(1))
+            val expired = failure as? TapToPayException
+            assertEquals(failure.toString(), PayabliErrorType.READER_SESSION_EXPIRED, expired?.type)
+            assertEquals(TapToPayCapture.UNKNOWN, expired?.capture)
+            fixture.reader.answerReadWith(cardRead())
+            runCatching {
+                runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
+            assertEquals("the key is still held", "$MINTED_KEY-1", fixture.keySent(2))
         }
 
     /** The key one opening carried, from the request itself rather than from the store that held it. */
