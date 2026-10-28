@@ -241,7 +241,10 @@ internal class PayInSubmission(
             TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
             entryPoint,
             publishes = false,
-            retry = RetryKey(entryPoint, "${PayInRoutes.CAPTURE_AUTHORIZED}:${request.transId.trim()}"),
+            retry =
+                request.transId.trim().let {
+                    RetryKey(entryPoint, "${PayInRoutes.CAPTURE_AUTHORIZED}:$it", transaction = it)
+                },
         ) { retry ->
             val key = retry.reserve()
             PayInSubmissionState.Succeeded.Payment(moneyIn.captureAuthorized(request, key))
@@ -262,7 +265,7 @@ internal class PayInSubmission(
             TelemetryEvents.PAYIN_VOID_COMPLETED,
             entryPoint,
             publishes = false,
-            retry = RetryKey(entryPoint, "${PayInRoutes.VOID}:${transId.trim()}"),
+            retry = transId.trim().let { RetryKey(entryPoint, "${PayInRoutes.VOID}:$it", transaction = it) },
         ) { retry ->
             val key = retry.reserve()
             PayInSubmissionState.Succeeded.Payment(moneyIn.void(transId, key))
@@ -644,6 +647,7 @@ internal class PayInSubmission(
         val payment: String?,
         val reference: String? = null,
         private val claimsHeldKey: Boolean = true,
+        private val transaction: String? = null,
     ) {
         /** The entry point trimmed, as the request carries it, so padding does not move the key to another partition. */
         val entryPoint: String = entryPoint.trim()
@@ -689,7 +693,17 @@ internal class PayInSubmission(
                 return newIdempotencyKey().also { key = it }
             }
             val reserved =
-                keys.reserve(entryPoint, environment, payment, now, claimsHeldKey, description, newIdempotencyKey)
+                keys.reserve(
+                    entryPoint,
+                    environment,
+                    payment,
+                    // A capture and a void of one transaction share one send at a time.
+                    transaction ?: payment,
+                    now,
+                    claimsHeldKey,
+                    description,
+                    newIdempotencyKey,
+                )
             reused = reserved.reused
             // Carried with the key, so the payment it was minted for outlives a sweep of its record.
             this.description = reserved.description

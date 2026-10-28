@@ -993,13 +993,39 @@ class PayInPaymentFlowTest {
     @Test
     fun `two facades capturing one authorization at once send it once`() =
         runTest(timeout = timeout) {
-            assertOneSendAtATime { captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails())) }
+            assertOneSendAtATime({ captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails())) })
         }
 
     /** A void of one transaction from two facades at once is sent once; the other is refused unsent. */
     @Test
     fun `two facades voiding one transaction at once send it once`() =
-        runTest(timeout = timeout) { assertOneSendAtATime { voidTransaction("101-abc") } }
+        runTest(timeout = timeout) { assertOneSendAtATime({ voidTransaction("101-abc") }) }
+
+    /** A void while another facade captures the same authorization is refused unsent, and so is the reverse. */
+    @Test
+    fun `a capture and a void of one transaction from two facades at once send one of them`() =
+        runTest(timeout = timeout) {
+            val capture: suspend PayInPaymentFlow.() -> Result<PayInResult> = {
+                captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+            }
+            val void: suspend PayInPaymentFlow.() -> Result<PayInResult> = { voidTransaction("101-abc") }
+
+            assertOneSendAtATime(capture, void)
+            assertOneSendAtATime(void, capture)
+        }
+
+    /** A void once the capture of its authorization was answered is sent, as the service allows. */
+    @Test
+    fun `a void after another facade's capture is answered is sent`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            flowOver(transport).captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+
+            val voided = flowOver(transport).voidTransaction("101-abc")
+
+            assertTrue("${voided.exceptionOrNull()}", voided.isSuccess)
+            assertEquals(2, transport.count)
+        }
 
     /** A send still under way can reach the service, so its key is kept past the window until it is answered. */
     @Test
@@ -1075,18 +1101,22 @@ class PayInPaymentFlowTest {
         }
 
     /**
-     * Holds [send] in flight on one facade while a second facade makes the same call, and asserts the second is
+     * Holds [send] in flight on one facade while a second facade makes [overlapping], and asserts the second is
      * refused with [PayabliErrorType.PAYMENT_REFERENCE_OPEN] before anything is sent.
      *
-     * @param send the call naming one transaction, made on each facade.
+     * @param send the call held in flight on the first facade.
+     * @param overlapping the call made on the second facade, the same call unless named.
      */
-    private suspend fun TestScope.assertOneSendAtATime(send: suspend PayInPaymentFlow.() -> Result<PayInResult>) {
+    private suspend fun TestScope.assertOneSendAtATime(
+        send: suspend PayInPaymentFlow.() -> Result<PayInResult>,
+        overlapping: suspend PayInPaymentFlow.() -> Result<PayInResult> = send,
+    ) {
         val gated = GatedPayInTransport.answering(APPROVED_TRANSACTION)
         val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
         val sending = launch { flowOver(gated).send() }
         gated.arrived.await()
 
-        val refused = flowOver(other).send().exceptionOrNull()
+        val refused = flowOver(other).overlapping().exceptionOrNull()
         gated.release()
         sending.join()
 

@@ -21,13 +21,14 @@ internal class PayInKeyStore(
      * Reading and recording are one operation under one lock, so below the capacity two facades sending one payment
      * at once cannot each find nothing and mint.
      *
-     * One send at a time per payment: any send of a payment whose recorded key has a send under way is refused before
-     * anything is sent, as is a new payment whose reference has a recorded key and a declared retry describing a
-     * different payment from the recorded one. The recorded key stays.
+     * One send at a time per [slot]: any send while a recorded key in the same slot has a send under way is refused
+     * before anything is sent, as is a new payment whose reference has a recorded key and a declared retry describing
+     * a different payment from the recorded one. The recorded key stays.
      *
      * @param entry the entry point the payment is sent to.
      * @param environment the environment the payment is sent to.
      * @param payment what names the payment.
+     * @param slot what one send at a time is held over: the transaction a route names, otherwise [payment].
      * @param now the clock, read as the key is chosen.
      * @param claimsHeld whether this send may carry a recorded key: a declared retry, or a route naming a transaction.
      * @param description the payment this send describes, or null on a route that names a transaction.
@@ -38,6 +39,7 @@ internal class PayInKeyStore(
         entry: String,
         environment: PayabliEnvironment,
         payment: String,
+        slot: String,
         now: Long,
         claimsHeld: Boolean,
         description: PayInPaymentDescription?,
@@ -45,9 +47,15 @@ internal class PayInKeyStore(
     ): Reserved =
         synchronized(SHARED_LOCK) {
             sweep(now)
+            if (SHARED_HELD.any { it.matches(entry, environment) && it.slot == slot && it.underWay }) {
+                throw PayabliGenericException(
+                    PayabliErrorType.PAYMENT_REFERENCE_OPEN,
+                    PayabliErrorType.PAYMENT_REFERENCE_OPEN.message,
+                )
+            }
             val held = SHARED_HELD.firstOrNull { it.matches(entry, environment) && it.payment == payment }
             if (held != null) {
-                if (held.underWay || !claimsHeld) {
+                if (!claimsHeld) {
                     throw PayabliGenericException(
                         PayabliErrorType.PAYMENT_REFERENCE_OPEN,
                         PayabliErrorType.PAYMENT_REFERENCE_OPEN.message,
@@ -74,7 +82,7 @@ internal class PayInKeyStore(
                 SHARED_REPORTED_FULL.remove(partition)
                 SHARED_HELD.add(
                     0,
-                    HeldKey(entry, environment.name, payment, minted, now, description).apply { underWay = true },
+                    HeldKey(entry, environment.name, payment, slot, minted, now, description).apply { underWay = true },
                 )
             }
             Reserved(minted, reused = false, description)
@@ -193,6 +201,7 @@ internal sealed interface SendEnding {
  * @property entry the entry point the payment is sent to.
  * @property environment the name of the environment the payment is sent to.
  * @property payment what names the payment: its route, and its transaction or payment reference.
+ * @property slot what one send at a time is held over: the transaction a route names, otherwise [payment].
  * @property key the idempotency key a repeat of the payment carries.
  * @property description the payment the key was first sent for, or null on a route that names a transaction.
  */
@@ -200,6 +209,7 @@ internal class HeldKey(
     val entry: String,
     val environment: String,
     val payment: String,
+    val slot: String,
     val key: String,
     reservedAt: Long,
     val description: PayInPaymentDescription?,
