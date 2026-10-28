@@ -999,13 +999,13 @@ class PayInPaymentFlowTest {
             val thrown = runCatching { flowOver(failing, clock = clock::get).capture(cardRequest("order-1")) }
 
             val refused = flowOver(other, clock = clock::get).capture(cardRequest("order-1")).exceptionOrNull()
-            // Dropped rather than answered, so the retry keeps the key held and only the window can free it.
+            // A dropped retry keeps the key held, so only the window can free it.
             val dropping = ConcurrentFailingTransport()
             flowOver(dropping, clock = clock::get).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry))
             clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds + 1)
             val later = flowOver(other, clock = clock::get).capture(cardRequest("order-1"))
 
-            // The premise: the error escaped the facade rather than becoming a failure it returned.
+            // The premise: the error escapes the facade.
             assertTrue("$thrown", thrown.exceptionOrNull() is LinkageError)
             assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
             assertEquals(failing.keys, dropping.keys)

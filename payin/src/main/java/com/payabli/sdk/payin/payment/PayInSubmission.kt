@@ -376,10 +376,8 @@ internal class PayInSubmission(
             report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null, null, entryPoint, publishes)
             return null
         }
-        // Starting here would overwrite an outcome nothing has read yet, and a taken payment would leave no
-        // record of itself. `reset` is what clears the way. Only for a caller that publishes: one that does
-        // not cannot overwrite anything, and gating it on the form's state is what would make two headless
-        // calls in a row impossible.
+        // An outcome nothing has read yet stays until `reset`, so a taken payment keeps its record. A caller that
+        // does not publish overwrites nothing, so it is not held to the form's state and headless calls can follow.
         if (publishes && sink.value != PayInSubmissionState.Idle) {
             inFlight.unlock()
             onReserved(false)
@@ -428,8 +426,8 @@ internal class PayInSubmission(
                 }
                 report(event, outcomeOf(finished), codeOf(finished), failingType, startedAt, entryPoint, publishes)
             } else {
-                // An error rather than an exception, which ends the send as surely: a send still counted as under way
-                // keeps its reference refused for the life of the process.
+                // An error that is not an exception ends the send too, or its reference stays refused for the life of
+                // the process.
                 val payment = retry.payment
                 val key = retry.key
                 if (payment != null && key != null) {
