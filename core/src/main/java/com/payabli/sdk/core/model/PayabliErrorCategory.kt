@@ -15,9 +15,11 @@ public enum class PayabliErrorCategory(
      *
      * A provider that failed is asked again on the next call. [PayabliErrorType.TOKEN_EXPIRED] means a fresh
      * token was refused too, so the session is finished until `initialize`, once the cause is fixed. It leaves
-     * the session usable when another call had already replaced the refused token, and when it comes from Tap to
-     * Pay device setup, where the next setup call asks again. A device setup that has ended, which the state
-     * reports, is established again by calling `initialize`.
+     * the session usable when another call had already replaced the refused token, or was replacing it, and when
+     * a Tap to Pay device setup's own request was refused after the renewal, where the next setup call asks
+     * again. A setup call that fails with it at once, without calling the provider, means the session is
+     * finished: call `initialize`, then create the terminal again from the new session. A device setup that has
+     * ended, which the state reports, is established again by calling `initialize`.
      */
     CREDENTIAL("CREDENTIAL"),
 
