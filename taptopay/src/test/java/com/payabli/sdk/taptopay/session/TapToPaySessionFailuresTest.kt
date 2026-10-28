@@ -259,12 +259,23 @@ class TapToPaySessionFailuresTest {
     }
 
     @Test
-    fun `the failure raised carries the code of the state landed`() {
+    fun `only a device the configuration found owing its code is reported pending, whatever is registered`() {
         for (failure in owingActivation()) {
             val name = failure::class.qualifiedName
             val held = TapToPaySessionFailures.raisedFor(failure, HELD)
-            assertEquals(name, PayabliErrorType.DEVICE_PENDING_ACTIVATION, TapToPayErrorCodes.typeFor(held))
-            if (failure !is TapToPaySessionException.PendingActivation) assertSame(name, failure, held.cause)
+            val expected =
+                if (failure is TapToPaySessionException.PendingActivation) {
+                    PayabliErrorType.DEVICE_PENDING_ACTIVATION
+                } else {
+                    PayabliErrorType.PERMISSION_DENIED
+                }
+            assertEquals(name, expected, TapToPayErrorCodes.typeFor(held))
+            // The service's own failure stays reachable, so its text still reaches the host.
+            if (failure is DeviceServiceException) {
+                assertSame(name, failure, held.cause)
+            } else {
+                assertSame(name, failure, held)
+            }
 
             val unregistered = TapToPaySessionFailures.raisedFor(failure, StoredRegistration.None)
             assertEquals(name, PayabliErrorType.PERMISSION_DENIED, TapToPayErrorCodes.typeFor(unregistered))
