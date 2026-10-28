@@ -917,6 +917,62 @@ class PayInPaymentFlowTest {
             assertEquals("a resend minted instead of repeating", minted, transport.keys.drop(minted.size).toSet())
         }
 
+    /** A new payment on a reference another facade is still sending is refused, and its retry repeats that key. */
+    @Test
+    fun `two facades sending one new payment at once send one key, and a retry repeats it`() =
+        runTest(timeout = timeout) {
+            val gated = GatedPayInTransport.failingWith(dropped())
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val sending = launch { flowOver(gated).capture(cardRequest("order-1")) }
+            gated.arrived.await()
+
+            val refused = flowOver(other).capture(cardRequest("order-1")).exceptionOrNull()
+            val sentWhileOpen = other.count
+            gated.release()
+            sending.join()
+            flowOver(other).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry))
+
+            assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
+            assertEquals("the refused payment was sent", 0, sentWhileOpen)
+            assertEquals(gated.sent.single().headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY], other.sentKey())
+        }
+
+    /** A send still under way can reach the service, so its key is kept past the window until it is answered. */
+    @Test
+    fun `a key mid-send outlives the service's window until its send is answered`() =
+        runTest(timeout = timeout) {
+            val clock = AtomicLong(0)
+            val gated = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val sending = launch { flowOver(gated, clock = clock::get).capture(cardRequest("order-1")) }
+            gated.arrived.await()
+
+            clock.set(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
+            val refused = flowOver(other, clock = clock::get).capture(cardRequest("order-1")).exceptionOrNull()
+            gated.release()
+            sending.join()
+            val after = flowOver(other, clock = clock::get).capture(cardRequest("order-1"))
+
+            assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
+            assertTrue("${after.exceptionOrNull()}", after.isSuccess)
+            assertNotEquals(gated.sent.single().headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY], other.sentKey())
+        }
+
+    /** A payment that never left ran nowhere, so its reference is free for another facade's new payment. */
+    @Test
+    fun `a new payment that never left leaves its reference free for another facade`() =
+        runTest(timeout = timeout) {
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val never = flowOver(NeverLeavesTransport()).capture(cardRequest("order-1")).exceptionOrNull()
+
+            val next = flowOver(other).capture(cardRequest("order-1"))
+
+            // The premise: the first payment failed before the hand-off, so nothing about it is unknown.
+            assertFalse("$never", never == null || never is PayInException.Unsettled)
+            assertTrue("${next.exceptionOrNull()}", next.isSuccess)
+            assertEquals(1, other.count)
+        }
+
     private fun dropped(): PayabliGenericException =
         PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)
 
@@ -968,6 +1024,17 @@ class PayInPaymentFlowTest {
             request.headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY]?.let(sent::add)
             throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)
         }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("no route here decodes a v2 envelope")
+    }
+
+    /** Fails every call before the hand-off, so no request can have reached the service. */
+    private class NeverLeavesTransport : PayabliTransport {
+        override suspend fun execute(request: PayabliRequest): PayabliResponse =
+            throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)
 
         override suspend fun <T> execute(
             request: PayabliRequest,
