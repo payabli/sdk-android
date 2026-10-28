@@ -155,7 +155,7 @@ public enum class PayabliErrorType(
 
     /**
      * A new payment names a reference whose earlier payment is still unresolved, or a call names a payment another
-     * call is still sending, so it was not sent.
+     * instance is still sending through the same call, so it was not sent.
      */
     PAYMENT_REFERENCE_OPEN(
         1023,

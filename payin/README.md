@@ -141,7 +141,7 @@ the same payment again, submit it with the same `paymentReference` and `attempt 
 resends that payment's key, so the service recognizes the repeat. If the SDK holds no key for that reference, or
 the service would no longer recognize it, the retry goes out under a new key. Calling again without declaring a
 retry is a new payment, and naming a reference whose outcome is still unknown fails with `PAYMENT_REFERENCE_OPEN`
-and isn't sent. So does any call on a payment another `PayabliPayIn` is still sending, a declared retry
+and isn't sent. So does the same call on a payment another `PayabliPayIn` is still sending, a declared retry
 included. The held key lives in memory only, so after a restart read the transaction back.
 
 If the service refuses a declared retry, it arrives as `PayInException.Unsettled` with type `RETRY_REFUSED`: the
