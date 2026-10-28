@@ -110,16 +110,35 @@ internal class ChargeKeyStore(
         }
 
     /**
-     * Whether the newest key held for [entry] under [environment] has a send under way.
+     * The newest key held for [entry] under [environment], as a [PayabliAttempt.Retry] for [description] finds it,
+     * without reserving it.
      *
      * @param entry the entry point the charge is for.
      * @param environment the environment the charge is sent to.
-     * @return true when the newest held key has been reserved and its send has not ended.
+     * @param description the sale the retry describes.
+     * @return the held key's state, or null when none is held.
      */
-    suspend fun isUnderWay(
+    suspend fun heldRetryOf(
         entry: String,
         environment: PayabliEnvironment,
-    ): Boolean = lock.withLock { held.firstOrNull { it.matches(entry, environment) }?.underWay == true }
+        description: ChargeDescription,
+    ): HeldRetry? =
+        lock.withLock {
+            sweep(elapsedRealtimeNanos())
+            val existing = held.firstOrNull { it.matches(entry, environment) } ?: return@withLock null
+            HeldRetry(underWay = existing.underWay, resent = existing.description?.matches(description) != false)
+        }
+
+    /**
+     * A held key as a retry finds it, read in one pass under the lock.
+     *
+     * @property underWay whether the key has a send under way.
+     * @property resent whether [reserve] would hand the key to the retry.
+     */
+    internal class HeldRetry(
+        val underWay: Boolean,
+        val resent: Boolean,
+    )
 
     /**
      * A reserved key, whether it was already held, and when this send reserved it. Not a `data class`, and the

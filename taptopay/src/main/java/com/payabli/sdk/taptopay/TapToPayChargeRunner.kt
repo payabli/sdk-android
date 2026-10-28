@@ -176,7 +176,17 @@ internal class TapToPayChargeRunner(
                 // Claimed before the region, so a second charge on this entry point is refused here and never
                 // reaches the lock.
                 claimed = HOLDERS.putIfAbsent(entry, 1) == null
-                if (!claimed) throw overlapRefusal(attempt)
+                if (!claimed) {
+                    // One read, so the running charge cannot settle the key between the refusal and its capture.
+                    val found =
+                        if (attempt == PayabliAttempt.Retry) {
+                            keys.heldRetryOf(entry, environment, ChargeDescription.of(paymentDetails, invoice))
+                        } else {
+                            null
+                        }
+                    if (found?.resent == true) capture = TapToPayCapture.UNKNOWN
+                    throw overlapRefusal(found)
+                }
                 // Locked inside the try, so the refusal above reaches the same catch and finally.
                 region.lock()
                 locked = true
@@ -319,7 +329,8 @@ internal class TapToPayChargeRunner(
                     }
                 }
                 // A retry refused before its key was reserved still describes the held sale, whose outcome is unknown.
-                if (reserved == null && attempt == PayabliAttempt.Retry) {
+                // Only once claimed: then no other charge on this entry point can settle the key under the read.
+                if (claimed && reserved == null && attempt == PayabliAttempt.Retry) {
                     val described = ChargeDescription.of(paymentDetails, invoice)
                     if (withContext(NonCancellable) { keys.holdsRetryOf(entry, environment, described) }) {
                         capture = TapToPayCapture.UNKNOWN
@@ -550,11 +561,11 @@ internal class TapToPayChargeRunner(
     /**
      * Why a charge is refused while another on its entry point is under way.
      *
-     * @param attempt whether the host declared the refused charge a retry.
+     * @param found the held key a refused retry found, or null for a new payment or when none is held.
      * @return a payment-reference refusal for a retry whose key is under way, otherwise the terminal not being ready.
      */
-    private suspend fun overlapRefusal(attempt: PayabliAttempt): Exception =
-        if (attempt == PayabliAttempt.Retry && keys.isUnderWay(entry, environment)) {
+    private fun overlapRefusal(found: ChargeKeyStore.HeldRetry?): Exception =
+        if (found?.underWay == true) {
             PayabliGenericException(
                 PayabliErrorType.PAYMENT_REFERENCE_OPEN,
                 PayabliErrorType.PAYMENT_REFERENCE_OPEN.message,

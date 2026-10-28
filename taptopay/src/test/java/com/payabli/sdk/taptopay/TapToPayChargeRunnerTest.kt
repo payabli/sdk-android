@@ -2888,6 +2888,10 @@ class TapToPayChargeRunnerTest {
                 for (attempt in listOf(PayabliAttempt.NewPayment, PayabliAttempt.Retry)) {
                     val refusal = refusedAtOnce(runnerOver(fixture), attempt)
                     assertEquals("$attempt", PayabliErrorType.TERMINAL_NOT_READY, refusal.type)
+                    // The retry describes the sale whose close gave up, so its money may have moved.
+                    val capture =
+                        if (attempt == PayabliAttempt.Retry) TapToPayCapture.UNKNOWN else TapToPayCapture.NOT_CHARGED
+                    assertEquals("$attempt", capture, refusal.capture)
                 }
             } finally {
                 release.complete(Unit)

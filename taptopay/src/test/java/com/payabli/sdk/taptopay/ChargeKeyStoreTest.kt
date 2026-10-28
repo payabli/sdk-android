@@ -15,6 +15,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -292,14 +293,37 @@ class ChargeKeyStoreTest {
     fun `a key is under way from its reserve until its send ends`() =
         runBlocking {
             val keys = store()
-            assertFalse(keys.isUnderWay(ENTRY, PayabliEnvironment.SANDBOX))
+            assertNull(keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale()))
 
             val first = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale())
-            assertTrue("a reserved key is not under way", keys.isUnderWay(ENTRY, PayabliEnvironment.SANDBOX))
-            assertFalse("another environment's key is under way", keys.isUnderWay(ENTRY, PayabliEnvironment.PRODUCTION))
+            val sending = keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale())
+            assertTrue("a reserved key is not under way", sending?.underWay == true)
+            assertNull(
+                "another environment's key is held",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.PRODUCTION, sale()),
+            )
             keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, first.key)
 
-            assertFalse("an ended send is still under way", keys.isUnderWay(ENTRY, PayabliEnvironment.SANDBOX))
+            assertFalse(
+                "an ended send is still under way",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale())?.underWay == true,
+            )
+        }
+
+    @Test
+    fun `a held key is resent only to a retry of the same sale`() =
+        runBlocking {
+            val keys = store()
+            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale())
+
+            assertTrue(
+                "the same sale is not resent",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale())!!.resent,
+            )
+            assertFalse(
+                "another sale is resent",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale(amount = "9.99"))!!.resent,
+            )
         }
 
     @Test
