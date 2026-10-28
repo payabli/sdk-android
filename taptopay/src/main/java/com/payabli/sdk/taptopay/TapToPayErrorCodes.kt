@@ -63,13 +63,12 @@ internal object TapToPayErrorCodes {
             paymentTransId = paymentTransId,
             capture = capture,
             retryAfterMillis = retryAfterOf(failure),
-            refusal =
-                (failure as? CustomerDataRefusal)?.let {
-                    TapToPayChargeRefusal.CustomerDataRefused(
-                        it.requiredFields,
-                    )
-                },
+            refusal = refusalOf(failure),
         )
+
+    /** The charge's own refusal [failure] carries, or null when it is not one. */
+    private fun refusalOf(failure: Throwable): TapToPayChargeRefusal? =
+        (failure as? CustomerDataRefusal)?.let { TapToPayChargeRefusal.CustomerDataRefused(it.requiredFields) }
 
     /** The wait on the first failure in [failure]'s chain that can carry one, which a session refusal wraps. */
     private fun retryAfterOf(failure: Throwable): Long? =
