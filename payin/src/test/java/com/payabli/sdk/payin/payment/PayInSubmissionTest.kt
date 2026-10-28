@@ -1660,7 +1660,7 @@ class PayInSubmissionTest {
             assertTrue("the cause lost the type that raised it: $carried", carried.contains("IllegalStateException"))
         }
 
-    // --- what an unknown outcome says, one test per route so a route that drifts fails on its own ---
+    // --- what an unknown outcome says, on each route that can leave one ---
 
     @Test
     fun `a capture whose outcome is unknown names the transaction`() =

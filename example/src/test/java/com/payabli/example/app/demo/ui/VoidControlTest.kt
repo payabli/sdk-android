@@ -159,7 +159,8 @@ class VoidControlTest {
         assertNull("the void was offered again under doubt", after.voidableTransactionId)
         assertNull("an unknown outcome recorded the transaction as reversed", after.voidedTransactionId)
         assertEquals("101-abc", after.readableTransactionId)
-        // The SDK's reason already says to read the transaction back, so the panel adds nothing beneath it.
+        // The SDK's reason says to read the transaction back, and the panel adds nothing beneath it.
+        assertTrue(after.resultText, after.resultText.contains("Read the transaction back"))
         assertEquals("✗ ${(unsettledOutcome() as PayInOutcome.Refused).error.displayMessage}", after.resultText)
     }
 
