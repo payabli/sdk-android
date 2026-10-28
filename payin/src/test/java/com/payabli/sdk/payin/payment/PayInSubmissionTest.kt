@@ -2275,7 +2275,7 @@ class PayInSubmissionTest {
     private companion object {
         const val MINTED_KEY = "minted"
 
-        /** Written out rather than read from the constant, so a change to the sentence fails here. */
+        /** The sentence itself, so a change to the SDK's constant fails these tests. */
         const val UNKNOWN_OUTCOME_REASON =
             "The transaction's status is unknown. Read the transaction back to see its status."
     }
