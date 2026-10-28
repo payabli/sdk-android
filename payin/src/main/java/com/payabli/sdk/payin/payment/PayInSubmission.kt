@@ -67,7 +67,7 @@ internal class PayInSubmission(
      */
     private val inFlight = Mutex()
 
-    private val keys = PayInKeyStore(elapsedRealtimeNanos, logger)
+    private val keys = PayInKeyStore(logger)
 
     private val sink = MutableStateFlow<PayInSubmissionState>(PayInSubmissionState.Idle)
 
@@ -448,19 +448,17 @@ internal class PayInSubmission(
         retry: RetryKey,
     ) {
         val failure = (outcome as? PayInSubmissionState.Failed)?.cause
-        val key = retry.key
-        when {
-            key == null -> Unit
-            failure == null || failure.answersThePayment() -> keys.forget(retry.entryPoint, environment, payment, key)
-            // Ahead of the general case: a refused resend keeps the key without restarting its clock.
-            retry.reused && failure.type == PayabliErrorType.RETRY_REFUSED ->
-                keys.hold(retry.entryPoint, environment, payment, key, retry.reservedAt, retry.description)
-
-            // A send that never left starts no new key's clock and restarts no held one's.
-            failure.type.leavesOutcomeUnknown && retry.mayHaveLeft ->
-                keys.hold(retry.entryPoint, environment, payment, key, retry.sentAt, retry.description)
-            else -> Unit
-        }
+        val key = retry.key ?: return
+        val ending =
+            when {
+                failure == null || failure.answersThePayment() -> SendEnding.Answered
+                // Ahead of the general case: a refused resend keeps the key without restarting its clock.
+                retry.reused && failure.type == PayabliErrorType.RETRY_REFUSED -> SendEnding.RefusedAsRepeat
+                // A send that never left starts no new key's clock and restarts no held one's.
+                failure.type.leavesOutcomeUnknown && retry.mayHaveLeft -> SendEnding.MayHaveArrived(retry.sentAt)
+                else -> SendEnding.Ended
+            }
+        keys.end(retry.entryPoint, environment, payment, key, ending)
     }
 
     /**
@@ -686,32 +684,18 @@ internal class PayInSubmission(
             val now = elapsedRealtimeNanos()
             sentAt = now
             this.description = description
-            val held = payment?.let { keys.held(entryPoint, environment, it, now) }
-            if (held != null && !claimsHeldKey) {
-                throw PayabliGenericException(
-                    PayabliErrorType.PAYMENT_REFERENCE_OPEN,
-                    PayabliErrorType.PAYMENT_REFERENCE_OPEN.message,
-                )
+            if (payment == null) {
+                reservedAt = now
+                return newIdempotencyKey().also { key = it }
             }
-            if (held != null && description != null && held.description?.matches(description) == false) {
-                throw PayabliGenericException(
-                    PayabliErrorType.RETRY_NOT_SAME_PAYMENT,
-                    PayabliErrorType.RETRY_NOT_SAME_PAYMENT.message,
-                )
-            }
-            val chosen =
-                if (held != null) {
-                    reservedAt = held.reservedAt
-                    reused = true
-                    // Carried with the key, so the payment it was minted for outlives a sweep of its record.
-                    this.description = held.description ?: description
-                    held.key
-                } else {
-                    reservedAt = now
-                    newIdempotencyKey()
-                }
-            key = chosen
-            return chosen
+            val reserved =
+                keys.reserve(entryPoint, environment, payment, now, claimsHeldKey, description, newIdempotencyKey)
+            reservedAt = reserved.reservedAt
+            reused = reserved.reused
+            // Carried with the key, so the payment it was minted for outlives a sweep of its record.
+            this.description = reserved.description
+            key = reserved.key
+            return reserved.key
         }
     }
 
