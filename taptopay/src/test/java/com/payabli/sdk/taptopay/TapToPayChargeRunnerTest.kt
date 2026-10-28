@@ -1573,6 +1573,40 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a reader gone before the read reports nothing charged and lets its attempt go when its close fails`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A failing close is answered 500, which the close retries, so it costs three answers.
+            var closes = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to List(2) { challengeBody() },
+                        RouteScript.REGISTER to List(2) { registerBody(status = "active") },
+                        RouteScript.ATTEST to List(2) { attestBody() },
+                        RouteScript.CONFIG to List(2) { configBody() },
+                        INITIATE to List(2) { approved("""{"paymentTransId":"$TRANS_ID"}""") },
+                        UPDATE to List(4) { problemBody("The service failed") },
+                        statusFor = { if (it == UPDATE && closes++ < 3) 500 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.failNextRead(CardReaderException.SessionUnusable(null))
+            val runner = runnerOver(fixture)
+
+            val failure =
+                runCatching {
+                    runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            val expired = failure as? TapToPayException
+            assertEquals(failure.toString(), PayabliErrorType.READER_SESSION_EXPIRED, expired?.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, expired?.capture)
+            assertEquals("every close was refused", 3, fixture.requestsTo(UPDATE).size)
+            fixture.reader.answerReadWith(cardRead())
+            runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            assertEquals("the retry named a new attempt", "$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    @Test
     fun `a reader gone before the read on a resent key keeps its outcome unknown and its attempt held`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = rebuildableFixture(opens = 3, noRecordFrom = 1)

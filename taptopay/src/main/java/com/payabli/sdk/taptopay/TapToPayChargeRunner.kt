@@ -165,7 +165,7 @@ internal class TapToPayChargeRunner(
             val sendMark = PayabliSendMark()
             var resentKey = false
             var arrivedAt: Long? = null
-            // Never unset: once a card is asked for, no failure releases the key.
+            // Never unset: once a card is asked for, only an answer that nothing was taken releases the key.
             var askedForCard = false
             try {
                 // At the call, not by listening: the adapter's state broadcasts reach no app.
@@ -295,7 +295,8 @@ internal class TapToPayChargeRunner(
                 if (!askedForCard && openedAs == null && (failure is ChargeKeyRefusal || !sendMark.mayHaveLeft)) {
                     arrivedAt = null
                 }
-                // Only before the read: after it, no failure proves the money did not move.
+                // Before the read. After it, only the reader's or the processor's answer that nothing was taken
+                // releases the key, below and in the close.
                 if (!askedForCard) {
                     val key = reserved
                     // Uncancellable, so a withdrawal cannot skip the settle.
@@ -342,7 +343,7 @@ internal class TapToPayChargeRunner(
     /**
      * Asks for one card for [amount], at the scale the paypoint recorded. Every other exit, cancellation and a
      * JVM `Error` included, closes [paymentTransId] and rethrows what it caught. A minted-key run's `Exception`
-     * but an unusable reader session gives way to the close's no-record refusal, which settles the key.
+     * gives way to the close's no-record refusal, which settles the key, unless the reader's session was unusable.
      */
     private suspend fun readCard(
         paymentTransId: String,
