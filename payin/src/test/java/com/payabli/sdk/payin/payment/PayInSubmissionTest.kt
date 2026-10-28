@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
@@ -44,6 +45,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.KSerializer
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -52,6 +54,7 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import java.math.BigDecimal
 import java.util.concurrent.TimeUnit
@@ -66,6 +69,10 @@ import kotlin.time.Duration.Companion.seconds
  */
 class PayInSubmissionTest {
     private val timeout = 5.seconds
+
+    @Before
+    @After
+    fun forgetHeld() = PayInKeyStore.forgetHeld()
 
     private val approved = APPROVED_TRANSACTION
     private val stored = STORED_METHOD
@@ -651,13 +658,26 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
+    /** A key one holder kept is handed to the next, because every holder in the process reads the same keys. */
+    @Test
+    fun `a key held by one holder is resent by another for the same entry point`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+            submissionOver(transport).captureAuthorized(TEST_ENTRY_POINT, request)
+
+            submissionOver(transport).captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+        }
+
     /** Past the cap a minted key is not kept, so reporting one would name a retry that mints instead. */
     @Test
     fun `a minted key there was no room to keep is not resent`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.failingWith(dropped())
             val submission = submissionOver(transport)
-            repeat(PayInSubmission.HELD_KEYS_MAX) {
+            repeat(PayInKeyStore.HELD_KEYS_MAX) {
                 submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
             }
             val pastTheCap = PayInAuthorizedRequest("101-past-the-cap", testDetails())
@@ -666,7 +686,7 @@ class PayInSubmissionTest {
             submission.captureAuthorized(TEST_ENTRY_POINT, pastTheCap)
 
             assertEquals(
-                "$MINTED_KEY-${PayInSubmission.HELD_KEYS_MAX + 2}",
+                "$MINTED_KEY-${PayInKeyStore.HELD_KEYS_MAX + 2}",
                 transport.request?.headers?.get("idempotencyKey"),
             )
         }
@@ -678,12 +698,56 @@ class PayInSubmissionTest {
             val logger = RecordingSdkLogger()
             val submission = submissionOver(FakePayInTransport.failingWith(dropped()), logger)
 
-            repeat(PayInSubmission.HELD_KEYS_MAX + 3) {
+            repeat(PayInKeyStore.HELD_KEYS_MAX + 3) {
                 submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
             }
 
             assertEquals(
                 "the holder said it was full more than once",
+                1,
+                logger.records.count {
+                    it.level == LogLevel.WARN && it.message.contains("too many are unresolved")
+                },
+            )
+        }
+
+    /** Each entry point is full on its own, so each says so once. */
+    @Test
+    fun `each full entry point reports being full once`() =
+        runTest(timeout = timeout) {
+            val logger = RecordingSdkLogger()
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()), logger)
+
+            listOf(TEST_ENTRY_POINT, OTHER_ENTRY_POINT).forEach { entryPoint ->
+                repeat(PayInKeyStore.HELD_KEYS_MAX + 2) {
+                    submission.captureAuthorized(entryPoint, PayInAuthorizedRequest("101-$it", testDetails()))
+                }
+            }
+
+            assertEquals(
+                "a full entry point did not say so exactly once",
+                2,
+                logger.records.count {
+                    it.level == LogLevel.WARN && it.message.contains("too many are unresolved")
+                },
+            )
+        }
+
+    /** Another entry point finding room does not make a full one say so again. */
+    @Test
+    fun `a key held at another entry point does not repeat a full entry point's report`() =
+        runTest(timeout = timeout) {
+            val logger = RecordingSdkLogger()
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()), logger)
+            repeat(PayInKeyStore.HELD_KEYS_MAX + 1) {
+                submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
+            }
+
+            submission.captureAuthorized(OTHER_ENTRY_POINT, PayInAuthorizedRequest("101-other", testDetails()))
+            submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-still-full", testDetails()))
+
+            assertEquals(
+                "the full entry point said so again",
                 1,
                 logger.records.count {
                     it.level == LogLevel.WARN && it.message.contains("too many are unresolved")
@@ -863,6 +927,7 @@ class PayInSubmissionTest {
                 "conflict" to duplicate(),
             )) {
                 minted.set(0)
+                PayInKeyStore.forgetHeld()
                 val unknown = ScriptedPayInTransport.failingWith(dropped())
                 val transport = ScriptedPayInTransport(listOf(unknown, unknown, answer, unknown))
                 val submission = submissionOver(transport)
@@ -882,6 +947,7 @@ class PayInSubmissionTest {
         runTest(timeout = timeout) {
             for (authorizes in listOf(false, true)) {
                 minted.set(0)
+                PayInKeyStore.forgetHeld()
                 val unknown = ScriptedPayInTransport.failingWith(dropped())
                 val transport = ScriptedPayInTransport(listOf(unknown, duplicate(), unknown))
                 val submission = submissionOver(transport)
@@ -937,7 +1003,7 @@ class PayInSubmissionTest {
             submission.capture(TEST_ENTRY_POINT, cardRequest("order-1", attempt = PayabliAttempt.Retry))
 
             assertEquals(
-                "$MINTED_KEY-${PayInSubmission.HELD_KEYS_MAX + 1}",
+                "$MINTED_KEY-${PayInKeyStore.HELD_KEYS_MAX + 1}",
                 transport.request?.headers?.get("idempotencyKey"),
             )
         }
@@ -954,7 +1020,7 @@ class PayInSubmissionTest {
             submission.capture(TEST_ENTRY_POINT, cardRequest("order-1", attempt = PayabliAttempt.Retry))
 
             assertEquals(
-                "$MINTED_KEY-${PayInSubmission.HELD_KEYS_MAX + 2}",
+                "$MINTED_KEY-${PayInKeyStore.HELD_KEYS_MAX + 2}",
                 transport.request?.headers?.get("idempotencyKey"),
             )
         }
@@ -1255,6 +1321,7 @@ class PayInSubmissionTest {
                 )
             for ((field, first, retry) in cases) {
                 minted.set(0)
+                PayInKeyStore.forgetHeld()
                 val transport = FakePayInTransport.failingWith(dropped())
                 val submission = submissionOver(transport)
                 submission.capture(TEST_ENTRY_POINT, first.asNewPayment())
@@ -1311,6 +1378,7 @@ class PayInSubmissionTest {
                 )
             for ((field, retry) in cases) {
                 minted.set(0)
+                PayInKeyStore.forgetHeld()
                 val transport = FakePayInTransport.failingWith(dropped())
                 val submission = submissionOver(transport)
                 submission.capture(TEST_ENTRY_POINT, described().asNewPayment())
@@ -1563,6 +1631,7 @@ class PayInSubmissionTest {
                     moneyIn = MoneyInClient(transport, logger),
                     storage = TokenStorageClient(transport, logger),
                     dispatcher = StandardTestDispatcher(testScheduler),
+                    environment = PayabliEnvironment.SANDBOX,
                     newIdempotencyKey = { MINTED_KEY },
                     elapsedRealtimeNanos = clock::get,
                     logger = logger,
@@ -2080,6 +2149,7 @@ class PayInSubmissionTest {
             moneyIn = MoneyInClient(transport, logger),
             storage = TokenStorageClient(transport, logger),
             dispatcher = StandardTestDispatcher(testScheduler),
+            environment = PayabliEnvironment.SANDBOX,
             // Counted, so a test can tell one minted key from the next without matching a UUID.
             newIdempotencyKey = { "$MINTED_KEY-${minted.incrementAndGet()}" },
             // Advanced by a test that needs a held key to age; still otherwise, so nothing expires by surprise.
@@ -2231,7 +2301,7 @@ class PayInSubmissionTest {
 
     /** Holds as many keys as there is room for, one per authorization, each under a minted key. */
     private suspend fun fillTheHolder(submission: PayInSubmission) =
-        repeat(PayInSubmission.HELD_KEYS_MAX) {
+        repeat(PayInKeyStore.HELD_KEYS_MAX) {
             submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
         }
 
@@ -2274,6 +2344,7 @@ class PayInSubmissionTest {
 
     private companion object {
         const val MINTED_KEY = "minted"
+        const val OTHER_ENTRY_POINT = "another-merchant-entry"
 
         /** The sentence itself, so a change to the SDK's constant fails these tests. */
         const val UNKNOWN_OUTCOME_REASON =

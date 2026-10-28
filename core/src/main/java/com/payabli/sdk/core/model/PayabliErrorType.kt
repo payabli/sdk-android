@@ -153,12 +153,16 @@ public enum class PayabliErrorType(
         "This retry describes a different payment from the one still unresolved, so it was not sent. Check that payment first; to charge a different payment, send it as a new payment.",
     ),
 
-    /** A new payment names a reference whose earlier payment is still unresolved, so it was not sent. */
+    /**
+     * A new payment names a reference whose earlier payment is still unresolved, or a call names a payment another
+     * instance is still sending through the same call, or a transaction another instance is still capturing or
+     * voiding, so it was not sent.
+     */
     PAYMENT_REFERENCE_OPEN(
         1023,
         "PAYMENT_REFERENCE_OPEN",
         PayabliErrorCategory.INVALID_REQUEST,
-        "A payment with this reference is still unresolved, so this one was not sent. Check that payment first, or retry it.",
+        "Another call for this payment is still under way or its outcome is unknown, so this one was not sent. Check that payment's outcome first.",
     ),
 
     // Card-present.
