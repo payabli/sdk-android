@@ -153,7 +153,10 @@ public enum class PayabliErrorType(
         "This retry describes a different payment from the one still unresolved, so it was not sent. Check that payment first; to charge a different payment, send it as a new payment.",
     ),
 
-    /** A new payment names a reference whose earlier payment is still unresolved, so it was not sent. */
+    /**
+     * A new payment names a reference whose earlier payment is still unresolved, or a call names a payment another
+     * call is still sending, so it was not sent.
+     */
     PAYMENT_REFERENCE_OPEN(
         1023,
         "PAYMENT_REFERENCE_OPEN",

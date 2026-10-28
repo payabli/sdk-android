@@ -372,7 +372,8 @@ unknown: on card-not-present, the capture or authorization with the same `paymen
 `PayInException.Unsettled` carries and the SDK mints when you set none; on Tap to Pay, the most recent charge for
 that entry point. The service then recognizes the repeat rather than taking the money twice. Without it, every
 call is a new payment, and on card-not-present a new payment naming an unresolved `paymentReference` fails with
-`PAYMENT_REFERENCE_OPEN` and isn't sent. If the service refuses the retry because it already has that payment, a card-not-present
+`PAYMENT_REFERENCE_OPEN` and isn't sent, as does any call on a payment another `PayabliPayIn` is still sending.
+If the service refuses the retry because it already has that payment, a card-not-present
 retry fails with `RETRY_REFUSED` and a Tap to Pay one with `CHARGE_NOT_FINISHED`; check that payment before
 trying again.
 
