@@ -345,7 +345,6 @@ internal class ChargeKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "C
  * The service refused the customer the opening carried, before any card was read.
  *
  * Classified exactly as the [validation] failure it is: the type, reason and detail are that failure's.
- * [requiredFields] is what tells the charge's caller what to collect.
  *
  * @property validation the refusal as the transport read it.
  * @property requiredFields the customer fields the refusal names, empty when it names none.
