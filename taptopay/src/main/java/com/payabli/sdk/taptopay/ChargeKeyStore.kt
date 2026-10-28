@@ -40,12 +40,12 @@ internal class ChargeKeyStore(
      * Reading and reserving are one operation, under one lock. Split in two they leave a window where
      * two charges both find nothing held and mint separately.
      *
+     * A declared retry that describes a different sale from the held one is refused before anything is sent,
+     * and the held key stays for the retry that does match. A declared retry whose held key has a send under
+     * way is refused with [PayabliErrorType.PAYMENT_REFERENCE_OPEN].
+     *
      * @param entry the entry point the charge is for.
      * @param environment the environment the charge is sent to.
-     * A declared retry that describes a different sale from the held one is refused before anything is sent,
-     * and the held key stays for the retry that does match. So is one whose held key has a send under way, with
-     * [PayabliErrorType.PAYMENT_REFERENCE_OPEN].
-     *
      * @param attempt whether the host declared this charge a retry.
      * @param description the sale this charge describes.
      * @return the key to send, and whether it was already held.

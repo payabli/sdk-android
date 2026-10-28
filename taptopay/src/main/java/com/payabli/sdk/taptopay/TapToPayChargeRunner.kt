@@ -138,17 +138,9 @@ internal class TapToPayChargeRunner(
     private val scope: String = "${environment.name}/$entry"
 
     /**
-     * One payment at a time for this entry point, across every terminal built for it and every environment.
-     *
-     * Keyed by the entry point rather than held per instance, because that is what it protects. A terminal is
-     * built per call, so two of them exist for one paypoint whenever a screen is rebuilt, and they share the
-     * charge key by design. An instance mutex lets one settle that key while the other is mid-charge, after
-     * which an ambiguous failure mints a fresh one and the payer can be charged twice.
-     *
-     * **Broader than [scope], which is what a payment belongs to.** The store matches on entry point
-     * plus environment, so two environments for one paypoint hold separate keys. The lock stays keyed
-     * on the entry point alone so two terminals for that paypoint cannot open, close or settle side by
-     * side — including across environments, where [HELD] and the session repair still share the paypoint.
+     * Orders a captured close behind the charge on this entry point, which [HOLDERS] keeps to one. Keyed by the
+     * entry point rather than the instance, since a terminal is built per call, and across environments, where
+     * [HELD] and the session repair still share the paypoint.
      */
     private val region: Mutex get() = regionFor(entry)
 
@@ -441,7 +433,7 @@ internal class TapToPayChargeRunner(
      * Holds the entry point from the call, so a charge arriving while this runs or waits is refused; this
      * itself waits for a charge already under way.
      *
-     * @param paymentTransId the payment to close, which has to be the one held for this entry point.
+     * @param paymentTransId the payment to close, which has to be the one held for this entry point and environment.
      */
     suspend fun closeCaptured(paymentTransId: String) {
         HOLDERS.merge(entry, 1, Int::plus)
@@ -559,7 +551,7 @@ internal class TapToPayChargeRunner(
      * Why a charge is refused while another on its entry point is under way.
      *
      * @param attempt whether the host declared the refused charge a retry.
-     * @return a payment-reference refusal for a retry whose key is being sent, otherwise the terminal not being ready.
+     * @return a payment-reference refusal for a retry whose key is under way, otherwise the terminal not being ready.
      */
     private suspend fun overlapRefusal(attempt: PayabliAttempt): Exception =
         if (attempt == PayabliAttempt.Retry && keys.isUnderWay(entry, environment)) {

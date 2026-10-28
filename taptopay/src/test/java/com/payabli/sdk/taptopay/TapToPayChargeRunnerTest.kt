@@ -2758,6 +2758,23 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a retry while its key's charge waits for a card is refused as open and sends nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val first = chargeParkedInTheRead(fixture, held)
+            val reserved = fixture.minted.get()
+
+            val refusal = refusedAtOnce(runnerOver(fixture), PayabliAttempt.Retry)
+
+            assertEquals(PayabliErrorType.PAYMENT_REFERENCE_OPEN, refusal.type)
+            assertEquals("the refused retry reserved a key", reserved, fixture.minted.get())
+            assertEquals("the refused retry sent an opening", 1, fixture.requestsTo(INITIATE).size)
+            held.complete(Unit)
+            completing("the first charge") { first.await() }.getOrThrow()
+        }
+
+    @Test
     fun `a charge on another entry point is not refused while one reads a card`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The reader is one per process, so the other paypoint's charge waits for it.
