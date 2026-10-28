@@ -2900,6 +2900,48 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a retry whose key a running charge is sending is refused as open while a close waits behind it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val sending = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val fixture =
+                SessionFixture(
+                    script(),
+                    sendGate = { request ->
+                        if (request.path == INITIATE && !release.isCompleted) {
+                            sending.complete(Unit)
+                            release.await()
+                        }
+                    },
+                ).also { it.coordinator.initialize() }
+            val first =
+                async(UnconfinedTestDispatcher(testScheduler)) {
+                    runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                }
+            assertTrue("the first charge is sending its opening", sending.isCompleted)
+            val close =
+                async(UnconfinedTestDispatcher(testScheduler)) {
+                    runCatching { runnerOver(fixture).closeCaptured(TRANS_ID) }
+                }
+            assertFalse("the close did not wait for the charge", close.isCompleted)
+            val reserved = fixture.minted.get()
+
+            // Released however this ends, so a failure here does not leave the region held for later tests.
+            val refusal =
+                try {
+                    refusedAtOnce(runnerOver(fixture), PayabliAttempt.Retry)
+                } finally {
+                    release.complete(Unit)
+                }
+
+            assertEquals(PayabliErrorType.PAYMENT_REFERENCE_OPEN, refusal.type)
+            assertEquals("the refused retry reserved a key", reserved, fixture.minted.get())
+            assertEquals("the refused retry sent an opening", 1, fixture.requestsTo(INITIATE).size)
+            completing("the first charge") { first.await() }.getOrThrow()
+            completing("the close") { close.await() }
+        }
+
+    @Test
     fun `a close arriving during a charge waits for it, then sends`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The charge's own close gives up after three answers, which leaves its payment held for the close
