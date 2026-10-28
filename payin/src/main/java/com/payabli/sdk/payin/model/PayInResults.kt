@@ -291,7 +291,7 @@ public sealed class PayInException(
         internal const val DEFAULT_UNDECODABLE_REASON: String = "The response could not be read"
         internal const val DEFAULT_INTERRUPTED_REASON: String = "The payment was interrupted before it finished"
         internal const val DEFAULT_UNSETTLED_REASON: String =
-            "The payment may have been taken, and its outcome is not known"
+            "The transaction's status is unknown. Read the transaction back to see its status."
         internal const val DEFAULT_ALREADY_SUBMITTING_REASON: String = "A submission is already in flight"
     }
 }
