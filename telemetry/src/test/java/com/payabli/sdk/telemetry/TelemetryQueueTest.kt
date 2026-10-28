@@ -41,6 +41,23 @@ class TelemetryQueueTest {
         assertEquals(0, queue.takeDropCount())
     }
 
+    /**
+     * What an offer answers is how many were offered since the last drain, not how many are waiting.
+     *
+     * A returned batch is not offered again, so a queue refilled by one does not read as a full batch.
+     */
+    @Test
+    fun offerCountsOnlyWhatWasOfferedSinceTheLastDrain() {
+        val queue = TelemetryQueue(capacity = 8)
+        (1..3).forEach { queue.offer(event(it)) }
+        val drained = queue.drain(8)
+
+        queue.pushFront(drained)
+
+        assertEquals(1, queue.offer(event(4)))
+        assertEquals(4, queue.size())
+    }
+
     @Test
     fun drainingAnEmptyQueueIsNotAFailure() {
         assertEquals(emptyList<QueuedTelemetryEvent>(), TelemetryQueue(capacity = 2).drain(4))

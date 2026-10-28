@@ -180,8 +180,9 @@ internal class DeviceServiceClient(
      * routes.
      *
      * **A device that still owes activation is refused here, and the refusal can arrive either as an envelope
-     * decline or as a transport status.** Both become [DeviceServiceException.Forbidden], so a caller branches
-     * once, on a classification that is imprecise for the reason that type states.
+     * decline or as a transport status with no body.** Both become [DeviceServiceException.Forbidden], so a caller
+     * branches once, on a classification that is imprecise for the reason that type states. A refusal the
+     * service worded reaches [failureMapper] first, at either status.
      *
      * A refusal here is never retried in place. A rejection under [DeviceServiceException.NotAttested] means
      * the credential moved and the binding with it; attesting again from inside a failing call would spend a
@@ -200,8 +201,8 @@ internal class DeviceServiceClient(
             headers = assertion.asHeaders(),
             statusOverride = { statusCode ->
                 if (statusCode == HTTP_FORBIDDEN) {
-                    // The gateway's refusal carries no service text, and inventing one would put words in
-                    // its mouth that a caller could display.
+                    // Reached only by a 403 with no envelope declining under it: the gateway's refusal carries
+                    // no service text, and inventing one would put words in its mouth that a caller could display.
                     DeviceServiceException.Forbidden(statusCode, "")
                 } else {
                     null
@@ -364,9 +365,9 @@ internal class DeviceServiceClient(
     private fun elapsedMillis(startedAt: Long): Long = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
 
     /**
-     * Order is the contract. With [refusesAtStatus], a 4xx declining under its own code is the service refusing and
-     * an unenveloped 400 is a request this SDK built wrong; otherwise the status decides. Then the decline, then the
-     * payload. [emptyPayload] is settled here, where the success record is written, never by the caller.
+     * Order is the contract. A 4xx declining under its own code is the service refusing when [refusesAtStatus] is set
+     * or [statusOverride] claims that status; with [refusesAtStatus] an unenveloped 400 is this SDK's defect; otherwise
+     * the status decides. Then the decline, then the payload. [emptyPayload] is settled here, never by the caller.
      */
     private fun <T> read(
         route: String,
@@ -380,7 +381,9 @@ internal class DeviceServiceClient(
         val declineOutcome = PayabliEnvelope.declineOutcome(response.body)
         val status = response.statusCode
         val serviceRefused =
-            refusesAtStatus && status in HTTP_BAD_REQUEST until HTTP_INTERNAL_ERROR && declineOutcome?.code == status
+            status in HTTP_BAD_REQUEST until HTTP_INTERNAL_ERROR &&
+                declineOutcome?.code == status &&
+                (refusesAtStatus || statusOverride(status) != null)
         val transportFailure =
             when {
                 serviceRefused -> null

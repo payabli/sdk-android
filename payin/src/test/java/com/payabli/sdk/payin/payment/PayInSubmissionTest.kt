@@ -1729,6 +1729,50 @@ class PayInSubmissionTest {
             assertTrue("the cause lost the type that raised it: $carried", carried.contains("IllegalStateException"))
         }
 
+    // --- what an unknown outcome says, on each route that can leave one ---
+
+    @Test
+    fun `a capture whose outcome is unknown names the transaction`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()))
+
+            val state = submission.capture(TEST_ENTRY_POINT, cardRequest())
+
+            assertEquals(UNKNOWN_OUTCOME_REASON, unsettled(state).reason)
+        }
+
+    @Test
+    fun `an authorization whose outcome is unknown names the transaction`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()))
+
+            val state = submission.authorize(TEST_ENTRY_POINT, cardRequest())
+
+            assertEquals(UNKNOWN_OUTCOME_REASON, unsettled(state).reason)
+        }
+
+    @Test
+    fun `a capture of an authorization whose outcome is unknown names the transaction`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()))
+
+            val state = submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-abc", testDetails()))
+
+            assertEquals(UNKNOWN_OUTCOME_REASON, unsettled(state).reason)
+        }
+
+    @Test
+    fun `a void whose outcome is unknown names the transaction, not a payment`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()))
+
+            val reason = unsettled(submission.void(TEST_ENTRY_POINT, "101-abc")).reason
+
+            assertEquals(UNKNOWN_OUTCOME_REASON, reason)
+            assertFalse(reason, reason.contains("payment", ignoreCase = true))
+            assertFalse(reason, reason.contains("taken", ignoreCase = true))
+        }
+
     // --- cancellation ---
 
     @Test
@@ -2286,6 +2330,12 @@ class PayInSubmissionTest {
         return state as PayInSubmissionState.Failed
     }
 
+    private fun unsettled(state: PayInSubmissionState?): PayInException.Unsettled {
+        val cause = failed(requireNotNull(state)).cause
+        assertTrue("expected an unknown outcome, and the cause is $cause", cause is PayInException.Unsettled)
+        return cause as PayInException.Unsettled
+    }
+
     private fun succeededPayment(submission: PayInSubmission): PayInSubmissionState.Succeeded.Payment {
         val state = submission.state.value
         assertTrue("expected a payment, and the state is $state", state is PayInSubmissionState.Succeeded.Payment)
@@ -2295,5 +2345,9 @@ class PayInSubmissionTest {
     private companion object {
         const val MINTED_KEY = "minted"
         const val OTHER_ENTRY_POINT = "another-merchant-entry"
+
+        /** The sentence itself, so a change to the SDK's constant fails these tests. */
+        const val UNKNOWN_OUTCOME_REASON =
+            "The transaction's status is unknown. Read the transaction back to see its status."
     }
 }

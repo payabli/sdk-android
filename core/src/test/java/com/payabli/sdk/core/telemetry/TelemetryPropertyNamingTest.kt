@@ -90,6 +90,7 @@ class TelemetryPropertyNamingTest {
                 "origin",
                 "error_number",
                 "failure_type",
+                "dropped",
             ),
             declaredKeys(),
         )
