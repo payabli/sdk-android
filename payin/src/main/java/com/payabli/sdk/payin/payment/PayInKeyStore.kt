@@ -21,8 +21,9 @@ internal class PayInKeyStore(
      * Reading and recording are one operation under one lock, so below the capacity two facades sending one payment
      * at once cannot each find nothing and mint.
      *
-     * A new payment whose reference has a recorded key is refused before anything is sent, and a declared retry
-     * describing a different payment from the recorded one is refused too. The recorded key stays.
+     * One send at a time per payment: any send of a payment whose recorded key has a send under way is refused before
+     * anything is sent, as is a new payment whose reference has a recorded key and a declared retry describing a
+     * different payment from the recorded one. The recorded key stays.
      *
      * @param entry the entry point the payment is sent to.
      * @param environment the environment the payment is sent to.
@@ -46,7 +47,7 @@ internal class PayInKeyStore(
             sweep(now)
             val held = SHARED_HELD.firstOrNull { it.matches(entry, environment) && it.payment == payment }
             if (held != null) {
-                if (!claimsHeld) {
+                if (held.underWay || !claimsHeld) {
                     throw PayabliGenericException(
                         PayabliErrorType.PAYMENT_REFERENCE_OPEN,
                         PayabliErrorType.PAYMENT_REFERENCE_OPEN.message,
@@ -58,7 +59,7 @@ internal class PayInKeyStore(
                         PayabliErrorType.RETRY_NOT_SAME_PAYMENT.message,
                     )
                 }
-                held.sending++
+                held.underWay = true
                 return@synchronized Reserved(held.key, reused = true, held.description ?: description)
             }
             val minted = mint()
@@ -73,16 +74,15 @@ internal class PayInKeyStore(
                 SHARED_REPORTED_FULL.remove(partition)
                 SHARED_HELD.add(
                     0,
-                    HeldKey(entry, environment.name, payment, minted, now, description).apply { sending = 1 },
+                    HeldKey(entry, environment.name, payment, minted, now, description).apply { underWay = true },
                 )
             }
             Reserved(minted, reused = false, description)
         }
 
     /**
-     * Ends a send of [payment]'s key [key]: an answer forgets it, and any other ending keeps it only while a send of
-     * it may have reached the service or is still under way. A key not recorded, past the capacity or already
-     * answered, is left alone.
+     * Ends the send of [payment]'s key [key]: an answer forgets it, and any other ending keeps it only while a send
+     * of it may have reached the service. A key not recorded, past the capacity or already answered, is left alone.
      *
      * @param entry the entry point the payment is sent to.
      * @param environment the environment the payment is sent to.
@@ -104,7 +104,7 @@ internal class PayInKeyStore(
                 }
             if (at < 0) return
             val held = SHARED_HELD[at]
-            held.sending = maxOf(0, held.sending - 1)
+            held.underWay = false
             when (ending) {
                 SendEnding.Answered -> SHARED_HELD.removeAt(at)
                 is SendEnding.MayHaveArrived -> {
@@ -114,7 +114,7 @@ internal class PayInKeyStore(
 
                 // The service has seen the key, so it was carried out; the clock it already had stands.
                 SendEnding.RefusedAsRepeat -> held.carried = true
-                SendEnding.Ended -> if (held.sending == 0 && !held.carried) SHARED_HELD.removeAt(at)
+                SendEnding.Ended -> if (!held.carried) SHARED_HELD.removeAt(at)
             }
         }
     }
@@ -128,7 +128,7 @@ internal class PayInKeyStore(
      */
     private fun sweep(now: Long) {
         SHARED_HELD.removeAll {
-            it.sending == 0 && now - it.reservedAt >= IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds
+            !it.underWay && now - it.reservedAt >= IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds
         }
     }
 
@@ -207,8 +207,8 @@ internal class HeldKey(
     /** When the key's window started, on a monotonic clock that counts device sleep. */
     var reservedAt: Long = reservedAt
 
-    /** Sends of this key not yet ended, which may still reach the service, so no sweep drops it meanwhile. */
-    var sending: Int = 0
+    /** Whether a send of this key has not yet ended: it may still reach the service, so no sweep drops it meanwhile. */
+    var underWay: Boolean = false
 
     /** Whether the service may know this key, which keeps it held when no send of it is under way. */
     var carried: Boolean = false

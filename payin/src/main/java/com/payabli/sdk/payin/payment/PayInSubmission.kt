@@ -671,8 +671,9 @@ internal class PayInSubmission(
          * is read here, where the key is sent, not where the call began: this clock counts device sleep, so a
          * check taken earlier can be arbitrarily stale by the time the request leaves.
          *
-         * Refused before anything is sent: a blank payment reference, a new payment naming one whose key is
-         * still held, and a declared retry describing a different payment from the held one. The held key stays.
+         * Refused before anything is sent: a blank payment reference, any send of a payment whose held key has a
+         * send under way, a new payment naming one whose key is still held, and a declared retry describing a
+         * different payment from the held one. The held key stays.
          *
          * @param description the payment this attempt describes, or null on a route that names a transaction.
          * @return the key this attempt sends.

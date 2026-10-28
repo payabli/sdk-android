@@ -27,6 +27,7 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionStatus
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
@@ -966,15 +967,39 @@ class PayInPaymentFlowTest {
             assertEquals(dropping.keys.single(), other.sentKey())
         }
 
-    /** A resend that never left, ending while the first send is open, leaves the key held for the first. */
+    /** A declared retry while another facade's send of the key is under way is refused unsent; an answer frees it. */
     @Test
-    fun `a resend that never left ending first keeps the key the open send holds`() =
-        runTest(timeout = timeout) { assertOverlappingResendKeepsTheKey(resendEndsFirst = true) }
+    fun `a declared retry while another facade sends the key is refused, and after the answer nothing is held`() =
+        runTest(timeout = timeout) {
+            val gated = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val sending = launch { flowOver(gated).capture(cardRequest("order-1")) }
+            gated.arrived.await()
 
-    /** The first send ending unknown while a resend is open leaves the key held once the resend never leaves. */
+            val refused =
+                flowOver(other).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry)).exceptionOrNull()
+            val sentWhileOpen = other.count
+            gated.release()
+            sending.join()
+            val after = flowOver(other).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry))
+
+            assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
+            assertEquals("the refused retry was sent", 0, sentWhileOpen)
+            assertTrue("${after.exceptionOrNull()}", after.isSuccess)
+            assertNotEquals(gated.sent.single().headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY], other.sentKey())
+        }
+
+    /** A capture of one authorization from two facades at once is sent once; the other is refused unsent. */
     @Test
-    fun `a send ending unknown first keeps the key an open resend holds`() =
-        runTest(timeout = timeout) { assertOverlappingResendKeepsTheKey(resendEndsFirst = false) }
+    fun `two facades capturing one authorization at once send it once`() =
+        runTest(timeout = timeout) {
+            assertOneSendAtATime { captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails())) }
+        }
+
+    /** A void of one transaction from two facades at once is sent once; the other is refused unsent. */
+    @Test
+    fun `two facades voiding one transaction at once send it once`() =
+        runTest(timeout = timeout) { assertOneSendAtATime { voidTransaction("101-abc") } }
 
     /** A send still under way can reach the service, so its key is kept past the window until it is answered. */
     @Test
@@ -1050,44 +1075,24 @@ class PayInPaymentFlowTest {
         }
 
     /**
-     * Sends a new payment that ends unknown and, while it is open, a declared retry of it that never leaves, ending
-     * them in the order [resendEndsFirst] names. Asserts a new payment is refused while either send is open and
-     * after both end, and that a later retry carries the first send's key.
+     * Holds [send] in flight on one facade while a second facade makes the same call, and asserts the second is
+     * refused with [PayabliErrorType.PAYMENT_REFERENCE_OPEN] before anything is sent.
      *
-     * @param resendEndsFirst whether the retry ends before the first send.
+     * @param send the call naming one transaction, made on each facade.
      */
-    private suspend fun TestScope.assertOverlappingResendKeepsTheKey(resendEndsFirst: Boolean) {
-        val open = GatedPayInTransport.failingWith(dropped())
-        val resend = GatedPayInTransport.failingBeforeHandOffWith(dropped())
+    private suspend fun TestScope.assertOneSendAtATime(send: suspend PayInPaymentFlow.() -> Result<PayInResult>) {
+        val gated = GatedPayInTransport.answering(APPROVED_TRANSACTION)
         val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
-        val first = launch { flowOver(open).capture(cardRequest("order-1")) }
-        open.arrived.await()
-        val second = launch { flowOver(resend).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry)) }
-        resend.arrived.await()
+        val sending = launch { flowOver(gated).send() }
+        gated.arrived.await()
 
-        val (endsFirst, endsLast) = if (resendEndsFirst) resend to open else open to resend
-        val (joinsFirst, joinsLast) = if (resendEndsFirst) second to first else first to second
-        endsFirst.release()
-        joinsFirst.join()
-        val whileOneIsOpen = flowOver(other).capture(cardRequest("order-1")).exceptionOrNull()
-        endsLast.release()
-        joinsLast.join()
-        val afterBoth = flowOver(other).capture(cardRequest("order-1")).exceptionOrNull()
-        flowOver(other).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry))
+        val refused = flowOver(other).send().exceptionOrNull()
+        gated.release()
+        sending.join()
 
-        val key = open.sent.single().headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY]
-        assertEquals(
-            "the resend did not carry the open key",
-            key,
-            resend.sent.single().headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY],
-        )
-        assertEquals(
-            "$whileOneIsOpen",
-            PayabliErrorType.PAYMENT_REFERENCE_OPEN,
-            (whileOneIsOpen as? PayabliException)?.type,
-        )
-        assertEquals("$afterBoth", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (afterBoth as? PayabliException)?.type)
-        assertEquals(key, other.sentKey())
+        assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
+        assertEquals("the refused call was sent", 0, other.count)
+        assertEquals(1, gated.sent.size)
     }
 
     private fun dropped(): PayabliGenericException =
