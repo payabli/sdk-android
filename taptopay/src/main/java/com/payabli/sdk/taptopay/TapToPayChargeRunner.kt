@@ -67,6 +67,12 @@ private fun regionFor(entry: String): Mutex =
     REGIONS[(entry.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
 
 /**
+ * The entry points with a charge under way in this process, from any terminal and any environment. Keyed
+ * exactly, so an unrelated paypoint sharing a stripe is never refused; an entry is here only while its charge runs.
+ */
+private val CHARGING: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+/**
  * The payment each scope has read a card for and not confirmed a close on.
  *
  * Keyed exactly rather than striped, because two scopes sharing a stripe share a lock and must not share a
@@ -148,7 +154,7 @@ internal class TapToPayChargeRunner(
         orderDescription: String?,
         attempt: PayabliAttempt = PayabliAttempt.NewPayment,
     ): TapToPayResult =
-        region.withLock {
+        run {
             val sendable = sendableAmountOf(paymentDetails)
             // The service refuses this only after a card is taken.
             requireArgument(customer.identifiesSomeone) { "a charge has to name the payer it is for" }
@@ -167,7 +173,15 @@ internal class TapToPayChargeRunner(
             var arrivedAt: Long? = null
             // Never unset: once a card is asked for, no failure releases the key.
             var askedForCard = false
+            var claimed = false
+            var locked = false
             try {
+                // Before the region, so a second charge on this entry point is refused rather than queued behind it.
+                claimed = CHARGING.add(entry)
+                if (!claimed) throw overlapRefusal(attempt)
+                // Taken by hand rather than with `withLock`, so the refusal above goes through the same catch.
+                region.lock()
+                locked = true
                 // At the call, not by listening: the adapter's state broadcasts reach no app.
                 if (!contactlessEnabled()) {
                     throw PayabliGenericException(
@@ -329,7 +343,12 @@ internal class TapToPayChargeRunner(
                 throw if (failure is Exception) failed(failure, type, openedAs, capture) else failure
             } finally {
                 // A key still held names the newest unsettled charge, the only one a retry can claim.
-                reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it, arrivedAt) } }
+                try {
+                    reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it, arrivedAt) } }
+                } finally {
+                    if (locked) region.unlock()
+                    if (claimed) CHARGING.remove(entry)
+                }
             }
         }
 
@@ -515,6 +534,22 @@ internal class TapToPayChargeRunner(
             type == PayabliErrorType.SDK_INTERNAL_ERROR || type == PayabliErrorType.VALIDATION_ERROR
         return if (cardWasAsked && claimsNothingWasSent) PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN else type
     }
+
+    /**
+     * Why a charge is refused while another on its entry point is under way.
+     *
+     * @param attempt whether the host declared the refused charge a retry.
+     * @return a payment-reference refusal for a retry whose key is being sent, otherwise the terminal not being ready.
+     */
+    private suspend fun overlapRefusal(attempt: PayabliAttempt): Exception =
+        if (attempt == PayabliAttempt.Retry && keys.isUnderWay(entry, environment)) {
+            PayabliGenericException(
+                PayabliErrorType.PAYMENT_REFERENCE_OPEN,
+                PayabliErrorType.PAYMENT_REFERENCE_OPEN.message,
+            )
+        } else {
+            TapToPayCallException.TerminalNotReady()
+        }
 
     /** The failure a caller sees, under [type], carrying the payment it belongs to and whether the money moved. */
     private fun failed(

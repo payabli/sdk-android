@@ -43,7 +43,8 @@ internal class ChargeKeyStore(
      * @param entry the entry point the charge is for.
      * @param environment the environment the charge is sent to.
      * A declared retry that describes a different sale from the held one is refused before anything is sent,
-     * and the held key stays for the retry that does match.
+     * and the held key stays for the retry that does match. So is one whose held key has a send under way, with
+     * [PayabliErrorType.PAYMENT_REFERENCE_OPEN].
      *
      * @param attempt whether the host declared this charge a retry.
      * @param description the sale this charge describes.
@@ -61,13 +62,20 @@ internal class ChargeKeyStore(
             val existing =
                 held.takeIf { attempt == PayabliAttempt.Retry }?.firstOrNull { it.matches(entry, environment) }
             if (existing != null) {
+                // The service answers two sends of one key as one, so the second would learn no outcome.
+                if (existing.underWay) {
+                    throw PayabliGenericException(
+                        PayabliErrorType.PAYMENT_REFERENCE_OPEN,
+                        PayabliErrorType.PAYMENT_REFERENCE_OPEN.message,
+                    )
+                }
                 if (description != null && existing.description?.matches(description) == false) {
                     throw PayabliGenericException(
                         PayabliErrorType.RETRY_NOT_SAME_PAYMENT,
                         PayabliErrorType.RETRY_NOT_SAME_PAYMENT.message,
                     )
                 }
-                existing.sending++
+                existing.underWay = true
                 return@withLock Reserved(existing.key, reused = true, reservedAt = now)
             }
             // Nothing live is evicted to make room. Every remaining record names a charge whose outcome
@@ -78,7 +86,7 @@ internal class ChargeKeyStore(
                 throw ChargeKeyStoreFullException(entryPoints.size)
             }
             val minted = newKey()
-            held.add(0, ChargeAttempt(entry, environment.name, minted, now, description).apply { sending++ })
+            held.add(0, ChargeAttempt(entry, environment.name, minted, now, description).apply { underWay = true })
             Reserved(minted, reused = false, reservedAt = now)
         }
 
@@ -100,6 +108,18 @@ internal class ChargeKeyStore(
             val existing = held.firstOrNull { it.matches(entry, environment) } ?: return@withLock false
             existing.description?.matches(description) != false
         }
+
+    /**
+     * Whether the key a [PayabliAttempt.Retry] for [entry] under [environment] would be handed has a send under way.
+     *
+     * @param entry the entry point the charge is for.
+     * @param environment the environment the charge is sent to.
+     * @return true when the newest held key has been reserved and its send has not ended.
+     */
+    suspend fun isUnderWay(
+        entry: String,
+        environment: PayabliEnvironment,
+    ): Boolean = lock.withLock { held.firstOrNull { it.matches(entry, environment) }?.underWay == true }
 
     /**
      * A reserved key, whether it was already held, and when this send reserved it. Not a `data class`, and the
@@ -146,7 +166,7 @@ internal class ChargeKeyStore(
     ) {
         lock.withLock {
             val kept = held.firstOrNull { it.matches(entry, environment) && it.key == key } ?: return@withLock
-            kept.sending = maxOf(0, kept.sending - 1)
+            kept.underWay = false
             held.removeAll { it.matches(entry, environment) && it.key != key }
             if (arrivedAt != null) kept.reservedAt = maxOf(kept.reservedAt, arrivedAt)
         }
@@ -158,7 +178,7 @@ internal class ChargeKeyStore(
      */
     private fun sweep(now: Long) {
         val bound = IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds
-        held.removeAll { it.sending == 0 && now - it.reservedAt >= bound }
+        held.removeAll { !it.underWay && now - it.reservedAt >= bound }
     }
 
     internal companion object {
@@ -217,8 +237,8 @@ internal class ChargeAttempt(
     var reservedAt: Long = reservedAt
         internal set
 
-    /** Sends of this key not yet ended, which may still reach the service, so no sweep drops it meanwhile. */
-    var sending: Int = 0
+    /** Whether a send of this key has not yet ended. It may still reach the service, so no sweep drops it meanwhile. */
+    var underWay: Boolean = false
         internal set
 
     fun matches(
