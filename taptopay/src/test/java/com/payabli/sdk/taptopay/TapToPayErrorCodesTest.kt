@@ -99,7 +99,7 @@ class TapToPayErrorCodesTest {
             TapToPayCallException.NoDeviceToChargeAs() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             TapToPayCallException.PaymentNotHeld() to PayabliErrorType.PAYMENT_NOT_HELD,
             ChargeKeyStoreFullException(4) to PayabliErrorType.TOO_MANY_OPEN_CHARGES,
-            TapToPayArgumentException("a charge has to name the payer it is for") to PayabliErrorType.VALIDATION_ERROR,
+            TapToPayArgumentException("an amount has to be greater than zero") to PayabliErrorType.VALIDATION_ERROR,
             IllegalArgumentException("a decoder's own complaint") to PayabliErrorType.UNKNOWN,
             IllegalStateException("refused transition") to PayabliErrorType.SDK_INTERNAL_ERROR,
             RuntimeException("unexamined") to PayabliErrorType.UNKNOWN,
