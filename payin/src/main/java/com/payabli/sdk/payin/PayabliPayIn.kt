@@ -67,10 +67,10 @@ public sealed class PayabliPayIn {
      * payment was taken; the failure is [PayInException.Unsettled], carrying that reference. Submitting the same
      * reference with `attempt` set to `PayabliAttempt.Retry` resends its key, so the service recognises the
      * repeat. A new payment naming a reference whose outcome is still unknown is refused as
-     * [PayabliErrorType.PAYMENT_REFERENCE_OPEN] and not sent, and so is this call on a reference another instance is
-     * still sending through it. The key is held in memory for every instance on the same entry point and environment, while
-     * the service would still recognise it, and for at most 16 unresolved payments there at once; past that, or
-     * after a restart, a retry goes out under a new key, so read the transaction back instead.
+     * [PayabliErrorType.PAYMENT_REFERENCE_OPEN] and not sent, and so is this call on a reference another instance
+     * is still sending through it. The key is held in memory for every instance on the same entry point and
+     * environment, while the service would still recognise it, and for at most 16 unresolved payments there at
+     * once; past that, or after a restart, a retry goes out under a new key, so read the transaction back instead.
      *
      * **A declared retry describes the same payment.** One that describes a different payment is refused as
      * [PayabliErrorType.RETRY_NOT_SAME_PAYMENT] and not sent, and the earlier payment's key stays held.
@@ -124,8 +124,8 @@ public sealed class PayabliPayIn {
      *
      * **This call moves money, so it always carries an idempotency key, which the SDK mints and holds for the
      * transaction.** A failure that leaves it unknown whether the capture was applied arrives as
-     * [PayInException.Unsettled], and calling again with the same transaction resends the held key. This call on
-     * a transaction another instance is still sending through it is refused as
+     * [PayInException.Unsettled], and calling again with the same transaction resends the held key. A capture
+     * or a void of a transaction another instance is still capturing or voiding is refused as
      * [PayabliErrorType.PAYMENT_REFERENCE_OPEN] and not sent.
      *
      * **A repeat the service refuses outright is the end of what repeating can tell you.** It arrives as
