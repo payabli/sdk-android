@@ -966,6 +966,16 @@ class PayInPaymentFlowTest {
             assertEquals(dropping.keys.single(), other.sentKey())
         }
 
+    /** A resend that never left, ending while the first send is open, leaves the key held for the first. */
+    @Test
+    fun `a resend that never left ending first keeps the key the open send holds`() =
+        runTest(timeout = timeout) { assertOverlappingResendKeepsTheKey(resendEndsFirst = true) }
+
+    /** The first send ending unknown while a resend is open leaves the key held once the resend never leaves. */
+    @Test
+    fun `a send ending unknown first keeps the key an open resend holds`() =
+        runTest(timeout = timeout) { assertOverlappingResendKeepsTheKey(resendEndsFirst = false) }
+
     /** A send still under way can reach the service, so its key is kept past the window until it is answered. */
     @Test
     fun `a key mid-send outlives the service's window until its send is answered`() =
@@ -1038,6 +1048,47 @@ class PayInPaymentFlowTest {
             assertTrue("${next.exceptionOrNull()}", next.isSuccess)
             assertEquals(1, other.count)
         }
+
+    /**
+     * Sends a new payment that ends unknown and, while it is open, a declared retry of it that never leaves, ending
+     * them in the order [resendEndsFirst] names. Asserts a new payment is refused while either send is open and
+     * after both end, and that a later retry carries the first send's key.
+     *
+     * @param resendEndsFirst whether the retry ends before the first send.
+     */
+    private suspend fun TestScope.assertOverlappingResendKeepsTheKey(resendEndsFirst: Boolean) {
+        val open = GatedPayInTransport.failingWith(dropped())
+        val resend = GatedPayInTransport.failingBeforeHandOffWith(dropped())
+        val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+        val first = launch { flowOver(open).capture(cardRequest("order-1")) }
+        open.arrived.await()
+        val second = launch { flowOver(resend).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry)) }
+        resend.arrived.await()
+
+        val (endsFirst, endsLast) = if (resendEndsFirst) resend to open else open to resend
+        val (joinsFirst, joinsLast) = if (resendEndsFirst) second to first else first to second
+        endsFirst.release()
+        joinsFirst.join()
+        val whileOneIsOpen = flowOver(other).capture(cardRequest("order-1")).exceptionOrNull()
+        endsLast.release()
+        joinsLast.join()
+        val afterBoth = flowOver(other).capture(cardRequest("order-1")).exceptionOrNull()
+        flowOver(other).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry))
+
+        val key = open.sent.single().headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY]
+        assertEquals(
+            "the resend did not carry the open key",
+            key,
+            resend.sent.single().headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY],
+        )
+        assertEquals(
+            "$whileOneIsOpen",
+            PayabliErrorType.PAYMENT_REFERENCE_OPEN,
+            (whileOneIsOpen as? PayabliException)?.type,
+        )
+        assertEquals("$afterBoth", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (afterBoth as? PayabliException)?.type)
+        assertEquals(key, other.sentKey())
+    }
 
     private fun dropped(): PayabliGenericException =
         PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)

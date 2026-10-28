@@ -182,6 +182,7 @@ internal class ScriptedPayInTransport(
 internal class GatedPayInTransport(
     private val response: PayabliResponse,
     private val failure: Throwable? = null,
+    private val handsOver: Boolean = true,
 ) : PayabliTransport {
     private val released = CompletableDeferred<Unit>()
 
@@ -192,7 +193,7 @@ internal class GatedPayInTransport(
     val arrived: CompletableDeferred<Unit> = CompletableDeferred()
 
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
-        currentCoroutineContext()[PayabliSendMark]?.mark()
+        if (handsOver) currentCoroutineContext()[PayabliSendMark]?.mark()
         sent += request
         arrived.complete(Unit)
         released.await()
@@ -221,6 +222,10 @@ internal class GatedPayInTransport(
         /** Holds the request past the hand-off, then throws [failure] once released. */
         fun failingWith(failure: Throwable): GatedPayInTransport =
             GatedPayInTransport(PayabliResponse(200, emptyMap(), ByteArray(0)), failure)
+
+        /** Holds the request before the hand-off, then throws [failure] once released, so nothing left. */
+        fun failingBeforeHandOffWith(failure: Throwable): GatedPayInTransport =
+            GatedPayInTransport(PayabliResponse(200, emptyMap(), ByteArray(0)), failure, handsOver = false)
     }
 }
 
