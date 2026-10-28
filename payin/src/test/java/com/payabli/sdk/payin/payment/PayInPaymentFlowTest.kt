@@ -937,6 +937,22 @@ class PayInPaymentFlowTest {
             assertEquals(gated.sent.single().headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY], other.sentKey())
         }
 
+    /** Facades sending the same new payments at once on real threads send one key for each. */
+    @Test
+    fun `facades sending the same new payments at once send one key for each`() =
+        runTest(timeout = timeout) {
+            val transport = ConcurrentFailingTransport()
+            val flows = (0 until 4).map { flowOver(transport, dispatcher = Dispatchers.Default) }
+            val references = (0 until PayInKeyStore.HELD_KEYS_MAX).map { "order-$it" }
+
+            flows
+                .map { flow ->
+                    async(Dispatchers.Default) { references.forEach { flow.capture(cardRequest(it)) } }
+                }.awaitAll()
+
+            assertEquals("a payment was sent with a second key", references.size, transport.keys.size)
+        }
+
     /** A send still under way can reach the service, so its key is kept past the window until it is answered. */
     @Test
     fun `a key mid-send outlives the service's window until its send is answered`() =
