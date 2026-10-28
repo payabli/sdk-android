@@ -162,7 +162,7 @@ public enum class PayabliErrorType(
         1023,
         "PAYMENT_REFERENCE_OPEN",
         PayabliErrorCategory.INVALID_REQUEST,
-        "A payment with this reference is still unresolved, so this one was not sent. Check that payment first, or retry it.",
+        "Another call for this payment is still under way or its outcome is unknown, so this one was not sent. Check that payment's outcome first.",
     ),
 
     // Card-present.

@@ -94,7 +94,7 @@ class PayabliErrorCatalogTest {
                 "PAYMENT_REFERENCE_OPEN",
                 1023,
                 PayabliErrorCategory.INVALID_REQUEST,
-                "A payment with this reference is still unresolved, so this one was not sent. Check that payment first, or retry it.",
+                "Another call for this payment is still under way or its outcome is unknown, so this one was not sent. Check that payment's outcome first.",
             ),
             Row(
                 "DEVICE_KEY_UNAVAILABLE",
