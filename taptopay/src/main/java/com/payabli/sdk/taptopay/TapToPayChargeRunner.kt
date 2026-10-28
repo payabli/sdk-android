@@ -340,9 +340,9 @@ internal class TapToPayChargeRunner(
         }
 
     /**
-     * Asks for one card for [amount]. Every other exit closes [paymentTransId] and rethrows what it caught,
-     * except that a minted-key run's `Exception` gives way to the close's no-record refusal, which settles the
-     * key; an `Error` and an unusable reader session keep their place.
+     * Asks for one card for [amount], at the scale the paypoint recorded. Every other exit, cancellation and a
+     * JVM `Error` included, closes [paymentTransId] and rethrows what it caught. A minted-key run's `Exception`
+     * but an unusable reader session gives way to the close's no-record refusal, which settles the key.
      */
     private suspend fun readCard(
         paymentTransId: String,
