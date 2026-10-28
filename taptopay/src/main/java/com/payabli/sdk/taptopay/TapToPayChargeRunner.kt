@@ -67,10 +67,15 @@ private fun regionFor(entry: String): Mutex =
     REGIONS[(entry.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
 
 /**
- * The entry points with a charge under way in this process, from any terminal and any environment. Keyed
- * exactly, so an unrelated paypoint sharing a stripe is never refused; an entry is here only while its charge runs.
+ * The charges and captured closes holding each entry point, from any terminal and environment. A charge claims
+ * only an entry point nothing holds; a close counts itself and waits. Keyed exactly, so a shared stripe never refuses.
  */
-private val CHARGING: MutableSet<String> = ConcurrentHashMap.newKeySet()
+private val HOLDERS = ConcurrentHashMap<String, Int>()
+
+/** Removes one holder of [entry], and the entry with its last. */
+private fun release(entry: String) {
+    HOLDERS.compute(entry) { _, holders -> if (holders == null || holders <= 1) null else holders - 1 }
+}
 
 /**
  * The payment each scope has read a card for and not confirmed a close on.
@@ -177,7 +182,7 @@ internal class TapToPayChargeRunner(
             var locked = false
             try {
                 // Before the region, so a second charge on this entry point is refused rather than queued behind it.
-                claimed = CHARGING.add(entry)
+                claimed = HOLDERS.putIfAbsent(entry, 1) == null
                 if (!claimed) throw overlapRefusal(attempt)
                 // Taken by hand rather than with `withLock`, so the refusal above goes through the same catch.
                 region.lock()
@@ -347,7 +352,7 @@ internal class TapToPayChargeRunner(
                     reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it, arrivedAt) } }
                 } finally {
                     if (locked) region.unlock()
-                    if (claimed) CHARGING.remove(entry)
+                    if (claimed) release(entry)
                 }
             }
         }
@@ -431,8 +436,22 @@ internal class TapToPayChargeRunner(
      * Whether the first close reached the service is not known here and does not need to be. Sending one
      * that already applied costs nothing, and a response that never arrived may have followed a close that
      * did apply, so an unconfirmed close is what this retries rather than a failed one.
+     *
+     * Holds the entry point from the call, so a charge arriving while this runs or waits is refused; this
+     * itself waits for a charge already under way.
+     *
+     * @param paymentTransId the payment to close, which has to be the one held for this entry point.
      */
-    suspend fun closeCaptured(paymentTransId: String): Unit =
+    suspend fun closeCaptured(paymentTransId: String) {
+        HOLDERS.merge(entry, 1, Int::plus)
+        try {
+            closeHeld(paymentTransId)
+        } finally {
+            release(entry)
+        }
+    }
+
+    private suspend fun closeHeld(paymentTransId: String): Unit =
         region.withLock {
             val pending = HELD[scope]
             if (pending == null || pending.paymentTransId != paymentTransId) {
