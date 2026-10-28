@@ -62,7 +62,7 @@ internal class ChargeKeyStore(
             val existing =
                 held.takeIf { attempt == PayabliAttempt.Retry }?.firstOrNull { it.matches(entry, environment) }
             if (existing != null) {
-                // The service answers two sends of one key as one, so the second would learn no outcome.
+                // A key has one send at a time, so every send learns its own outcome.
                 if (existing.underWay) {
                     throw PayabliGenericException(
                         PayabliErrorType.PAYMENT_REFERENCE_OPEN,
@@ -110,7 +110,7 @@ internal class ChargeKeyStore(
         }
 
     /**
-     * Whether the key a [PayabliAttempt.Retry] for [entry] under [environment] would be handed has a send under way.
+     * Whether the newest key held for [entry] under [environment] has a send under way.
      *
      * @param entry the entry point the charge is for.
      * @param environment the environment the charge is sent to.

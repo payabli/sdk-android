@@ -2648,11 +2648,9 @@ class TapToPayChargeRunnerTest {
         }
 
     /**
-     * Charges with [runner] while another charge on its entry point is under way, and returns what it was
-     * refused with.
+     * Charges with [runner] while its entry point is held, and returns what it was refused with.
      *
-     * The charge is asserted finished before anything is released, so one that waits for the first fails
-     * here rather than succeeding once the first ends.
+     * The charge is asserted finished before anything is released, so a charge that waits fails here.
      *
      * @param runner the terminal the second charge is made on.
      * @param attempt whether the second charge is declared a retry.
@@ -2762,8 +2760,7 @@ class TapToPayChargeRunnerTest {
     @Test
     fun `a charge on another entry point is not refused while one reads a card`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // The reader is one per process, so the other paypoint's charge waits for it rather than running
-            // beside the first. Waiting is right there: it is a different payment.
+            // The reader is one per process, so the other paypoint's charge waits for it.
             // Set up first: a session setup waits for the reader as the charge does.
             val other = readyFixture()
             val device = checkNotNull(other.enrollment.store.read(ENTRY))

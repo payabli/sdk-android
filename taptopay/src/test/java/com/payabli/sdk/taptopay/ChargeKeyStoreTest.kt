@@ -276,7 +276,7 @@ class ChargeKeyStoreTest {
             assertTrue(resent.reused)
         }
 
-    /** Two sends of one key are answered by the service as one, so the second gets no outcome. */
+    /** A key has one send at a time, so a retry of one being sent is refused. */
     @Test
     fun `a declared retry of a key being sent is refused as open and the key stays`() =
         runBlocking {

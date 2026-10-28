@@ -181,10 +181,11 @@ internal class TapToPayChargeRunner(
             var claimed = false
             var locked = false
             try {
-                // Before the region, so a second charge on this entry point is refused rather than queued behind it.
+                // Claimed before the region, so a second charge on this entry point is refused here and never
+                // reaches the lock.
                 claimed = HOLDERS.putIfAbsent(entry, 1) == null
                 if (!claimed) throw overlapRefusal(attempt)
-                // Taken by hand rather than with `withLock`, so the refusal above goes through the same catch.
+                // Locked inside the try, so the refusal above reaches the same catch and finally.
                 region.lock()
                 locked = true
                 // At the call, not by listening: the adapter's state broadcasts reach no app.
