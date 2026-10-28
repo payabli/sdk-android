@@ -640,11 +640,14 @@ internal class PayInSubmission(
      * request carries the key, so it is known only once that has been built.
      */
     private inner class RetryKey(
-        val entryPoint: String,
+        entryPoint: String,
         val payment: String?,
         val reference: String? = null,
         private val claimsHeldKey: Boolean = true,
     ) {
+        /** The entry point trimmed, as the request carries it, so padding does not move the key to another partition. */
+        val entryPoint: String = entryPoint.trim()
+
         var key: String? = null
             private set
 

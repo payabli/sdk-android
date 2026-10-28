@@ -953,6 +953,19 @@ class PayInPaymentFlowTest {
             assertEquals("a payment was sent with a second key", references.size, transport.keys.size)
         }
 
+    /** The service sees the entry point trimmed, so a rebuilt facade given it unpadded resends the held key. */
+    @Test
+    fun `a declared retry with the entry point unpadded resends the key a padded one held`() =
+        runTest(timeout = timeout) {
+            val dropping = ConcurrentFailingTransport()
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            flowOver(dropping, entryPoint = " $TEST_ENTRY_POINT ").capture(cardRequest("order-1"))
+
+            flowOver(other).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry))
+
+            assertEquals(dropping.keys.single(), other.sentKey())
+        }
+
     /** A send still under way can reach the service, so its key is kept past the window until it is answered. */
     @Test
     fun `a key mid-send outlives the service's window until its send is answered`() =
