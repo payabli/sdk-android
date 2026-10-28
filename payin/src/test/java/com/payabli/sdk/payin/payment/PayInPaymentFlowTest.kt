@@ -973,6 +973,43 @@ class PayInPaymentFlowTest {
             assertEquals(1, other.count)
         }
 
+    /** A send that may have left before an error keeps its key for the window, and frees its reference after it. */
+    @Test
+    fun `a send ending in an error after the hand-off holds its key only for the window`() =
+        runTest(timeout = timeout) {
+            val clock = AtomicLong(0)
+            val failing = ErrorTransport(handsOver = true)
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val thrown = runCatching { flowOver(failing, clock = clock::get).capture(cardRequest("order-1")) }
+
+            val refused = flowOver(other, clock = clock::get).capture(cardRequest("order-1")).exceptionOrNull()
+            // Dropped rather than answered, so the retry keeps the key held and only the window can free it.
+            val dropping = ConcurrentFailingTransport()
+            flowOver(dropping, clock = clock::get).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry))
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds + 1)
+            val later = flowOver(other, clock = clock::get).capture(cardRequest("order-1"))
+
+            // The premise: the error escaped the facade rather than becoming a failure it returned.
+            assertTrue("$thrown", thrown.exceptionOrNull() is LinkageError)
+            assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
+            assertEquals(failing.keys, dropping.keys)
+            assertTrue("${later.exceptionOrNull()}", later.isSuccess)
+        }
+
+    /** A send that never left before an error ran nowhere, so its reference is free at once. */
+    @Test
+    fun `a send ending in an error before the hand-off leaves its reference free`() =
+        runTest(timeout = timeout) {
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val thrown = runCatching { flowOver(ErrorTransport(handsOver = false)).capture(cardRequest("order-1")) }
+
+            val next = flowOver(other).capture(cardRequest("order-1"))
+
+            assertTrue("$thrown", thrown.exceptionOrNull() is LinkageError)
+            assertTrue("${next.exceptionOrNull()}", next.isSuccess)
+            assertEquals(1, other.count)
+        }
+
     private fun dropped(): PayabliGenericException =
         PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)
 
@@ -1023,6 +1060,24 @@ class PayInPaymentFlowTest {
             currentCoroutineContext()[PayabliSendMark]?.mark()
             request.headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY]?.let(sent::add)
             throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("no route here decodes a v2 envelope")
+    }
+
+    /** Throws an error that is not an exception, after the hand-off when [handsOver], and records each key sent. */
+    private class ErrorTransport(
+        private val handsOver: Boolean,
+    ) : PayabliTransport {
+        val keys = mutableListOf<String>()
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            if (handsOver) currentCoroutineContext()[PayabliSendMark]?.mark()
+            request.headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY]?.let(keys::add)
+            throw LinkageError("a class failed to link")
         }
 
         override suspend fun <T> execute(

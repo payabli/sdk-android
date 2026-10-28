@@ -427,6 +427,15 @@ internal class PayInSubmission(
                     sink.value = finished
                 }
                 report(event, outcomeOf(finished), codeOf(finished), failingType, startedAt, entryPoint, publishes)
+            } else {
+                // An error rather than an exception, which ends the send as surely: a send still counted as under way
+                // keeps its reference refused for the life of the process.
+                val payment = retry.payment
+                val key = retry.key
+                if (payment != null && key != null) {
+                    val ending = if (sendMark.mayHaveLeft) SendEnding.MayHaveArrived(retry.sentAt) else SendEnding.Ended
+                    keys.end(retry.entryPoint, environment, payment, key, ending)
+                }
             }
             inFlight.unlock()
         }
