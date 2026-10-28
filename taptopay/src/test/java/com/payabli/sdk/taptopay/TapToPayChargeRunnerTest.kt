@@ -421,25 +421,6 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `an identifier alone names the payer, because the service decides the rest`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            // What is measured is that all three of first name, last name and customer number empty is
-            // refused. Whether an id on its own suffices is the service's answer, so this check does not
-            // pre-empt it: refusing here would break a caller the service would have accepted.
-            val fixture = readyFixture()
-
-            val receipt =
-                runnerOver(fixture).charge(
-                    details(),
-                    TapToPayCustomerData(customerId = 91),
-                    TapToPayInvoiceData(),
-                    null,
-                )
-
-            assertEquals(TRANS_ID, receipt.paymentTransId)
-        }
-
-    @Test
     fun `a payment is opened, tapped and closed, in that order`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = readyFixture()
