@@ -50,6 +50,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -3114,6 +3115,58 @@ class TapToPayChargeRunnerTest {
             completing("the close") { close.await() }.getOrThrow()
             val next = runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
             assertEquals("the entry point was still held after the close", TRANS_ID, next.paymentTransId)
+        }
+
+    @Test
+    fun `a retry refused while only a close holds the entry point is unknown until the close settles its key`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Three answers for the charge's close that gives up, one for the close that lands.
+            var closeFails = true
+            val closing = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val fixture =
+                SessionFixture(
+                    scriptWithCloseControl(opens = 1, closes = 4) { closeFails },
+                    sendGate = { request ->
+                        if (request.path == UPDATE && !closeFails && !release.isCompleted) {
+                            closing.complete(Unit)
+                            release.await()
+                        }
+                    },
+                ).also { it.coordinator.initialize() }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            closeFails = false
+            val close =
+                async(UnconfinedTestDispatcher(testScheduler)) {
+                    runCatching { runnerOver(fixture).closeCaptured(TRANS_ID) }
+                }
+            // A second close of the same payment, counted on the entry point and queued behind the first.
+            val again =
+                async(StandardTestDispatcher(testScheduler)) {
+                    runCatching { runnerOver(fixture).closeCaptured(TRANS_ID) }
+                }
+            testScheduler.runCurrent()
+            assertTrue("the close is being sent", closing.isCompleted)
+
+            val whileHeld =
+                try {
+                    refusedAtOnce(runnerOver(fixture), PayabliAttempt.Retry)
+                } finally {
+                    release.complete(Unit)
+                }
+            assertEquals(PayabliErrorType.TERMINAL_NOT_READY, whileHeld.type)
+            assertEquals("the close's key is still held", TapToPayCapture.UNKNOWN, whileHeld.capture)
+
+            assertTrue("the first close landed", close.isCompleted)
+            assertFalse("the second close released the entry point", again.isCompleted)
+            val afterSettle = refusedAtOnce(runnerOver(fixture), PayabliAttempt.Retry)
+            assertEquals(PayabliErrorType.TERMINAL_NOT_READY, afterSettle.type)
+            assertEquals("the close settled its key", TapToPayCapture.NOT_CHARGED, afterSettle.capture)
+
+            close.await().getOrThrow()
+            testScheduler.runCurrent()
+            assertTrue("the second close never ended", again.isCompleted)
+            assertEquals("a refused retry sent an opening", 1, fixture.requestsTo(INITIATE).size)
         }
 
     @Test
