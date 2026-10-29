@@ -13,9 +13,9 @@ import kotlin.time.Duration.Companion.seconds
 private val TEST_TIMEOUT = 5.seconds
 
 /**
- * The vendor's refusals for a session that has ended against the kind each lands on. Two of them carry the
- * vendor's generic internal code and differ only in their text, so the texts are written out here: a
- * reworded one fails this test rather than reporting an ended session as an unknown outcome.
+ * The vendor's refusals for an ended session against the kind each lands on. Two differ only in text, copied
+ * here from the pinned vendor version. Nothing reads the vendor's copy, so a version bump that rewords them
+ * passes this test and reports an unknown outcome: a bump re-reads both texts.
  */
 class SessionEndedMappingTest {
     @Test
