@@ -3146,7 +3146,7 @@ class TapToPayChargeRunnerTest {
             val held = CompletableDeferred<Unit>()
             val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
             val first = chargeParkedInTheRead(fixture, held)
-            val reserved = fixture.minted.get()
+            val reserved = other.minted.get()
 
             // Released however this ends, so a failure here does not leave the reader held for later tests.
             val refusal =
@@ -3158,7 +3158,7 @@ class TapToPayChargeRunnerTest {
 
             assertEquals(PayabliErrorType.TERMINAL_NOT_READY, refusal.type)
             assertEquals(TapToPayCapture.NOT_CHARGED, refusal.capture)
-            assertEquals("the refused charge reserved a key", reserved, fixture.minted.get())
+            assertEquals("the refused charge reserved a key", reserved, other.minted.get())
             assertTrue("the refused charge sent an opening", other.requestsTo(INITIATE).isEmpty())
             completing("the first charge") { first.await() }.getOrThrow()
         }
