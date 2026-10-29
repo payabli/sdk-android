@@ -3218,21 +3218,27 @@ class TapToPayChargeRunnerTest {
                 async(UnconfinedTestDispatcher(testScheduler)) {
                     runCatching { runnerOver(fixture).closeCaptured(TRANS_ID) }
                 }
-            assertTrue("the close is being sent", closing.isCompleted)
             val terminal = runnerOver(other, entry = STRIPE_SHARING_ENTRY)
-            val waiting =
-                async(UnconfinedTestDispatcher(testScheduler)) {
-                    terminal.charge(details(), PAYER, TapToPayInvoiceData(), null)
-                }
-            assertFalse("the charge took the lock", waiting.isCompleted)
-            val close =
-                async(UnconfinedTestDispatcher(testScheduler)) {
-                    runCatching { runnerOver(other, entry = STRIPE_SHARING_ENTRY).closeCaptured(TRANS_ID) }
-                }
 
-            waiting.cancel()
-            waiting.join()
-            release.complete(Unit)
+            // Released however this ends, so a failure here does not leave the region held for later tests.
+            val close =
+                try {
+                    assertTrue("the close is being sent", closing.isCompleted)
+                    val waiting =
+                        async(UnconfinedTestDispatcher(testScheduler)) {
+                            terminal.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                        }
+                    assertFalse("the charge took the lock", waiting.isCompleted)
+                    val close =
+                        async(UnconfinedTestDispatcher(testScheduler)) {
+                            runCatching { runnerOver(other, entry = STRIPE_SHARING_ENTRY).closeCaptured(TRANS_ID) }
+                        }
+                    waiting.cancel()
+                    waiting.join()
+                    close
+                } finally {
+                    release.complete(Unit)
+                }
             completing("the close holding the lock") { holding.await() }.getOrThrow()
 
             assertTrue("the close still waits for the withdrawn charge", close.isCompleted)
