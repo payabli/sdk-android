@@ -49,8 +49,8 @@ internal class EntryPointHolders {
      *
      * @param entry the entry point the charge is for.
      * @param sale the sale the charge describes.
-     * @return the claim, or the refusal naming the sale running on [entry] when something holds it or another
-     *   entry point's charge runs.
+     * @return the claim, or the refusal when something holds [entry] or another entry point's charge runs, naming
+     *   the sale running on [entry] when there is one.
      */
     fun admitCharge(
         entry: String,

@@ -564,7 +564,7 @@ internal class TapToPayChargeRunner(
     }
 
     /**
-     * Why a charge is refused while another on its entry point is under way.
+     * Why a charge is refused while another is under way.
      *
      * @param found the held key a refused retry found, or null for a new payment or when none is held.
      * @return a payment-reference refusal for a retry whose key is under way, otherwise the terminal not being ready.
