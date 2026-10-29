@@ -105,7 +105,7 @@ class SetupScreenDeviceIdInstrumentedTest {
     }
 
     private companion object {
-        const val DEVICE_ID = "a1b2c3d4e5f60718"
+        const val DEVICE_ID = "a1b2c3d4e5f60718293a4b5c6d7e8f90"
         const val COPY = "Copy Device ID"
     }
 }

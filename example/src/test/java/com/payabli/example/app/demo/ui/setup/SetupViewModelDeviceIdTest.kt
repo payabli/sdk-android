@@ -33,9 +33,9 @@ class SetupViewModelDeviceIdTest {
 
     @Test
     fun `the session's device ID reaches the screen`() {
-        val state = model { Result.success("a1b2c3d4e5f60718") }.uiState.value
+        val state = model { Result.success("a1b2c3d4e5f60718293a4b5c6d7e8f90") }.uiState.value
 
-        assertEquals("a1b2c3d4e5f60718", state.deviceId)
+        assertEquals("a1b2c3d4e5f60718293a4b5c6d7e8f90", state.deviceId)
         assertNull(state.deviceIdProblem)
     }
 
@@ -60,11 +60,11 @@ class SetupViewModelDeviceIdTest {
     fun `a recheck reads the device ID again`() {
         var answer: String? = null
         val model = model { Result.success(answer) }
-        answer = "a1b2c3d4e5f60718"
+        answer = "a1b2c3d4e5f60718293a4b5c6d7e8f90"
 
         model.recheck()
 
-        assertEquals("a1b2c3d4e5f60718", model.uiState.value.deviceId)
+        assertEquals("a1b2c3d4e5f60718293a4b5c6d7e8f90", model.uiState.value.deviceId)
     }
 
     private fun model(readDeviceId: suspend () -> Result<String?>): SetupViewModel {

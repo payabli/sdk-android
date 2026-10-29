@@ -303,7 +303,7 @@ private fun SetupScreenPreview() {
                             packageName = "com.payabli.example.app",
                             signingCertificateDigest = "AB:CD",
                         ),
-                    deviceId = "a1b2c3d4e5f60718",
+                    deviceId = "a1b2c3d4e5f60718293a4b5c6d7e8f90",
                     readiness = Readiness.NotAvailable,
                     problems =
                         listOf(

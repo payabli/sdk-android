@@ -141,6 +141,6 @@ private fun DetailRowPreview() {
         // looking at: a dash where a value should be, and the reason underneath it.
         DetailRow(label = "Entry point", value = "", problem = "Not set. Configuration is keyed by entry point.")
         DetailRow(label = "Payment trans ID", value = "txn_01JQ8F3M2K7WZ9XB4C6D8E0GHR")
-        DetailRow(label = "Device ID", value = "a1b2c3d4e5f60718", onCopy = {})
+        DetailRow(label = "Device ID", value = "a1b2c3d4e5f60718293a4b5c6d7e8f90", onCopy = {})
     }
 }

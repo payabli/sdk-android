@@ -41,6 +41,7 @@ class NoLogCarriesDeviceIdTest {
         const val DEVICE_ID = "deviceId"
 
         /** Platform logging, standard output, and the sample's own diagnostics log. */
-        val LOG_SINK = Regex("""\bLog\.[a-z]+\(|\bprintln\(|\bprint\(|System\.(out|err)|diagnostics\.record\(""")
+        val LOG_SINK =
+            Regex("""\bLog\.[a-z]+\(|\bprintln\(|\bprint\(|printStackTrace\(|System\.(out|err)|diagnostics\.record\(""")
     }
 }
