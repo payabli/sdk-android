@@ -441,9 +441,9 @@ Their READMEs say how to configure and run both. In sandbox, use Payabli's
 
 The SDK sends error and usage events to Payabli, with no card, payer or account data. Telemetry is always
 on and can't be turned off. The events are not listed. For Google Play's Data safety form, every module
-collects device or other IDs, app interactions and diagnostics, and `sdk-android-payin` and
-`sdk-android-taptopay` also collect financial info (user payment info). None of it is shared or used for
-tracking.
+collects device or other IDs, app interactions and diagnostics. `sdk-android-payin` and
+`sdk-android-taptopay` also collect financial info (user payment info), and `sdk-android-payin` collects
+personal info (name, email address) from its form. None of it is shared or used for tracking.
 
 Every request the SDK sends to Payabli carries an `X-Pyb-Client` header with the SDK version, the platform, the OS
 version, the device model, the locale and the device ID described under [Device identity](#device-identity).
