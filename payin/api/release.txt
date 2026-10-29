@@ -230,10 +230,6 @@ package com.payabli.sdk.payin.form {
     method @InaccessibleFromKotlin public String? getTotal();
     method public String? labelFor(com.payabli.sdk.payin.form.PayInField field);
     method public String? placeholderFor(com.payabli.sdk.payin.form.PayInField field);
-    method public String? submitButtonOrNull();
-    method public String? subtitleOrNull();
-    method public String? titleOrNull();
-    method public String? totalOrNull();
     property public java.util.Map<com.payabli.sdk.payin.form.PayInField,java.lang.String> fieldLabels;
     property public java.util.Map<com.payabli.sdk.payin.form.PayInField,java.lang.String> fieldPlaceholders;
     property public String? submitButton;
