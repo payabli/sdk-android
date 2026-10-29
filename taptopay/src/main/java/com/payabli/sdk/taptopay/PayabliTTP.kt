@@ -57,7 +57,8 @@ public class PayabliTTP private constructor(
      *
      * [customer] is sent as given, an empty one included. A paypoint that requires customer fields the charge
      * did not carry refuses it before any card is read, with [TapToPayException.refusal] set to
-     * [TapToPayChargeRefusal.CustomerDataRefused] naming them and [TapToPayException.capture] not charged.
+     * [TapToPayChargeRefusal.CustomerDataRefused] naming them. [TapToPayException.capture] is not charged, or
+     * unknown on a retry that resent a held key, which stays held.
      *
      * **A charge is a new sale unless [attempt] says it is a retry.** A charge whose outcome is unknown keeps
      * its idempotency key for this entry point under this environment, and only a charge declared

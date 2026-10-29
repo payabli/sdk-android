@@ -325,6 +325,45 @@ class TapToPayChargeRunnerTest {
             assertNull(failure.refusal)
         }
 
+    /** The resent key names an earlier opening, and refusing the retry's customer does not say whether that one charged. */
+    @Test
+    fun `a refused customer on a resent key stays unknown and keeps its key`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var openings = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to
+                            listOf(approved("{\"paymentTransId\":\"$TRANS_ID\"}")) +
+                            List(2) { fieldRefusal("Missing customer identifiers: customerNumber") },
+                        UPDATE to listOf("{}"),
+                        statusFor = { path -> if (path == INITIATE && ++openings >= 2) 400 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+                }.exceptionOrNull() as TapToPayException
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
+
+            assertEquals(
+                listOf("customerNumber"),
+                (failure.refusal as? TapToPayChargeRefusal.CustomerDataRefused)?.requiredFields,
+            )
+            assertEquals("the earlier sale was reported as not charged", TapToPayCapture.UNKNOWN, failure.capture)
+            assertEquals("the retry did not resend the held key", "$MINTED_KEY-1", fixture.keySent(1))
+            assertEquals("the refusal let the held key go", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
     @Test
     fun `a charge with the contactless radio off is refused as 3036 and sends nothing`() =
         runTest(timeout = TEST_TIMEOUT) {
