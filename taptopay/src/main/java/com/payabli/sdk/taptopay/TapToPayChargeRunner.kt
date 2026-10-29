@@ -36,6 +36,7 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionCoordinator
 import com.payabli.sdk.taptopay.session.TapToPaySessionManager
 import com.payabli.sdk.taptopay.telemetry.TapToPayReports
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -66,16 +67,8 @@ private val REGIONS: List<Mutex> = List(REGION_STRIPES) { Mutex() }
 private fun regionFor(entry: String): Mutex =
     REGIONS[(entry.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
 
-/**
- * The charges and captured closes holding each entry point, from any terminal and environment. A charge claims
- * only an entry point nothing holds; a close counts itself and waits. Keyed exactly, so a shared stripe never refuses.
- */
-private val HOLDERS = ConcurrentHashMap<String, Int>()
-
-/** Removes one holder of [entry], and the entry with its last. */
-private fun release(entry: String) {
-    HOLDERS.compute(entry) { _, holders -> if (holders == null || holders <= 1) null else holders - 1 }
-}
+/** Shared rather than held per runner for the reason the regions are. */
+private val HOLDERS = EntryPointHolders()
 
 /**
  * The payment each scope has read a card for and not confirmed a close on.
@@ -170,13 +163,13 @@ internal class TapToPayChargeRunner(
             var arrivedAt: Long? = null
             // Never unset: once a card is asked for, no failure releases the key.
             var askedForCard = false
-            var claimed = false
+            var inRegion: CompletableDeferred<Unit>? = null
             var locked = false
             try {
                 // Claimed before the region, so a second charge on this entry point is refused here and never
                 // reaches the lock.
-                claimed = HOLDERS.putIfAbsent(entry, 1) == null
-                if (!claimed) {
+                inRegion = HOLDERS.admitCharge(entry)
+                if (inRegion == null) {
                     // One read, so the running charge cannot settle the key between the refusal and its capture.
                     val found =
                         if (attempt == PayabliAttempt.Retry) {
@@ -190,6 +183,7 @@ internal class TapToPayChargeRunner(
                 // Locked inside the try, so the refusal above reaches the same catch and finally.
                 region.lock()
                 locked = true
+                inRegion.complete(Unit)
                 // At the call, not by listening: the adapter's state broadcasts reach no app.
                 if (!contactlessEnabled()) {
                     throw PayabliGenericException(
@@ -330,7 +324,7 @@ internal class TapToPayChargeRunner(
                 }
                 // A retry refused before its key was reserved still describes the held sale, whose outcome is unknown.
                 // Only once claimed: then no other charge on this entry point can settle the key under the read.
-                if (claimed && reserved == null && attempt == PayabliAttempt.Retry) {
+                if (inRegion != null && reserved == null && attempt == PayabliAttempt.Retry) {
                     val described = ChargeDescription.of(paymentDetails, invoice)
                     if (withContext(NonCancellable) { keys.holdsRetryOf(entry, environment, described) }) {
                         capture = TapToPayCapture.UNKNOWN
@@ -356,7 +350,10 @@ internal class TapToPayChargeRunner(
                     reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it, arrivedAt) } }
                 } finally {
                     if (locked) region.unlock()
-                    if (claimed) release(entry)
+                    inRegion?.let {
+                        it.complete(Unit)
+                        HOLDERS.release(entry)
+                    }
                 }
             }
         }
@@ -447,11 +444,13 @@ internal class TapToPayChargeRunner(
      * @param paymentTransId the payment to close, which has to be the one held for this entry point and environment.
      */
     suspend fun closeCaptured(paymentTransId: String) {
-        HOLDERS.merge(entry, 1, Int::plus)
+        val admitted = HOLDERS.admitClose(entry)
         try {
+            // A charge admitted before this close goes first, even one not yet holding the region.
+            admitted?.await()
             closeHeld(paymentTransId)
         } finally {
-            release(entry)
+            HOLDERS.release(entry)
         }
     }
 
