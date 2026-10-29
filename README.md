@@ -263,8 +263,8 @@ val session: PayabliSession = PayabliSession.initialize(config, HostBindings(app
 - There is one session per app process.
 - Calling `initialize` again with the same entry point and environment returns the same session, which keeps its
   original token provider. A different one throws a `PayabliException` whose `type` is `INVALID_CONFIGURATION`, and
-  the session already running stays in place. After authentication has failed for good, it builds a fresh session
-  instead.
+  the session already running stays in place. Once the session's credential is finished (see `TOKEN_EXPIRED`
+  below), `initialize` with any configuration starts a fresh session in its place.
 
 The token provider is a `PayabliTokenProvider`, a `suspend` function that returns a new access token from
 your token endpoint:
@@ -277,6 +277,26 @@ your token endpoint:
 - The SDK doesn't retry a `TOKEN_PROVIDER_FAILED` or `TOKEN_EXPIRED` failure itself. Try again only when someone
   using your app asks to, or wait longer before each attempt.
 - Let cancellation through. Don't catch `CancellationException`.
+
+**What `TOKEN_EXPIRED` (1002) means.** It isn't how an expired token reaches you. A token that expires or is
+refused once is handled inside the SDK: it asks your provider for a new one, repeats the request, and your call
+succeeds. A 1002 means the service refused the token **and** the new one your provider just returned, so even a
+freshly minted token is being rejected. Don't treat it as a signal to fetch a token; treat it as a credential your
+app has to fix. The usual causes are a token for another environment or entry point, a missing permission, or a
+disabled paypoint. Apart from the two cases below, after a 1002 the session's credential is finished: every later
+call on that session fails at once with 1002, without sending a request or calling your provider. Fix the cause,
+then call `PayabliSession.initialize` again; it starts a fresh session, which calls your provider before its first
+request.
+
+Two kinds of 1002 leave the session usable:
+
+- One from Tap to Pay setting up the device (`PayabliTTP.initialize()`, `activateDevice`, or the repair `charge`
+  runs first) when the setup's own request was refused, the SDK renewed the token, and the new one was refused
+  too. Fix the cause, then call that setup again; it asks your provider for a new token. If it fails again at
+  once with 1002 and your provider isn't called, the session's credential is finished: call
+  `PayabliSession.initialize`, then create the terminal again from the new session.
+- One whose refused token another call had already replaced, or was replacing. Only that call fails; the next
+  call uses the new token, and `initialize` with the same configuration returns the same session.
 
 ### Device identity
 

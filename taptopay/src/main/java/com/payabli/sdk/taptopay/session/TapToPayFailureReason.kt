@@ -26,7 +26,16 @@ public enum class TapToPayFailureReason {
      */
     CONFIGURATION_REJECTED,
 
-    /** The service could not be reached, or failed inside. The same call may succeed later. */
+    /**
+     * The service could not be reached, or failed inside, or refused the token again after the SDK renewed it.
+     *
+     * The error thrown with it says which. When its type is `PayabliErrorType.TOKEN_EXPIRED`, waiting does not
+     * help. If the setup's own request was refused after the renewal, the session stays usable: once the
+     * credential is fixed, setting the device up again asks the token provider for a new token. If the setup
+     * failed at once without calling the provider, the session's credential is finished: call
+     * `PayabliSession.initialize`, then create this terminal again from the new session. Whatever the error,
+     * repeat a call only when someone asks to, or after waiting longer each time.
+     */
     SERVICE_UNAVAILABLE,
 
     /**

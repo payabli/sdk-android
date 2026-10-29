@@ -20,7 +20,6 @@ import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
-import com.payabli.sdk.taptopay.model.identifiesSomeone
 import com.payabli.sdk.taptopay.network.ChargeKeyRefusal
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
@@ -146,8 +145,6 @@ internal class TapToPayChargeRunner(
     ): TapToPayResult =
         run {
             val sendable = sendableAmountOf(paymentDetails)
-            // The service refuses this only after a card is taken.
-            requireArgument(customer.identifiesSomeone) { "a charge has to name the payer it is for" }
             val sale = ChargeDescription.of(paymentDetails, invoice)
 
             // After the precondition, so a bad argument is not reported as a failed charge.
