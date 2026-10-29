@@ -74,10 +74,32 @@ class EntryPointHoldersTest {
     }
 
     @Test
+    fun `a charge refused after the running charge left a close behind is told no sale is running`() {
+        admitted()!!.complete(Unit)
+        holders.admitClose(ENTRY)
+
+        holders.releaseCharge(ENTRY)
+        val refusal = holders.admitCharge(ENTRY, sale()) as Admission.Refused
+
+        assertNull(refusal.runningSale)
+    }
+
+    @Test
+    fun `a close leaving before the running charge keeps that charge's sale`() {
+        admitted()
+        holders.admitClose(ENTRY)
+
+        holders.releaseClose(ENTRY)
+        val refusal = holders.admitCharge(ENTRY, sale()) as Admission.Refused
+
+        assertTrue(refusal.runningSale!!.matches(sale()))
+    }
+
+    @Test
     fun `a charge is refused while a close or another charge holds the entry point`() {
         holders.admitClose(ENTRY)
         assertNull("admitted beside a close", admitted())
-        holders.release(ENTRY)
+        holders.releaseClose(ENTRY)
 
         admitted()!!.complete(Unit)
         assertNull("admitted beside a charge", admitted())
@@ -88,9 +110,9 @@ class EntryPointHoldersTest {
         admitted()!!.complete(Unit)
         holders.admitClose(ENTRY)
 
-        holders.release(ENTRY)
+        holders.releaseCharge(ENTRY)
         assertNull("admitted while the close still holds", admitted())
-        holders.release(ENTRY)
+        holders.releaseClose(ENTRY)
 
         assertNotNull(admitted())
     }

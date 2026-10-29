@@ -350,7 +350,7 @@ internal class TapToPayChargeRunner(
                     if (locked) region.unlock()
                     inRegion?.let {
                         it.complete(Unit)
-                        HOLDERS.release(entry)
+                        HOLDERS.releaseCharge(entry)
                     }
                 }
             }
@@ -448,7 +448,7 @@ internal class TapToPayChargeRunner(
             admitted?.await()
             closeHeld(paymentTransId)
         } finally {
-            HOLDERS.release(entry)
+            HOLDERS.releaseClose(entry)
         }
     }
 

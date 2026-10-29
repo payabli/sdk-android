@@ -3240,6 +3240,31 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a retry refused while a close outlasts the charge it queued behind reads the held keys alone`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val charge = chargeParkedInTheRead(fixture, held)
+            // Runs only when the scheduler is advanced, so it still holds the entry point after the charge leaves.
+            val close =
+                async(StandardTestDispatcher(testScheduler)) {
+                    runCatching { runnerOver(fixture).closeCaptured(TRANS_ID) }
+                }
+            testScheduler.runCurrent()
+
+            held.complete(Unit)
+            assertTrue("the charge did not end", charge.isCompleted)
+            charge.await().getOrThrow()
+            assertFalse("the close released the entry point", close.isCompleted)
+
+            val refusal = refusedAtOnce(runnerOver(fixture), PayabliAttempt.Retry)
+            assertEquals(PayabliErrorType.TERMINAL_NOT_READY, refusal.type)
+            assertEquals("the finished charge's sale was still counted", TapToPayCapture.NOT_CHARGED, refusal.capture)
+            testScheduler.runCurrent()
+            assertTrue("the close never ended", close.isCompleted)
+        }
+
+    @Test
     fun `a close withdrawn while it waits for a charge leaves the entry point free`() =
         runTest(timeout = TEST_TIMEOUT) {
             val held = CompletableDeferred<Unit>()

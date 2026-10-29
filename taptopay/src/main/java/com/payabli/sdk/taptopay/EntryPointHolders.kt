@@ -12,8 +12,8 @@ import java.util.concurrent.ConcurrentHashMap
 internal class EntryPointHolders {
     /**
      * @property count the charges and closes holding the entry point.
-     * @property charge completed once the admitted charge holds its region or ends, or null when none was admitted.
-     * @property sale the sale the admitted charge describes, or null when none was admitted.
+     * @property charge completed once the admitted charge holds its region or ends, or null when no charge holds it.
+     * @property sale the sale the admitted charge describes, or null when no charge holds it.
      */
     private class Holding(
         val count: Int,
@@ -63,11 +63,22 @@ internal class EntryPointHolders {
         holdings.compute(entry) { _, held -> Holding((held?.count ?: 0) + 1, held?.charge, held?.sale) }?.charge
 
     /**
-     * Removes one holder of [entry], and the entry with its last.
+     * Removes the admitted charge from [entry], with its signal and its sale, and the entry with its last holder.
      *
-     * @param entry the entry point a charge or close is leaving.
+     * @param entry the entry point the charge is leaving.
      */
-    fun release(entry: String) {
+    fun releaseCharge(entry: String) {
+        holdings.compute(entry) { _, held ->
+            if (held == null || held.count <= 1) null else Holding(held.count - 1, null, null)
+        }
+    }
+
+    /**
+     * Removes one close from [entry], and the entry with its last holder.
+     *
+     * @param entry the entry point the close is leaving.
+     */
+    fun releaseClose(entry: String) {
         holdings.compute(entry) { _, held ->
             if (held == null || held.count <= 1) null else Holding(held.count - 1, held.charge, held.sale)
         }
