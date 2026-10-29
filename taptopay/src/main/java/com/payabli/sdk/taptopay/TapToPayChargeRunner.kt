@@ -164,8 +164,7 @@ internal class TapToPayChargeRunner(
             var inRegion: CompletableDeferred<Unit>? = null
             var locked = false
             try {
-                // Claimed before the region, so a charge made while another runs, on any entry point, is refused
-                // here and never reaches the lock.
+                // Claimed before the lock, so a refused charge never waits on it.
                 val admitted =
                     when (val admission = HOLDERS.admitCharge(entry, sale)) {
                         is EntryPointHolders.Admission.Admitted -> admission.inRegion

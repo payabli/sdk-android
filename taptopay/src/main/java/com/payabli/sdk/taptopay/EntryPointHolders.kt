@@ -36,12 +36,10 @@ internal class EntryPointHolders {
         ) : Admission
     }
 
-    /** One monitor for the entry points and the running charge, so a claim reads and takes both in one step. */
     private val guard = Any()
 
     private val holdings = HashMap<String, Holding>()
 
-    /** The entry point whose charge is admitted, or null when no charge runs. */
     private var charging: String? = null
 
     /**
