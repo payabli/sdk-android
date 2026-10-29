@@ -14,8 +14,9 @@ public sealed class TapToPayChargeRefusal {
     /**
      * The paypoint requires customer fields the charge did not carry.
      *
-     * @property requiredFields the customer fields to collect before charging again, empty when the
-     *   refusal named none.
+     * @property requiredFields every customer field the paypoint requires, all of which must be set to charge
+     *   again, named as [com.payabli.sdk.taptopay.model.TapToPayCustomerData] names them, or as the paypoint
+     *   names one that no customer field sets; empty when the refusal named none.
      */
     public class CustomerDataRefused(
         requiredFields: List<String>,

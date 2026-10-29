@@ -55,10 +55,10 @@ public class PayabliTTP private constructor(
     /**
      * Takes one payment. Waits for a card, so it runs as long as the person in front of the phone.
      *
-     * [customer] has to identify the payer: an opening that names none is refused before a card is asked
-     * for. Any one of `customerId`, `customerNumber`, `firstName` or `lastName` satisfies that, so a caller
-     * holding only the identifier the service already knows does not have to invent a name to go with it.
-     * What a given paypoint then requires is its own rule and is answered by the service.
+     * [customer] is sent as given, an empty one included. A paypoint that requires customer fields the charge
+     * did not carry refuses it before any card is read, with [TapToPayException.refusal] set to
+     * [TapToPayChargeRefusal.CustomerDataRefused] naming them. [TapToPayException.capture] is not charged, or
+     * unknown on a retry that resent a held key, which stays held.
      *
      * **A charge is a new sale unless [attempt] says it is a retry.** A charge whose outcome is unknown keeps
      * its idempotency key for this entry point under this environment, and only a charge declared

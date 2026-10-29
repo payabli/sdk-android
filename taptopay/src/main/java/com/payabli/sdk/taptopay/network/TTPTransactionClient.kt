@@ -8,6 +8,7 @@ import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
@@ -24,6 +25,7 @@ import com.payabli.sdk.taptopay.provider.CardReadResult
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
 import java.net.HttpURLConnection.HTTP_NOT_FOUND
+import java.util.Locale
 
 /**
  * The two MoneyIn calls a card-present charge is bracketed by.
@@ -196,7 +198,11 @@ internal class TTPTransactionClient(
         failureFor(route, response)?.let { failure ->
             // A 409 whose body is not a JSON object is the idempotency check refusing the key. Any other 409,
             // such as a refused duplicate sale, stays a conflict.
-            throw if (failure.isConflict() && !response.bodyAsText().isJsonObject()) ChargeKeyRefusal() else failure
+            throw when {
+                failure.isConflict() && !response.bodyAsText().isJsonObject() -> ChargeKeyRefusal()
+                failure is PayabliValidationException -> CustomerDataRefusal.of(failure) ?: failure
+                else -> failure
+            }
         }
         val envelope =
             try {
@@ -334,6 +340,73 @@ internal fun String.isUsableTransId(): Boolean {
  * A conflict like any other until the charge reads it, which tells a resent held key from a new one.
  */
 internal class ChargeKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)")
+
+/**
+ * The service refused the customer the opening carried, before any card was read.
+ *
+ * Classified exactly as the [validation] failure it is: the type, reason and detail are that failure's.
+ *
+ * @property validation the refusal as the transport read it.
+ * @property requiredFields the customer fields the refusal names, empty when it names none.
+ */
+internal class CustomerDataRefusal(
+    val validation: PayabliValidationException,
+    val requiredFields: List<String>,
+) : PayabliException(PayabliErrorType.VALIDATION_ERROR, validation.reason, validation.detail, validation) {
+    companion object {
+        private const val CODE = "E7020"
+        private const val FIELD = "customerData"
+        private const val IDENTIFIERS_PREFIX = "Missing customer identifiers: "
+
+        /** The [TapToPayCustomerData] field that sets each identifier key, by the key lowercased. */
+        private val FIELD_FOR_KEY =
+            mapOf(
+                "customernumber" to "customerNumber",
+                "firstname" to "firstName",
+                "lastname" to "lastName",
+                "company" to "company",
+                "phone" to "billingPhone",
+                "email" to "billingEmail",
+                "city" to "billingCity",
+                "state" to "billingState",
+                "zip" to "billingZip",
+                "country" to "billingCountry",
+                "shippingcity" to "shippingCity",
+                "shippingstate" to "shippingState",
+                "shippingzip" to "shippingZip",
+                "shippingcountry" to "shippingCountry",
+            )
+
+        /**
+         * The refusal [validation] is, when it refuses the opening's customer.
+         *
+         * @param validation a 400 the opening was answered with.
+         * @return the refusal, with the fields its text names, or null when [validation] refuses something else.
+         */
+        fun of(validation: PayabliValidationException): CustomerDataRefusal? {
+            if (validation.rawCode != CODE) return null
+            val failures = validation.fieldErrors[FIELD] ?: return null
+            val fields = failures.firstNotNullOfOrNull { fieldsNamed(it.message) }.orEmpty()
+            return CustomerDataRefusal(validation, fields)
+        }
+
+        /**
+         * The customer fields [message] lists after its fixed prefix, or null when it lists none.
+         *
+         * @param message the refusal's text for the customer.
+         * @return each listed key as the customer field that sets it, or as given when no field does, in order.
+         */
+        private fun fieldsNamed(message: String): List<String>? {
+            if (!message.startsWith(IDENTIFIERS_PREFIX)) return null
+            return message
+                .removePrefix(IDENTIFIERS_PREFIX)
+                .split(',')
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .map { key -> FIELD_FOR_KEY[key.lowercase(Locale.ROOT)] ?: key }
+        }
+    }
+}
 
 private fun Throwable.isConflict(): Boolean = this is PayabliException && type == PayabliErrorType.CONFLICT
 

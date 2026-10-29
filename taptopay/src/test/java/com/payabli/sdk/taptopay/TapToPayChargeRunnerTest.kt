@@ -32,6 +32,7 @@ import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.network.approved
 import com.payabli.sdk.taptopay.network.declined
+import com.payabli.sdk.taptopay.network.fieldRefusal
 import com.payabli.sdk.taptopay.network.rejected
 import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.cardRead
@@ -66,7 +67,7 @@ private const val TRANS_ID = "12-abc"
 
 private const val INITIATE = "/api/v2/MoneyIn/initiate"
 
-/** Every charge here names a payer, because a charge that names nobody is refused before it is sent. */
+/** A named payer, for the charges whose subject is not the customer. */
 private val PAYER = TapToPayCustomerData(firstName = "Ada", lastName = "Payer", customerNumber = "cust-1")
 
 private const val UPDATE = "/api/v2/MoneyIn/update/$TRANS_ID"
@@ -224,26 +225,163 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a charge naming nobody is refused before the reader is touched`() =
+    fun `a charge naming nobody is sent`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // The service refuses this opening, and it refuses it after the reader has been armed and a
-            // card has been taken. Asserting the reader was never asked is the point: the failure alone
-            // would pass with the check placed after the tap, which is where it costs a merchant.
             val fixture = readyFixture()
+
+            val result =
+                runCatching {
+                    runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                }
+
+            assertEquals("${result.exceptionOrNull()}", TRANS_ID, result.getOrNull()?.paymentTransId)
+            assertTrue("no payment was opened for a charge naming nobody", INITIATE in fixture.routes)
+        }
+
+    /** A ready session whose openings are all refused with [body] as a 400. */
+    private suspend fun openingRefusedWith(body: String): SessionFixture =
+        SessionFixture(
+            RouteScript(
+                RouteScript.CHALLENGE to listOf(challengeBody()),
+                RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                RouteScript.ATTEST to listOf(attestBody()),
+                RouteScript.CONFIG to listOf(configBody()),
+                INITIATE to List(2) { body },
+                statusFor = { if (it == INITIATE) 400 else 200 },
+            ),
+        ).also { it.coordinator.initialize() }
+
+    @Test
+    fun `a refused customer names the fields to collect, charges nothing and lets its attempt go`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = openingRefusedWith(fieldRefusal("Missing customer identifiers: customerNumber,email"))
+            val runner = runnerOver(fixture)
+
+            val failure =
+                runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+                    .exceptionOrNull()
+
+            assertTrue("$failure", failure is TapToPayException)
+            failure as TapToPayException
+            assertEquals(
+                listOf("customerNumber", "billingEmail"),
+                (failure.refusal as? TapToPayChargeRefusal.CustomerDataRefused)?.requiredFields,
+            )
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, failure.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, failure.capture)
+            assertNull(failure.paymentTransId)
+            assertNull("the reader was asked for a card", fixture.reader.lastReadRequest)
+
+            runCatching {
+                runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt = PayabliAttempt.Retry)
+            }
+            assertEquals("the retry resent a refused opening's key", "$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    @Test
+    fun `a refused customer naming no fields lists none`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = openingRefusedWith(fieldRefusal("Customer data is required"))
+
+            val failure =
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                    .exceptionOrNull() as TapToPayException
+
+            assertEquals(
+                emptyList<String>(),
+                (failure.refusal as? TapToPayChargeRefusal.CustomerDataRefused)?.requiredFields,
+            )
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, failure.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, failure.capture)
+        }
+
+    @Test
+    fun `the customer's code on another field is not a refused customer`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                openingRefusedWith(
+                    fieldRefusal("Missing customer identifiers: customerNumber", field = "paymentDetails.totalAmount"),
+                )
+
+            val failure =
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                    .exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, failure.type)
+            assertNull(failure.refusal)
+        }
+
+    @Test
+    fun `another code on the customer is not a refused customer`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                openingRefusedWith(fieldRefusal("Missing customer identifiers: customerNumber", code = "E5009"))
+
+            val failure =
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                    .exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, failure.type)
+            assertNull(failure.refusal)
+        }
+
+    @Test
+    fun `the customer's code on one of its fields is not a refused customer`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                openingRefusedWith(
+                    fieldRefusal(
+                        "customerData.firstName must not contain a card number",
+                        field = "customerData.firstName",
+                    ),
+                )
+
+            val failure =
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                    .exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, failure.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, failure.capture)
+            assertNull(failure.refusal)
+        }
+
+    /** The resent key names an earlier opening, and refusing the retry's customer does not say whether that one charged. */
+    @Test
+    fun `a refused customer on a resent key stays unknown and keeps its key`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var openings = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to
+                            listOf(approved("{\"paymentTransId\":\"$TRANS_ID\"}")) +
+                            List(2) { fieldRefusal("Missing customer identifiers: customerNumber") },
+                        UPDATE to listOf("{}"),
+                        statusFor = { path -> if (path == INITIATE && ++openings >= 2) 400 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             val failure =
                 runCatching {
-                    runnerOver(fixture).charge(
-                        details(),
-                        TapToPayCustomerData(),
-                        TapToPayInvoiceData(),
-                        null,
-                    )
-                }.exceptionOrNull()
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+                }.exceptionOrNull() as TapToPayException
+            runCatching {
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null, PayabliAttempt.Retry)
+            }
 
-            assertTrue(failure.toString(), failure is IllegalArgumentException)
-            assertFalse("a payment was opened for a charge naming nobody", INITIATE in fixture.routes)
-            assertEquals("the reader was asked for a card", null, fixture.reader.lastReadRequest)
+            assertEquals(
+                listOf("customerNumber"),
+                (failure.refusal as? TapToPayChargeRefusal.CustomerDataRefused)?.requiredFields,
+            )
+            assertEquals("the earlier sale was reported as not charged", TapToPayCapture.UNKNOWN, failure.capture)
+            assertEquals("the retry did not resend the held key", "$MINTED_KEY-1", fixture.keySent(1))
+            assertEquals("the refusal let the held key go", "$MINTED_KEY-1", fixture.keySent(2))
         }
 
     @Test
@@ -339,25 +477,6 @@ class TapToPayChargeRunnerTest {
             assertEquals(TRANS_ID, receipt.paymentTransId)
             assertEquals(listOf(INITIATE, UPDATE), fixture.routes.filter { it.startsWith("/api/v2/MoneyIn") })
             assertEquals(TapToPaySessionState.Ready, fixture.state)
-        }
-
-    @Test
-    fun `an identifier alone names the payer, because the service decides the rest`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            // What is measured is that all three of first name, last name and customer number empty is
-            // refused. Whether an id on its own suffices is the service's answer, so this check does not
-            // pre-empt it: refusing here would break a caller the service would have accepted.
-            val fixture = readyFixture()
-
-            val receipt =
-                runnerOver(fixture).charge(
-                    details(),
-                    TapToPayCustomerData(customerId = 91),
-                    TapToPayInvoiceData(),
-                    null,
-                )
-
-            assertEquals(TRANS_ID, receipt.paymentTransId)
         }
 
     @Test
