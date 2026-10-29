@@ -81,7 +81,7 @@ fun DetailRow(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(verticalAlignment = Alignment.Top) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 SelectionContainer(modifier = Modifier.weight(1f)) {
                     Text(
                         text = shown,
