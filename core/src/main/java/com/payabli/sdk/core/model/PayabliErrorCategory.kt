@@ -18,8 +18,8 @@ public enum class PayabliErrorCategory(
      * the session usable when another call had already replaced the refused token, or was replacing it, and when
      * a Tap to Pay device setup's own request was refused after the renewal, where the next setup call asks
      * again. A setup call that fails with it at once, without calling the provider, means the session is
-     * finished: call `initialize`, then create the terminal again from the new session. A device setup that has
-     * ended, which the state reports, is established again by calling `initialize`.
+     * finished: call `PayabliSession.initialize`, then create the terminal again from the new session. A device
+     * setup that has ended, which the state reports, is established again by calling `initialize`.
      */
     CREDENTIAL("CREDENTIAL"),
 
