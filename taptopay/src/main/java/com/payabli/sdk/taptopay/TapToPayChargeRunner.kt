@@ -175,8 +175,6 @@ internal class TapToPayChargeRunner(
                         is EntryPointHolders.Admission.Refused -> {
                             val retry = attempt == PayabliAttempt.Retry
                             val found = if (retry) keys.heldRetryOf(entry, environment, sale) else null
-                            // The running sale comes from the claim, so a charge that settled its key before the
-                            // read still counts.
                             val describesCharge =
                                 admission.runningSale?.matches(sale) == true || found?.describesHeld == true
                             if (retry && describesCharge) capture = TapToPayCapture.UNKNOWN
