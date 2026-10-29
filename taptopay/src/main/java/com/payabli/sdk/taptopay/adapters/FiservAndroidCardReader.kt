@@ -133,8 +133,8 @@ internal class FiservAndroidCardReader(
     )
 
     /**
-     * What a reader that did not come up reports. Only a denial and a switched-off radio name a remedy other
-     * than trying again.
+     * What a reader that did not come up reports: a denial, a switched-off radio, or otherwise a reader that
+     * did not come up.
      *
      * @return the failure the session lands on.
      */

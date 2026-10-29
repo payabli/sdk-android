@@ -52,8 +52,8 @@ public enum class TapToPayFailureReason {
     DEVICE_INELIGIBLE,
 
     /**
-     * The device's contactless radio was switched off, found by `initialize` or by a charge, so no card was
-     * read and nothing can have been charged.
+     * The device's contactless radio was switched off. Found by `initialize`, nothing was charged. Found while a
+     * charge waited for a card, whether the card was charged is unknown, so read the failure's capture.
      *
      * The remedy is the merchant's alone: turning the radio on in Settings. Unlike [DEVICE_INELIGIBLE],
      * the handset can take contactless payments once the radio is on.

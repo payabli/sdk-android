@@ -40,8 +40,8 @@ internal sealed class CardReaderException(
 
     /**
      * The contactless radio is switched off, found while the reader came up or while it waited for a card. The
-     * session lands `Failed` on `CONTACTLESS_DISABLED` either way. Coming up, nothing was charged. Waiting,
-     * whether a card was presented first is unknown, so the charge fails with its outcome unknown.
+     * session lands `Failed` on `CONTACTLESS_DISABLED` either way. Coming up, no card was read. Waiting, whether
+     * a card was presented first is unknown, so the charge fails with its outcome unknown.
      */
     class ContactlessDisabled(
         cause: Throwable?,
