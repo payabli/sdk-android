@@ -67,6 +67,7 @@ private val TEST_TIMEOUT = 5.seconds
 private const val TRANS_ID = "12-abc"
 
 private const val INITIATE = "/api/v2/MoneyIn/initiate"
+private const val OLDER_SALE = "50.00"
 
 /** Every charge here names a payer, because a charge that names nobody is refused before it is sent. */
 private val PAYER = TapToPayCustomerData(firstName = "Ada", lastName = "Payer", customerNumber = "cust-1")
@@ -2725,21 +2726,80 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a retry refused for a running charge with no key held is unknown`() =
+    fun `a refused retry with no key held is unknown for the running sale and not charged for neither`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Keys are held per environment, so the retry finds none while the entry point is held.
             val held = CompletableDeferred<Unit>()
             val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
             val first = chargeParkedInTheRead(fixture, held)
+            fixture.keys.settle(ENTRY, PayabliEnvironment.SANDBOX, "$MINTED_KEY-${fixture.minted.get()}")
 
-            val refusal = refusedAtOnce(runnerOver(fixture, PayabliEnvironment.PRODUCTION), PayabliAttempt.Retry)
+            val running = refusedAtOnce(runnerOver(fixture), PayabliAttempt.Retry)
+            val neither = refusedAtOnce(runnerOver(fixture), PayabliAttempt.Retry, details("99.99"))
 
-            assertEquals(PayabliErrorType.TERMINAL_NOT_READY, refusal.type)
-            assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
-            assertEquals("the refused retry sent an opening", 1, fixture.requestsTo(INITIATE).size)
+            assertEquals(PayabliErrorType.TERMINAL_NOT_READY, running.type)
+            assertEquals("the running sale", TapToPayCapture.UNKNOWN, running.capture)
+            assertEquals("neither sale", TapToPayCapture.NOT_CHARGED, neither.capture)
+            assertEquals("a refused retry sent an opening", 1, fixture.requestsTo(INITIATE).size)
             held.complete(Unit)
             completing("the first charge") { first.await() }.getOrThrow()
         }
+
+    @Test
+    fun `a retry for the running sale is unknown once its key settles, though an older sale is still held`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val older = holdUnknownSale(fixture, details(OLDER_SALE))
+            val first = chargeParkedInTheRead(fixture, held)
+            fixture.keys.settle(ENTRY, PayabliEnvironment.SANDBOX, "$MINTED_KEY-${fixture.minted.get()}")
+
+            val refusal = refusedAtOnce(runnerOver(fixture), PayabliAttempt.Retry)
+
+            assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
+            assertTrue(
+                "the older sale's key was dropped",
+                fixture.keys.holdsRetryOf(ENTRY, PayabliEnvironment.SANDBOX, older),
+            )
+            held.complete(Unit)
+            completing("the first charge") { first.await() }.getOrThrow()
+        }
+
+    @Test
+    fun `a retry for an older held sale, refused while another sale runs, is unknown and keeps its key`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val older = holdUnknownSale(fixture, details(OLDER_SALE))
+            val first = chargeParkedInTheRead(fixture, held)
+
+            val refusal = refusedAtOnce(runnerOver(fixture), PayabliAttempt.Retry, details(OLDER_SALE))
+
+            assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
+            assertEquals("a refused retry sent an opening", 1, fixture.requestsTo(INITIATE).size)
+            held.complete(Unit)
+            completing("the first charge") { first.await() }.getOrThrow()
+            assertTrue(
+                "the older sale's key was dropped",
+                fixture.keys.holdsRetryOf(ENTRY, PayabliEnvironment.SANDBOX, older),
+            )
+        }
+
+    /**
+     * Holds a key for [payment] whose send ended unknown, as an earlier charge on [fixture]'s entry point leaves it.
+     *
+     * @param fixture the session whose key store holds the sale.
+     * @param payment the sale the earlier charge described.
+     * @return the held sale, as a retry for it is compared.
+     */
+    private suspend fun holdUnknownSale(
+        fixture: SessionFixture,
+        payment: TapToPayPaymentDetails,
+    ): ChargeDescription {
+        val sale = ChargeDescription.of(payment, TapToPayInvoiceData())
+        val reserved = fixture.keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale)
+        fixture.keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, reserved.key)
+        return sale
+    }
 
     @Test
     fun `a retry refused for a running charge of a different sale is not charged`() =

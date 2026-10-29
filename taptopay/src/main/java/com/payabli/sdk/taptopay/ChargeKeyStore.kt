@@ -110,13 +110,13 @@ internal class ChargeKeyStore(
         }
 
     /**
-     * The newest key held for [entry] under [environment], as a [PayabliAttempt.Retry] for [description] finds it,
-     * without reserving it.
+     * The keys held for [entry] under [environment], as a [PayabliAttempt.Retry] for [description] finds them,
+     * without reserving one.
      *
      * @param entry the entry point the charge is for.
      * @param environment the environment the charge is sent to.
      * @param description the sale the retry describes.
-     * @return the held key's state, or null when none is held.
+     * @return the held keys' state, or null when none is held.
      */
     suspend fun heldRetryOf(
         entry: String,
@@ -125,19 +125,23 @@ internal class ChargeKeyStore(
     ): HeldRetry? =
         lock.withLock {
             sweep(elapsedRealtimeNanos())
-            val existing = held.firstOrNull { it.matches(entry, environment) } ?: return@withLock null
-            HeldRetry(underWay = existing.underWay, resent = existing.description?.matches(description) != false)
+            val keys = held.filter { it.matches(entry, environment) }
+            val newest = keys.firstOrNull() ?: return@withLock null
+            HeldRetry(
+                underWay = newest.underWay,
+                describesHeld = keys.any { it.description?.matches(description) != false },
+            )
         }
 
     /**
-     * A held key as a retry finds it, read in one pass under the lock.
+     * The held keys as a retry finds them, read in one pass under the lock.
      *
-     * @property underWay whether the key has a send under way.
-     * @property resent whether [reserve] would hand the key to the retry.
+     * @property underWay whether the newest key, the one [reserve] would hand a retry, has a send under way.
+     * @property describesHeld whether the retry describes the sale of any held key, not only the newest.
      */
     internal class HeldRetry(
         val underWay: Boolean,
-        val resent: Boolean,
+        val describesHeld: Boolean,
     )
 
     /**

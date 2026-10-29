@@ -311,18 +311,30 @@ class ChargeKeyStoreTest {
         }
 
     @Test
-    fun `a held key is resent only to a retry of the same sale`() =
+    fun `a retry describes a held sale when any held key is for it, not only the newest`() =
         runBlocking {
             val keys = store()
+            val older =
+                keys.reserve(
+                    ENTRY,
+                    PayabliEnvironment.SANDBOX,
+                    PayabliAttempt.NewPayment,
+                    sale(amount = "9.99"),
+                )
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, older.key)
             keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale())
 
             assertTrue(
-                "the same sale is not resent",
-                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale())!!.resent,
+                "the newest sale is not described",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale())!!.describesHeld,
+            )
+            assertTrue(
+                "the older sale is not described",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale(amount = "9.99"))!!.describesHeld,
             )
             assertFalse(
-                "another sale is resent",
-                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale(amount = "9.99"))!!.resent,
+                "a sale nothing holds is described",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale(amount = "1.00"))!!.describesHeld,
             )
         }
 

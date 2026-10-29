@@ -148,6 +148,7 @@ internal class TapToPayChargeRunner(
             val sendable = sendableAmountOf(paymentDetails)
             // The service refuses this only after a card is taken.
             requireArgument(customer.identifiesSomeone) { "a charge has to name the payer it is for" }
+            val sale = ChargeDescription.of(paymentDetails, invoice)
 
             // After the precondition, so a bad argument is not reported as a failed charge.
             val startedAt = System.nanoTime()
@@ -168,22 +169,25 @@ internal class TapToPayChargeRunner(
             try {
                 // Claimed before the region, so a second charge on this entry point is refused here and never
                 // reaches the lock.
-                inRegion = HOLDERS.admitCharge(entry)
-                if (inRegion == null) {
-                    // One read, so the running charge cannot settle the key between the refusal and its capture.
-                    val found =
-                        if (attempt == PayabliAttempt.Retry) {
-                            keys.heldRetryOf(entry, environment, ChargeDescription.of(paymentDetails, invoice))
-                        } else {
-                            null
+                val admitted =
+                    when (val admission = HOLDERS.admitCharge(entry, sale)) {
+                        is EntryPointHolders.Admission.Admitted -> admission.inRegion
+                        is EntryPointHolders.Admission.Refused -> {
+                            val retry = attempt == PayabliAttempt.Retry
+                            val found = if (retry) keys.heldRetryOf(entry, environment, sale) else null
+                            // The running sale comes from the claim, so a charge that settled its key before the
+                            // read still counts.
+                            val describesCharge =
+                                admission.runningSale?.matches(sale) == true || found?.describesHeld == true
+                            if (retry && describesCharge) capture = TapToPayCapture.UNKNOWN
+                            throw overlapRefusal(found)
                         }
-                    if (attempt == PayabliAttempt.Retry && found?.resent != false) capture = TapToPayCapture.UNKNOWN
-                    throw overlapRefusal(found)
-                }
+                    }
+                inRegion = admitted
                 // Locked inside the try, so the refusal above reaches the same catch and finally.
                 region.lock()
                 locked = true
-                inRegion.complete(Unit)
+                admitted.complete(Unit)
                 // At the call, not by listening: the adapter's state broadcasts reach no app.
                 if (!contactlessEnabled()) {
                     throw PayabliGenericException(
@@ -203,7 +207,7 @@ internal class TapToPayChargeRunner(
                             }
                         // After the checks, so a charge that never reaches the wire holds no key.
                         val reservation =
-                            keys.reserve(entry, environment, attempt, ChargeDescription.of(paymentDetails, invoice))
+                            keys.reserve(entry, environment, attempt, sale)
                         val idempotencyKey = reservation.key
                         reserved = idempotencyKey
                         resentKey = reservation.reused
@@ -325,8 +329,7 @@ internal class TapToPayChargeRunner(
                 // A retry refused before its key was reserved still describes the held sale, whose outcome is unknown.
                 // Only once claimed: then no other charge on this entry point can settle the key under the read.
                 if (inRegion != null && reserved == null && attempt == PayabliAttempt.Retry) {
-                    val described = ChargeDescription.of(paymentDetails, invoice)
-                    if (withContext(NonCancellable) { keys.holdsRetryOf(entry, environment, described) }) {
+                    if (withContext(NonCancellable) { keys.holdsRetryOf(entry, environment, sale) }) {
                         capture = TapToPayCapture.UNKNOWN
                     }
                 }
