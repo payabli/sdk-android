@@ -2654,15 +2654,17 @@ class TapToPayChargeRunnerTest {
      *
      * @param runner the terminal the second charge is made on.
      * @param attempt whether the second charge is declared a retry.
+     * @param payment the sale the second charge describes.
      * @return the refusal the second charge ended with.
      */
     private suspend fun TestScope.refusedAtOnce(
         runner: TapToPayChargeRunner,
         attempt: PayabliAttempt = PayabliAttempt.NewPayment,
+        payment: TapToPayPaymentDetails = details(),
     ): TapToPayException {
         val second =
             async(UnconfinedTestDispatcher(testScheduler)) {
-                runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null, attempt) }
+                runCatching { runner.charge(payment, PAYER, TapToPayInvoiceData(), null, attempt) }
             }
         assertTrue("the second charge waited for the first", second.isCompleted)
         return second.await().exceptionOrNull() as TapToPayException
@@ -2718,6 +2720,38 @@ class TapToPayChargeRunnerTest {
 
             assertEquals(PayabliErrorType.TERMINAL_NOT_READY, refusal.type)
             assertEquals("the refused charge sent an opening", 1, fixture.requestsTo(INITIATE).size)
+            held.complete(Unit)
+            completing("the first charge") { first.await() }.getOrThrow()
+        }
+
+    @Test
+    fun `a retry refused for a running charge with no key held is unknown`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Keys are held per environment, so the retry finds none while the entry point is held.
+            val held = CompletableDeferred<Unit>()
+            val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val first = chargeParkedInTheRead(fixture, held)
+
+            val refusal = refusedAtOnce(runnerOver(fixture, PayabliEnvironment.PRODUCTION), PayabliAttempt.Retry)
+
+            assertEquals(PayabliErrorType.TERMINAL_NOT_READY, refusal.type)
+            assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
+            assertEquals("the refused retry sent an opening", 1, fixture.requestsTo(INITIATE).size)
+            held.complete(Unit)
+            completing("the first charge") { first.await() }.getOrThrow()
+        }
+
+    @Test
+    fun `a retry refused for a running charge of a different sale is not charged`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val first = chargeParkedInTheRead(fixture, held)
+
+            val refusal = refusedAtOnce(runnerOver(fixture), PayabliAttempt.Retry, details("99.99"))
+
+            assertEquals(TapToPayCapture.NOT_CHARGED, refusal.capture)
+            assertEquals("the refused retry sent an opening", 1, fixture.requestsTo(INITIATE).size)
             held.complete(Unit)
             completing("the first charge") { first.await() }.getOrThrow()
         }

@@ -184,7 +184,7 @@ internal class TapToPayChargeRunner(
                         } else {
                             null
                         }
-                    if (found?.resent == true) capture = TapToPayCapture.UNKNOWN
+                    if (attempt == PayabliAttempt.Retry && found?.resent != false) capture = TapToPayCapture.UNKNOWN
                     throw overlapRefusal(found)
                 }
                 // Locked inside the try, so the refusal above reaches the same catch and finally.
