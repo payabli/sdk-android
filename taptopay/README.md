@@ -26,8 +26,10 @@ its session there first.
 - A 64-bit phone. A 32-bit-only phone can't take Tap to Pay payments.
 - Developer options and USB debugging switched off, and the phone **restarted** after switching them off.
   The card reader refuses a phone it considers to be in developer mode until it restarts.
-- In production, your app installed from Google Play. Ask Payabli whether your sandbox paypoint accepts a
-  build installed another way. A build installed with `adb install` can be refused by the card reader.
+- In production, your app installed from Google Play. A build installed with `adb install` can be refused
+  by the card reader.
+- For Tap to Pay on Android, contact Payabli support for the specifics: enrolling your app with the card
+  reader, and testing on sandbox.
 
 `PayabliTTP.isSupported(context)` checks what the phone reports about itself, without a session or a
 network call. `false` is reliable. `true` doesn't guarantee a payment, since it can't see the paypoint or
