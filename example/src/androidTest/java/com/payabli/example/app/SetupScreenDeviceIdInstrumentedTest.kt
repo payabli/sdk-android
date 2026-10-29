@@ -1,5 +1,6 @@
 package com.payabli.example.app
 
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
@@ -47,20 +48,18 @@ class SetupScreenDeviceIdInstrumentedTest {
 
     @Test
     fun copyPutsTheDeviceIdOnTheClipboard() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val clipboard = instrumentation.targetContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        // Something else first: the clipboard outlives the test, and a previous run left the ID on it.
+        instrumentation.runOnMainSync { clipboard.setPrimaryClip(ClipData.newPlainText("before", "before")) }
         show(deviceId = DEVICE_ID)
 
         compose.onNodeWithContentDescription(COPY).performScrollTo().performClick()
         compose.waitForIdle()
 
-        val copied =
-            InstrumentationRegistry.getInstrumentation().let { instrumentation ->
-                var text: CharSequence? = null
-                instrumentation.runOnMainSync { text = clipboard.primaryClip?.getItemAt(0)?.text }
-                text?.toString()
-            }
-        assertEquals(DEVICE_ID, copied)
+        var copied: CharSequence? = null
+        instrumentation.runOnMainSync { copied = clipboard.primaryClip?.getItemAt(0)?.text }
+        assertEquals(DEVICE_ID, copied?.toString())
     }
 
     private fun show(deviceId: String?) {
