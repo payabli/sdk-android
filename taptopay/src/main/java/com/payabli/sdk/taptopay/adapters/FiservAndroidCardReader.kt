@@ -65,11 +65,7 @@ internal class FiservAndroidCardReader(
 
         armWithin(arming)?.let { failure ->
             record("arm", failure)
-            throw if (failure.kind in DENIALS) {
-                CardReaderException.DeviceDenied(failure)
-            } else {
-                CardReaderException.ArmingFailed(failure)
-            }
+            throw failure.asArmingFailure()
         }
         logger.debug(
             LogField.safe("event", "ttp_reader_armed"),
@@ -136,6 +132,23 @@ internal class FiservAndroidCardReader(
         val failure: CardReaderFailure?,
     )
 
+    /**
+     * What a reader that did not come up reports. Only a denial and a switched-off radio name a remedy other
+     * than trying again.
+     *
+     * @return the failure the session lands on.
+     */
+    private fun CardReaderFailure.asArmingFailure(): CardReaderException =
+        when (kind) {
+            ReaderFailureKind.DEVICE_DENIED -> CardReaderException.DeviceDenied(this)
+            ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED -> CardReaderException.DeviceDenied(this)
+            ReaderFailureKind.CONTACTLESS_DISABLED -> CardReaderException.ContactlessDisabled(this)
+            ReaderFailureKind.CONTACTLESS_UNAVAILABLE -> CardReaderException.ArmingFailed(this)
+            ReaderFailureKind.SESSION_UNUSABLE -> CardReaderException.ArmingFailed(this)
+            ReaderFailureKind.TIMED_OUT -> CardReaderException.ArmingFailed(this)
+            ReaderFailureKind.UNCLASSIFIED -> CardReaderException.ArmingFailed(this)
+        }
+
     private fun CardReaderFailure.asChargeFailure(): CardReaderException =
         when (kind) {
             ReaderFailureKind.SESSION_UNUSABLE -> CardReaderException.SessionUnusable(this)
@@ -148,12 +161,6 @@ internal class FiservAndroidCardReader(
             ReaderFailureKind.DEVICE_DENIED -> CardReaderException.DeviceDenied(this)
             ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED -> CardReaderException.DeviceDenied(this)
         }
-
-    private companion object {
-        /** Both refuse the handset; they differ in whether the vendor has said why. */
-        val DENIALS =
-            setOf(ReaderFailureKind.DEVICE_DENIED, ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED)
-    }
 
     /** The vendor's classification and its code. Its message is free text and is never a log field. */
     private fun record(

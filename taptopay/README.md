@@ -302,7 +302,7 @@ lookup.
 | `DEVICE_SETUP_REQUIRED` | This device's setup was refused or revoked. Call `initialize()`, which sets the device up again. If it lands here again, check that the app came from Google Play. |
 | `SERVICE_UNAVAILABLE` | The service or the reader wasn't available, or the token was refused again after the SDK renewed it. If the error thrown was `TOKEN_EXPIRED`, waiting won't help: fix the credential, then call `initialize()` again. If that fails at once and your token provider isn't called, the session's credential is finished: call `PayabliSession.initialize`, then create the terminal again with `PayabliTTP.create(session, context)`. Otherwise try again when someone asks to, or wait longer before each attempt. |
 | `DEVICE_INELIGIBLE` | This phone can't take Tap to Pay payments: the hardware or Android version is missing something, or the card reader refused the phone. Check developer options and restart the phone. If a phone that meets the requirements still lands here, contact Payabli before replacing it. |
-| `CONTACTLESS_DISABLED` | Contactless (NFC) is turned off on the phone. Turn it on in Settings, then charge again. |
+| `CONTACTLESS_DISABLED` | Contactless (NFC) is turned off on the phone. Turn it on in Settings, then call `initialize()` or charge again. |
 | `SDK_INTERNAL_ERROR` | Report it to Payabli. |
 | `DEVICE_KEY_UNAVAILABLE` | The phone's key facility or secure storage failed, so the SDK can't tell whether the device's keys still work. Initialize again. If it keeps failing, the phone is the cause. |
 | `SESSION_ENDED` | This `PayabliTTP`'s `PayabliSession` was replaced or ended; create a new one with `PayabliTTP.create(session, context)` from the current session. |

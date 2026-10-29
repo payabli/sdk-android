@@ -250,6 +250,21 @@ class PayabliTapToPayTest {
         }
 
     @Test
+    fun `a contactless radio found off while setting up throws 3036 and lands failed on it, not ready`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(script(), readerGate = { throw CardReaderException.ContactlessDisabled(null) })
+            val terminal = terminalOver(fixture)
+
+            val thrown = runCatching { terminal.initialize() }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.CONTACTLESS_DISABLED, thrown.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, thrown.capture)
+            assertEquals(Failed(TapToPayFailureReason.CONTACTLESS_DISABLED), terminal.sessionState.value)
+            assertFalse(terminal.isReady.value)
+        }
+
+    @Test
     fun `a failure reaching a host still names the payment`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The facade builds the failure a host sees, so a payment named underneath it has to survive
