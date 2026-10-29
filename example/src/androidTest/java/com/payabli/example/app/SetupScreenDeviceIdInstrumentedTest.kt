@@ -47,6 +47,15 @@ class SetupScreenDeviceIdInstrumentedTest {
     }
 
     @Test
+    fun beforeTheSessionAnswersTheRowSaysItIsReading() {
+        show(deviceId = null, answered = false)
+
+        compose.onNodeWithText("Reading…").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Unavailable").assertDoesNotExist()
+        compose.onNodeWithContentDescription(COPY).assertDoesNotExist()
+    }
+
+    @Test
     fun copyPutsTheDeviceIdOnTheClipboard() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val clipboard = instrumentation.targetContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -62,7 +71,10 @@ class SetupScreenDeviceIdInstrumentedTest {
         assertEquals(DEVICE_ID, copied?.toString())
     }
 
-    private fun show(deviceId: String?) {
+    private fun show(
+        deviceId: String?,
+        answered: Boolean = true,
+    ) {
         val target = TokenServerTarget("http://127.0.0.1:1", TokenHostSource.Emulator)
         compose.setContent {
             PayabliDemoTheme {
@@ -93,6 +105,7 @@ class SetupScreenDeviceIdInstrumentedTest {
                                 ),
                             formSetup = PayInForms.storePaymentMethod(),
                             deviceId = deviceId,
+                            deviceIdAnswered = answered,
                         ),
                     onProbeToken = {},
                     onProbeHealth = {},

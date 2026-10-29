@@ -163,7 +163,12 @@ private fun SupportSection(state: SetupUiState) {
     ) {
         DetailRow(
             label = "Device ID",
-            value = deviceId ?: "Unavailable",
+            value =
+                when {
+                    !state.deviceIdAnswered -> "Reading…"
+                    deviceId == null -> "Unavailable"
+                    else -> deviceId
+                },
             problem = state.deviceIdProblem,
             onCopy =
                 deviceId?.let { id ->
@@ -304,6 +309,7 @@ private fun SetupScreenPreview() {
                             signingCertificateDigest = "AB:CD",
                         ),
                     deviceId = "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+                    deviceIdAnswered = true,
                     readiness = Readiness.NotAvailable,
                     problems =
                         listOf(

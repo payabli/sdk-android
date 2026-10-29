@@ -32,6 +32,8 @@ data class SetupUiState(
     val deviceId: String? = null,
     /** Why there is no session to read [deviceId] from. Null when the session answered, even with null. */
     val deviceIdProblem: String? = null,
+    /** Whether the session has answered at least once, so [deviceId] means something. */
+    val deviceIdAnswered: Boolean = false,
     /** The very object the payment screen hands its form, so this screen cannot describe another one. */
     val formSetup: PayInFormSetup,
     val readiness: Readiness = Readiness.Ready,
@@ -101,6 +103,7 @@ class SetupViewModel(
                 it.copy(
                     deviceId = answer.getOrNull(),
                     deviceIdProblem = answer.exceptionOrNull()?.let { failure -> failure.message ?: "No session." },
+                    deviceIdAnswered = true,
                 )
             }
         }

@@ -10,6 +10,7 @@ import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.sdk.DemoEnvironment
 import com.payabli.example.app.sdk.PayInForms
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -17,7 +18,9 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -54,6 +57,17 @@ class SetupViewModelDeviceIdTest {
 
         assertNull(state.deviceId)
         assertEquals("No entry point is configured.", state.deviceIdProblem)
+    }
+
+    @Test
+    fun `the screen says it is reading until the session answers`() {
+        val answer = CompletableDeferred<Result<String?>>()
+        val model = model { answer.await() }
+        assertFalse(model.uiState.value.deviceIdAnswered)
+
+        answer.complete(Result.success(null))
+
+        assertTrue(model.uiState.value.deviceIdAnswered)
     }
 
     @Test
