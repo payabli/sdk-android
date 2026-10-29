@@ -3056,15 +3056,17 @@ class TapToPayChargeRunnerTest {
      *
      * @param fixture the session whose key store holds the sale.
      * @param payment the sale the earlier charge described.
+     * @param entry the entry point the earlier charge was made on.
      * @return the held sale, as a retry for it is compared.
      */
     private suspend fun holdUnknownSale(
         fixture: SessionFixture,
         payment: TapToPayPaymentDetails,
+        entry: String = ENTRY,
     ): ChargeDescription {
         val sale = ChargeDescription.of(payment, TapToPayInvoiceData())
-        val reserved = fixture.keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale)
-        fixture.keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, reserved.key)
+        val reserved = fixture.keys.reserve(entry, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale)
+        fixture.keys.supersede(entry, PayabliEnvironment.SANDBOX, reserved.key)
         return sale
     }
 
@@ -3136,42 +3138,87 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a charge on another entry point is not refused while one reads a card`() =
+    fun `a charge on another entry point is refused at once while one reads a card`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // The reader is one per process, so the other paypoint's charge waits for it.
-            // Set up first: a session setup waits for the reader as the charge does.
             val other = readyFixture()
             val device = checkNotNull(other.enrollment.store.read(ENTRY))
             other.enrollment.store.write(AttestedDevice(ANOTHER_ENTRY, device.deviceId, device.keyId))
             val held = CompletableDeferred<Unit>()
             val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
             val first = chargeParkedInTheRead(fixture, held)
+            val reserved = fixture.minted.get()
 
-            val second =
-                async(UnconfinedTestDispatcher(testScheduler)) {
-                    runCatching {
-                        runnerOver(other, entry = ANOTHER_ENTRY).charge(details(), PAYER, TapToPayInvoiceData(), null)
-                    }
+            // Released however this ends, so a failure here does not leave the reader held for later tests.
+            val refusal =
+                try {
+                    refusedAtOnce(runnerOver(other, entry = ANOTHER_ENTRY))
+                } finally {
+                    held.complete(Unit)
                 }
-            assertFalse("the other paypoint's charge was refused", second.isCompleted)
-            held.complete(Unit)
 
+            assertEquals(PayabliErrorType.TERMINAL_NOT_READY, refusal.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, refusal.capture)
+            assertEquals("the refused charge reserved a key", reserved, fixture.minted.get())
+            assertTrue("the refused charge sent an opening", other.requestsTo(INITIATE).isEmpty())
             completing("the first charge") { first.await() }.getOrThrow()
-            assertEquals(TRANS_ID, completing("the other charge") { second.await() }.getOrThrow().paymentTransId)
+        }
+
+    @Test
+    fun `a retry refused on another entry point is unknown when that entry point holds its sale`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val other = readyFixture()
+            val device = checkNotNull(other.enrollment.store.read(ENTRY))
+            other.enrollment.store.write(AttestedDevice(ANOTHER_ENTRY, device.deviceId, device.keyId))
+            val held = CompletableDeferred<Unit>()
+            val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val older = holdUnknownSale(other, details(OLDER_SALE), entry = ANOTHER_ENTRY)
+            val first = chargeParkedInTheRead(fixture, held)
+
+            val refusal =
+                try {
+                    refusedAtOnce(runnerOver(other, entry = ANOTHER_ENTRY), PayabliAttempt.Retry, details(OLDER_SALE))
+                } finally {
+                    held.complete(Unit)
+                }
+
+            assertEquals(PayabliErrorType.TERMINAL_NOT_READY, refusal.type)
+            assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
+            completing("the first charge") { first.await() }.getOrThrow()
+            assertTrue(
+                "the held sale's key was dropped",
+                other.keys.holdsRetryOf(ANOTHER_ENTRY, PayabliEnvironment.SANDBOX, older),
+            )
         }
 
     @Test
     fun `a charge withdrawn between its claim and its lock lets the close behind it go and frees its entry point`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Another paypoint on the same stripe holds the lock, so this one's charge is claimed but not yet locked.
+            // A close on another paypoint of the same stripe holds the lock, so this charge is claimed but not locked.
             val stripe = { entry: String -> (entry.hashCode().toLong() and 0x7fffffffL).toInt() % 16 }
             assertEquals("the entry points share a lock stripe", stripe(ENTRY), stripe(STRIPE_SHARING_ENTRY))
             val other = readyFixture()
             val device = checkNotNull(other.enrollment.store.read(ENTRY))
             other.enrollment.store.write(AttestedDevice(STRIPE_SHARING_ENTRY, device.deviceId, device.keyId))
-            val held = CompletableDeferred<Unit>()
-            val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
-            val first = chargeParkedInTheRead(fixture, held)
+            var closeFails = true
+            val closing = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val fixture =
+                SessionFixture(
+                    scriptWithCloseControl(opens = 1, closes = 4) { closeFails },
+                    sendGate = { request ->
+                        if (request.path == UPDATE && !closeFails && !release.isCompleted) {
+                            closing.complete(Unit)
+                            release.await()
+                        }
+                    },
+                ).also { it.coordinator.initialize() }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            closeFails = false
+            val holding =
+                async(UnconfinedTestDispatcher(testScheduler)) {
+                    runCatching { runnerOver(fixture).closeCaptured(TRANS_ID) }
+                }
+            assertTrue("the close is being sent", closing.isCompleted)
             val terminal = runnerOver(other, entry = STRIPE_SHARING_ENTRY)
             val waiting =
                 async(UnconfinedTestDispatcher(testScheduler)) {
@@ -3185,8 +3232,8 @@ class TapToPayChargeRunnerTest {
 
             waiting.cancel()
             waiting.join()
-            held.complete(Unit)
-            completing("the first charge") { first.await() }.getOrThrow()
+            release.complete(Unit)
+            completing("the close holding the lock") { holding.await() }.getOrThrow()
 
             assertTrue("the close still waits for the withdrawn charge", close.isCompleted)
             val receipt = terminal.charge(details(), PAYER, TapToPayInvoiceData(), null)

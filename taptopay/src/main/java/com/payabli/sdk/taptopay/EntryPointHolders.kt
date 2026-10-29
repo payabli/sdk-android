@@ -2,12 +2,11 @@ package com.payabli.sdk.taptopay
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
-import java.util.concurrent.ConcurrentHashMap
 
 /**
- * The charges and captured closes holding each entry point, from any terminal and environment. A charge claims
- * only an entry point nothing holds; a close counts itself in the step that finds the admitted charge, and waits
- * for that charge to hold its region. Keyed exactly, so a shared stripe never refuses.
+ * The charges and captured closes holding each entry point. A charge is admitted only while nothing holds its entry
+ * point and no charge runs in the process; a close counts on its own entry point only and waits for the charge
+ * admitted there to hold its region. Keyed exactly, so a shared stripe never refuses.
  */
 internal class EntryPointHolders {
     /**
@@ -28,29 +27,43 @@ internal class EntryPointHolders {
             val inRegion: CompletableDeferred<Unit>,
         ) : Admission
 
-        /** @property runningSale the sale of the charge holding the entry point, or null when no charge was admitted. */
+        /**
+         * @property runningSale the sale of the charge holding the entry point, or null when no charge holds it,
+         *   including when the running charge is on another entry point.
+         */
         class Refused(
             val runningSale: ChargeDescription?,
         ) : Admission
     }
 
-    private val holdings = ConcurrentHashMap<String, Holding>()
+    /** One monitor for the entry points and the running charge, so a claim reads and takes both in one step. */
+    private val guard = Any()
+
+    private val holdings = HashMap<String, Holding>()
+
+    /** The entry point whose charge is admitted, or null when no charge runs. */
+    private var charging: String? = null
 
     /**
      * Claims [entry] for a charge.
      *
      * @param entry the entry point the charge is for.
      * @param sale the sale the charge describes.
-     * @return the claim, or the refusal naming the sale already running when something holds [entry].
+     * @return the claim, or the refusal naming the sale running on [entry] when something holds it or another
+     *   entry point's charge runs.
      */
     fun admitCharge(
         entry: String,
         sale: ChargeDescription,
-    ): Admission {
-        val inRegion = CompletableDeferred<Unit>()
-        val holding = holdings.putIfAbsent(entry, Holding(1, inRegion, sale))
-        return if (holding == null) Admission.Admitted(inRegion) else Admission.Refused(holding.sale)
-    }
+    ): Admission =
+        synchronized(guard) {
+            val holding = holdings[entry]
+            if (holding != null || charging != null) return Admission.Refused(holding?.sale)
+            val inRegion = CompletableDeferred<Unit>()
+            holdings[entry] = Holding(1, inRegion, sale)
+            charging = entry
+            Admission.Admitted(inRegion)
+        }
 
     /**
      * Counts a close on [entry].
@@ -60,7 +73,11 @@ internal class EntryPointHolders {
      *   charge was admitted.
      */
     fun admitClose(entry: String): Deferred<Unit>? =
-        holdings.compute(entry) { _, held -> Holding((held?.count ?: 0) + 1, held?.charge, held?.sale) }?.charge
+        synchronized(guard) {
+            val held = holdings[entry]
+            holdings[entry] = Holding((held?.count ?: 0) + 1, held?.charge, held?.sale)
+            held?.charge
+        }
 
     /**
      * Removes the admitted charge from [entry], with its signal and its sale, and the entry with its last holder.
@@ -68,8 +85,9 @@ internal class EntryPointHolders {
      * @param entry the entry point the charge is leaving.
      */
     fun releaseCharge(entry: String) {
-        holdings.compute(entry) { _, held ->
-            if (held == null || held.count <= 1) null else Holding(held.count - 1, null, null)
+        synchronized(guard) {
+            if (charging == entry) charging = null
+            leave(entry) { held -> Holding(held.count - 1, null, null) }
         }
     }
 
@@ -79,8 +97,22 @@ internal class EntryPointHolders {
      * @param entry the entry point the close is leaving.
      */
     fun releaseClose(entry: String) {
-        holdings.compute(entry) { _, held ->
-            if (held == null || held.count <= 1) null else Holding(held.count - 1, held.charge, held.sale)
+        synchronized(guard) {
+            leave(entry) { held -> Holding(held.count - 1, held.charge, held.sale) }
         }
+    }
+
+    /**
+     * Removes one holder of [entry], or the entry with its last. Called with [guard] held.
+     *
+     * @param entry the entry point a holder is leaving.
+     * @param remaining the holding left behind when other holders remain.
+     */
+    private inline fun leave(
+        entry: String,
+        remaining: (Holding) -> Holding,
+    ) {
+        val held = holdings[entry] ?: return
+        if (held.count <= 1) holdings.remove(entry) else holdings[entry] = remaining(held)
     }
 }

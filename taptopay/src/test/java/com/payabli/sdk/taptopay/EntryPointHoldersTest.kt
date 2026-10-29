@@ -118,9 +118,29 @@ class EntryPointHoldersTest {
     }
 
     @Test
-    fun `a charge on another entry point is admitted while one is held`() {
+    fun `a charge on another entry point is refused while a charge runs, and told no sale`() {
         admitted()
 
+        val admission = holders.admitCharge(OTHER_ENTRY, sale())
+
+        assertTrue("admitted beside a running charge", admission is Admission.Refused)
+        assertNull((admission as Admission.Refused).runningSale)
+    }
+
+    @Test
+    fun `a charge on another entry point is admitted while only a close holds one`() {
+        holders.admitClose(ENTRY)
+
         assertNotNull(admitted(OTHER_ENTRY))
+    }
+
+    @Test
+    fun `a charge on another entry point is admitted once the running charge releases`() {
+        admitted()!!.complete(Unit)
+        holders.admitClose(ENTRY)
+
+        holders.releaseCharge(ENTRY)
+
+        assertNotNull("refused while only a close holds the other entry point", admitted(OTHER_ENTRY))
     }
 }
