@@ -62,11 +62,12 @@ public sealed class PayabliPayIn {
      * nothing to do.
      *
      * **This call moves money, so it always carries an idempotency key, which the SDK mints and holds.** The
-     * payment is named by [PayInTransactionOptions.paymentReference], or by one the SDK mints when that is unset.
-     * A read timeout, a cancellation or an answer that could not be decoded leaves it unknown whether the
-     * payment was taken; the failure is [PayInException.Unsettled], carrying that reference. Submitting the same
-     * reference with `attempt` set to `PayabliAttempt.Retry` resends its key, so the service recognises the
-     * repeat. A new payment naming a reference whose outcome is still unknown is refused as
+     * payment is named by [PayInTransactionOptions.paymentReference], or, for a new payment, by one the SDK mints
+     * when that is unset. A read timeout, a cancellation or an answer that could not be decoded leaves it unknown
+     * whether the payment was taken; the failure is [PayInException.Unsettled], carrying that reference. Submitting
+     * the same reference with `attempt` set to `PayabliAttempt.Retry` resends its key, so the service recognises
+     * the repeat. A retry naming no reference is refused as [PayInException.InvalidInput] and not sent. A new
+     * payment naming a reference whose outcome is still unknown is refused as
      * [PayabliErrorType.PAYMENT_REFERENCE_OPEN] and not sent, and so is this call on a reference another instance
      * is still sending through it. The key is held in memory for every instance on the same entry point and
      * environment, while the service would still recognise it, and for at most 16 unresolved payments there at

@@ -107,6 +107,7 @@ internal class PayInSubmission(
                     operation.holding?.let { paymentOf(it, reference) },
                     reference,
                     operation.declaresRetry,
+                    refusal = refusalOf(operation.transactionOptions),
                 ),
         ) { retry ->
             // The customer and the description the payer typed, which are not part of the instrument. Read
@@ -164,6 +165,7 @@ internal class PayInSubmission(
                     paymentOf(PayInRoutes.CAPTURE, reference),
                     reference,
                     claimsHeldKey = request.options.attempt == PayabliAttempt.Retry,
+                    refusal = refusalOf(request.options),
                 ),
         ) { retry ->
             val key = retry.reserve(PayInPaymentDescription.of(request.paymentMethod, request.options))
@@ -195,6 +197,7 @@ internal class PayInSubmission(
                     paymentOf(PayInRoutes.AUTHORIZE, reference),
                     reference,
                     claimsHeldKey = request.options.attempt == PayabliAttempt.Retry,
+                    refusal = refusalOf(request.options),
                 ),
         ) { retry ->
             val key = retry.reserve(PayInPaymentDescription.of(request.paymentMethod, request.options))
@@ -648,6 +651,7 @@ internal class PayInSubmission(
         val reference: String? = null,
         private val claimsHeldKey: Boolean = true,
         private val transaction: String? = null,
+        private val refusal: String = REASON_BLANK_REFERENCE,
     ) {
         /** The entry point trimmed, as the request carries it, so padding does not move the key to another partition. */
         val entryPoint: String = entryPoint.trim()
@@ -675,7 +679,7 @@ internal class PayInSubmission(
          * is read here, where the key is sent, not where the call began: this clock counts device sleep, so a
          * check taken earlier can be arbitrarily stale by the time the request leaves.
          *
-         * Refused before anything is sent: a blank payment reference, any send while a held key of the same payment,
+         * Refused before anything is sent: a blank payment reference or a retry naming none, any send while a held key of the same payment,
          * or of a capture or void of the same transaction, has a send under way, a new payment naming one whose key
          * is still held, and a declared retry describing a different payment from the held one. The held key stays.
          *
@@ -684,7 +688,7 @@ internal class PayInSubmission(
          */
         fun reserve(description: PayInPaymentDescription? = null): String {
             if (description != null && payment == null) {
-                throw PayInException.InvalidInput(FIELD_PAYMENT_REFERENCE, REASON_BLANK_REFERENCE)
+                throw PayInException.InvalidInput(FIELD_PAYMENT_REFERENCE, refusal)
             }
             val now = elapsedRealtimeNanos()
             sentAt = now
@@ -713,15 +717,20 @@ internal class PayInSubmission(
     }
 
     /**
-     * The payment reference [options] names, trimmed, or a new one when it names none. Null for a blank one,
-     * which names no payment and is refused before anything is sent.
+     * The payment reference [options] names, trimmed, or a new one for a new payment naming none. Null for a blank
+     * one, and for a retry naming none, which name no payment and are refused before anything is sent.
      */
     private fun referenceOf(options: PayInTransactionOptions): String? {
-        val given = options.paymentReference ?: return newPaymentReference()
+        val given = options.paymentReference
+        if (given == null) return if (options.attempt == PayabliAttempt.Retry) null else newPaymentReference()
         return given.trim().ifEmpty { null }
     }
 
-    /** What names a capture or an authorization: its route and its reference, or nothing for a blank reference. */
+    /** Why [options] name no payment, when [referenceOf] finds none: a retry that set no reference, or a blank one. */
+    private fun refusalOf(options: PayInTransactionOptions?): String =
+        if (options?.paymentReference == null) REASON_RETRY_UNNAMED else REASON_BLANK_REFERENCE
+
+    /** What names a capture or an authorization: its route and its reference, or nothing when [referenceOf] found none. */
     private fun paymentOf(
         route: String,
         reference: String?,
@@ -731,7 +740,8 @@ internal class PayInSubmission(
         const val REASON_UNEXPECTED = "The payment could not be submitted"
         const val REASON_RETRY_REFUSED = "Retry refused (409)"
         const val FIELD_PAYMENT_REFERENCE = "paymentReference"
-        const val REASON_BLANK_REFERENCE = "The paymentReference cannot be blank"
+        const val REASON_BLANK_REFERENCE = "The paymentReference cannot be blank."
+        const val REASON_RETRY_UNNAMED = "A retry must name the paymentReference of the payment it repeats."
     }
 }
 

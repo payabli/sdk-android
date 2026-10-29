@@ -1151,8 +1151,58 @@ class PayInSubmissionTest {
                 val cause = failed(requireNotNull(outcome)).cause
                 assertTrue("$cause", cause is PayInException.InvalidInput)
                 assertEquals(PayInSubmission.FIELD_PAYMENT_REFERENCE, (cause as PayInException.InvalidInput).field)
+                assertEquals("The paymentReference cannot be blank.", cause.reason)
             }
             assertNull("a request was sent for a blank reference", transport.request)
+        }
+
+    /** A retry must say which payment it repeats: minting one for it would send the retry as a new payment. */
+    @Test
+    fun `a direct retry naming no reference is refused before anything is sent`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val capture = submission.capture(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
+            val authorize = submission.authorize(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
+
+            for (outcome in listOf(capture, authorize)) {
+                val cause = failed(requireNotNull(outcome)).cause
+                assertTrue("$cause", cause is PayInException.InvalidInput)
+                assertEquals(PayInSubmission.FIELD_PAYMENT_REFERENCE, (cause as PayInException.InvalidInput).field)
+                assertEquals("A retry must name the paymentReference of the payment it repeats.", cause.reason)
+            }
+            assertNull("a request was sent for a retry naming no reference", transport.request)
+        }
+
+    /** The drawn form submits the options it was configured with, so the same retry is refused there too. */
+    @Test
+    fun `a form retry naming no reference is refused before anything is sent`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val outcome = submission.submit(TEST_ENTRY_POINT, captureOf(attempt = PayabliAttempt.Retry), cardForm())
+
+            val cause = failed(requireNotNull(outcome)).cause
+            assertTrue("$cause", cause is PayInException.InvalidInput)
+            assertEquals(PayInSubmission.FIELD_PAYMENT_REFERENCE, (cause as PayInException.InvalidInput).field)
+            assertEquals("A retry must name the paymentReference of the payment it repeats.", cause.reason)
+            assertNull("a request was sent for a retry naming no reference", transport.request)
+        }
+
+    /** A refused retry minted nothing, so the next payment is sent under the first key minted. */
+    @Test
+    fun `a retry naming no reference mints no key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
+
+            assertEquals(1, transport.count)
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
         }
 
     /** A new payment naming an open one would leave the open one unprotected, so it is refused and sends nothing. */
@@ -1913,7 +1963,7 @@ class PayInSubmissionTest {
             submission.submit(TEST_ENTRY_POINT, PayabliPayInOperation.StoreMethod(), cardForm())
             assertNull(transport.request?.headers?.get("idempotencyKey"))
             submission.reset()
-            submission.submit(TEST_ENTRY_POINT, captureOf(attempt = PayabliAttempt.Retry), cardForm())
+            submission.submit(TEST_ENTRY_POINT, captureOf("order-1", PayabliAttempt.Retry), cardForm())
 
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
         }
@@ -1926,9 +1976,9 @@ class PayInSubmissionTest {
             val transport = FakePayInTransport.answering(declined)
             val submission = submissionOver(transport)
 
-            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+            submission.submit(TEST_ENTRY_POINT, captureOf("order-1"), cardForm())
             submission.reset()
-            submission.submit(TEST_ENTRY_POINT, captureOf(attempt = PayabliAttempt.Retry), cardForm())
+            submission.submit(TEST_ENTRY_POINT, captureOf("order-1", PayabliAttempt.Retry), cardForm())
 
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
         }
