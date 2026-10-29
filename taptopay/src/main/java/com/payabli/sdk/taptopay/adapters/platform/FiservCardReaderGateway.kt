@@ -5,6 +5,7 @@ import com.fiserv.commercehub.ttp.provider.FiservTTPCardReader
 import com.fiserv.commercehub.ttp.provider.constants.Currency
 import com.fiserv.commercehub.ttp.provider.constants.Environment
 import com.fiserv.commercehub.ttp.provider.constants.PaymentTransactionType
+import com.fiserv.commercehub.ttp.provider.exception.FSSDKInternalSDKException
 import com.fiserv.commercehub.ttp.provider.exception.FSSDKInternalSDKUninitializedException
 import com.fiserv.commercehub.ttp.provider.exception.FSSDKNFCDisabledInternalException
 import com.fiserv.commercehub.ttp.provider.exception.FSSDKNFCDisabledSDKException
@@ -185,9 +186,22 @@ internal suspend fun <T> mappingFailures(block: suspend () -> T): T =
         throw unsupported.asFailure(ReaderFailureKind.CONTACTLESS_UNAVAILABLE)
     } catch (cancellation: CancellationException) {
         throw cancellation
+    } catch (internal: FSSDKInternalSDKException) {
+        val ended = internal.additionalInfo in SESSION_ENDED_TEXTS
+        throw internal.asFailure(if (ended) ReaderFailureKind.SESSION_UNUSABLE else refusalKind(internal.code))
     } catch (vendor: FiservTTPCardReaderException) {
         throw vendor.asFailure(refusalKind(vendor.code))
     }
+
+/**
+ * The vendor's refusals for a session it holds as expired or inactive. They carry the code every vendor
+ * internal failure carries, so the text is the only thing that names them.
+ */
+private val SESSION_ENDED_TEXTS =
+    setOf(
+        "Session expired. Please activate the session using initializeSession",
+        "Session is currently inactive. Please activate the session using initializeSession",
+    )
 
 /**
  * What a vendor refusal code means for the session. One exception type covers every arming refusal, so the
