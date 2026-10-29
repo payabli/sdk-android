@@ -325,6 +325,26 @@ class TapToPayChargeRunnerTest {
             assertNull(failure.refusal)
         }
 
+    @Test
+    fun `the customer's code on one of its fields is not a refused customer`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                openingRefusedWith(
+                    fieldRefusal(
+                        "customerData.firstName must not contain a card number",
+                        field = "customerData.firstName",
+                    ),
+                )
+
+            val failure =
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                    .exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, failure.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, failure.capture)
+            assertNull(failure.refusal)
+        }
+
     /** The resent key names an earlier opening, and refusing the retry's customer does not say whether that one charged. */
     @Test
     fun `a refused customer on a resent key stays unknown and keeps its key`() =
