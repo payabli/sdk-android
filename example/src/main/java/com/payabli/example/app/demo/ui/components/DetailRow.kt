@@ -26,16 +26,10 @@ import com.payabli.example.app.demo.ui.theme.LocalStatusColors
 import com.payabli.example.app.demo.ui.theme.monospaceBodyMedium
 
 /**
- * One configured value, shown and not edited.
+ * One configured value, shown as text because nothing at runtime can change it.
  *
- * Text and never a text field. Every value this displays was captured when the app started and
- * nothing at runtime can change it, so an editable field would promise something the app cannot
- * honour.
- *
- * @param problem when set, an amber line under the value saying what is wrong with it. This is how a
- *   blank entry point or a mismatched app id becomes visible on the screen that reads it, before it
- *   can surface much later as a rejected request.
- * @param onCopy when set, a copy button beside the value, for a value someone has to pass on.
+ * @param problem when set, an amber line under the value saying what is wrong with it.
+ * @param onCopy when set, a copy button beside the value.
  */
 @Composable
 fun DetailRow(
