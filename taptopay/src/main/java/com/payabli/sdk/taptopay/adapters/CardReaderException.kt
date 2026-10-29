@@ -39,9 +39,9 @@ internal sealed class CardReaderException(
     ) : CardReaderException("the tap did not complete", cause)
 
     /**
-     * The contactless radio was switched off while the reader waited. Whether a card was presented first is
-     * unknown, so the charge fails as `CONTACTLESS_DISABLED` with its outcome unknown, and the session lands
-     * `Failed` on the same reason.
+     * The contactless radio is switched off, found while the reader came up or while it waited for a card. The
+     * session lands `Failed` on `CONTACTLESS_DISABLED` either way. Coming up, no card was read. Waiting, whether
+     * a card was presented first is unknown, so the charge fails with its outcome unknown.
      */
     class ContactlessDisabled(
         cause: Throwable?,

@@ -377,7 +377,7 @@ public enum class PayabliErrorType(
      * The device's contactless radio is switched off, and the remedy is the merchant's alone: turning the radio
      * on in Settings. It does not say whether a card was charged: met while the reader waited for a card, or on
      * a retry of a sale whose outcome is unknown, money may have moved, so read the failure's capture before
-     * charging again.
+     * charging again. Met by `initialize`, nothing was charged.
      */
     CONTACTLESS_DISABLED(
         3036,
