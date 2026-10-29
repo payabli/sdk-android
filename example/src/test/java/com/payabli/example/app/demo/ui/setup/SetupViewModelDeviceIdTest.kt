@@ -71,6 +71,14 @@ class SetupViewModelDeviceIdTest {
     }
 
     @Test
+    fun `the state's string form does not carry the device ID`() {
+        val state = model { Result.success("a1b2c3d4e5f60718293a4b5c6d7e8f90") }.uiState.value
+
+        assertEquals("a1b2c3d4e5f60718293a4b5c6d7e8f90", state.deviceId)
+        assertFalse(state.toString().contains("a1b2c3d4e5f60718293a4b5c6d7e8f90"))
+    }
+
+    @Test
     fun `a recheck reads the device ID again`() {
         var answer: String? = null
         val model = model { Result.success(answer) }

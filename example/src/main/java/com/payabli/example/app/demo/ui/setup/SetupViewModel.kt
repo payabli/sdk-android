@@ -47,7 +47,11 @@ data class SetupUiState(
     val demoCustomerSummary: String = "",
     /** Whether the fifth tab is in the bar. */
     val showSimpleCapture: Boolean = false,
-)
+) {
+    /** Says whether a device ID is held, never the ID: a synthesized `toString` would print it. */
+    override fun toString(): String =
+        "SetupUiState(readiness=$readiness, hasDeviceId=${deviceId != null}, deviceIdAnswered=$deviceIdAnswered)"
+}
 
 class SetupViewModel(
     private val configuration: DemoConfiguration,
