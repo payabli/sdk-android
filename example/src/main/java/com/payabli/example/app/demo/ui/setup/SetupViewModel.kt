@@ -28,6 +28,10 @@ data class SetupUiState(
     val configuration: DemoConfiguration,
     val tokenServer: TokenServerTarget,
     val deviceFacts: DeviceFacts,
+    /** The device ID support asks for, or null when there is none to show. */
+    val deviceId: String? = null,
+    /** Why there is no session to read [deviceId] from. Null when the session answered, even with null. */
+    val deviceIdProblem: String? = null,
     /** The very object the payment screen hands its form, so this screen cannot describe another one. */
     val formSetup: PayInFormSetup,
     val readiness: Readiness = Readiness.Ready,
@@ -48,6 +52,7 @@ class SetupViewModel(
     private val tokenServer: TokenServerTarget,
     private val tokenClient: TokenServerClient,
     private val readDeviceFacts: () -> DeviceFacts,
+    private val readDeviceId: suspend () -> Result<String?>,
     private val demoCustomer: DemoCustomerSetting,
     private val simpleCapture: SimpleCaptureSetting,
     formSetup: PayInFormSetup,
@@ -89,6 +94,15 @@ class SetupViewModel(
         val checks = TapToPayPreflight.checks(facts, configuration.appId, configuration.signingCertificate)
         _uiState.update {
             it.copy(deviceFacts = facts, readiness = readinessFrom(checks), problems = problemsIn(checks))
+        }
+        viewModelScope.launch {
+            val answer = readDeviceId()
+            _uiState.update {
+                it.copy(
+                    deviceId = answer.getOrNull(),
+                    deviceIdProblem = answer.exceptionOrNull()?.let { failure -> failure.message ?: "No session." },
+                )
+            }
         }
     }
 
@@ -132,6 +146,7 @@ class SetupViewModel(
                 tokenServer = container.tokenServer,
                 tokenClient = container.tokenClient,
                 readDeviceFacts = container.readDeviceFacts,
+                readDeviceId = container.sessionSource::deviceId,
                 demoCustomer = container.demoCustomer,
                 simpleCapture = container.simpleCapture,
                 // The stored-method form. The capture form differs in more than its summary section: the
