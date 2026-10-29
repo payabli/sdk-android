@@ -11,8 +11,9 @@ public enum class TapToPayCapture {
     /**
      * No money moved, so charging again cannot take it twice.
      *
-     * Either the card was never asked for, or it was asked for and refused. A refusal is an answer, which
-     * is what separates it from [UNKNOWN].
+     * Either the card was never asked for, or an answer says nothing was taken: the card was refused, the
+     * processor has no record of the payment, or the reader's session was gone before any card was read. The
+     * answer is what separates it from [UNKNOWN].
      */
     NOT_CHARGED,
 

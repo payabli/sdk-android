@@ -162,7 +162,7 @@ internal class TapToPayChargeRunner(
             val sendMark = PayabliSendMark()
             var resentKey = false
             var arrivedAt: Long? = null
-            // Never unset: once a card is asked for, no failure releases the key.
+            // Never unset: once a card is asked for, only an answer that nothing was taken releases the key.
             var askedForCard = false
             try {
                 // At the call, not by listening: the adapter's state broadcasts reach no app.
@@ -292,7 +292,8 @@ internal class TapToPayChargeRunner(
                 if (!askedForCard && openedAs == null && (failure is ChargeKeyRefusal || !sendMark.mayHaveLeft)) {
                     arrivedAt = null
                 }
-                // Only before the read: after it, no failure proves the money did not move.
+                // Before the read. After it, only the reader's or the processor's answer that nothing was taken
+                // releases the key, below and in the close.
                 if (!askedForCard) {
                     val key = reserved
                     // Uncancellable, so a withdrawal cannot skip the settle.
@@ -302,6 +303,12 @@ internal class TapToPayChargeRunner(
                             key?.let { keys.settle(entry, environment, it) }
                         }
                     }
+                }
+                // The reader answering that it was never set up touched no card, so a run that minted its key
+                // charged nothing and lets the key go. A resent key names an earlier opening and stays unknown.
+                if (askedForCard && !resentKey && failure is CardReaderException.SessionUnusable) {
+                    capture = TapToPayCapture.NOT_CHARGED
+                    reserved?.let { withContext(NonCancellable) { keys.settle(entry, environment, it) } }
                 }
                 // A retry refused before its key was reserved still describes the held sale, whose outcome is unknown.
                 if (reserved == null && attempt == PayabliAttempt.Retry) {
@@ -331,9 +338,9 @@ internal class TapToPayChargeRunner(
         }
 
     /**
-     * Asks for one card for [amount], at the scale the paypoint recorded. Every other exit, cancellation
-     * and a JVM `Error` included, closes [paymentTransId] and rethrows what it caught. A minted-key run's
-     * `Exception` gives way to the close's no-record refusal, which settles the key; an `Error` never does.
+     * Asks for one card for [amount], at the scale the paypoint recorded. Every other exit, cancellation and a
+     * JVM `Error` included, closes [paymentTransId] and rethrows what it caught. A minted-key run's `Exception`
+     * gives way to the close's no-record refusal, which settles the key, unless the reader's session was unusable.
      */
     private suspend fun readCard(
         paymentTransId: String,
@@ -368,9 +375,10 @@ internal class TapToPayChargeRunner(
             if (failure is CardReaderException.ContactlessDisabled) {
                 manager.failCharge(TapToPayFailureReason.CONTACTLESS_DISABLED)
             }
-            // A JVM Error is never converted into a payment outcome: it keeps its place, the close's
-            // refusal suppressed on it, the way a failed close rides on a refused card.
-            if (noRecord != null && failure is Error) {
+            // A JVM Error is never converted into a payment outcome, and a reader gone before the read keeps the
+            // expiry, whose cause is the session: each keeps its place, the close's refusal suppressed on it, the
+            // way a failed close rides on a refused card.
+            if (noRecord != null && (failure is Error || failure is CardReaderException.SessionUnusable)) {
                 failure.addSuppressed(noRecord)
                 throw failure
             }
