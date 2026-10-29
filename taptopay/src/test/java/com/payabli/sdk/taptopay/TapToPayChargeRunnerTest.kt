@@ -84,6 +84,7 @@ private const val READ = "reader:read"
 
 /** A paypoint other than [ENTRY]. */
 private const val ANOTHER_ENTRY = "another-entry-point"
+private const val STRIPE_SHARING_ENTRY = "stripe-sharing-entry-5"
 
 /** The idempotency check's 409, the one answer that is not a JSON object. */
 private const val KEY_REFUSED = "Duplicated idempotencyKey"
@@ -3011,6 +3012,39 @@ class TapToPayChargeRunnerTest {
 
             completing("the first charge") { first.await() }.getOrThrow()
             assertEquals(TRANS_ID, completing("the other charge") { second.await() }.getOrThrow().paymentTransId)
+        }
+
+    @Test
+    fun `a charge withdrawn between its claim and its lock lets the close behind it go and frees its entry point`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Another paypoint on the same stripe holds the lock, so this one's charge is claimed but not yet locked.
+            val stripe = { entry: String -> (entry.hashCode().toLong() and 0x7fffffffL).toInt() % 16 }
+            assertEquals("the entry points share a lock stripe", stripe(ENTRY), stripe(STRIPE_SHARING_ENTRY))
+            val other = readyFixture()
+            val device = checkNotNull(other.enrollment.store.read(ENTRY))
+            other.enrollment.store.write(AttestedDevice(STRIPE_SHARING_ENTRY, device.deviceId, device.keyId))
+            val held = CompletableDeferred<Unit>()
+            val fixture = SessionFixture(script(), readGate = { held.await() }).also { it.coordinator.initialize() }
+            val first = chargeParkedInTheRead(fixture, held)
+            val terminal = runnerOver(other, entry = STRIPE_SHARING_ENTRY)
+            val waiting =
+                async(UnconfinedTestDispatcher(testScheduler)) {
+                    terminal.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }
+            assertFalse("the charge took the lock", waiting.isCompleted)
+            val close =
+                async(UnconfinedTestDispatcher(testScheduler)) {
+                    runCatching { runnerOver(other, entry = STRIPE_SHARING_ENTRY).closeCaptured(TRANS_ID) }
+                }
+
+            waiting.cancel()
+            waiting.join()
+            held.complete(Unit)
+            completing("the first charge") { first.await() }.getOrThrow()
+
+            assertTrue("the close still waits for the withdrawn charge", close.isCompleted)
+            val receipt = terminal.charge(details(), PAYER, TapToPayInvoiceData(), null)
+            assertEquals("the entry point was still held", TRANS_ID, receipt.paymentTransId)
         }
 
     @Test
