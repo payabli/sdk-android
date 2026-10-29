@@ -257,6 +257,7 @@ These Tap to Pay causes are ones your app handles, with their codes:
 | `ACTIVATION_ATTEMPTS_EXHAUSTED` | 3026 | `CONFIGURATION` | Too many incorrect activation codes were entered. |
 | `ACTIVATION_CODE_NOT_ISSUED` | 3027 | `CONFIGURATION` | No activation code has been issued for this device. |
 | `DEVICE_NOT_PENDING` | 3028 | `INVALID_REQUEST` | This device is not waiting for activation. |
+| `PAYMENT_REFERENCE_OPEN` | 1023 | `INVALID_REQUEST` | Another call for this payment is still under way or its outcome is unknown, so this one was not sent. Check that payment's outcome first. |
 | `TERMINAL_NOT_READY` | 3029 | `INVALID_REQUEST` | The terminal is not ready for this call. |
 | `TOO_MANY_OPEN_CHARGES` | 3030 | `INVALID_REQUEST` | Too many charges are waiting to be resolved. |
 | `PAYMENT_NOT_HELD` | 3031 | `INVALID_REQUEST` | No captured payment is held under that identifier. |
@@ -276,6 +277,12 @@ Call `closeCapturedCharge` again only while the close is unconfirmed. Once one s
 holds the payment, and a further call fails with `capture` `UNKNOWN`. It works only for the payment most
 recently taken for this entry point in this process; for anything else, reconcile with the transaction
 lookup.
+
+One charge runs at a time across every `PayabliTTP` in the process. A charge made while another runs is refused
+before anything is sent. A retry fails with `PAYMENT_REFERENCE_OPEN` (1023) while the key it would be handed, the
+newest held for its entry point, is being sent, whichever payment it describes; any other charge fails with
+`TERMINAL_NOT_READY` (3029). Follow `capture`: `UNKNOWN` means the retry describes a payment that may have been
+charged, so find it before charging again.
 
 ## Reference
 
