@@ -4,6 +4,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
@@ -289,6 +290,36 @@ class PayabliTapToPayTest {
             assertEquals(TRANS_ID, result.paymentTransId)
             assertEquals(1, renewals)
             assertEquals(3, fixture.requestsTo(RouteScript.CONFIG).size)
+        }
+
+    @Test
+    fun `a charge on a finished session fails its repair at once and is not renewed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var finished = false
+            var renewals = 0
+            val fixture =
+                SessionFixture(
+                    script(),
+                    renewToken = { renewals++ },
+                    unsent = {
+                        PayabliGenericException(
+                            PayabliErrorType.TOKEN_EXPIRED,
+                            "finished",
+                        ).takeIf { finished }
+                    },
+                )
+            val terminal = terminalOver(fixture)
+            terminal.initialize()
+            fixture.manager.invalidate()
+            val sent = fixture.enrollment.requests.size
+            finished = true
+
+            val failure =
+                runCatching { terminal.charge(TapToPayPaymentDetails(BigDecimal("12.34")), PAYER) }.exceptionOrNull()
+
+            assertEquals(PayabliErrorType.TOKEN_EXPIRED, (failure as? TapToPayException)?.type)
+            assertEquals("a finished session's refusal was renewed", 0, renewals)
+            assertEquals("a request was sent on a finished session", sent, fixture.enrollment.requests.size)
         }
 
     @Test

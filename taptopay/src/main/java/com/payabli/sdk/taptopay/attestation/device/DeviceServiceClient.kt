@@ -6,6 +6,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliEnvelope
@@ -26,6 +27,7 @@ import kotlinx.serialization.SerializationException
 import java.net.HttpURLConnection.HTTP_BAD_REQUEST
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
 import java.net.HttpURLConnection.HTTP_INTERNAL_ERROR
+import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -389,7 +391,7 @@ internal class DeviceServiceClient(
                 serviceRefused -> null
                 refusesAtStatus && status == HTTP_BAD_REQUEST && declineOutcome == null ->
                     DeviceServiceException.BadRequest(status, PayabliHttpErrors.from(response)?.reason.orEmpty())
-                else -> statusOverride(status) ?: PayabliHttpErrors.from(response)
+                else -> statusOverride(status) ?: pinnedRefusalOf(PayabliHttpErrors.from(response), status)
             }
         transportFailure?.let {
             logger.warn(
@@ -470,6 +472,24 @@ internal class DeviceServiceClient(
         ) { "the device service response could not be decoded" }
         return DeviceServiceException.Undecodable(cause)
     }
+
+    /**
+     * Marks a 401 as the refusal of the token this route was sent with. Every route here pins its credential, so
+     * the transport hands that 401 back unrefreshed.
+     *
+     * @param failure the transport's failure for the response, or null when it has none.
+     * @param status the response's status.
+     * @return a [PinnedTokenRefusal] for a 401, otherwise [failure] unchanged.
+     */
+    private fun pinnedRefusalOf(
+        failure: PayabliException?,
+        status: Int,
+    ): PayabliException? =
+        if (failure != null && status == HTTP_UNAUTHORIZED && failure.type == PayabliErrorType.TOKEN_EXPIRED) {
+            PinnedTokenRefusal(failure.reason)
+        } else {
+            failure
+        }
 
     internal companion object {
         private const val BASE = "/api/v2/device/taptopay"
