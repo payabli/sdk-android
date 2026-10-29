@@ -53,9 +53,6 @@ class DemoTerminalController(
     override val failureReason: StateFlow<TerminalFailureReason?> = MutableStateFlow(null).asStateFlow()
     override val deviceFailure: StateFlow<String?> = MutableStateFlow(null).asStateFlow()
 
-    /** Nothing here fails, so there is never a reason to read. */
-    override fun currentFailureReason(): TerminalFailureReason? = null
-
     private var chargeCounter = 0
 
     /** A merchant registers a device once. Until then, starting the terminal asks for a code. */
