@@ -35,6 +35,7 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionCoordinator
 import com.payabli.sdk.taptopay.session.TapToPaySessionManager
 import com.payabli.sdk.taptopay.telemetry.TapToPayReports
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -64,6 +65,9 @@ private val REGIONS: List<Mutex> = List(REGION_STRIPES) { Mutex() }
 /** Masked rather than negated: `Int.MIN_VALUE` has no positive counterpart and negating it returns itself. */
 private fun regionFor(entry: String): Mutex =
     REGIONS[(entry.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
+
+/** Shared rather than held per runner for the reason the regions are. */
+private val HOLDERS = EntryPointHolders()
 
 /**
  * The payment each scope has read a card for and not confirmed a close on.
@@ -126,17 +130,9 @@ internal class TapToPayChargeRunner(
     private val scope: String = "${environment.name}/$entry"
 
     /**
-     * One payment at a time for this entry point, across every terminal built for it and every environment.
-     *
-     * Keyed by the entry point rather than held per instance, because that is what it protects. A terminal is
-     * built per call, so two of them exist for one paypoint whenever a screen is rebuilt, and they share the
-     * charge key by design. An instance mutex lets one settle that key while the other is mid-charge, after
-     * which an ambiguous failure mints a fresh one and the payer can be charged twice.
-     *
-     * **Broader than [scope], which is what a payment belongs to.** The store matches on entry point
-     * plus environment, so two environments for one paypoint hold separate keys. The lock stays keyed
-     * on the entry point alone so two terminals for that paypoint cannot open, close or settle side by
-     * side — including across environments, where [HELD] and the session repair still share the paypoint.
+     * Orders a captured close behind the charge on this entry point, which [HOLDERS] keeps to one. Keyed by the
+     * entry point rather than the instance, since a terminal is built per call, and across environments, where
+     * [HELD] and the session repair still share the paypoint.
      */
     private val region: Mutex get() = regionFor(entry)
 
@@ -147,8 +143,9 @@ internal class TapToPayChargeRunner(
         orderDescription: String?,
         attempt: PayabliAttempt = PayabliAttempt.NewPayment,
     ): TapToPayResult =
-        region.withLock {
+        run {
             val sendable = sendableAmountOf(paymentDetails)
+            val sale = ChargeDescription.of(paymentDetails, invoice)
 
             // After the precondition, so a bad argument is not reported as a failed charge.
             val startedAt = System.nanoTime()
@@ -164,7 +161,28 @@ internal class TapToPayChargeRunner(
             var arrivedAt: Long? = null
             // Never unset: once a card is asked for, only an answer that nothing was taken releases the key.
             var askedForCard = false
+            var inRegion: CompletableDeferred<Unit>? = null
+            var locked = false
             try {
+                // Claimed before the region, so a second charge on this entry point is refused here and never
+                // reaches the lock.
+                val admitted =
+                    when (val admission = HOLDERS.admitCharge(entry, sale)) {
+                        is EntryPointHolders.Admission.Admitted -> admission.inRegion
+                        is EntryPointHolders.Admission.Refused -> {
+                            val retry = attempt == PayabliAttempt.Retry
+                            val found = if (retry) keys.heldRetryOf(entry, environment, sale) else null
+                            val describesCharge =
+                                admission.runningSale?.matches(sale) == true || found?.describesHeld == true
+                            if (retry && describesCharge) capture = TapToPayCapture.UNKNOWN
+                            throw overlapRefusal(found)
+                        }
+                    }
+                inRegion = admitted
+                // Locked inside the try, so the refusal above reaches the same catch and finally.
+                region.lock()
+                locked = true
+                admitted.complete(Unit)
                 // At the call, not by listening: the adapter's state broadcasts reach no app.
                 if (!contactlessEnabled()) {
                     throw PayabliGenericException(
@@ -184,7 +202,7 @@ internal class TapToPayChargeRunner(
                             }
                         // After the checks, so a charge that never reaches the wire holds no key.
                         val reservation =
-                            keys.reserve(entry, environment, attempt, ChargeDescription.of(paymentDetails, invoice))
+                            keys.reserve(entry, environment, attempt, sale)
                         val idempotencyKey = reservation.key
                         reserved = idempotencyKey
                         resentKey = reservation.reused
@@ -311,9 +329,9 @@ internal class TapToPayChargeRunner(
                     reserved?.let { withContext(NonCancellable) { keys.settle(entry, environment, it) } }
                 }
                 // A retry refused before its key was reserved still describes the held sale, whose outcome is unknown.
-                if (reserved == null && attempt == PayabliAttempt.Retry) {
-                    val described = ChargeDescription.of(paymentDetails, invoice)
-                    if (withContext(NonCancellable) { keys.holdsRetryOf(entry, environment, described) }) {
+                // Only once claimed: then no other charge on this entry point can settle the key under the read.
+                if (inRegion != null && reserved == null && attempt == PayabliAttempt.Retry) {
+                    if (withContext(NonCancellable) { keys.holdsRetryOf(entry, environment, sale) }) {
                         capture = TapToPayCapture.UNKNOWN
                     }
                 }
@@ -333,7 +351,15 @@ internal class TapToPayChargeRunner(
                 throw if (failure is Exception) failed(failure, type, openedAs, capture) else failure
             } finally {
                 // A key still held names the newest unsettled charge, the only one a retry can claim.
-                reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it, arrivedAt) } }
+                try {
+                    reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it, arrivedAt) } }
+                } finally {
+                    if (locked) region.unlock()
+                    inRegion?.let {
+                        it.complete(Unit)
+                        HOLDERS.releaseCharge(entry)
+                    }
+                }
             }
         }
 
@@ -417,8 +443,24 @@ internal class TapToPayChargeRunner(
      * Whether the first close reached the service is not known here and does not need to be. Sending one
      * that already applied costs nothing, and a response that never arrived may have followed a close that
      * did apply, so an unconfirmed close is what this retries rather than a failed one.
+     *
+     * Holds the entry point from the call, so a charge arriving while this runs or waits is refused; this
+     * itself waits for a charge already under way.
+     *
+     * @param paymentTransId the payment to close, which has to be the one held for this entry point and environment.
      */
-    suspend fun closeCaptured(paymentTransId: String): Unit =
+    suspend fun closeCaptured(paymentTransId: String) {
+        val admitted = HOLDERS.admitClose(entry)
+        try {
+            // A charge admitted before this close goes first, even one not yet holding the region.
+            admitted?.await()
+            closeHeld(paymentTransId)
+        } finally {
+            HOLDERS.releaseClose(entry)
+        }
+    }
+
+    private suspend fun closeHeld(paymentTransId: String): Unit =
         region.withLock {
             val pending = HELD[scope]
             if (pending == null || pending.paymentTransId != paymentTransId) {
@@ -520,6 +562,22 @@ internal class TapToPayChargeRunner(
             type == PayabliErrorType.SDK_INTERNAL_ERROR || type == PayabliErrorType.VALIDATION_ERROR
         return if (cardWasAsked && claimsNothingWasSent) PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN else type
     }
+
+    /**
+     * Why a charge is refused while another on its entry point is under way.
+     *
+     * @param found the held key a refused retry found, or null for a new payment or when none is held.
+     * @return a payment-reference refusal for a retry whose key is under way, otherwise the terminal not being ready.
+     */
+    private fun overlapRefusal(found: ChargeKeyStore.HeldRetry?): Exception =
+        if (found?.underWay == true) {
+            PayabliGenericException(
+                PayabliErrorType.PAYMENT_REFERENCE_OPEN,
+                PayabliErrorType.PAYMENT_REFERENCE_OPEN.message,
+            )
+        } else {
+            TapToPayCallException.TerminalNotReady()
+        }
 
     /** The failure a caller sees, under [type], carrying the payment it belongs to and whether the money moved. */
     private fun failed(

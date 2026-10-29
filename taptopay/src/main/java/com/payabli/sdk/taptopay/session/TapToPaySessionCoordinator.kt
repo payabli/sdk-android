@@ -11,6 +11,7 @@ import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
+import com.payabli.sdk.taptopay.attestation.device.PinnedTokenRefusal
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
@@ -324,8 +325,8 @@ internal class TapToPaySessionCoordinator(
     }
 
     /**
-     * Runs [sequence], and once more after [renewToken] when a device route refused the token it was sent.
-     * The second attempt re-enters the state the refusal arrived in, which is always legal.
+     * Runs [sequence], and once more after [renewToken] when a device route was sent and refused the token it
+     * carried. The second attempt re-enters the state the refusal arrived in, which is always legal.
      *
      * @param sequence the run, from its first request.
      */
@@ -337,7 +338,11 @@ internal class TapToPaySessionCoordinator(
         }
         logger.debug(LogField.safe("event", "ttp_token_renewed")) { "renewing a refused token before running again" }
         renewToken()
-        sequence()
+        try {
+            sequence()
+        } catch (refused: PinnedTokenRefusal) {
+            throw refused.reported()
+        }
     }
 
     /**
@@ -537,14 +542,13 @@ private class RunReports(
 }
 
 /**
- * Whether [failure] is a device route refusing the token it was sent. Every device route keeps its token for
- * the sequence, so that refusal arrives as an expired token.
+ * Whether [failure] is a device route refusing the token it was sent. A finished session's expired token is not:
+ * it is raised before anything is sent.
  *
  * @param failure the failure a run raised.
- * @return true for an expired token; false otherwise.
+ * @return true for a sent route's refused token; false otherwise.
  */
-private fun isRefusedToken(failure: Throwable): Boolean =
-    failure is PayabliException && failure.type == PayabliErrorType.TOKEN_EXPIRED
+private fun isRefusedToken(failure: Throwable): Boolean = failure is PinnedTokenRefusal
 
 /** An activation moves nothing before its answer, so withdrawing one leaves the code still owed. */
 private val SessionWorkKind.resetsOnWithdrawal: Boolean get() = this != SessionWorkKind.ACTIVATE
