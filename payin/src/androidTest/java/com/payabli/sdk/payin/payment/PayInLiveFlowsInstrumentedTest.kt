@@ -32,6 +32,7 @@ import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
@@ -268,13 +269,7 @@ class PayInLiveFlowsInstrumentedTest {
     fun aDeclaredRetryAfterALostAnswerIsTheSamePayment() =
         runBlocking {
             val transport = LosesFirstAnswer(installedSession().transport)
-            val lossy =
-                PayInPaymentFlow.over(
-                    transport,
-                    entryPoint,
-                    CoroutineScope(SupervisorJob() + Dispatchers.IO),
-                    Dispatchers.IO,
-                )
+            val lossy = flowOver(transport)
             val options = PayInTransactionOptions(PayInPaymentDetails(AMOUNT), orderDescription = "android lost answer")
 
             val lost = lossy.capture(options, card()).exceptionOrNull() as? PayabliException
@@ -282,30 +277,96 @@ class PayInLiveFlowsInstrumentedTest {
             // No reference was named, so the retry names the one the SDK minted and returned with the unknown outcome.
             val retried = lossy.capture(options.asRetry((lost as? PayInException.Unsettled)?.paymentReference), card())
 
-            assertTrue("the lost answer was not reported as unknown: $lost", lost is PayInException.Unsettled)
-            val original = transport.lostTransId
-            assertNotNull("the service took no payment the first time", original)
-            assertEquals("the retry did not resend the held key", transport.keys[0], transport.keys[1])
-            val refused = retried.exceptionOrNull() as? PayabliException
-            val repeated =
-                refused?.type == PayabliErrorType.RETRY_REFUSED ||
-                    retried.getOrNull()?.transaction?.paymentTransId == original
-            // The run's evidence, on one line: a transaction identifier and a type carry no payer data.
-            Log.i(
-                "PayInLiveFlows",
-                "lost answer: transaction=$original keys=${transport.keys.distinct().size} " +
-                    "retry=${refused?.type ?: retried.getOrNull()?.transaction?.paymentTransId}",
-            )
-            assertTrue(
-                "the retry was taken as a second payment: ${retried.exceptionOrNull() ?: retried.getOrNull()?.code}",
-                repeated,
-            )
-            assertTrue(lossy.consume())
-            assertEquals(
-                PayInTransactionStatus.Captured,
-                lossy.readTransaction(original!!).orFail("reading the original payment back").status,
-            )
+            assertTheSamePayment("lost answer", transport, lost, retried, lossy)
         }
+
+    /**
+     * The same lost answer, retried on a flow built after the first one, as a screen rebuilt between the two would
+     * build it. The held key belongs to the process rather than to the flow, so the rebuilt one resends it.
+     */
+    @Test
+    fun aRetryFromARebuiltFlowIsTheSamePayment() =
+        runBlocking {
+            val transport = LosesFirstAnswer(installedSession().transport)
+            val options =
+                PayInTransactionOptions(PayInPaymentDetails(AMOUNT), orderDescription = "android rebuilt flow")
+
+            val lost = flowOver(transport).capture(options, card()).exceptionOrNull() as? PayabliException
+            val rebuilt = flowOver(transport)
+            val retried =
+                rebuilt.capture(
+                    options.asRetry((lost as? PayInException.Unsettled)?.paymentReference),
+                    card(),
+                )
+
+            assertTheSamePayment("rebuilt flow", transport, lost, retried, rebuilt)
+        }
+
+    /** A retry that names no payment is refused before anything is sent, so it cannot be taken as a new one. */
+    @Test
+    fun aRetryNamingNoReferenceIsRefusedUnsent() =
+        runBlocking {
+            val transport = LosesFirstAnswer(installedSession().transport)
+
+            val refused = flowOver(transport).capture(transaction().asRetry(null), card()).exceptionOrNull()
+
+            assertTrue("a retry naming no payment was not refused: $refused", refused is PayInException.InvalidInput)
+            assertEquals(PayInSubmission.FIELD_PAYMENT_REFERENCE, (refused as PayInException.InvalidInput).field)
+            assertEquals(PayInSubmission.REASON_RETRY_UNNAMED, refused.reason)
+            assertTrue("a payment was sent: ${transport.keys.size}", transport.keys.isEmpty())
+        }
+
+    /** A flow whose requests go through [transport], for the environment and entry point this run names. */
+    private fun flowOver(transport: PayabliTransport) =
+        PayInPaymentFlow.over(
+            transport,
+            entryPoint,
+            CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            Dispatchers.IO,
+            environment = environment,
+        )
+
+    /**
+     * Asserts that [retried] was answered as the payment whose answer [transport] discarded: sent under the same key,
+     * and either refused as a retry or answered with that payment's transaction, which still reads as captured.
+     *
+     * @param label names the case in the run's evidence line.
+     * @param transport the transport that discarded the first answer.
+     * @param lost what the first send reported.
+     * @param retried what the declared retry returned.
+     * @param flow a flow to read the original payment back through.
+     */
+    private suspend fun assertTheSamePayment(
+        label: String,
+        transport: LosesFirstAnswer,
+        lost: PayabliException?,
+        retried: Result<PayInResult>,
+        flow: PayInPaymentFlow,
+    ) {
+        assertTrue("the lost answer was not reported as unknown: $lost", lost is PayInException.Unsettled)
+        val original = transport.lostTransId
+        assertNotNull("the service took no payment the first time", original)
+        assertEquals("the retry did not resend the held key", transport.keys[0], transport.keys[1])
+        val refused = retried.exceptionOrNull() as? PayabliException
+        val repeated =
+            refused?.type == PayabliErrorType.RETRY_REFUSED ||
+                retried.getOrNull()?.transaction?.paymentTransId == original
+        // The run's evidence, on one line: a transaction identifier and a type carry no payer data.
+        Log.i(
+            "PayInLiveFlows",
+            "$label: transaction=$original keys=${transport.keys.distinct().size} " +
+                "retry=${refused?.type ?: retried.getOrNull()?.transaction?.paymentTransId}",
+        )
+        assertTrue(
+            "the retry was taken as a second payment: ${retried.exceptionOrNull() ?: retried.getOrNull()?.code}",
+            repeated,
+        )
+        assertTrue(flow.consume())
+        assertEquals(
+            PayInTransactionStatus.Captured,
+            flow.readTransaction(original!!).orFail("reading the original payment back").status,
+        )
+    }
 
     private fun PayInTransactionOptions.asRetry(reference: String?) =
         PayInTransactionOptions(
