@@ -92,9 +92,6 @@ dependencies {
 
 `sdk-android` includes card-not-present, Tap to Pay, and error and usage reporting, and needs `minSdk` 30.
 
-To build changes that aren't released yet, build `main` from source with `./gradlew publishToMavenLocal`
-and add `mavenLocal()` to your repositories.
-
 #### Alternative declaration for solo features
 
 To take one feature without the other, depend on its artifact instead of `sdk-android`:
@@ -263,8 +260,8 @@ val session: PayabliSession = PayabliSession.initialize(config, HostBindings(app
 - There is one session per app process.
 - Calling `initialize` again with the same entry point and environment returns the same session, which keeps its
   original token provider. A different one throws a `PayabliException` whose `type` is `INVALID_CONFIGURATION`, and
-  the session already running stays in place. After authentication has failed for good, it builds a fresh session
-  instead.
+  the session already running stays in place. Once the session's credential is finished (see `TOKEN_EXPIRED`
+  below), `initialize` with any configuration starts a fresh session in its place.
 
 The token provider is a `PayabliTokenProvider`, a `suspend` function that returns a new access token from
 your token endpoint:
@@ -277,6 +274,26 @@ your token endpoint:
 - The SDK doesn't retry a `TOKEN_PROVIDER_FAILED` or `TOKEN_EXPIRED` failure itself. Try again only when someone
   using your app asks to, or wait longer before each attempt.
 - Let cancellation through. Don't catch `CancellationException`.
+
+**What `TOKEN_EXPIRED` (1002) means.** It isn't how an expired token reaches you. A token that expires or is
+refused once is handled inside the SDK: it asks your provider for a new one, repeats the request, and your call
+succeeds. A 1002 means the service refused the token **and** the new one your provider just returned, so even a
+freshly minted token is being rejected. Don't treat it as a signal to fetch a token; treat it as a credential your
+app has to fix. The usual causes are a token for another environment or entry point, a missing permission, or a
+disabled paypoint. Apart from the two cases below, after a 1002 the session's credential is finished: every later
+call on that session fails at once with 1002, without sending a request or calling your provider. Fix the cause,
+then call `PayabliSession.initialize` again; it starts a fresh session, which calls your provider before its first
+request.
+
+Two kinds of 1002 leave the session usable:
+
+- One from Tap to Pay setting up the device (`PayabliTTP.initialize()`, `activateDevice`, or the repair `charge`
+  runs first) when the setup's own request was refused, the SDK renewed the token, and the new one was refused
+  too. Fix the cause, then call that setup again; it asks your provider for a new token. If it fails again at
+  once with 1002 and your provider isn't called, the session's credential is finished: call
+  `PayabliSession.initialize`, then create the terminal again from the new session.
+- One whose refused token another call had already replaced, or was replacing. Only that call fails; the next
+  call uses the new token, and `initialize` with the same configuration returns the same session.
 
 ### Device identity
 
@@ -369,10 +386,13 @@ Store the transaction ID with your order every time you get one.
 If you then try the same payment again, say so: pass `attempt = PayabliAttempt.Retry`, in
 `PayInTransactionOptions` or to `charge`. The SDK sends it under the key of the payment whose outcome is
 unknown: on card-not-present, the capture or authorization with the same `paymentReference`, which
-`PayInException.Unsettled` carries and the SDK mints when you set none; on Tap to Pay, the most recent charge for
-that entry point. The service then recognizes the repeat rather than taking the money twice. Without it, every
+`PayInException.Unsettled` carries and the SDK mints when you set none on a new payment; on Tap to Pay, the most
+recent charge for that entry point. A card-not-present retry must set that `paymentReference`: one naming none
+fails with `InvalidInput` and isn't sent. The service then recognizes the repeat rather than taking the money twice. Without it, every
 call is a new payment, and on card-not-present a new payment naming an unresolved `paymentReference` fails with
-`PAYMENT_REFERENCE_OPEN` and isn't sent. If the service refuses the retry because it already has that payment, a card-not-present
+`PAYMENT_REFERENCE_OPEN` and isn't sent, as does the same call on a payment another `PayabliPayIn` is still sending,
+and a capture or void of a transaction another one is still capturing or voiding.
+If the service refuses the retry because it already has that payment, a card-not-present
 retry fails with `RETRY_REFUSED` and a Tap to Pay one with `CHARGE_NOT_FINISHED`; check that payment before
 trying again.
 
@@ -418,9 +438,10 @@ Their READMEs say how to configure and run both. In sandbox, use Payabli's
 ## Privacy and data collection
 
 The SDK sends error and usage events to Payabli, with no card, payer or account data. Telemetry is always
-on and can't be turned off. The events are not listed. For Google Play's
-Data safety form, the SDK collects device or other IDs, app interactions, and crash logs and
-diagnostics, and none of it is shared or used for tracking.
+on and can't be turned off. The events are not listed. For Google Play's Data safety form, every module
+collects device or other IDs, app interactions and diagnostics. `sdk-android-payin` and
+`sdk-android-taptopay` also collect financial info (user payment info), and `sdk-android-payin` collects
+personal info (name, email address, user IDs) from its form. None of it is shared or used for tracking.
 
 Every request the SDK sends to Payabli carries an `X-Pyb-Client` header with the SDK version, the platform, the OS
 version, the device model, the locale and the device ID described under [Device identity](#device-identity).
@@ -434,8 +455,8 @@ A value that's missing, blank or isn't printable ASCII is left out. The header c
 
 - **Depend on the latest version** as [Installation](#installation) describes. Each version and its notes are
   on the [Releases](https://github.com/payabli/sdk-android/releases) page.
-- **`main` holds changes that aren't released yet, and changes without notice.** A build from `main` takes
-  whatever is there when it's built.
+- **`main` holds the latest release.** Work toward the next release isn't published for integration; depend on a
+  released version.
 - **When a stable version is released,** this section says so.
 
 ## Support

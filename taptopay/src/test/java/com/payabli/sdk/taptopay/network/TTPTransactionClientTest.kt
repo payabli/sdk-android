@@ -438,4 +438,77 @@ class TTPTransactionClientTest {
                 assertNull("a log record must not carry a cause that can print a body", record.throwable)
             }
         }
+
+    // A refused customer
+
+    /** The customer field that sets each identifier key the service lists, by the key lowercased. */
+    private val fieldForKey =
+        listOf(
+            "customernumber" to "customerNumber",
+            "firstname" to "firstName",
+            "lastname" to "lastName",
+            "company" to "company",
+            "phone" to "billingPhone",
+            "email" to "billingEmail",
+            "city" to "billingCity",
+            "state" to "billingState",
+            "zip" to "billingZip",
+            "country" to "billingCountry",
+            "shippingcity" to "shippingCity",
+            "shippingstate" to "shippingState",
+            "shippingzip" to "shippingZip",
+            "shippingcountry" to "shippingCountry",
+        )
+
+    /**
+     * The opening's refusal when the customer is refused with [message].
+     *
+     * @param message the text the refusal carries for the customer.
+     * @return what opening a transaction throws.
+     */
+    private suspend fun refusedCustomer(message: String): Throwable? {
+        val (_, client) = client(answer(fieldRefusal(message), 400))
+        return runCatching { client.open() }.exceptionOrNull()
+    }
+
+    @Test
+    fun `every key a refused customer lists arrives as the customer field that sets it, in any casing`() =
+        runTest(timeout = timeout) {
+            fieldForKey.forEach { (key, field) ->
+                listOf(key, key.uppercase(), key.replaceFirstChar(Char::uppercase)).forEach { casing ->
+                    val failure = refusedCustomer("Missing customer identifiers: $casing")
+
+                    assertEquals("$casing: $failure", listOf(field), (failure as? CustomerDataRefusal)?.requiredFields)
+                }
+            }
+        }
+
+    @Test
+    fun `a refused customer's fields arrive in the order the service lists them`() =
+        runTest(timeout = timeout) {
+            val failure = refusedCustomer("Missing customer identifiers: CustomerNumber,Email,ShippingZip")
+
+            assertEquals(
+                listOf("customerNumber", "billingEmail", "shippingZip"),
+                (failure as? CustomerDataRefusal)?.requiredFields,
+            )
+        }
+
+    @Test
+    fun `a key no customer field sets passes through as the paypoint names it`() =
+        runTest(timeout = timeout) {
+            val failure = refusedCustomer("Missing customer identifiers: Email,LoyaltyId")
+
+            assertEquals(listOf("billingEmail", "LoyaltyId"), (failure as? CustomerDataRefusal)?.requiredFields)
+        }
+
+    @Test
+    fun `a refused customer keeps the classification and text of the validation error it is`() =
+        runTest(timeout = timeout) {
+            val failure = refusedCustomer("Customer data is required")
+
+            assertEquals("$failure", emptyList<String>(), (failure as? CustomerDataRefusal)?.requiredFields)
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, (failure as PayabliException).type)
+            assertEquals("Customer data is required", failure.detail)
+        }
 }

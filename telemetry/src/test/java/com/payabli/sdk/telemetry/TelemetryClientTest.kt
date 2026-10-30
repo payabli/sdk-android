@@ -3,6 +3,7 @@
 package com.payabli.sdk.telemetry
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
@@ -233,15 +234,13 @@ class TelemetryClientTest {
         }
 
     /**
-     * What the queue evicted rides the next batch that leaves.
+     * What the queue evicted arrives as one event in the next batch.
      *
      * A log line reaches the device and nothing else, so a stream that went quiet and a stream that
-     * overflowed read the same at the far end, which is the one question this count exists to answer. It
-     * travels on a request that is succeeding rather than in one of its own: a report of lost telemetry sent
-     * as telemetry would be queued by the queue that just overflowed.
+     * overflowed read the same at the far end, which is the one question this count exists to answer.
      */
     @Test
-    fun whatTheQueueEvictedIsCarriedByTheNextBatch() =
+    fun evictionsSinceTheLastBatchArriveAsOneOverflowEvent() =
         runTest(timeout = TEST_TIMEOUT) {
             val transport = FakeTransport()
 
@@ -250,16 +249,15 @@ class TelemetryClientTest {
 
                 client.flush()
 
-                assertTrue(
-                    "the count did not reach the wire: ${transport.bodyAsText()}",
-                    transport.bodyAsText().contains(""""droppedSinceLastSend":6"""),
-                )
+                val body = transport.bodyAsText()
+                assertEquals("the count did not arrive as one event: $body", listOf("6"), overflowCounts(body))
+                assertFalse("the batch still carries a count of its own: $body", body.contains("droppedSinceLastSend"))
             }
         }
 
     /** And a batch that lost nothing says nothing, rather than sending a zero on every request. */
     @Test
-    fun aBatchThatLostNothingCarriesNoCount() =
+    fun noEvictionsSendNoOverflowEvent() =
         runTest(timeout = TEST_TIMEOUT) {
             val transport = FakeTransport()
 
@@ -267,6 +265,30 @@ class TelemetryClientTest {
                 repeat(2) { record(client) }
 
                 assertTrue(transport.bodyAsText(), !transport.bodyAsText().contains("dropped"))
+            }
+        }
+
+    /**
+     * The event takes one of the request's places rather than a place past them, and is the batch's last.
+     */
+    @Test
+    fun theOverflowEventTakesOneOfTheRequestsPlaces() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 4, capacity = 6) { client ->
+                repeat(9) { record(client) }
+
+                client.flush()
+
+                val body = transport.bodyAsText()
+                assertEquals("the request carried more than one request may: $body", 4, eventsIn(body))
+                assertEquals("the count did not arrive: $body", listOf("3"), overflowCounts(body))
+                assertEquals(
+                    "the overflow event is not the batch's last: $body",
+                    body.lastIndexOf("\"event\":"),
+                    body.indexOf("\"event\":\"${TelemetryEvents.TELEMETRY_OVERFLOW}\""),
+                )
             }
         }
 
@@ -439,32 +461,106 @@ class TelemetryClientTest {
         }
 
     /**
-     * A refused batch does not take the count with it.
-     *
-     * Its events go back to the front of the queue, so the next batch that is accepted carries both them
-     * and the count the refused one owed: a stream that overflowed while offline arrives reporting both.
+     * A signal sends everything that was waiting when the queue holds an exact number of requests' worth and
+     * a count is waiting, because the overflow event takes one of the first request's places.
      */
     @Test
-    fun aCountSurvivesTheBatchThatWasRefused() =
+    fun oneSignalDrainsAFullQueueAndItsOverflowEvent() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 2, capacity = 4) { client ->
+                repeat(6) { record(client) }
+
+                client.flushAsync()
+
+                assertEquals("an event was left for the timer", 5, transport.eventsSent())
+            }
+        }
+
+    /**
+     * A discarded batch gives its count back, so every request of the drain carries an overflow event and
+     * the signal still reaches everything that was waiting.
+     */
+    @Test
+    fun oneSignalDrainsEverythingWhenEachRequestIsDiscarded() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport.refusing(413)
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 4, capacity = 7) { client ->
+                repeat(9) { record(client) }
+
+                client.flushAsync()
+
+                val queuedEventsSent = transport.bodiesAsText().sumOf { eventsIn(it) - overflowCounts(it).size }
+                assertEquals("an event was left for the timer", 7, queuedEventsSent)
+            }
+        }
+
+    /**
+     * The count is restored beside a refused batch's events, so evictions after the refusal add to it
+     * rather than becoming an event of their own.
+     */
+    @Test
+    fun aRefusedBatchGoesBackWithoutTheOverflowEventAndTheNextCarriesTheRunningTotal() =
         runTest(timeout = TEST_TIMEOUT) {
             val transport = FakeTransport.refusingOnce(500)
 
             withClient(transport, batchSize = 1_000, maxEventsPerRequest = 1_000, capacity = 4) { client ->
                 repeat(10) { record(client) }
                 client.flush()
+                repeat(2) { record(client) }
 
                 client.flush()
 
-                assertEquals(
-                    "the refused batch's events did not go back: ${transport.bodyAsText(1)}",
-                    4,
-                    transport.bodyAsText(1).split("\"schemaVersion\"").size - 1,
-                )
-                assertTrue(
-                    "the refused batch took the count with it: ${transport.bodyAsText(1)}",
-                    transport.bodyAsText(1).contains(""""droppedSinceLastSend":6"""),
-                )
+                val body = transport.bodyAsText(1)
+                assertEquals("the count was lost, doubled or not totalled: $body", listOf("8"), overflowCounts(body))
+                assertEquals("the queue's events and one overflow event: $body", 5, eventsIn(body))
             }
+        }
+
+    /**
+     * A refused batch that goes back into a queue refilled during its send still reports every eviction.
+     *
+     * Events offered while the request is in flight fill the queue, so putting the batch back evicts all of
+     * it. The count it carried survives that, so every event lost is reported.
+     */
+    @Test
+    fun aRefusedBatchEvictedOnItsWayBackKeepsItsCount() =
+        runTest(timeout = TEST_TIMEOUT) {
+            lateinit var client: TelemetryClient
+            var refused = false
+            val transport =
+                FakeTransport {
+                    if (refused) {
+                        FakeTransport.accepted()
+                    } else {
+                        refused = true
+                        repeat(4) { record(client) }
+                        PayabliResponse(statusCode = 500, headers = emptyMap(), body = ByteArray(0))
+                    }
+                }
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 1_000, capacity = 4) {
+                client = it
+                repeat(10) { record(client) }
+                client.flush()
+
+                client.flush()
+
+                val body = transport.bodyAsText(1)
+                assertEquals("evictions went unreported: $body", listOf("10"), overflowCounts(body))
+            }
+        }
+
+    /**
+     * A request that holds one event has no place for the overflow event beside anything else, so it is
+     * refused at construction rather than sending nothing once a count is waiting.
+     */
+    @Test(expected = IllegalArgumentException::class)
+    fun aRequestTooSmallForTheOverflowEventIsRefused() =
+        runTest(timeout = TEST_TIMEOUT) {
+            withClient(FakeTransport(), batchSize = 1, maxEventsPerRequest = 1) { }
         }
 
     // ---- a batch that was not accepted goes back to the front of the queue ------------------------
@@ -563,9 +659,10 @@ class TelemetryClientTest {
 
                 record(client)
                 client.flush()
-                assertTrue(
+                assertEquals(
                     "the count the discarded batch carried was lost: ${transport.bodyAsText(1)}",
-                    transport.bodyAsText(1).contains(""""droppedSinceLastSend":6"""),
+                    listOf("6"),
+                    overflowCounts(transport.bodyAsText(1)),
                 )
             }
         }
@@ -637,6 +734,25 @@ class TelemetryClientTest {
 
                 advanceTimeBy(2.seconds)
                 assertEquals("the next flush did not send the returned batch", 3, transport.sent.size)
+            }
+        }
+
+    /**
+     * With sends refused, only twenty new events send again, not every event on a full queue.
+     *
+     * A refused batch fills the queue it goes back to, so a trigger read off the queue's size fires on every
+     * event after it and resends the whole backlog each time.
+     */
+    @Test
+    fun refusedSendsRetryOnlyOnTwentyNewEvents() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport.refusing(500)
+
+            withClient(transport, batchSize = 20) { client ->
+                repeat(40) { record(client) }
+
+                assertEquals("a refused batch was resent on every new event", 2, transport.sent.size)
+                assertEquals("the returned batch did not go with the next one", 40, eventsIn(transport.bodyAsText(1)))
             }
         }
 
@@ -759,6 +875,15 @@ class TelemetryClientTest {
     ) {
         client.record(TelemetryEvents.SDK_INITIALIZED, mapOf(TelemetryProperty.STATE.key to state))
     }
+
+    private fun eventsIn(body: String): Int = body.split("\"schemaVersion\"").size - 1
+
+    /** The `dropped` value of every overflow event on the body, in the order they were carried. */
+    private fun overflowCounts(body: String): List<String> =
+        Regex(""""event":"${TelemetryEvents.TELEMETRY_OVERFLOW}","properties":\{"dropped":"(\d+)"\}""")
+            .findAll(body)
+            .map { it.groupValues[1] }
+            .toList()
 
     /** The three recorded states, on the body, in the order they were recorded. */
     private fun assertCarriedInOrder(body: String) {

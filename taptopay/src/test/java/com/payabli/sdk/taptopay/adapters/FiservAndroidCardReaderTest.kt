@@ -225,6 +225,39 @@ class FiservAndroidCardReaderTest {
         }
 
     @Test
+    fun `a radio found off while the reader comes up is reported as switched off, not as a reader to retry`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val disabled = CardReaderFailure(ReaderFailureKind.CONTACTLESS_DISABLED)
+            val reader = readerFor(FakeCardReaderGateway(prepareFailure = disabled))
+            reader.configure(readerCredentials())
+
+            val failure = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.ContactlessDisabled)
+            assertSame(disabled, failure?.cause)
+        }
+
+    @Test
+    fun `every other arming failure is a reader that did not come up`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val others =
+                listOf(
+                    ReaderFailureKind.CONTACTLESS_UNAVAILABLE,
+                    ReaderFailureKind.SESSION_UNUSABLE,
+                    ReaderFailureKind.TIMED_OUT,
+                    ReaderFailureKind.UNCLASSIFIED,
+                )
+            for (kind in others) {
+                val reader = readerFor(FakeCardReaderGateway(prepareFailure = CardReaderFailure(kind)))
+                reader.configure(readerCredentials())
+
+                val failure = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+                assertTrue("$kind became $failure", failure is CardReaderException.ArmingFailed)
+            }
+        }
+
+    @Test
     fun `the identifier the payment was opened under is the one the reader is given`() =
         runTest(timeout = TEST_TIMEOUT) {
             val gateway = FakeCardReaderGateway()
@@ -309,6 +342,17 @@ class FiservAndroidCardReaderTest {
             val failure = runCatching { readerFor(dead).startReading(readRequest()) }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is CardReaderException.SessionUnusable)
+        }
+
+    @Test
+    fun `a switched-off radio is refused as its own cause`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val disabled = CardReaderFailure(ReaderFailureKind.CONTACTLESS_DISABLED)
+            val gateway = FakeCardReaderGateway(readFailure = disabled)
+
+            val failure = runCatching { readerFor(gateway).startReading(readRequest()) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.ContactlessDisabled)
         }
 
     @Test

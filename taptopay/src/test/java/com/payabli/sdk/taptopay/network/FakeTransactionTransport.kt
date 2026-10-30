@@ -79,3 +79,20 @@ internal fun rejected(
     code: String = "E01",
     reason: String = "Rejected",
 ): String = """{"code":"$code","reason":"$reason"}"""
+
+/**
+ * The 400 body refusing one field of an opening, in the shape the service sends: [message] as the detail and as
+ * the field's one failure.
+ *
+ * @param message the refusal's text, with no character JSON would need escaped.
+ * @param code the service's own code.
+ * @param field the field the refusal names.
+ * @return the body.
+ */
+internal fun fieldRefusal(
+    message: String,
+    code: String = "E7020",
+    field: String = "customerData",
+): String =
+    """{"type":"https://docs.payabli.com/","title":"Bad Request","status":400,"detail":"$message",""" +
+        """"code":"$code","errors":{"$field":[{"message":"$message","suggestion":""}]}}"""

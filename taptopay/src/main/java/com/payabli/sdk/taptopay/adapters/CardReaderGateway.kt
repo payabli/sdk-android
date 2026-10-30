@@ -37,8 +37,11 @@ internal enum class ReaderFailureKind {
     /** The reader holds no usable session. Only bringing it up again fixes this. */
     SESSION_UNUSABLE,
 
-    /** The contactless radio is off, or this handset has none. */
+    /** This handset has no contactless radio the reader can use. */
     CONTACTLESS_UNAVAILABLE,
+
+    /** The contactless radio is switched off. The remedy is the merchant's alone: turn it on. */
+    CONTACTLESS_DISABLED,
 
     /** The reader did not answer inside the time it was given. */
     TIMED_OUT,

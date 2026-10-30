@@ -181,6 +181,7 @@ internal class ScriptedPayInTransport(
  */
 internal class GatedPayInTransport(
     private val response: PayabliResponse,
+    private val failure: Throwable? = null,
 ) : PayabliTransport {
     private val released = CompletableDeferred<Unit>()
 
@@ -195,6 +196,7 @@ internal class GatedPayInTransport(
         sent += request
         arrived.complete(Unit)
         released.await()
+        failure?.let { throw it }
         return response
     }
 
@@ -215,6 +217,10 @@ internal class GatedPayInTransport(
             GatedPayInTransport(
                 PayabliResponse(statusCode, emptyMap(), body.toByteArray(Charsets.UTF_8)),
             )
+
+        /** Holds the request past the hand-off, then throws [failure] once released. */
+        fun failingWith(failure: Throwable): GatedPayInTransport =
+            GatedPayInTransport(PayabliResponse(200, emptyMap(), ByteArray(0)), failure)
     }
 }
 

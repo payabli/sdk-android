@@ -287,6 +287,33 @@ class TelemetryCatalogTest {
         )
     }
 
+    /** The eviction count is declared for the overflow event, and for no other. */
+    @Test
+    fun droppedIsCarriedByTheOverflowEventOnly() {
+        assertEquals(
+            mapOf(TelemetryProperty.DROPPED.key to "6"),
+            TelemetryCatalog.scrub(TelemetryEvents.TELEMETRY_OVERFLOW, mapOf(TelemetryProperty.DROPPED.key to "6")),
+        )
+        val carriers =
+            TelemetryCatalog.events.filter {
+                TelemetryProperty.DROPPED.key in
+                    TelemetryCatalog.allowedKeys(it)
+            }
+        assertEquals(listOf(TelemetryEvents.TELEMETRY_OVERFLOW), carriers)
+    }
+
+    /** The overflow event waits for its batch: it reports a gap, not a failure that needs sending now. */
+    @Test
+    fun theOverflowEventWaitsForItsBatch() {
+        assertFalse(TelemetryEvents.TELEMETRY_OVERFLOW in TelemetryCatalog.immediateEvents)
+        assertFalse(
+            TelemetryCatalog.forcesSend(
+                TelemetryEvents.TELEMETRY_OVERFLOW,
+                mapOf(TelemetryProperty.DROPPED.key to "6"),
+            ),
+        )
+    }
+
     /** A start, or a plain success, waits for its batch. Most of the stream is this. */
     @Test
     fun anEventThatReportsNothingWrongWaits() {

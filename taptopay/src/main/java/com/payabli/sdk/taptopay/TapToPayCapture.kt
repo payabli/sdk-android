@@ -11,16 +11,19 @@ public enum class TapToPayCapture {
     /**
      * No money moved, so charging again cannot take it twice.
      *
-     * Either the card was never asked for, or it was asked for and refused. A refusal is an answer, which
-     * is what separates it from [UNKNOWN].
+     * Either the card was never asked for, or an answer says nothing was taken: the card was refused, the
+     * processor has no record of the payment, or the reader's session was gone before any card was read. The
+     * answer is what separates it from [UNKNOWN].
      */
     NOT_CHARGED,
 
     /**
-     * The card was asked for and what happened to it is unknown.
+     * The processor may have taken the sale, and this SDK does not know whether it did.
      *
      * The processor takes the sale before the reader hands the answer back, so a tap that ends without one
-     * may still have moved money. Reconcile the payment rather than retrying it.
+     * may still have moved money. A retry that resent the key of such a sale and failed before learning its
+     * outcome is unknown too, whatever stopped it and even when this call asked for no card. Reconcile the
+     * payment rather than retrying it.
      */
     UNKNOWN,
 

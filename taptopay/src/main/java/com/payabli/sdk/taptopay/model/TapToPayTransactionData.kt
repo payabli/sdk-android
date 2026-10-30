@@ -31,13 +31,9 @@ public class TapToPayPaymentDetails(
 /**
  * Who is paying.
  *
- * Which fields a paypoint requires is the service's business and differs between them, so every field is
- * optional and none is checked against a paypoint's rules here.
- *
- * **One thing is checked: that the payer is identified at all.** A charge naming nobody is refused by every
- * paypoint this has been sent to, and refused on the call that opens the payment — after the terminal is set
- * up and before a card is asked for. Nothing has been taken from anyone at that point, so what the local
- * check saves is a round trip and a reader session rather than a payment.
+ * Every field is optional and none is checked here, so an empty instance is sent as a charge naming no
+ * payer. A paypoint that requires customer fields refuses such a charge before any card is read, naming the
+ * fields on [com.payabli.sdk.taptopay.TapToPayException.refusal].
  */
 public class TapToPayCustomerData(
     public val customerId: Long? = null,
@@ -65,21 +61,6 @@ public class TapToPayCustomerData(
     /** Every field here is personal data, so none of them is printed. */
     override fun toString(): String = "TapToPayCustomerData"
 }
-
-/**
- * Whether this names a payer at all.
- *
- * [customerId] counts, even though only the other three are measured. What is known is that a body whose
- * `firstName`, `lastName` and `customerNumber` are all empty is refused; whether an id alone is enough is
- * the service's answer to give. Refusing it here would break a caller the service would have accepted,
- * which is worse than the late refusal this check exists to avoid.
- */
-internal val TapToPayCustomerData.identifiesSomeone: Boolean
-    get() =
-        customerId != null ||
-            !customerNumber.isNullOrBlank() ||
-            !firstName.isNullOrBlank() ||
-            !lastName.isNullOrBlank()
 
 /** What the payment settles, where the paypoint tracks invoices. */
 public class TapToPayInvoiceData(

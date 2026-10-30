@@ -116,6 +116,17 @@ class TapToPayViewModelTest {
             )
         }
 
+    @Test
+    fun `a failed action's line is the message alone, with no step name`() =
+        runTest {
+            val viewModel = model()
+            viewModel.enableTerminal()
+            viewModel.setAmount("twelve pounds")
+            viewModel.charge()
+
+            assertEquals("✗ That is not an amount", viewModel.uiState.value.resultText)
+        }
+
     /** Started and activated, which is what a charge needs from the demo device. */
     private fun TapToPayViewModel.readyTerminal() {
         enableTerminal()
@@ -296,6 +307,17 @@ class TapToPayViewModelTest {
         }
 
     @Test
+    fun `a failure after a refused reader prints the same way`() =
+        runTest {
+            val viewModel = model(terminal = RefusedDeviceTerminal())
+            viewModel.enableTerminal()
+            viewModel.setAmount("12.34")
+            viewModel.charge()
+
+            assertEquals("✗ not reached", viewModel.uiState.value.resultText)
+        }
+
+    @Test
     fun `the buttons are released once an action finishes`() =
         runTest {
             val viewModel = model()
@@ -369,8 +391,6 @@ private class RefusedDeviceTerminal : TerminalController {
         MutableStateFlow(
             "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID.",
         ).asStateFlow()
-
-    override fun currentFailureReason(): TerminalFailureReason? = TerminalFailureReason.DeviceIneligible
 
     override suspend fun initialize(): Result<Unit> =
         Result.failure(

@@ -26,8 +26,10 @@ its session there first.
 - A 64-bit phone. A 32-bit-only phone can't take Tap to Pay payments.
 - Developer options and USB debugging switched off, and the phone **restarted** after switching them off.
   The card reader refuses a phone it considers to be in developer mode until it restarts.
-- In production, your app installed from Google Play. Ask Payabli whether your sandbox paypoint accepts a
-  build installed another way. A build installed with `adb install` can be refused by the card reader.
+- In production, your app installed from Google Play. A build installed with `adb install` can be refused
+  by the card reader.
+- For Tap to Pay on Android, contact Payabli support for the specifics: enrolling your app with the card
+  reader, and testing on sandbox.
 
 `PayabliTTP.isSupported(context)` checks what the phone reports about itself, without a session or a
 network call. `false` is reliable. `true` doesn't guarantee a payment, since it can't see the paypoint or
@@ -218,7 +220,7 @@ order.paymentTransId = result.paymentTransId // store it; don't log it
 | Parameter | Type | Notes |
 |---|---|---|
 | `paymentDetails` | `TapToPayPaymentDetails` | `amount`, the total charged, is required. `serviceFee` defaults to zero. `serviceFee` is part of `amount`, not added to it: the card is charged `amount`. Leave `currency` out to charge in the paypoint's currency. `paymentDescription` is optional. |
-| `customer` | `TapToPayCustomerData` | Required. Name the payer with at least one of `firstName`, `lastName`, `customerNumber` or `customerId`; a charge that names nobody is refused before the card is read. The other fields are optional. |
+| `customer` | `TapToPayCustomerData` | Optional, and sent as given, an empty one included. A paypoint that requires customer fields the charge did not carry refuses it before the card is read: `TapToPayException.refusal` is `TapToPayChargeRefusal.CustomerDataRefused`, whose `requiredFields` names every field to set before charging again. |
 | `invoice` | `TapToPayInvoiceData` | Optional. `invoiceNumber`. |
 | `orderDescription` | `String?` | Optional. |
 
@@ -255,10 +257,13 @@ These Tap to Pay causes are ones your app handles, with their codes:
 | `ACTIVATION_ATTEMPTS_EXHAUSTED` | 3026 | `CONFIGURATION` | Too many incorrect activation codes were entered. |
 | `ACTIVATION_CODE_NOT_ISSUED` | 3027 | `CONFIGURATION` | No activation code has been issued for this device. |
 | `DEVICE_NOT_PENDING` | 3028 | `INVALID_REQUEST` | This device is not waiting for activation. |
+| `PAYMENT_REFERENCE_OPEN` | 1023 | `INVALID_REQUEST` | Another call for this payment is still under way or its outcome is unknown, so this one was not sent. Check that payment's outcome first. |
 | `TERMINAL_NOT_READY` | 3029 | `INVALID_REQUEST` | The terminal is not ready for this call. |
 | `TOO_MANY_OPEN_CHARGES` | 3030 | `INVALID_REQUEST` | Too many charges are waiting to be resolved. |
 | `PAYMENT_NOT_HELD` | 3031 | `INVALID_REQUEST` | No captured payment is held under that identifier. |
 | `CHARGE_NOT_FINISHED` | 3034 | `OUTCOME_UNKNOWN` | An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes. |
+| `PAYMENT_NOT_TAKEN` | 3035 | `RETRY_LATER` | The payment was not taken, and the card was not charged. Try again. |
+| `CONTACTLESS_DISABLED` | 3036 | `CONFIGURATION` | Contactless (NFC) is turned off on this device. Turn it on in Settings. |
 
 It also carries `capture` and `paymentTransId`:
 
@@ -272,6 +277,12 @@ Call `closeCapturedCharge` again only while the close is unconfirmed. Once one s
 holds the payment, and a further call fails with `capture` `UNKNOWN`. It works only for the payment most
 recently taken for this entry point in this process; for anything else, reconcile with the transaction
 lookup.
+
+One charge runs at a time across every `PayabliTTP` in the process. A charge made while another runs is refused
+before anything is sent. A retry fails with `PAYMENT_REFERENCE_OPEN` (1023) while the key it would be handed, the
+newest held for its entry point, is being sent, whichever payment it describes; any other charge fails with
+`TERMINAL_NOT_READY` (3029). Follow `capture`: `UNKNOWN` means the retry describes a payment that may have been
+charged, so find it before charging again.
 
 ## Reference
 
@@ -296,8 +307,9 @@ lookup.
 |---|---|
 | `CONFIGURATION_REJECTED` | The paypoint, the device or its setup is missing something. Retrying won't help. If Google Play on the phone is missing, out of date or signed out, fix that on the phone; otherwise contact Payabli. |
 | `DEVICE_SETUP_REQUIRED` | This device's setup was refused or revoked. Call `initialize()`, which sets the device up again. If it lands here again, check that the app came from Google Play. |
-| `SERVICE_UNAVAILABLE` | The service or the reader wasn't available. Try again later. |
+| `SERVICE_UNAVAILABLE` | The service or the reader wasn't available, or the token was refused again after the SDK renewed it. If the error thrown was `TOKEN_EXPIRED`, waiting won't help: fix the credential, then call `initialize()` again. If that fails at once and your token provider isn't called, the session's credential is finished: call `PayabliSession.initialize`, then create the terminal again with `PayabliTTP.create(session, context)`. Otherwise try again when someone asks to, or wait longer before each attempt. |
 | `DEVICE_INELIGIBLE` | This phone can't take Tap to Pay payments: the hardware or Android version is missing something, or the card reader refused the phone. Check developer options and restart the phone. If a phone that meets the requirements still lands here, contact Payabli before replacing it. |
+| `CONTACTLESS_DISABLED` | Contactless (NFC) is turned off on the phone. Turn it on in Settings, then call `initialize()` or charge again. |
 | `SDK_INTERNAL_ERROR` | Report it to Payabli. |
 | `DEVICE_KEY_UNAVAILABLE` | The phone's key facility or secure storage failed, so the SDK can't tell whether the device's keys still work. Initialize again. If it keeps failing, the phone is the cause. |
 | `SESSION_ENDED` | This `PayabliTTP`'s `PayabliSession` was replaced or ended; create a new one with `PayabliTTP.create(session, context)` from the current session. |

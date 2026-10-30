@@ -18,13 +18,10 @@ name: Live flows
 # app asks an integrator's backend. They are separate `gradlew` calls because asking for the walkthrough
 # narrows `:example` to it, and because each installs a session in its own process.
 #
-# ## Every action is pinned here, and none is in the nightly
+# ## Every action is pinned
 #
-# The difference is the credential. A step cannot be isolated from code that ran earlier in the same job, so
-# every action in this job is one that could reach the client secret, whoever publishes it. `nightly.yml`
-# records why it stays on moving tags and that reasoning holds there, since it holds no payment credential.
-#
-# Its premise was that nothing bumps a pin, which `.github/dependabot.yml` now answers.
+# As in every workflow here. It matters most in this job: a step cannot be isolated from code that ran
+# earlier in the same job, so every action in it is one that could reach the client secret.
 #
 # ## What the credential can do
 #
@@ -48,19 +45,22 @@ on:
         required: false
         default: ''
         type: string
-    secrets:
-      client-id:
+      secrets-suffix:
+        description: >-
+          Which of ci-protected's credential sets this run reads, `QA` or `SBX`: the jobs below read
+          `PAYABLI_CLIENT_ID_<suffix>`, `PAYABLI_CLIENT_SECRET_<suffix>` and `PAYABLI_ENTRY_<suffix>`. A job that
+          calls this workflow cannot name an environment, so the secrets are read here, from the environment,
+          and the caller passes none.
         required: true
-      client-secret:
-        required: true
-      entry-point:
-        required: true
-      slack-bot-token:
-        description: Absent, the run still decides its own verdict and posts nothing.
-        required: false
+        type: string
 
 permissions:
   contents: read
+
+# `bash` turns on pipefail, so a failure left of a `|` fails the step.
+defaults:
+  run:
+    shell: bash
 
 env:
   # Never --info or --debug here: verbose Gradle logs can print repository credentials.
@@ -69,6 +69,8 @@ env:
 jobs:
   live:
     name: ${{ inputs.environment }}
+    # The client credentials are environment secrets, released only to a run on main, release/* or hotfix/*.
+    environment: ci-protected
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -98,7 +100,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: AVD cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: avd-cache
         with:
           path: |
@@ -146,9 +148,9 @@ jobs:
         env:
           PORT: '8787'
           ENVIRONMENT: ${{ inputs.environment }}
-          PAYABLI_CLIENT_ID: ${{ secrets.client-id }}
-          PAYABLI_CLIENT_SECRET: ${{ secrets.client-secret }}
-          PAYABLI_ENTRY: ${{ secrets.entry-point }}
+          PAYABLI_CLIENT_ID: ${{ secrets[format('PAYABLI_CLIENT_ID_{0}', inputs.secrets-suffix)] }}
+          PAYABLI_CLIENT_SECRET: ${{ secrets[format('PAYABLI_CLIENT_SECRET_{0}', inputs.secrets-suffix)] }}
+          PAYABLI_ENTRY: ${{ secrets[format('PAYABLI_ENTRY_{0}', inputs.secrets-suffix)] }}
           API_ORIGIN: ${{ inputs.api-origin }}
         run: |
           # The allow-list moves with the base URL. The server's committed default names sandbox and
@@ -216,7 +218,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         env:
           PAYABLI_LIVETEST_ENVIRONMENT: ${{ inputs.environment }}
-          PAYABLI_LIVETEST_ENTRY_POINT: ${{ secrets.entry-point }}
+          PAYABLI_LIVETEST_ENTRY_POINT: ${{ secrets[format('PAYABLI_ENTRY_{0}', inputs.secrets-suffix)] }}
           PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787
           # The environment the run is for, added to the two the checkout carries. Empty for one it already
           # names, and `:core`'s generator refuses anything that is not an https payabli.com origin.
@@ -290,6 +292,8 @@ jobs:
   report:
     name: Report ${{ inputs.environment }} to Slack
     needs: live
+    # The bot token is an environment secret, released only to a run on main, release/* or hotfix/*.
+    environment: ci-protected
     continue-on-error: true
     # Not `always()`. A superseded or hand-cancelled run is silent on purpose; a job that died on its own is
     # not. Same reasoning as the nightly's report job, which states it at length.
@@ -317,7 +321,7 @@ jobs:
       - name: Post the live report
         timeout-minutes: 5
         env:
-          SLACK_BOT_TOKEN: ${{ secrets.slack-bot-token }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
           LIVE_ENVIRONMENT: ${{ inputs.environment }}
           # So a run with no results can say what became of the job instead of guessing.
