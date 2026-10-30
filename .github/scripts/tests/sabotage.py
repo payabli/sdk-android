@@ -2919,13 +2919,16 @@ MUTATIONS = [
 
     # The source branch. A ruleset cannot name it, so this job is the whole rule.
     ("Source branch refuses a hotfix branch", SOURCE_BRANCH, "workflows",
-     "            release/?*|hotfix/?*|dependabot/?*) ;;\n", "            release/?*|dependabot/?*) ;;\n"),
+     "            release/?*|hotfix/?*|dependabot/?*|ci/?*) ;;\n", "            release/?*|dependabot/?*|ci/?*) ;;\n"),
 
     ("Source branch refuses a Dependabot branch", SOURCE_BRANCH, "workflows",
-     "            release/?*|hotfix/?*|dependabot/?*) ;;\n", "            release/?*|hotfix/?*) ;;\n"),
+     "            release/?*|hotfix/?*|dependabot/?*|ci/?*) ;;\n", "            release/?*|hotfix/?*|ci/?*) ;;\n"),
+
+    ("Source branch refuses a ci branch", SOURCE_BRANCH, "workflows",
+     "            release/?*|hotfix/?*|dependabot/?*|ci/?*) ;;\n", "            release/?*|hotfix/?*|dependabot/?*) ;;\n"),
 
     ("Source branch accepts any branch with a slash in it", SOURCE_BRANCH, "workflows",
-     "            release/?*|hotfix/?*|dependabot/?*) ;;\n", "            */?*) ;;\n"),
+     "            release/?*|hotfix/?*|dependabot/?*|ci/?*) ;;\n", "            */?*) ;;\n"),
 
     ("Source branch reports the rule and passes anyway", SOURCE_BRANCH, "workflows",
      "'$HEAD_REF'.\"\n              exit 1\n", "'$HEAD_REF'.\"\n              exit 0\n"),

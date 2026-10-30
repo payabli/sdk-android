@@ -29,7 +29,7 @@ jobs:
     steps:
       # Through the environment, so a branch name is never parsed as shell. A fork's branch can carry any
       # name, so the branch has to be this repository's before its name means anything.
-      - name: Check the pull request comes from a release, hotfix or Dependabot branch
+      - name: Check the pull request comes from a release, hotfix, Dependabot or ci branch
         env:
           HEAD_REF: ${{ github.head_ref }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
