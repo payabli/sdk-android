@@ -7,7 +7,7 @@ package com.payabli.sdk.core {
     field public static final boolean DEBUG = false;
     field public static final String LIBRARY_PACKAGE_NAME = "com.payabli.sdk.core";
     field public static final String SDK_IDENTIFIER = "com.payabli.sdk";
-    field public static final String SDK_VERSION = "0.1.1";
+    field public static final String SDK_VERSION = "0.2.0";
   }
 
   public final class HostBindings {
