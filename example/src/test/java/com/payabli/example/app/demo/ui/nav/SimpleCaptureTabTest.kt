@@ -10,19 +10,18 @@ import org.junit.Test
  * Which tabs the bar shows, which is the whole of what the setting decides.
  *
  * The bar filters on [TopLevelDestination.isOptional], so the arithmetic is here rather than in a Compose
- * test: four items without the setting and five with it, and the four are the capability areas this app is
- * for.
+ * test. How many tabs there are without the setting depends on the variant, and `CardPresentTabTest` in each
+ * variant's tests says which.
  */
 class SimpleCaptureTabTest {
     @Test
-    fun `the bar is four items until the setting is on`() {
-        assertEquals(4, shown(simpleCaptureOn = false).size)
+    fun `the tab is absent until the setting is on`() {
         assertFalse(TopLevelDestination.SimpleCapture in shown(simpleCaptureOn = false))
     }
 
     @Test
-    fun `the setting adds the fifth`() {
-        assertEquals(5, shown(simpleCaptureOn = true).size)
+    fun `the setting adds that one tab`() {
+        assertEquals(shown(simpleCaptureOn = false).size + 1, shown(simpleCaptureOn = true).size)
         assertTrue(TopLevelDestination.SimpleCapture in shown(simpleCaptureOn = true))
     }
 

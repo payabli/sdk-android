@@ -150,7 +150,7 @@ UNIT_XML = "core/build/test-results/testDebugUnitTest/TEST-com.payabli.sdk.core.
 INST_XML = "core/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
 PAYIN_INST_XML = "payin/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
 COV_XML = "core/build/reports/coverage/test/debug/report.xml"
-EXAMPLE_COV_XML = "example/build/reports/coverage/test/debug/report.xml"
+EXAMPLE_COV_XML = "example/build/reports/coverage/test/cardPresent/debug/report.xml"
 SRC = "core/src/test/java/com/payabli/sdk/core/RetryTest.kt"
 SUBJ = "core/src/main/java/com/payabli/sdk/core/Retry.kt"
 
@@ -506,8 +506,8 @@ def test_collector():
     )
     check("C22 both variants present is green", "verdict=green" in r["output"], r["output"])
 
-    # C21 the sample app's coverage is read under `debug`, as every module's is, and a report at a flavored
-    # path is not read: no build writes one.
+    # C21 the sample app's coverage is read from its `cardPresent` variant, the one the card-present job measures,
+    # and a report at the old `withTelemetry` flavor's path is not read: no build writes one.
     r = run_collector(make_repo({
         UNIT_XML: junit("S", [("a", None)]),
         INST_XML: junit("I", [("b", None)]),
@@ -4679,14 +4679,18 @@ def test_workflows():
     # print it. Every secret is an environment secret, and a job reads one only from an environment that
     # releases it to main, release/* and hotfix/* (ci-protected), to the release or the mirror after a reviewer, or,
     # for the one job that builds a pull request's code with the card reader credential, after a reviewer
-    # approves that run (ci-pull-request). A job calling a reusable workflow cannot name an environment, so
-    # it passes no secret either: the called job reads its own.
-    # The live callers pass no secret and name the credential set the called jobs read from ci-protected:
-    # a qa run reading the sandbox credentials would authenticate against the wrong service.
+    # approves that run (ci-pull-request). A job calling a reusable workflow cannot name an environment, and
+    # the called job can read an environment secret only when the caller passes it by name, so the caller
+    # passes exactly its own set and the called job, in ci-protected, resolves them.
+    # A qa run reading the sandbox credentials would authenticate against the wrong service, and a secret not
+    # passed reads as an empty string with no error, which is how run 40999428148 lost its entry point.
     for name, job_name, suffix in (("live-qa.yml", "qa", "QA"), ("live-sandbox.yml", "sandbox", "SBX")):
         caller = ((workflow_doc(name).get("jobs") or {}).get(job_name) or {})
-        check(f"W19 {name} passes no secret and reads the {suffix} credentials",
-              "secrets" not in caller and (caller.get("with") or {}).get("secrets-suffix") == suffix,
+        own = [f"PAYABLI_CLIENT_ID_{suffix}", f"PAYABLI_CLIENT_SECRET_{suffix}", f"PAYABLI_ENTRY_{suffix}",
+               "SLACK_BOT_TOKEN"]
+        expected = {key: "${{ secrets.%s }}" % key for key in own}
+        check(f"W19 {name} passes the {suffix} credentials by name, and no other secret",
+              caller.get("secrets") == expected and (caller.get("with") or {}).get("secrets-suffix") == suffix,
               f"secrets={caller.get('secrets')} suffix={(caller.get('with') or {}).get('secrets-suffix')}")
     CARD_PRESENT_ENV = "${{ github.event_name == 'pull_request' && 'ci-pull-request' || 'ci-protected' }}"
     allowed = {"ci-protected", "release", "card-reader-mirror"}
@@ -4700,6 +4704,10 @@ def test_workflows():
             held = sorted((set(re.findall(r"secrets\.([A-Za-z0-9_]+)", dumped)) - {"GITHUB_TOKEN"})
                           | ({"secrets[...]"} if "secrets[" in dumped else set()))
             if not held and job.get("secrets") != "inherit":
+                continue
+            # A caller of a workflow in this repository is held by the row above, and the called jobs by this
+            # loop, which reads them in their own file.
+            if str(job.get("uses", "")).startswith("./.github/workflows/") and job.get("secrets") != "inherit":
                 continue
             environment = " ".join(str(job.get("environment", "")).split())
             # The two jobs that build a pull request's code with the card reader credential.

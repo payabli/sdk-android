@@ -36,7 +36,7 @@ import org.junit.runner.RunWith
  *
  * ```
  * adb -s <serial> reverse tcp:8787 tcp:8787
- * ANDROID_SERIAL=<serial> ./gradlew :example:connectedDebugAndroidTest \
+ * ANDROID_SERIAL=<serial> ./gradlew :example:connectedCardNotPresentDebugAndroidTest \
  *   -Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true \
  *   -Ppayabli.demo.environment=sandbox -Ppayabli.demo.entryPoint=<entry>
  * ```

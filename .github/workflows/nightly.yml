@@ -125,8 +125,8 @@ jobs:
       #
       # The coverage task rather than the plain test task, because it depends on it: this writes both the
       # JUnit results and the JaCoCo report, and the Slack summary reports coverage as well as failures.
-      # :example is not here: it links :taptopay, so its build needs the credential and it runs in the
-      # `card-present` job.
+      # :example is not here: its `cardPresent` variant links :taptopay, so its build needs the credential and
+      # it runs in the `card-present` job.
       #
       # continue-on-error throughout, so a failure still reaches Slack with its detail instead of aborting
       # the job at the first red suite. The final step turns any failure back into a red run.
@@ -314,7 +314,7 @@ jobs:
           PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
           PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
         run: ./gradlew --no-daemon --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
-          :example:createDebugUnitTestCoverageReport
+          :example:createCardPresentDebugUnitTestCoverageReport
 
       - name: Pack the results
         if: always()

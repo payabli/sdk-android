@@ -115,7 +115,7 @@ android {
         // started skipping. It also needs a reachable token server and a configured paypoint, which is why
         // asking for it is a deliberate flag and not a default.
         //
-        //   ./gradlew :example:connectedDebugAndroidTest -Ppayabli.sampleWalkthrough=true \
+        //   ./gradlew :example:connectedCardNotPresentDebugAndroidTest -Ppayabli.sampleWalkthrough=true \
         //     -Ppayabli.demo.prefill=true -Ppayabli.demo.environment=sandbox -Ppayabli.demo.entryPoint=<entry>
         val walkthrough = "com.payabli.example.app.SampleWalkthroughTest"
         val excluded = mutableListOf<String>()
@@ -150,6 +150,16 @@ android {
         if (excluded.isNotEmpty()) {
             testInstrumentationRunnerArguments["notClass"] = excluded.joinToString(",")
         }
+    }
+
+    // Two variants, one per artifact split. `cardPresent` links :taptopay, which resolves the card reader from a
+    // credentialed repository and carries an arm64-only native library. `cardNotPresent` links neither, so it
+    // builds with no `payabli.maven.*` credential and installs on an x86_64 emulator, which is what the live
+    // walkthrough runs on. The Tap to Pay screen and its tab are in `src/cardPresent` only.
+    flavorDimensions += "reader"
+    productFlavors {
+        create("cardPresent") { dimension = "reader" }
+        create("cardNotPresent") { dimension = "reader" }
     }
 
     // **The release variant exists for one reason: the card reader vendor signs a release artifact.**
@@ -206,9 +216,9 @@ dependencies {
     implementation(project(":payin"))
 
     // The SDK's card-present module, which the Tap to pay screen drives. It resolves from a credentialed
-    // repository, so every job that builds this app needs that credential; ci.yml puts it beside :taptopay
-    // for that reason.
-    implementation(project(":taptopay"))
+    // repository, so every job that builds the `cardPresent` variant needs that credential; ci.yml puts it beside
+    // :taptopay for that reason.
+    "cardPresentImplementation"(project(":taptopay"))
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

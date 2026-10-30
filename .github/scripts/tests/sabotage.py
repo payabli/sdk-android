@@ -104,7 +104,7 @@ SONAR = WORKFLOW_DIR / "sonar.yml"
 # The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
 # no longer matches the file reports itself invalid rather than caught, and two copies drift apart silently.
 WALKTHROUGH_COMMAND = (
-    "            ./gradlew :example:connectedDebugAndroidTest "
+    "            ./gradlew :example:connectedCardNotPresentDebugAndroidTest "
     "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true"
 )
 # The nightly's instrumented module list, quoted by four mutations below. One spelling, for the reason the
@@ -642,8 +642,10 @@ MUTATIONS = [
     # indicator and the loader strips it, so the shell receives the command it always ran and the
     # mutation would pass for a reason that has nothing to do with the check.
     ("CI negates a unit suite, so a red one reports success", CI, "workflows",
-     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
-     '        run: "! ./gradlew :core:test :payin:test :telemetry:test :testutils:test"\n'),
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n"
+     "          :example:testCardNotPresentDebugUnitTest\n",
+     '        run: "! ./gradlew :core:test :payin:test :telemetry:test :testutils:test'
+     ' :example:testCardNotPresentDebugUnitTest"\n'),
 
     # Nothing is declared: no continue-on-error, no shell override, and the command still exits 0 after
     # a red suite. The run is green, and a release can name its commit.
@@ -1244,6 +1246,12 @@ MUTATIONS = [
     ("Slack link promises a full trace again", POSTER, "poster",
      "<{run_url}|stack trace>", "<{run_url}|full trace>"),
 
+    # C21. The sample app's report is under its `cardPresent` variant; read as a library's, it is never found and
+    # the summary says the module went unmeasured.
+    ("The sample app's coverage is read where no variant writes it", COLLECTOR, "collector",
+     'COVERAGE_REPORTS = {"example": "build/reports/coverage/test/cardPresent/debug/report.xml"}',
+     'COVERAGE_REPORTS = {}'),
+
     ("Trace truncation keeps only the head", COLLECTOR, "collector",
      "    return (\n        trace[:head]",
      "    return (\n        trace[:MAX_TRACE_CHARS] + \"\" if True else trace[:head]"),
@@ -1410,7 +1418,7 @@ MUTATIONS = [
 
     ("A live setting is passed as a gradle argument, putting it in a command line", LIVE_FLOWS, "workflows",
      WALKTHROUGH_COMMAND,
-     "            ./gradlew :example:connectedDebugAndroidTest "
+     "            ./gradlew :example:connectedCardNotPresentDebugAndroidTest "
      "-Ppayabli.sampleWalkthrough=true "
      "-Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\""),
 
@@ -1452,7 +1460,7 @@ MUTATIONS = [
     ("The emulator script is written with a line continuation again", LIVE_FLOWS, "workflows",
      WALKTHROUGH_COMMAND,
      "            ./gradlew \\\n"
-     "              :example:connectedDebugAndroidTest "
+     "              :example:connectedCardNotPresentDebugAndroidTest "
      "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true"),
 
     # The origin an environment outside the checkout arrives by. Written in the file it is the address this
@@ -2842,8 +2850,16 @@ MUTATIONS = [
     ("The qa live run reads the sandbox credentials", LIVE_QA, "workflows",
      "      secrets-suffix: QA\n", "      secrets-suffix: SBX\n"),
 
-    ("The sandbox live caller passes a repository secret again", LIVE_SANDBOX, "workflows",
-     "      secrets-suffix: SBX\n", "      secrets-suffix: SBX\n    secrets:\n      client-secret: ${{ secrets.PAYABLI_CLIENT_SECRET_SBX }}\n"),
+    # Run 40999428148: a caller that passes nothing leaves every environment secret empty, with no error.
+    ("The sandbox live caller stops passing its secrets, so the run reads empty values", LIVE_SANDBOX, "workflows",
+     "    secrets:\n      PAYABLI_CLIENT_ID_SBX: ${{ secrets.PAYABLI_CLIENT_ID_SBX }}\n", "    with_secrets_dropped:\n"),
+
+    ("The sandbox live caller passes the qa entry point", LIVE_SANDBOX, "workflows",
+     "      PAYABLI_ENTRY_SBX: ${{ secrets.PAYABLI_ENTRY_SBX }}", "      PAYABLI_ENTRY_SBX: ${{ secrets.PAYABLI_ENTRY_QA }}"),
+
+    ("The qa live caller passes every secret it can reach", LIVE_QA, "workflows",
+     "    secrets:\n      PAYABLI_CLIENT_ID_QA: ${{ secrets.PAYABLI_CLIENT_ID_QA }}\n",
+     "    secrets: inherit\n    unused:\n      PAYABLI_CLIENT_ID_QA: ${{ secrets.PAYABLI_CLIENT_ID_QA }}\n"),
 
     ("The live flows read their credentials without the environment", LIVE_FLOWS, "workflows",
      "    # The client credentials are environment secrets, released only to a run on main, release/* or hotfix/*.\n    environment: ci-protected\n", ""),

@@ -62,12 +62,14 @@ jobs:
           # a licensing decision rather than a build one.
           cache-provider: basic
 
-      # :taptopay needs a credential fork PRs cannot have; see the card-present job. :example is there
-      # too, and not here, because it links :taptopay for the Tap to pay screen and so resolves the card
-      # reader as well. :payabli-android re-exports :taptopay, so it resolves the reader too.
+      # :taptopay needs a credential fork PRs cannot have; see the card-present job. :example's `cardPresent`
+      # variant is there too, because it links :taptopay for the Tap to pay screen and so resolves the card
+      # reader as well. Its `cardNotPresent` variant links no reader, so it builds here, where the live
+      # walkthrough's build is proved without the credential. :payabli-android re-exports :taptopay, so it
+      # resolves the reader too.
       - name: Build
         run: ./gradlew :core:assembleDebug :payin:assembleDebug :telemetry:assembleDebug
-          :testutils:assembleDebug
+          :testutils:assembleDebug :example:assembleCardNotPresentDebug
 
       # The public-surface gate runs in its own workflow, on the pull request: a release names a
       # commit that passed this workflow on its release branch, so a gate inside it is one a release
@@ -75,6 +77,7 @@ jobs:
 
       - name: Unit tests
         run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test
+          :example:testCardNotPresentDebugUnitTest
 
       # build-logic is an included build, so no task in the main build reaches its tests.
       - name: Convention plugin tests
@@ -343,11 +346,11 @@ jobs:
         run: ./gradlew :taptopay:ktlintCheck :payabli-android:ktlintCheck :example:ktlintCheck
 
       - name: Android Lint
-        run: ./gradlew :taptopay:lint :payabli-android:lint :example:lint
+        run: ./gradlew :taptopay:lint :payabli-android:lint :example:lintCardPresentDebug
 
       - name: Coverage
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
-          :example:createDebugUnitTestCoverageReport
+          :example:createCardPresentDebugUnitTestCoverageReport
 
       # The card-present modules' reports and classes, for `sonar.yml`, as the build job uploads its own.
       - name: Upload card-present reports

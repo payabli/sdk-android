@@ -13,14 +13,11 @@ import com.payabli.example.app.demo.preflight.DeviceFacts
 import com.payabli.example.app.demo.preflight.platform.DeviceFactsReader
 import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
-import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.sdk.DemoEnvironment
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.example.app.sdk.PayInStartup
-import com.payabli.example.app.sdk.TapToPayTerminal
 import com.payabli.example.app.sdk.payInFlowGate
 import com.payabli.example.app.sdk.payInStartup
-import kotlinx.coroutines.MainScope
 
 /**
  * Everything the app is built from, assembled once per process.
@@ -36,13 +33,13 @@ import kotlinx.coroutines.MainScope
  * token host from a launch Intent, and the entry point and environment from an instrumented test. Both
  * overrides exist because what they carry is not knowable at build time on the machine that needs it.
  *
- * The card-present screen reaches the SDK through [terminal]; the card-not-present screens start it through
- * [payInStartup] and it submits for them.
+ * The card-not-present screens start the SDK through [payInStartup] and it submits for them. The card-present
+ * screen reaches it through `terminal`, which only the variant linking the card reader declares.
  */
 class AppContainer(
     context: Context,
 ) {
-    private val appContext = context.applicationContext
+    val appContext: Context = context.applicationContext
 
     /**
      * The build's settings, except in an instrumented test, which has no build settings to read.
@@ -84,22 +81,6 @@ class AppContainer(
     val demoCustomer: DemoCustomerSetting = DemoCustomerSetting(sampleIdentity)
 
     val diagnostics: DiagnosticsRegistry = DiagnosticsRegistry()
-
-    /**
-     * The card-present SDK.
-     *
-     * Lazy for the reason [sessionSource] is: it captures [configuration], and both writes that can change
-     * it land before any screen asks for a terminal.
-     */
-    val terminal: TerminalController by lazy {
-        TapToPayTerminal(
-            appContext = appContext,
-            sessionSource = sessionSource,
-            entryPoint = configuration.entryPoint,
-            scope = MainScope(),
-            identity = sampleIdentity,
-        )
-    }
 
     /**
      * Where the token server is.

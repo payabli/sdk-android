@@ -15,8 +15,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.example.app.demo.ui.nav.PayabliDemoNavHost
 import com.payabli.example.app.demo.ui.nav.TopLevelDestination
+import com.payabli.example.app.demo.ui.nav.shownDestinations
 import com.payabli.example.app.demo.ui.theme.PayabliDemoTheme
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -91,18 +93,20 @@ class NavigationSmokeTest {
         launch()
 
         // By step title, which renders whatever the status. An empty state does not, so it would
-        // pin how far the flow had got.
-        open(TopLevelDestination.Capture)
-        assertReachable("3. Transaction")
-
-        open(TopLevelDestination.TapToPay)
-        assertReachable("4. Take a payment")
-
-        open(TopLevelDestination.Setup)
-        assertReachable("Chosen because")
-
-        open(TopLevelDestination.PaymentMethod)
-        assertReachable("3. Stored method")
+        // pin how far the flow had got. Every tab this variant draws, so a tab with no title here fails.
+        val titles =
+            mapOf(
+                TopLevelDestination.Capture to "3. Transaction",
+                TopLevelDestination.TapToPay to "4. Take a payment",
+                TopLevelDestination.Setup to "Chosen because",
+                TopLevelDestination.PaymentMethod to "3. Stored method",
+            )
+        val shown = shownDestinations(simpleCaptureShown = false)
+        assertEquals(emptyList<TopLevelDestination>(), shown - titles.keys)
+        titles.filterKeys { it in shown }.forEach { (destination, title) ->
+            open(destination)
+            assertReachable(title)
+        }
     }
 
     @Test
