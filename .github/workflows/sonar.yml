@@ -110,7 +110,7 @@ jobs:
       # The pull request's own CI built these, so they unpack outside the workspace, where nothing in them can
       # reach `.git` or a configuration file, and only module reports and classes are copied in.
       - name: Download the reports
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: reports
           path: ${{ runner.temp }}/artifacts
@@ -118,7 +118,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download the card-present reports
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: card-present-reports
           path: ${{ runner.temp }}/artifacts
@@ -126,7 +126,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download the instrumented coverage
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: instrumented-coverage
           path: ${{ runner.temp }}/artifacts
@@ -226,7 +226,7 @@ jobs:
       # Pinned to a commit: this step is handed SONAR_TOKEN.
       - name: Analyze
         if: steps.newest.outputs.newest == 'true'
-        uses: SonarSource/sonarqube-scan-action@2f77a1ec69fb1d595b06f35ab27e97605bdef703 # v5.3.2
+        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304 # v8.4.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
