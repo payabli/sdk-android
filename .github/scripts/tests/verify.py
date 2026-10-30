@@ -4636,7 +4636,7 @@ def test_workflows():
           bool(release_gradle) and not lacking, " | ".join(lacking))
 
 
-    # main takes pull requests from release, hotfix and Dependabot branches only. A ruleset cannot name a
+    # main takes pull requests from release, hotfix, Dependabot and ci branches only. A ruleset cannot name a
     # source branch, so this job is the rule, and it is run on the names it decides rather than read.
     source_doc = workflow_doc(SOURCE_WORKFLOW)
     source_on = (source_doc.get(True) if True in source_doc else source_doc.get("on")) or {}
@@ -4666,6 +4666,7 @@ def test_workflows():
                                        "GITHUB_REPOSITORY": "payabli/sdk-android"})[0]
         check("W18 and a release branch from a fork is refused", forked == 1, f"status={forked}")
         for branch, status in (("release/0.2.0", 0), ("hotfix/0.2.1", 0), ("dependabot/github_actions/actions-1", 0),
+                               ("ci/release-workflow", 0), ("ci/", 1),
                                ("feat/ci-release-branches", 1), ("release", 1), ("release/", 1),
                                ("dependabot/", 1), ("main", 1), ("x/release/0.2.0", 1)):
             ran = run_step(sourced[0], {"HEAD_REF": branch, "HEAD_REPO": "payabli/sdk-android",
