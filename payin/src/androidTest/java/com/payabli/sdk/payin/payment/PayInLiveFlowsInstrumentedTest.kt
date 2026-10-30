@@ -346,6 +346,7 @@ class PayInLiveFlowsInstrumentedTest {
         assertTrue("the lost answer was not reported as unknown: $lost", lost is PayInException.Unsettled)
         val original = transport.lostTransId
         assertNotNull("the service took no payment the first time", original)
+        assertEquals("the retry was not sent: ${retried.exceptionOrNull()}", 2, transport.keys.size)
         assertEquals("the retry did not resend the held key", transport.keys[0], transport.keys[1])
         val refused = retried.exceptionOrNull() as? PayabliException
         val repeated =

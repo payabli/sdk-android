@@ -46,24 +46,8 @@ private val TEST_TIMEOUT = 180.seconds
 private val AMOUNT = BigDecimal("1.00")
 
 /**
- * The whole charge against the real service, with the card stubbed.
- *
- * Everything a payment touches runs for real here except the tap: the session reaches ready, the payment is
- * opened, and it is closed with what the reader answered. Only the reader is stood in for, so this is the
- * furthest the charge can be driven without a person and a card.
- *
- * The unit tier asserts the same order against fakes. What this adds is the wire: that the service accepts
- * these two bodies, in this order, from a device it has activated.
- *
- * ```
- * adb -s <serial> reverse tcp:8787 tcp:8787
- * ANDROID_SERIAL=<serial> ./gradlew :taptopay:connectedAndroidTest \
- *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=qa \
- *   -Pandroid.testInstrumentationRunnerArguments.class=\
- * com.payabli.sdk.taptopay.adapters.platform.ChargeWithoutTapLiveTest
- * ```
- *
- * Every run opens and closes one real transaction on the paypoint for [AMOUNT].
+ * Charges against the real service from an activated handset, with the reader stubbed. Each case opens one real
+ * transaction for [AMOUNT] unless the opening is refused, and no case charges a card.
  */
 @RunWith(AndroidJUnit4::class)
 @ManualDeviceTest
