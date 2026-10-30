@@ -212,7 +212,7 @@ jobs:
         with:
           ref: ${{ needs.check.outputs.commit }}
 
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '21'
@@ -249,7 +249,7 @@ jobs:
         with:
           ref: ${{ needs.check.outputs.commit }}
 
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '21'
@@ -281,7 +281,7 @@ jobs:
 
       # Kept for as long as GitHub allows. A rebuild produces different bytes, so this tree is the only
       # one a half-finished upload can be completed from, by re-running the failed job.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: staging-repo
           path: build/staging-repo
@@ -432,7 +432,7 @@ jobs:
               git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"
           fi
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: staging-repo
           path: build/staging-repo
