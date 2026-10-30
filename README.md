@@ -92,9 +92,6 @@ dependencies {
 
 `sdk-android` includes card-not-present, Tap to Pay, and error and usage reporting, and needs `minSdk` 30.
 
-To build changes that aren't released yet, build `main` from source with `./gradlew publishToMavenLocal`
-and add `mavenLocal()` to your repositories.
-
 #### Alternative declaration for solo features
 
 To take one feature without the other, depend on its artifact instead of `sdk-android`:
@@ -458,8 +455,8 @@ A value that's missing, blank or isn't printable ASCII is left out. The header c
 
 - **Depend on the latest version** as [Installation](#installation) describes. Each version and its notes are
   on the [Releases](https://github.com/payabli/sdk-android/releases) page.
-- **`main` holds changes that aren't released yet, and changes without notice.** A build from `main` takes
-  whatever is there when it's built.
+- **`main` holds the latest release.** Work toward the next release isn't published for integration; depend on a
+  released version.
 - **When a stable version is released,** this section says so.
 
 ## Support
