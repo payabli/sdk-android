@@ -20,7 +20,6 @@ import com.payabli.example.app.demo.terminal.TerminalActionOutcome
 import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
-import com.payabli.example.app.terminal
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -246,7 +245,7 @@ class TapToPayViewModel(
     companion object {
         fun from(container: AppContainer): TapToPayViewModel =
             TapToPayViewModel(
-                terminal = container.terminal,
+                terminal = container.cardPresent.terminal,
                 tokenClient = container.tokenClient,
                 configuration = container.configuration,
                 readDeviceFacts = container.readDeviceFacts,

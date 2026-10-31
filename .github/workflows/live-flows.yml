@@ -190,7 +190,7 @@ jobs:
           # A secret the caller did not pass arrives as an empty string, with no error from GitHub.
           for name in PAYABLI_CLIENT_ID PAYABLI_CLIENT_SECRET PAYABLI_ENTRY; do
             if [ -z "${!name}" ]; then
-              echo "::error::$name is empty; the calling workflow did not pass it"
+              echo "::error::$name is empty: the calling workflow did not pass it, or ci-protected holds no value"
               exit 1
             fi
           done

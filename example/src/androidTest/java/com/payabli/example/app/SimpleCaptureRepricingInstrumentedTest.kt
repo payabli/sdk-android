@@ -26,7 +26,7 @@ import org.junit.runner.RunWith
  * exists for.
  *
  * Like the smoke tier, no automated job runs this: the per-PR emulator job runs the SDK's modules, and
- * this app's tier is local. Run it with `./gradlew :example:connectedAndroidTest`.
+ * this app's tier is local. Run it with `./gradlew :example:connectedCardNotPresentDebugAndroidTest`.
  */
 @RunWith(AndroidJUnit4::class)
 class SimpleCaptureRepricingInstrumentedTest {
