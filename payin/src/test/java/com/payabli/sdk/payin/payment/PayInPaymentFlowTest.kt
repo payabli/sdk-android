@@ -35,6 +35,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -722,6 +723,30 @@ class PayInPaymentFlowTest {
             transport.release()
             running.join()
             assertFalse("the ended submission was still reported as in flight", flow.isSubmitting.value)
+        }
+
+    @Test
+    fun `a submission the transport fails clears isSubmitting`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            flow.capture(testOptions(), cardForm())
+
+            assertFalse("the failed submission was still reported as in flight", flow.isSubmitting.value)
+        }
+
+    @Test
+    fun `a submission cancelled after its request arrived clears isSubmitting`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val flow = flowOver(transport)
+
+            val running = launch { flow.capture(testOptions(), cardForm()) }
+            transport.arrived.await()
+            assertTrue("the submission in flight was not reported", flow.isSubmitting.value)
+
+            running.cancelAndJoin()
+            assertFalse("the cancelled submission was still reported as in flight", flow.isSubmitting.value)
         }
 
     @Test
