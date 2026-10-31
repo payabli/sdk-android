@@ -187,6 +187,14 @@ jobs:
             exit 1
           fi
 
+          # A secret the caller did not pass arrives as an empty string, with no error from GitHub.
+          for name in PAYABLI_CLIENT_ID PAYABLI_CLIENT_SECRET PAYABLI_ENTRY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is empty; the calling workflow did not pass it"
+              exit 1
+            fi
+          done
+
           if [ -n "$API_ORIGIN" ]; then
             # The base URL keeps the port and the allow-list must not. example-server checks a request
             # against `URL.hostname`, which carries no port, so `host:port` in the list matches nothing and

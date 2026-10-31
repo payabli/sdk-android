@@ -1490,6 +1490,13 @@ MUTATIONS = [
      "          fi\n",
      ""),
 
+    ("The token server starts with whatever the caller passed, empty or not", LIVE_FLOWS, "workflows",
+     "            if [ -z \"${!name}\" ]; then\n", "            if false; then\n"),
+
+    ("The token server stops checking the entry point it was passed", LIVE_FLOWS, "workflows",
+     "          for name in PAYABLI_CLIENT_ID PAYABLI_CLIENT_SECRET PAYABLI_ENTRY; do\n",
+     "          for name in PAYABLI_CLIENT_ID PAYABLI_CLIENT_SECRET; do\n"),
+
     ("The allow-list keeps the origin's port, which matches no hostname the server compares", LIVE_FLOWS,
      "workflows",
      '            export PAYABLI_ALLOWED_API_HOSTS="${authority%%:*}"',
@@ -2854,8 +2861,15 @@ MUTATIONS = [
     ("The sandbox live caller stops passing its secrets, so the run reads empty values", LIVE_SANDBOX, "workflows",
      "    secrets:\n      PAYABLI_CLIENT_ID_SBX: ${{ secrets.PAYABLI_CLIENT_ID_SBX }}\n", "    with_secrets_dropped:\n"),
 
-    ("The sandbox live caller passes the qa entry point", LIVE_SANDBOX, "workflows",
+    # The called job's environment secret wins over the value passed under its name, so this run would still
+    # read the sandbox entry point. What it breaks is the review: the caller no longer says what it reads.
+    ("The sandbox live caller writes the qa secret under a sandbox name", LIVE_SANDBOX, "workflows",
      "      PAYABLI_ENTRY_SBX: ${{ secrets.PAYABLI_ENTRY_SBX }}", "      PAYABLI_ENTRY_SBX: ${{ secrets.PAYABLI_ENTRY_QA }}"),
+
+    ("Another workflow calls the live flows and passes them a secret", CI, "workflows",
+     "jobs:\n",
+     "jobs:\n  stray:\n    uses: ./.github/workflows/live-flows.yml\n    secrets:\n"
+     "      PAYABLI_ENTRY_PROD: ${{ secrets.PAYABLI_ENTRY_PROD }}\n"),
 
     ("The qa live caller passes every secret it can reach", LIVE_QA, "workflows",
      "    secrets:\n      PAYABLI_CLIENT_ID_QA: ${{ secrets.PAYABLI_CLIENT_ID_QA }}\n",

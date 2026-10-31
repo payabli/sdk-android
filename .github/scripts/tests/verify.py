@@ -3053,6 +3053,16 @@ def test_workflows():
                   "the refusal sits after the first read of API_ORIGIN")
         check("W2 and the base URL keeps the whole origin",
               'PAYABLI_API_BASE_URL="$API_ORIGIN/api"' in script, "base url not taken from the origin")
+        # Run 40999428148: a secret the caller did not pass is an empty string and GitHub says nothing, so
+        # the server started without an entry point. Run, each value empty in turn, with the others set.
+        # The refusal has to come before the server starts, so a run that reached it would hang here.
+        filled = {"ENVIRONMENT": "sandbox", "API_ORIGIN": "", "PAYABLI_CLIENT_ID": "id",
+                  "PAYABLI_CLIENT_SECRET": "secret", "PAYABLI_ENTRY": "entry"}
+        for empty in ("PAYABLI_CLIENT_ID", "PAYABLI_CLIENT_SECRET", "PAYABLI_ENTRY"):
+            status, _, _ = run_step({"run": script.split("nohup node", 1)[0] + "exit 0\n"},
+                                    {**filled, empty: ""})
+            check(f"W2 the token server refuses an empty {empty} before it starts", status == 1,
+                  f"status={status}")
 
     # Both suites run on every environment, and the same origin the token server got configures both. A run
     # that carried the environment for one and not the other would report a pay-in run against one service
@@ -4705,9 +4715,10 @@ def test_workflows():
                           | ({"secrets[...]"} if "secrets[" in dumped else set()))
             if not held and job.get("secrets") != "inherit":
                 continue
-            # A caller of a workflow in this repository is held by the row above, and the called jobs by this
-            # loop, which reads them in their own file.
-            if str(job.get("uses", "")).startswith("./.github/workflows/") and job.get("secrets") != "inherit":
+            # The two live callers are held by the row above, and the jobs they call by this loop, which reads
+            # them in their own file. Any other job passing secrets to a workflow is held here, where it fails:
+            # a caller cannot name an environment, so nothing has decided which branches its secrets reach.
+            if (path.name, name) in (("live-qa.yml", "qa"), ("live-sandbox.yml", "sandbox")):
                 continue
             environment = " ".join(str(job.get("environment", "")).split())
             # The two jobs that build a pull request's code with the card reader credential.

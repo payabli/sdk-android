@@ -89,6 +89,7 @@ jobs:
 
       - name: Android Lint
         run: ./gradlew :core:lint :payin:lint :telemetry:lint :testutils:lint
+          :example:lintCardNotPresentDebug
 
       # The aggregate module has no tests, so no coverage task.
       #

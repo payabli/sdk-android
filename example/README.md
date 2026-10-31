@@ -161,7 +161,8 @@ system font.
 ## Verifying
 
 ```bash
-./gradlew :example:assembleDebug :example:test :example:ktlintCheck :example:lint   # both variants
+./gradlew :example:assembleDebug :example:test :example:ktlintCheck   # both variants
+./gradlew :example:lintCardPresentDebug :example:lintCardNotPresentDebug  # plain `lint` runs one variant
 ./gradlew :example:assembleCardNotPresentDebug :example:testCardNotPresentDebugUnitTest  # no reader credential
 ./gradlew :example:ktlintFormat --no-configuration-cache   # the flag is required
 ./gradlew :example:connectedCardNotPresentDebugAndroidTest # local; an emulator runs this variant
