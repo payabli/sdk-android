@@ -15,6 +15,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -49,6 +50,20 @@ class ChargeKeyStoreTest {
         TapToPayPaymentDetails(BigDecimal(amount), BigDecimal(fee), currency),
         TapToPayInvoiceData(invoice),
     )
+
+    /**
+     * Reserves a key for [entry] and ends its send unknown, so the key stays held and is no longer under way.
+     *
+     * @param entry the entry point the charge is for.
+     * @param environment the environment the charge is sent to.
+     * @param attempt whether the charge was declared a retry.
+     * @return what the reserve handed back.
+     */
+    private suspend fun ChargeKeyStore.sentUnknown(
+        entry: String = ENTRY,
+        environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
+        attempt: PayabliAttempt = PayabliAttempt.Retry,
+    ): ChargeKeyStore.Reserved = reserve(entry, environment, attempt).also { supersede(entry, environment, it.key) }
 
     /** Reserves a declared retry of [description], or returns the type it was refused with. */
     private suspend fun ChargeKeyStore.retry(description: ChargeDescription): Any =
@@ -134,7 +149,7 @@ class ChargeKeyStoreTest {
     fun `an ordinary charge that settles leaves the held key for a declared retry`() =
         runBlocking {
             val keys = store()
-            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            keys.sentUnknown(attempt = PayabliAttempt.NewPayment)
             val ordinary = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
             keys.settle(ENTRY, PayabliEnvironment.SANDBOX, ordinary.key)
 
@@ -144,14 +159,16 @@ class ChargeKeyStoreTest {
             assertTrue(retry.reused)
         }
 
-    /** Two charges left unsettled: a retry is of the latest, the one the host just saw fail. */
+    /** A retry is of the latest charge, so while that one is still sending it is refused, never handed an older key. */
     @Test
     fun `a declared retry claims the newest held key`() =
         runBlocking {
             val keys = store()
-            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
-            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            keys.sentUnknown(attempt = PayabliAttempt.NewPayment)
+            val newest = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
 
+            assertEquals(PayabliErrorType.PAYMENT_REFERENCE_OPEN, keys.retry(sale()))
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, newest.key)
             assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
         }
 
@@ -168,7 +185,7 @@ class ChargeKeyStoreTest {
     fun `an unsettled charge keeps the key it reserved`() =
         runBlocking {
             val keys = store()
-            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+            assertEquals("key-1", keys.sentUnknown().key)
             assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
         }
 
@@ -176,7 +193,7 @@ class ChargeKeyStoreTest {
     fun `a second reservation of the same attempt is reported as reused`() =
         runBlocking {
             val keys = store()
-            assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
+            assertFalse(keys.sentUnknown().reused)
             assertTrue(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
         }
 
@@ -195,7 +212,7 @@ class ChargeKeyStoreTest {
             val keys = store()
             val stale = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
             keys.settle(ENTRY, PayabliEnvironment.SANDBOX, stale)
-            val current = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
+            val current = keys.sentUnknown().key
             keys.settle(ENTRY, PayabliEnvironment.SANDBOX, stale)
             assertEquals(
                 "the in-flight attempt was dropped by a stale settle",
@@ -208,7 +225,7 @@ class ChargeKeyStoreTest {
     fun `two stores over the process map mint one key under one lock`() =
         runBlocking {
             // Park the first mint under the lock so a second reserve races the lookup. Without the shared
-            // mutex both would mint; with it the second waits and reuses.
+            // mutex both would mint; with it the second waits, finds the first's key being sent, and is refused.
             val mintStarted = CompletableDeferred<Unit>()
             val releaseMint = CompletableDeferred<Unit>()
             val racing = AtomicInteger()
@@ -235,11 +252,16 @@ class ChargeKeyStoreTest {
 
             val one = async { first.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key }
             mintStarted.await()
-            val other = async { second.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key }
+            val other =
+                async {
+                    runCatching { second.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry) }
+                }
             yield()
             releaseMint.complete(Unit)
 
-            assertEquals(one.await(), other.await())
+            assertEquals("key-1", one.await())
+            val refused = other.await().exceptionOrNull() as PayabliException
+            assertEquals(PayabliErrorType.PAYMENT_REFERENCE_OPEN, refused.type)
             assertEquals("two keys were minted under contention", 1, racing.get())
         }
 
@@ -249,18 +271,78 @@ class ChargeKeyStoreTest {
             // Two store objects, one companion map: what two terminals for one entry point look like.
             val first = store()
             val second = store()
-            assertEquals(
-                first.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key,
-                second.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key,
+            val held = first.sentUnknown()
+            val resent = second.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+            assertEquals(held.key, resent.key)
+            assertTrue(resent.reused)
+        }
+
+    /** A key has one send at a time, so a retry of one being sent is refused. */
+    @Test
+    fun `a declared retry of a key being sent is refused as open and the key stays`() =
+        runBlocking {
+            val keys = store()
+            val first = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale())
+
+            assertEquals(PayabliErrorType.PAYMENT_REFERENCE_OPEN, keys.retry(sale()))
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, first.key)
+            assertEquals("the refusal dropped the key", first.key, keys.retry(sale()))
+        }
+
+    @Test
+    fun `a key is under way from its reserve until its send ends`() =
+        runBlocking {
+            val keys = store()
+            assertNull(keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale()))
+
+            val first = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale())
+            val sending = keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale())
+            assertTrue("a reserved key is not under way", sending?.underWay == true)
+            assertNull(
+                "another environment's key is held",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.PRODUCTION, sale()),
             )
-            assertTrue(second.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, first.key)
+
+            assertFalse(
+                "an ended send is still under way",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale())?.underWay == true,
+            )
+        }
+
+    @Test
+    fun `a retry describes a held sale when any held key is for it, not only the newest`() =
+        runBlocking {
+            val keys = store()
+            val older =
+                keys.reserve(
+                    ENTRY,
+                    PayabliEnvironment.SANDBOX,
+                    PayabliAttempt.NewPayment,
+                    sale(amount = "9.99"),
+                )
+            keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, older.key)
+            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale())
+
+            assertTrue(
+                "the newest sale is not described",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale())!!.describesHeld,
+            )
+            assertTrue(
+                "the older sale is not described",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale(amount = "9.99"))!!.describesHeld,
+            )
+            assertFalse(
+                "a sale nothing holds is described",
+                keys.heldRetryOf(ENTRY, PayabliEnvironment.SANDBOX, sale(amount = "1.00"))!!.describesHeld,
+            )
         }
 
     @Test
     fun `two entry points hold independent keys`() =
         runBlocking {
             val keys = store()
-            val one = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
+            val one = keys.sentUnknown().key
             val other = keys.reserve(OTHER_ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
             assertNotEquals(one, other)
             assertEquals(one, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
@@ -271,7 +353,7 @@ class ChargeKeyStoreTest {
         runBlocking {
             val keys = store()
             val one = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
-            val other = keys.reserve(OTHER_ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
+            val other = keys.sentUnknown(OTHER_ENTRY).key
             keys.settle(ENTRY, PayabliEnvironment.SANDBOX, one)
             assertEquals(other, keys.reserve(OTHER_ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
             assertNotEquals(one, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
@@ -281,7 +363,7 @@ class ChargeKeyStoreTest {
     fun `a sandbox attempt is not handed to production for the same entry point`() =
         runBlocking {
             val keys = store()
-            val sandbox = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key
+            val sandbox = keys.sentUnknown().key
             val production = keys.reserve(ENTRY, PayabliEnvironment.PRODUCTION, PayabliAttempt.Retry).key
             assertNotEquals(sandbox, production)
             keys.settle(ENTRY, PayabliEnvironment.PRODUCTION, production)
@@ -296,7 +378,7 @@ class ChargeKeyStoreTest {
             assertEquals("key-1", first.key)
             keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, first.key, arrivedAt = first.reservedAt)
             clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
-            assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
+            assertEquals("key-2", keys.sentUnknown().key)
             assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key == "key-1")
         }
 
@@ -306,7 +388,7 @@ class ChargeKeyStoreTest {
         runBlocking {
             val keys = store()
             val half = IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2
-            val first = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            val first = keys.sentUnknown(attempt = PayabliAttempt.NewPayment)
             clock.addAndGet(half)
             val resend = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
             keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, resend.key, arrivedAt = resend.reservedAt)
@@ -368,7 +450,7 @@ class ChargeKeyStoreTest {
     fun `a charge that settled supersedes nothing`() =
         runBlocking {
             val keys = store()
-            keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
+            keys.sentUnknown(attempt = PayabliAttempt.NewPayment)
             val newer = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment)
             keys.settle(ENTRY, PayabliEnvironment.SANDBOX, newer.key)
             keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, newer.key)
@@ -392,7 +474,7 @@ class ChargeKeyStoreTest {
     fun `a full store refuses rather than evicting a live attempt`() =
         runBlocking {
             val keys = store()
-            repeat(ChargeKeyStore.MAX) { keys.reserve("entry-$it", PayabliEnvironment.SANDBOX, PayabliAttempt.Retry) }
+            repeat(ChargeKeyStore.MAX) { keys.sentUnknown("entry-$it") }
             val refused =
                 runCatching {
                     keys.reserve("entry-overflow", PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
@@ -411,7 +493,7 @@ class ChargeKeyStoreTest {
             val keys = store()
             keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
             ChargeKeyStore.forgetHeld()
-            assertFalse(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
+            assertFalse(keys.sentUnknown().reused)
             assertEquals("key-2", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).key)
         }
 }

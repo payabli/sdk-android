@@ -94,7 +94,7 @@ class PayabliErrorCatalogTest {
                 "PAYMENT_REFERENCE_OPEN",
                 1023,
                 PayabliErrorCategory.INVALID_REQUEST,
-                "A payment with this reference is still unresolved, so this one was not sent. Check that payment first, or retry it.",
+                "Another call for this payment is still under way or its outcome is unknown, so this one was not sent. Check that payment's outcome first.",
             ),
             Row(
                 "DEVICE_KEY_UNAVAILABLE",
@@ -254,6 +254,18 @@ class PayabliErrorCatalogTest {
                 PayabliErrorCategory.OUTCOME_UNKNOWN,
                 "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes.",
             ),
+            Row(
+                "PAYMENT_NOT_TAKEN",
+                3035,
+                PayabliErrorCategory.RETRY_LATER,
+                "The payment was not taken, and the card was not charged. Try again.",
+            ),
+            Row(
+                "CONTACTLESS_DISABLED",
+                3036,
+                PayabliErrorCategory.CONFIGURATION,
+                "Contactless (NFC) is turned off on this device. Turn it on in Settings.",
+            ),
         )
 
     @Test
@@ -299,7 +311,7 @@ class PayabliErrorCatalogTest {
     }
 
     private companion object {
-        /** Numbers no member may take. */
+        /** Numbers no member takes: 3032 is reserved. */
         val reserved = setOf(3032)
     }
 

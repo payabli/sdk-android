@@ -62,6 +62,14 @@ class PayInSessionSource(
      */
     suspend fun session(): Result<PayabliSession> = lock.withLock { build() }
 
+    /**
+     * This device's identity, the value Payabli support asks for.
+     *
+     * @return the session's device ID, null inside a success when the session cannot read it, or the reason
+     *   there is no session.
+     */
+    suspend fun deviceId(): Result<String?> = session().map { it.deviceId }
+
     private suspend fun build(): Result<PayabliSession> {
         if (configuration.entryPoint.isBlank()) {
             return Result.failure(IllegalStateException("No entry point is configured, so nothing can be sent."))

@@ -384,7 +384,7 @@ class CaptureViewModel(
 
     /**
      * The state after a void: an approval marks the transaction reversed, and a refusal whose outcome is unknown
-     * withholds the control and says to check the status.
+     * withholds the control, and its reason says to read the transaction back.
      *
      * @param outcome what the void returned.
      * @param transId the transaction that was voided.
@@ -416,12 +416,10 @@ class CaptureViewModel(
                     resultText =
                         listOfNotNull(
                             "✗ ${outcome.error.displayMessage}",
-                            when {
-                                outcome.isRetryRefused ->
-                                    "The earlier reversal may still be running. Read this transaction again shortly."
-                                outcome.isOutcomeUnknown ->
-                                    "Check this transaction's status to see whether it was voided."
-                                else -> null
+                            if (outcome.isRetryRefused) {
+                                "The earlier reversal may still be running. Read this transaction again shortly."
+                            } else {
+                                null
                             },
                         ).joinToString("\n"),
                 )

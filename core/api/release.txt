@@ -7,7 +7,7 @@ package com.payabli.sdk.core {
     field public static final boolean DEBUG = false;
     field public static final String LIBRARY_PACKAGE_NAME = "com.payabli.sdk.core";
     field public static final String SDK_IDENTIFIER = "com.payabli.sdk";
-    field public static final String SDK_VERSION = "0.1.1";
+    field public static final String SDK_VERSION = "0.2.0";
   }
 
   public final class HostBindings {
@@ -318,6 +318,7 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CARD_PRESENT_NOT_ENABLED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CHARGE_NOT_FINISHED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CONFLICT;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CONTACTLESS_DISABLED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DECODING_ERROR;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_HARDWARE_UNSUPPORTED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_IDENTITY_UNAVAILABLE;
@@ -340,6 +341,7 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_CLOSED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_HELD;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_OPENED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_TAKEN;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_OUTCOME_UNKNOWN;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_REFERENCE_OPEN;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PERMISSION_DENIED;
@@ -796,6 +798,7 @@ package com.payabli.sdk.core.telemetry {
     property public static String SDK_INITIALIZED;
     property public static String SDK_INITIALIZE_FAILED;
     property public static String SDK_INITIALIZE_STARTED;
+    property public static String TELEMETRY_OVERFLOW;
     property public static String TTP_ATTESTATION_FAILED;
     property public static String TTP_ATTESTATION_QUOTA_EXHAUSTED;
     property public static String TTP_ATTESTATION_STARTED;
@@ -835,6 +838,7 @@ package com.payabli.sdk.core.telemetry {
     field public static final String SDK_INITIALIZED = "sdk.initialized";
     field public static final String SDK_INITIALIZE_FAILED = "sdk.initialize.failed";
     field public static final String SDK_INITIALIZE_STARTED = "sdk.initialize.started";
+    field public static final String TELEMETRY_OVERFLOW = "sdk.telemetryOverflow";
     field public static final String TTP_ATTESTATION_FAILED = "ttp.attestation.failed";
     field public static final String TTP_ATTESTATION_QUOTA_EXHAUSTED = "ttp.attestation.quotaExhausted";
     field public static final String TTP_ATTESTATION_STARTED = "ttp.attestation.started";
@@ -902,6 +906,7 @@ package com.payabli.sdk.core.telemetry {
     property public String key;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty ATTEMPT;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty CODE;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty DROPPED;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty DURATION_MS;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty ERROR_NUMBER;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty FAILURE_TYPE;

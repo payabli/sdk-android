@@ -18,6 +18,7 @@ enum class TerminalFailureReason(
      * which, so [message] is the line only when none was captured.
      */
     DeviceIneligible("The session stopped."),
+    ContactlessDisabled("Contactless (NFC) is turned off on this phone. Turn it on, then set up the terminal."),
     SdkInternalError("The SDK reported a problem it cannot repair."),
     DeviceKeyUnavailable("This phone's key facility failed. Set up again; if it keeps failing, the phone is at fault."),
     SessionEnded("This terminal's session was replaced. Open the terminal again."),

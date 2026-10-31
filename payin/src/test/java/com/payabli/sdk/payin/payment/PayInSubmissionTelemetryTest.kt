@@ -55,12 +55,14 @@ class PayInSubmissionTelemetryTest {
 
     @Before
     fun install() {
+        PayInKeyStore.forgetHeld()
         TelemetryRecorders.install { event, properties -> recorded += event to properties }
     }
 
     @After
     fun clear() {
         TelemetryRecorders.clear()
+        PayInKeyStore.forgetHeld()
     }
 
     @Test
@@ -521,6 +523,7 @@ class PayInSubmissionTelemetryTest {
             moneyIn = MoneyInClient(transport, logger),
             storage = TokenStorageClient(transport, logger),
             dispatcher = StandardTestDispatcher(testScheduler),
+            environment = PayabliEnvironment.SANDBOX,
             newIdempotencyKey = { "a-minted-key" },
             elapsedRealtimeNanos = { ticks.addAndGet(1_000_000) },
             logger = logger,

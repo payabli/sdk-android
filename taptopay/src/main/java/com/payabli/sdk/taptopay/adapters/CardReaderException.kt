@@ -33,10 +33,19 @@ internal sealed class CardReaderException(
         cause: Throwable?,
     ) : CardReaderException("the reader session is not usable", cause)
 
-    /** The tap did not produce a payment. The session it ran on is unaffected. */
+    /** The tap ended without an answer, so whether the card was charged is unknown. The session is unaffected. */
     class ReadFailed(
         cause: Throwable?,
     ) : CardReaderException("the tap did not complete", cause)
+
+    /**
+     * The contactless radio is switched off, found while the reader came up or while it waited for a card. The
+     * session lands `Failed` on `CONTACTLESS_DISABLED` either way. Coming up, no card was read. Waiting, whether
+     * a card was presented first is unknown, so the charge fails with its outcome unknown.
+     */
+    class ContactlessDisabled(
+        cause: Throwable?,
+    ) : CardReaderException("the contactless radio is switched off", cause)
 }
 
 private fun armingMessage(cause: Throwable?): String = withCode("the reader did not come up", cause)

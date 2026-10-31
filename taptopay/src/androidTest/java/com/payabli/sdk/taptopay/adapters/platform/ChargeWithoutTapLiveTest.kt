@@ -4,14 +4,21 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.taptopay.ChargeKeyStore
 import com.payabli.sdk.taptopay.ManualDeviceTest
+import com.payabli.sdk.taptopay.TapToPayCapture
+import com.payabli.sdk.taptopay.TapToPayChargeRefusal
 import com.payabli.sdk.taptopay.TapToPayChargeRunner
+import com.payabli.sdk.taptopay.TapToPayException
+import com.payabli.sdk.taptopay.TapToPayResult
+import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.enrollment.platform.LiveRunSettings
 import com.payabli.sdk.taptopay.enrollment.platform.LiveTapToPay
+import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
@@ -39,24 +46,8 @@ private val TEST_TIMEOUT = 180.seconds
 private val AMOUNT = BigDecimal("1.00")
 
 /**
- * The whole charge against the real service, with the card stubbed.
- *
- * Everything a payment touches runs for real here except the tap: the session reaches ready, the payment is
- * opened, and it is closed with what the reader answered. Only the reader is stood in for, so this is the
- * furthest the charge can be driven without a person and a card.
- *
- * The unit tier asserts the same order against fakes. What this adds is the wire: that the service accepts
- * these two bodies, in this order, from a device it has activated.
- *
- * ```
- * adb -s <serial> reverse tcp:8787 tcp:8787
- * ANDROID_SERIAL=<serial> ./gradlew :taptopay:connectedAndroidTest \
- *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=qa \
- *   -Pandroid.testInstrumentationRunnerArguments.class=\
- * com.payabli.sdk.taptopay.adapters.platform.ChargeWithoutTapLiveTest
- * ```
- *
- * Every run opens and closes one real transaction on the paypoint for [AMOUNT].
+ * Charges against the real service from an activated handset, with the reader stubbed. Each case opens one real
+ * transaction for [AMOUNT] unless the opening is refused, and no case charges a card.
  */
 @RunWith(AndroidJUnit4::class)
 @ManualDeviceTest
@@ -80,6 +71,18 @@ class ChargeWithoutTapLiveTest {
             )
     }
 
+    /** Comes up, and answers every tap with a read that did not complete, so no card is charged. */
+    private class FailingReader : TapToPayProvider {
+        override suspend fun checkEligibility() = Unit
+
+        override suspend fun configure(credentials: ReaderCredentials) = Unit
+
+        override suspend fun prepareReader() = Unit
+
+        override suspend fun startReading(request: CardReadRequest): CardReadResult =
+            throw CardReaderException.ReadFailed(null)
+    }
+
     @Before
     fun requireHardware() = LiveTapToPay.requireWiredHandset("charging needs a device the service has attested")
 
@@ -87,51 +90,108 @@ class ChargeWithoutTapLiveTest {
     fun aPaymentIsOpenedAndClosedAgainstTheRealPaypoint() =
         runTest(timeout = TEST_TIMEOUT) {
             withContext(Dispatchers.IO) {
-                val session = LiveTapToPay.session(context)
-                val transport = session.transport
-                val manager = TapToPaySessionManager()
-                val coordinator =
-                    TapToPaySessionCoordinator(
-                        entry = LiveRunSettings.entry,
-                        enrollment = LiveTapToPay.enrollment(context),
-                        client = DeviceServiceClient(transport),
-                        reader = StubReader(),
-                        manager = manager,
-                        renewToken = session::renewRefusedToken,
-                        isLive = { session.isLive },
-                    )
-
-                val owed = runCatching { coordinator.initialize() }.exceptionOrNull()
-                if (owed is TapToPaySessionException.PendingActivation) {
-                    val record =
-                        AttestedDeviceStore(DeviceTrust.open(context).store).read(LiveRunSettings.entry)
-                            ?: error("the session asked for activation and recorded nothing to activate")
-                    coordinator.activateDevice(LiveTapToPay.mintActivationCode(record.deviceId))
-                    coordinator.initialize()
-                } else if (owed != null) {
-                    throw owed
-                }
-                assertEquals(TapToPaySessionState.Ready, manager.state.value)
-
-                val receipt =
-                    TapToPayChargeRunner(
-                        entry = LiveRunSettings.entry,
-                        environment = LiveRunSettings.environment,
-                        coordinator = coordinator,
-                        manager = manager,
-                        reader = StubReader(),
-                        client = TTPTransactionClient(transport),
-                        store = AttestedDeviceStore(DeviceTrust.open(context).store),
-                        keys = ChargeKeyStore(elapsedRealtimeNanos = android.os.SystemClock::elapsedRealtimeNanos),
-                    ).charge(
-                        TapToPayPaymentDetails(AMOUNT),
-                        LiveTapToPay.PAYER,
-                        TapToPayInvoiceData(),
-                        null,
-                    )
+                val receipt = chargeWith(StubReader(), LiveTapToPay.PAYER)
 
                 assertTrue("no identifier came back", receipt.paymentTransId.isNotBlank())
                 Log.i(LiveTapToPay.LIVE_TAG, "opened and closed one transaction")
             }
         }
+
+    /**
+     * A read that did not complete, closed against a payment the processor never saw because no card reached it.
+     * The close is refused for that, and the charge reports the payment as not taken.
+     */
+    @Test
+    fun aFailedReadTheProcessorNeverSawIsNotTaken() =
+        runTest(timeout = TEST_TIMEOUT) {
+            withContext(Dispatchers.IO) {
+                val failure = runCatching { chargeWith(FailingReader(), LiveTapToPay.PAYER) }.exceptionOrNull()
+
+                Log.i(LiveTapToPay.LIVE_TAG, "failed read: ${(failure as? TapToPayException)?.type ?: failure}")
+                assertTrue("the charge did not fail as a Tap to Pay failure: $failure", failure is TapToPayException)
+                val notTaken = failure as TapToPayException
+                assertEquals(PayabliErrorType.PAYMENT_NOT_TAKEN, notTaken.type)
+                assertEquals(TapToPayCapture.NOT_CHARGED, notTaken.capture)
+            }
+        }
+
+    /**
+     * A payer naming nobody, sent to a paypoint that requires a customer. The opening is refused with the fields
+     * to collect, before the reader is asked for a card.
+     */
+    @Test
+    fun aCustomerNamingNobodyIsRefusedWithTheFieldsToCollect() =
+        runTest(timeout = TEST_TIMEOUT) {
+            withContext(Dispatchers.IO) {
+                val failure = runCatching { chargeWith(FailingReader(), TapToPayCustomerData()) }.exceptionOrNull()
+
+                val refusal = (failure as? TapToPayException)?.refusal
+                Log.i(LiveTapToPay.LIVE_TAG, "nobody named: ${(failure as? TapToPayException)?.type ?: failure}")
+                assertTrue(
+                    "the customer was not refused: $failure",
+                    refusal is TapToPayChargeRefusal.CustomerDataRefused,
+                )
+                assertTrue(
+                    "the refusal named no field to collect",
+                    (refusal as TapToPayChargeRefusal.CustomerDataRefused).requiredFields.isNotEmpty(),
+                )
+                assertEquals(TapToPayCapture.NOT_CHARGED, (failure as TapToPayException).capture)
+            }
+        }
+
+    /**
+     * Brings a session up against the real service, activating this device first when it asks, and charges
+     * [AMOUNT] through [reader].
+     *
+     * @param reader what answers the tap.
+     * @param payer the customer the charge names.
+     * @return the receipt for the charge.
+     */
+    private suspend fun chargeWith(
+        reader: TapToPayProvider,
+        payer: TapToPayCustomerData,
+    ): TapToPayResult {
+        val session = LiveTapToPay.session(context)
+        val transport = session.transport
+        val manager = TapToPaySessionManager()
+        val coordinator =
+            TapToPaySessionCoordinator(
+                entry = LiveRunSettings.entry,
+                enrollment = LiveTapToPay.enrollment(context),
+                client = DeviceServiceClient(transport),
+                reader = reader,
+                manager = manager,
+                renewToken = session::renewRefusedToken,
+                isLive = { session.isLive },
+            )
+
+        val owed = runCatching { coordinator.initialize() }.exceptionOrNull()
+        if (owed is TapToPaySessionException.PendingActivation) {
+            val record =
+                AttestedDeviceStore(DeviceTrust.open(context).store).read(LiveRunSettings.entry)
+                    ?: error("the session asked for activation and recorded nothing to activate")
+            coordinator.activateDevice(LiveTapToPay.mintActivationCode(record.deviceId))
+            coordinator.initialize()
+        } else if (owed != null) {
+            throw owed
+        }
+        assertEquals(TapToPaySessionState.Ready, manager.state.value)
+
+        return TapToPayChargeRunner(
+            entry = LiveRunSettings.entry,
+            environment = LiveRunSettings.environment,
+            coordinator = coordinator,
+            manager = manager,
+            reader = reader,
+            contactlessEnabled = { true },
+            client = TTPTransactionClient(transport),
+            store = AttestedDeviceStore(DeviceTrust.open(context).store),
+            keys = ChargeKeyStore(elapsedRealtimeNanos = android.os.SystemClock::elapsedRealtimeNanos),
+        ).charge(
+            TapToPayPaymentDetails(AMOUNT),
+            payer,
+            TapToPayInvoiceData(),
+            null,
+        )
+    }
 }

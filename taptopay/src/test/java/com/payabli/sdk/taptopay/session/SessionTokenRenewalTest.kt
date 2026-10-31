@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay.session
 
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
@@ -82,11 +83,46 @@ class SessionTokenRenewalTest {
     private fun fixture(
         script: RouteScript,
         failure: Exception? = null,
+        unsent: (PayabliRequest) -> Exception? = { null },
     ): Pair<SessionFixture, RecordingRenewal> {
         lateinit var fixture: SessionFixture
         val renewal = RecordingRenewal({ fixture.state }, failure)
-        fixture = SessionFixture(script, renewToken = renewal::renew)
+        fixture = SessionFixture(script, renewToken = renewal::renew, unsent = unsent)
         return fixture to renewal
+    }
+
+    /** Refuses every request once [finish] is called, before it is sent, as a finished session's transport does. */
+    private class FinishedSession {
+        private var finished = false
+
+        fun finish() {
+            finished = true
+        }
+
+        fun refusal(request: PayabliRequest): Exception? =
+            PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "finished").takeIf { finished }
+    }
+
+    /**
+     * Runs [setup] on a session finished once [arrange] has run, and asserts it failed 1002 at once: no renewal,
+     * and nothing sent after the session finished.
+     */
+    private suspend fun assertRefusedAtOnceWhenFinished(
+        script: RouteScript,
+        arrange: suspend (SessionFixture) -> Unit,
+        setup: suspend (SessionFixture) -> Unit,
+    ) {
+        val session = FinishedSession()
+        val (fixture, renewal) = fixture(script, unsent = session::refusal)
+        arrange(fixture)
+        val sent = fixture.routes.size
+        session.finish()
+
+        val failure = runCatching { setup(fixture) }.exceptionOrNull()
+
+        assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure?.let(TapToPayErrorCodes::typeFor))
+        assertEquals("a finished session's refusal was renewed", 0, renewal.statesSeen.size)
+        assertEquals("a request was sent on a finished session", sent, fixture.routes.size)
     }
 
     /** The answers for a route: an empty refusal before [body] when [refused], [body] alone otherwise. */
@@ -175,8 +211,46 @@ class SessionTokenRenewalTest {
             val failure = runCatching { fixture.coordinator.initialize() }.exceptionOrNull()
 
             assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure?.let(TapToPayErrorCodes::typeFor))
+            assertTrue(failure.toString(), failure is PayabliGenericException)
             assertEquals(1, renewal.statesSeen.size)
             assertEquals(2, fixture.routes.size)
+        }
+
+    @Test
+    fun `an initialize on a finished session fails at once and is not renewed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            assertRefusedAtOnceWhenFinished(
+                RouteScript(RouteScript.CONFIG to listOf(configBody())),
+                arrange = { it.seedRecord() },
+                setup = { it.coordinator.initialize() },
+            )
+        }
+
+    @Test
+    fun `a repair on a finished session fails at once and is not renewed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            assertRefusedAtOnceWhenFinished(
+                RouteScript(RouteScript.CONFIG to listOf(configBody(), configBody())),
+                arrange = { expired(it) },
+                setup = { it.coordinator.reinitializeIfNeeded() },
+            )
+        }
+
+    @Test
+    fun `an activation on a finished session fails at once and is not renewed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            assertRefusedAtOnceWhenFinished(
+                RouteScript(
+                    RouteScript.CONFIG to listOf(decline(403, NOT_ACTIVE)),
+                    RouteScript.ACTIVATE to listOf(activateBody()),
+                ),
+                arrange = {
+                    it.seedRecord()
+                    runCatching { it.coordinator.initialize() }
+                    assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), it.state)
+                },
+                setup = { it.coordinator.activateDevice("123456") },
+            )
         }
 
     @Test
