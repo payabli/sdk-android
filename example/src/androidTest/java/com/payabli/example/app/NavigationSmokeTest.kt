@@ -29,12 +29,8 @@ import java.net.ServerSocket
 import kotlin.concurrent.thread
 
 /**
- * Three things, and no more.
- *
- * No job runs these: CI has no emulator, and the nightly covers `:core` only. Nothing added here
- * will be seen to go red.
- *
- * Run locally with `./gradlew :example:connectedCardNotPresentDebugAndroidTest`. Green on API 33, 36 and 37.
+ * Walks the screens against a fake token endpoint and stops before submitting. No job runs it, so nothing
+ * added here is seen to go red: run `./gradlew :example:connectedCardNotPresentDebugAndroidTest` locally.
  */
 @RunWith(AndroidJUnit4::class)
 class NavigationSmokeTest {

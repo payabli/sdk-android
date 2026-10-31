@@ -71,11 +71,8 @@ class AppContainer(
     val diagnostics: DiagnosticsRegistry = DiagnosticsRegistry()
 
     /**
-     * Where the token server is.
-     *
-     * `var` for one reason: the launch override arrives on the Intent, which the Activity sees after
-     * the Application has been created. [applyLaunchOverride] is the only thing that writes it, and
-     * it is called once before any screen composes.
+     * Where the token server is. A `var` because the launch override arrives on the Intent after the Application
+     * exists. [applyLaunchOverride] is its only writer, and runs before any screen composes.
      */
     var tokenServer: TokenServerTarget = resolveTokenServer(launchOverride = null)
         private set

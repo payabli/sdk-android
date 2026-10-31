@@ -7,11 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Which tabs the bar shows, which is the whole of what the setting decides.
- *
- * The bar filters on [TopLevelDestination.isOptional], so the arithmetic is here rather than in a Compose
- * test. How many tabs there are without the setting depends on the variant, and `CardPresentTabTest` in each
- * variant's tests says which.
+ * Which tabs the bar shows, the whole of what the setting decides. The count without it depends on the variant,
+ * and `CardPresentTabTest` in each variant's tests says which.
  */
 class SimpleCaptureTabTest {
     @Test
