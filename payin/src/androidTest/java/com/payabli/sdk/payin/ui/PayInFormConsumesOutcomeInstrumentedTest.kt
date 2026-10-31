@@ -9,7 +9,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.R
@@ -21,10 +25,12 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.payment.APPROVED_TRANSACTION
 import com.payabli.sdk.payin.payment.GatedPayInTransport
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
+import com.payabli.sdk.payin.payment.STORED_METHOD
 import com.payabli.sdk.payin.payment.TEST_ENTRY_POINT
 import com.payabli.sdk.payin.payment.testOptions
 import com.payabli.sdk.payin.util.extensions.formatAmount
@@ -34,6 +40,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -57,7 +64,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
     @Test
     fun anOutcomeIsConsumedOnceTheCallerHasHadIt() {
         val flow = flowAnswering()
-        var delivered: PayInSubmissionState.Succeeded? = null
+        var delivered: PayInFormSuccess? = null
 
         showForm(flow) { delivered = it }
         fillBank()
@@ -65,7 +72,43 @@ class PayInFormConsumesOutcomeInstrumentedTest {
 
         rule.waitForIdle()
         assertEquals("the caller was not given the outcome", "A0000", delivered?.let { code(it) })
-        assertEquals("the flow kept an outcome the caller already has", PayInSubmissionState.Idle, flow.state.value)
+        assertEquals(
+            "the flow kept an outcome the caller already has",
+            PayInSubmissionState.Idle,
+            flow.submissionState.value,
+        )
+    }
+
+    @Test
+    fun aStoreDeliversTheStoredMethod() {
+        var delivered: PayInFormSuccess? = null
+
+        showForm(
+            flowOver(FakePayInTransport.answering(STORED_METHOD)),
+            operation = PayabliPayInOperation.StoreMethod(),
+        ) { delivered = it }
+        fillBank()
+        submit(R.string.payabli_payin_submit_store_method)
+
+        rule.waitForIdle()
+        assertTrue("a store was not delivered as a method: $delivered", delivered is PayInFormSuccess.Method)
+    }
+
+    @Test
+    fun aPaymentWhoseOutcomeIsUnknownReachesOnFailedAsUnsettled() {
+        var failure: PayabliException? = null
+
+        showForm(
+            flowOver(
+                FakePayInTransport.failingWith(PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "dropped")),
+            ),
+            onFailed = { failure = it },
+        ) {}
+        fillBank()
+        submit()
+
+        rule.waitForIdle()
+        assertTrue("an unknown outcome reached the caller as $failure", failure is PayInException.Unsettled)
     }
 
     @Test
@@ -79,7 +122,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
         runCatching { submit() }
 
         rule.waitForIdle()
-        assertEquals("a throwing caller stranded the outcome", PayInSubmissionState.Idle, flow.state.value)
+        assertEquals("a throwing caller stranded the outcome", PayInSubmissionState.Idle, flow.submissionState.value)
     }
 
     @Test
@@ -97,7 +140,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
         val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
         val flow = flowOver(transport)
         val configuration = mutableStateOf(bankForm())
-        var delivered: PayInSubmissionState.Succeeded? = null
+        var delivered: PayInFormSuccess? = null
 
         showForm(flow, configuration) { delivered = it }
         fillBank()
@@ -110,11 +153,10 @@ class PayInFormConsumesOutcomeInstrumentedTest {
 
         rule.waitForIdle()
         assertEquals("a changed configuration lost the outcome", "A0000", delivered?.let { code(it) })
-        assertEquals("the flow was left holding an outcome", PayInSubmissionState.Idle, flow.state.value)
+        assertEquals("the flow was left holding an outcome", PayInSubmissionState.Idle, flow.submissionState.value)
     }
 
-    private fun code(state: PayInSubmissionState.Succeeded): String? =
-        (state as? PayInSubmissionState.Succeeded.Payment)?.result?.code
+    private fun code(state: PayInFormSuccess): String? = (state as? PayInFormSuccess.Payment)?.result?.code
 
     private fun flowAnswering(): PayInPaymentFlow = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
 
@@ -139,16 +181,18 @@ class PayInFormConsumesOutcomeInstrumentedTest {
     private fun showForm(
         flow: PayInPaymentFlow,
         configuration: State<PayInFormConfiguration> = mutableStateOf(bankForm()),
-        onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
+        operation: PayabliPayInOperation = PayabliPayInOperation.Capture(testOptions()),
+        onFailed: (PayabliException) -> Unit = {},
+        onCompleted: (PayInFormSuccess) -> Unit,
     ) {
         rule.setContent {
             MaterialTheme {
                 PayabliPayInForm(
                     payIn = flow,
-                    operation = PayabliPayInOperation.Capture(testOptions()),
+                    operation = operation,
                     configuration = configuration.value,
                     onCompleted = onCompleted,
-                    onFailed = {},
+                    onFailed = onFailed,
                     onMethodChanged = {},
                 )
             }
@@ -161,8 +205,8 @@ class PayInFormConsumesOutcomeInstrumentedTest {
         type(R.string.payabli_payin_field_account_number, TEST_ACCOUNT)
     }
 
-    private fun submit() {
-        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+    private fun submit(label: Int = R.string.payabli_payin_submit_capture) {
+        rule.onNodeWithText(string(label)).performClick()
         rule.waitForIdle()
     }
 

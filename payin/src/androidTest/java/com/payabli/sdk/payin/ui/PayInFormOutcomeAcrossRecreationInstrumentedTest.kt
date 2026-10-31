@@ -14,6 +14,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
@@ -58,8 +60,8 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
 
     private var submission by mutableStateOf<PayInSubmissionState>(PayInSubmissionState.Idle)
 
-    private val completed = mutableListOf<PayInSubmissionState.Succeeded>()
-    private val failed = mutableListOf<PayInSubmissionState.Failed>()
+    private val completed = mutableListOf<PayInFormSuccess>()
+    private val failed = mutableListOf<PayabliException>()
 
     @Test
     fun aSuccessAfterRecreationStillReachesOnCompleted() {

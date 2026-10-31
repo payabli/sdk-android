@@ -1,15 +1,30 @@
 // Signature format: 4.0
 package com.payabli.sdk.payin {
 
+  public abstract sealed exhaustive class PayInFormSuccess {
+  }
+
+  public static final class PayInFormSuccess.Method extends com.payabli.sdk.payin.PayInFormSuccess {
+    ctor public PayInFormSuccess.Method(com.payabli.sdk.payin.model.PayInStoredMethod storedMethod);
+    method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInStoredMethod getStoredMethod();
+    property public com.payabli.sdk.payin.model.PayInStoredMethod storedMethod;
+  }
+
+  public static final class PayInFormSuccess.Payment extends com.payabli.sdk.payin.PayInFormSuccess {
+    ctor public PayInFormSuccess.Payment(com.payabli.sdk.payin.model.PayInResult result);
+    method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInResult getResult();
+    property public com.payabli.sdk.payin.model.PayInResult result;
+  }
+
   public abstract sealed nonexhaustive class PayabliPayIn {
     method @KotlinOnly public abstract suspend Object? authorize(com.payabli.sdk.payin.model.PayInRequest request, kotlin.coroutines.Continuation<? super kotlin.Result<com.payabli.sdk.payin.model.PayInResult>>);
     method @KotlinOnly public abstract suspend Object? capture(com.payabli.sdk.payin.model.PayInRequest request, kotlin.coroutines.Continuation<? super kotlin.Result<com.payabli.sdk.payin.model.PayInResult>>);
     method @KotlinOnly public abstract suspend Object? captureAuthorizedTransaction(com.payabli.sdk.payin.model.PayInAuthorizedRequest request, kotlin.coroutines.Continuation<? super kotlin.Result<com.payabli.sdk.payin.model.PayInResult>>);
-    method @InaccessibleFromKotlin public abstract kotlinx.coroutines.flow.StateFlow<com.payabli.sdk.payin.payment.PayInSubmissionState> getState();
+    method @InaccessibleFromKotlin public abstract kotlinx.coroutines.flow.StateFlow<java.lang.Boolean> isSubmitting();
     method @KotlinOnly public abstract suspend Object? readTransaction(String transId, kotlin.coroutines.Continuation<? super kotlin.Result<com.payabli.sdk.payin.model.PayInTransaction>>);
     method @KotlinOnly public abstract suspend Object? storeMethod(com.payabli.sdk.payin.model.PayInStoreRequest request, kotlin.coroutines.Continuation<? super kotlin.Result<com.payabli.sdk.payin.model.PayInStoredMethod>>);
     method @KotlinOnly public abstract suspend Object? voidTransaction(String transId, kotlin.coroutines.Continuation<? super kotlin.Result<com.payabli.sdk.payin.model.PayInResult>>);
-    property public abstract kotlinx.coroutines.flow.StateFlow<com.payabli.sdk.payin.payment.PayInSubmissionState> state;
+    property public abstract kotlinx.coroutines.flow.StateFlow<java.lang.Boolean> isSubmitting;
     field public static final com.payabli.sdk.payin.PayabliPayIn.Companion Companion;
   }
 
@@ -18,7 +33,7 @@ package com.payabli.sdk.payin {
   }
 
   public final class PayabliPayInFormKt {
-    method @KotlinOnly @androidx.compose.runtime.Composable public static void PayabliPayInForm(com.payabli.sdk.payin.PayabliPayIn payIn, com.payabli.sdk.payin.payment.PayabliPayInOperation operation, com.payabli.sdk.payin.form.PayInFormConfiguration configuration, optional androidx.compose.ui.Modifier modifier, optional com.payabli.sdk.payin.form.PayInFormLabels labels, optional com.payabli.sdk.payin.form.PayInFormStyle? style, kotlin.jvm.functions.Function1<com.payabli.sdk.payin.payment.PayInSubmissionState.Succeeded,kotlin.Unit> onCompleted, kotlin.jvm.functions.Function1<com.payabli.sdk.payin.payment.PayInSubmissionState.Failed,kotlin.Unit> onFailed, kotlin.jvm.functions.Function1<com.payabli.sdk.payin.form.PayInMethodType,kotlin.Unit> onMethodChanged);
+    method @KotlinOnly @androidx.compose.runtime.Composable public static void PayabliPayInForm(com.payabli.sdk.payin.PayabliPayIn payIn, com.payabli.sdk.payin.payment.PayabliPayInOperation operation, com.payabli.sdk.payin.form.PayInFormConfiguration configuration, optional androidx.compose.ui.Modifier modifier, optional com.payabli.sdk.payin.form.PayInFormLabels labels, optional com.payabli.sdk.payin.form.PayInFormStyle? style, kotlin.jvm.functions.Function1<com.payabli.sdk.payin.PayInFormSuccess,kotlin.Unit> onCompleted, kotlin.jvm.functions.Function1<com.payabli.sdk.core.model.PayabliException,kotlin.Unit> onFailed, kotlin.jvm.functions.Function1<com.payabli.sdk.payin.form.PayInMethodType,kotlin.Unit> onMethodChanged);
   }
 
 }
@@ -919,40 +934,6 @@ package com.payabli.sdk.payin.model {
 }
 
 package com.payabli.sdk.payin.payment {
-
-  @androidx.compose.runtime.Immutable public abstract sealed exhaustive class PayInSubmissionState {
-  }
-
-  public static final class PayInSubmissionState.Failed extends com.payabli.sdk.payin.payment.PayInSubmissionState {
-    ctor public PayInSubmissionState.Failed(com.payabli.sdk.core.model.PayabliException cause, optional java.util.Map<com.payabli.sdk.payin.form.PayInField,? extends com.payabli.sdk.payin.form.PayInFieldError> fieldErrors);
-    method @InaccessibleFromKotlin public com.payabli.sdk.core.model.PayabliException getCause();
-    method @InaccessibleFromKotlin public java.util.Map<com.payabli.sdk.payin.form.PayInField,com.payabli.sdk.payin.form.PayInFieldError> getFieldErrors();
-    property public com.payabli.sdk.core.model.PayabliException cause;
-    property public java.util.Map<com.payabli.sdk.payin.form.PayInField,com.payabli.sdk.payin.form.PayInFieldError> fieldErrors;
-  }
-
-  public static final class PayInSubmissionState.Idle extends com.payabli.sdk.payin.payment.PayInSubmissionState {
-    field public static final com.payabli.sdk.payin.payment.PayInSubmissionState.Idle INSTANCE;
-  }
-
-  public static final class PayInSubmissionState.Submitting extends com.payabli.sdk.payin.payment.PayInSubmissionState {
-    field public static final com.payabli.sdk.payin.payment.PayInSubmissionState.Submitting INSTANCE;
-  }
-
-  public abstract static sealed exhaustive class PayInSubmissionState.Succeeded extends com.payabli.sdk.payin.payment.PayInSubmissionState {
-  }
-
-  public static final class PayInSubmissionState.Succeeded.Method extends com.payabli.sdk.payin.payment.PayInSubmissionState.Succeeded {
-    ctor public PayInSubmissionState.Succeeded.Method(com.payabli.sdk.payin.model.PayInStoredMethod storedMethod);
-    method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInStoredMethod getStoredMethod();
-    property public com.payabli.sdk.payin.model.PayInStoredMethod storedMethod;
-  }
-
-  public static final class PayInSubmissionState.Succeeded.Payment extends com.payabli.sdk.payin.payment.PayInSubmissionState.Succeeded {
-    ctor public PayInSubmissionState.Succeeded.Payment(com.payabli.sdk.payin.model.PayInResult result);
-    method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInResult getResult();
-    property public com.payabli.sdk.payin.model.PayInResult result;
-  }
 
   public abstract sealed exhaustive class PayabliPayInOperation {
   }

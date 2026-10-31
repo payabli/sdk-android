@@ -2,13 +2,13 @@ package com.payabli.example.app.sdk
 
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransaction
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 import java.math.BigDecimal
 
 // The outcomes the SDK can hand this app, built once. Written per test file, the screens' tests and the
@@ -17,7 +17,7 @@ import java.math.BigDecimal
 
 /** A stored method as the SDK reports one: an identifier a later transaction can charge. */
 internal fun storedMethodOutcome() =
-    PayInSubmissionState.Succeeded
+    PayInFormSuccess
         .Method(
             PayInStoredMethod(
                 storedMethodId = "tok-77",
@@ -35,7 +35,7 @@ internal fun storedMethodOutcome() =
  * An approval with no transaction is a different case, which the capture screen calls a failure.
  */
 internal fun capturedPaymentOutcome() =
-    PayInSubmissionState.Succeeded
+    PayInFormSuccess
         .Payment(
             PayInResult(
                 code = "A0000",
@@ -102,16 +102,14 @@ internal fun interruptedOutcome() = Result.failure<PayInResult>(PayInException.I
 
 /** A decline, which is the failure a payer meets most and the one whose wording reaches the screen. */
 internal fun refusedOutcome() =
-    PayInSubmissionState
-        .Failed(
-            PayInException.Refused(
-                PayInFailure(
-                    code = "D0001",
-                    reason = "Insufficient funds",
-                    explanation = "Try another card",
-                    action = "r",
-                    httpStatus = 200,
-                ),
+    PayInException
+        .Refused(
+            PayInFailure(
+                code = "D0001",
+                reason = "Insufficient funds",
+                explanation = "Try another card",
+                action = "r",
+                httpStatus = 200,
             ),
         ).toOutcome()
 
