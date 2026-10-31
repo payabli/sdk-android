@@ -724,6 +724,56 @@ class PayInPaymentFlowTest {
             assertFalse("the ended submission was still reported as in flight", flow.isSubmitting.value)
         }
 
+    /**
+     * The flight is one per flow, whatever started it, and a host refused by a flight it cannot see has only
+     * this flag for when that flight ends.
+     */
+    @Test
+    fun `every direct call reports its submission in flight, and none once it has answered`() =
+        runTest(timeout = timeout) {
+            val calls: List<Triple<String, String, suspend (PayInPaymentFlow) -> Unit>> =
+                listOf(
+                    Triple("a capture", APPROVED_TRANSACTION) { it.capture(cardRequest()) },
+                    Triple("an authorization", APPROVED_TRANSACTION) { it.authorize(cardRequest()) },
+                    Triple("a store", STORED_METHOD) { it.storeMethod(cardStoreRequest()) },
+                    Triple("an authorization's capture", APPROVED_TRANSACTION) {
+                        it.captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+                    },
+                    Triple("a void", APPROVED_TRANSACTION) { it.voidTransaction("101-abc") },
+                )
+
+            calls.forEach { (what, answers, call) ->
+                val transport = GatedPayInTransport.answering(answers)
+                val flow = flowOver(transport)
+
+                val running = launch { call(flow) }
+                transport.arrived.await()
+                assertTrue("$what did not report its submission in flight", flow.isSubmitting.value)
+
+                transport.release()
+                running.join()
+                assertFalse("$what was still reported as in flight", flow.isSubmitting.value)
+            }
+        }
+
+    @Test
+    fun `a refused second call leaves the flag to the submission in flight`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val flow = flowOver(transport)
+
+            val running = launch { flow.capture(cardRequest()) }
+            transport.arrived.await()
+            val refused = flow.capture(cardRequest())
+
+            assertTrue("$refused", refused.exceptionOrNull() is PayInException.AlreadySubmitting)
+            assertTrue("the refusal cleared the submission's flag", flow.isSubmitting.value)
+
+            transport.release()
+            running.join()
+            assertFalse("the ended submission was still reported as in flight", flow.isSubmitting.value)
+        }
+
     @Test
     fun `the second start is refused without waiting for a dispatch`() =
         runTest(timeout = timeout) {

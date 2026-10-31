@@ -401,10 +401,8 @@ internal class PayInSubmission(
         val startedAt = elapsedRealtimeNanos()
         // Set by the transport as it hands the request over, so a failure before that is known not to have left.
         val sendMark = PayabliSendMark()
-        if (publishes) {
-            sink.value = PayInSubmissionState.Submitting
-            busy.value = true
-        }
+        busy.value = true
+        if (publishes) sink.value = PayInSubmissionState.Submitting
         var outcome: PayInSubmissionState? = null
         // The failing type's name, read where the failure is caught: the wrapping below replaces the type
         // and keeps no copy of its name.
