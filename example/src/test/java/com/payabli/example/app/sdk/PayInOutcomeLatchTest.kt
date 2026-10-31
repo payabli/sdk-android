@@ -1,8 +1,8 @@
 package com.payabli.example.app.sdk
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -17,8 +17,18 @@ import org.junit.Test
 class PayInOutcomeLatchTest {
     private val flight = MutableStateFlow(false)
 
-    /** Unconfined: each value change runs the watcher inline, so assertions read a settled window. */
-    private val scope = CoroutineScope(Dispatchers.Unconfined)
+    /** Queued and never advanced: the window holds only if the latch watches inline on its own. */
+    private val scope = CoroutineScope(StandardTestDispatcher())
+
+    @Test
+    fun `a flight that ends before the caller's dispatcher runs still opens the window`() {
+        val latch = PayInOutcomeLatch(flight, scope)
+
+        flight.value = true
+        flight.value = false
+
+        assertTrue("the ended flight was conflated away, leaving the outcome standing", latch.holds)
+    }
 
     @Test
     fun `a submission opens the window, and it stays open past the submission's end`() {
