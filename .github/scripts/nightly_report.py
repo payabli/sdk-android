@@ -62,6 +62,11 @@ MAX_SUMMARY_BYTES = 900_000
 # while that was not true.
 COVERAGE_MODULES = ("core", "example", "payin", "taptopay", "telemetry", "testutils")
 
+# Where each module's unit coverage report is written. :example has a flavor per reader, and the card-present
+# job measures the `cardPresent` variant, so its report sits one directory deeper than a library's.
+COVERAGE_REPORTS = {"example": "build/reports/coverage/test/cardPresent/debug/report.xml"}
+DEFAULT_COVERAGE_REPORT = "build/reports/coverage/test/debug/report.xml"
+
 # Attribution stops here, because the report cannot show more than this and the work is not free: each
 # failure costs two recursive source globs and up to two `git log` subprocesses. Measured against this repo
 # one attribution is about 50 ms, so 335 failures is nearer 17 seconds than the collector's 300-second bound,
@@ -193,7 +198,7 @@ def coverage(counter_type: str) -> list[tuple[str, float | None, str]]:
     """
     out: list[tuple[str, float | None, str]] = []
     for module in COVERAGE_MODULES:
-        path = REPO_ROOT / module / "build/reports/coverage/test/debug/report.xml"
+        path = REPO_ROOT / module / COVERAGE_REPORTS.get(module, DEFAULT_COVERAGE_REPORT)
         if not path.is_file():
             out.append((module, None, "missing"))
             continue

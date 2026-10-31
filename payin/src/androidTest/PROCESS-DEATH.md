@@ -20,7 +20,7 @@ the loss is the design rather than a gap in it.
 The sample app is the only build that draws the form, so the walk is done there.
 
 ```bash
-./gradlew :example:installDebug
+./gradlew :example:installCardNotPresentDebug
 adb shell am start -n com.payabli.example.app/.MainActivity
 ```
 

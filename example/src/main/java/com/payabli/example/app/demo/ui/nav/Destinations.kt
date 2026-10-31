@@ -97,10 +97,10 @@ enum class TopLevelDestination(
 }
 
 /**
- * The items the bar draws, in order.
- *
- * One home for the rule, because the bar and the test that guards it have to be asking the same question. A
- * filter written out at the call site is one the test can only imitate.
+ * The items the bar draws, in order; [TopLevelDestination.TapToPay] only in the variant linking the card reader.
+ * The bar and its test both read this, so neither imitates the other's filter.
  */
 fun shownDestinations(simpleCaptureShown: Boolean): List<TopLevelDestination> =
-    TopLevelDestination.entries.filter { !it.isOptional || simpleCaptureShown }
+    TopLevelDestination.entries.filter {
+        (!it.isOptional || simpleCaptureShown) && (it != TopLevelDestination.TapToPay || CARD_PRESENT_IN_BUILD)
+    }

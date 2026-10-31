@@ -15,8 +15,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.example.app.demo.ui.nav.PayabliDemoNavHost
 import com.payabli.example.app.demo.ui.nav.TopLevelDestination
+import com.payabli.example.app.demo.ui.nav.shownDestinations
 import com.payabli.example.app.demo.ui.theme.PayabliDemoTheme
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -27,12 +29,8 @@ import java.net.ServerSocket
 import kotlin.concurrent.thread
 
 /**
- * Three things, and no more.
- *
- * No job runs these: CI has no emulator, and the nightly covers `:core` only. Nothing added here
- * will be seen to go red.
- *
- * Run locally with `./gradlew :example:connectedAndroidTest`. Green on API 33, 36 and 37.
+ * Walks the screens against a fake token endpoint and stops before submitting. No job runs it, so nothing
+ * added here is seen to go red: run `./gradlew :example:connectedCardNotPresentDebugAndroidTest` locally.
  */
 @RunWith(AndroidJUnit4::class)
 class NavigationSmokeTest {
@@ -91,18 +89,20 @@ class NavigationSmokeTest {
         launch()
 
         // By step title, which renders whatever the status. An empty state does not, so it would
-        // pin how far the flow had got.
-        open(TopLevelDestination.Capture)
-        assertReachable("3. Transaction")
-
-        open(TopLevelDestination.TapToPay)
-        assertReachable("4. Take a payment")
-
-        open(TopLevelDestination.Setup)
-        assertReachable("Chosen because")
-
-        open(TopLevelDestination.PaymentMethod)
-        assertReachable("3. Stored method")
+        // pin how far the flow had got. Every tab this variant draws, so a tab with no title here fails.
+        val titles =
+            mapOf(
+                TopLevelDestination.Capture to "3. Transaction",
+                TopLevelDestination.TapToPay to "4. Take a payment",
+                TopLevelDestination.Setup to "Chosen because",
+                TopLevelDestination.PaymentMethod to "3. Stored method",
+            )
+        val shown = shownDestinations(simpleCaptureShown = false)
+        assertEquals(emptyList<TopLevelDestination>(), shown - titles.keys)
+        titles.filterKeys { it in shown }.forEach { (destination, title) ->
+            open(destination)
+            assertReachable(title)
+        }
     }
 
     @Test

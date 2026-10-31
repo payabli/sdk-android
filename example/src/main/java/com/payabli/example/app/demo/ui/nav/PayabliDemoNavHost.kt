@@ -9,7 +9,6 @@ import androidx.compose.material3.adaptive.navigationsuite.rememberNavigationSui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -39,9 +38,6 @@ import com.payabli.example.app.demo.ui.method.PaymentMethodViewModel
 import com.payabli.example.app.demo.ui.payment.PaymentFlowActions
 import com.payabli.example.app.demo.ui.setup.SetupScreen
 import com.payabli.example.app.demo.ui.setup.SetupViewModel
-import com.payabli.example.app.demo.ui.taptopay.TapToPayActions
-import com.payabli.example.app.demo.ui.taptopay.TapToPayScreen
-import com.payabli.example.app.demo.ui.taptopay.TapToPayViewModel
 
 /**
  * The whole navigation graph: four capability areas, each with its own back stack, and an optional fifth for
@@ -100,7 +96,7 @@ fun PayabliDemoNavHost(
         NavHost(navController = navController, startDestination = PaymentMethodGraph) {
             paymentMethodGraph(navController)
             captureGraph(navController)
-            tapToPayGraph()
+            cardPresentGraph()
             setupGraph()
         }
     }
@@ -208,19 +204,6 @@ private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
             CaptureResultScreen(
                 result = state.lastResult,
                 onDone = { navController.popBackStack() },
-            )
-        }
-    }
-}
-
-private fun NavGraphBuilder.tapToPayGraph() {
-    navigation<TapToPayGraph>(startDestination = TapToPayHome) {
-        composable<TapToPayHome> {
-            val model = demoViewModel { TapToPayViewModel.from(it) }
-            val state by model.uiState.collectAsStateWithLifecycle()
-            TapToPayScreen(
-                state = state,
-                actions = remember(model) { TapToPayActions.from(model) },
             )
         }
     }

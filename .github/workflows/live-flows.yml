@@ -48,11 +48,28 @@ on:
       secrets-suffix:
         description: >-
           Which of ci-protected's credential sets this run reads, `QA` or `SBX`: the jobs below read
-          `PAYABLI_CLIENT_ID_<suffix>`, `PAYABLI_CLIENT_SECRET_<suffix>` and `PAYABLI_ENTRY_<suffix>`. A job that
-          calls this workflow cannot name an environment, so the secrets are read here, from the environment,
-          and the caller passes none.
+          `PAYABLI_CLIENT_ID_<suffix>`, `PAYABLI_CLIENT_SECRET_<suffix>` and `PAYABLI_ENTRY_<suffix>`, from
+          ci-protected, which the jobs below name because a job that calls this workflow cannot.
         required: true
         type: string
+    # Passed by the caller, by name, and resolved from ci-protected: GitHub gives a called workflow an
+    # environment secret only when its caller passes it, and one that is not passed reads as an empty string
+    # with no error. Each caller passes its own credential set and the Slack token, and nothing else.
+    secrets:
+      PAYABLI_CLIENT_ID_QA:
+        required: false
+      PAYABLI_CLIENT_SECRET_QA:
+        required: false
+      PAYABLI_ENTRY_QA:
+        required: false
+      PAYABLI_CLIENT_ID_SBX:
+        required: false
+      PAYABLI_CLIENT_SECRET_SBX:
+        required: false
+      PAYABLI_ENTRY_SBX:
+        required: false
+      SLACK_BOT_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -170,6 +187,14 @@ jobs:
             exit 1
           fi
 
+          # A secret the caller did not pass arrives as an empty string, with no error from GitHub.
+          for name in PAYABLI_CLIENT_ID PAYABLI_CLIENT_SECRET PAYABLI_ENTRY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is empty: the calling workflow did not pass it, or ci-protected holds no value"
+              exit 1
+            fi
+          done
+
           if [ -n "$API_ORIGIN" ]; then
             # The base URL keeps the port and the allow-list must not. example-server checks a request
             # against `URL.hostname`, which carries no port, so `host:port` in the list matches nothing and
@@ -246,7 +271,7 @@ jobs:
           # exit, so a refused pay-in flow stops here rather than being reported over by the sample app's run.
           script: |
             ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest
-            ./gradlew :example:connectedDebugAndroidTest -Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true
+            ./gradlew :example:connectedCardNotPresentDebugAndroidTest -Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true
 
       # The run's own verdict, so it cannot disagree with the message the report job sends. A suite that
       # succeeded having discovered no tests writes no results, leaves the step green, and reaches Slack as

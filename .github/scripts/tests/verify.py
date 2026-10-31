@@ -150,7 +150,7 @@ UNIT_XML = "core/build/test-results/testDebugUnitTest/TEST-com.payabli.sdk.core.
 INST_XML = "core/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
 PAYIN_INST_XML = "payin/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
 COV_XML = "core/build/reports/coverage/test/debug/report.xml"
-EXAMPLE_COV_XML = "example/build/reports/coverage/test/debug/report.xml"
+EXAMPLE_COV_XML = "example/build/reports/coverage/test/cardPresent/debug/report.xml"
 SRC = "core/src/test/java/com/payabli/sdk/core/RetryTest.kt"
 SUBJ = "core/src/main/java/com/payabli/sdk/core/Retry.kt"
 
@@ -506,8 +506,8 @@ def test_collector():
     )
     check("C22 both variants present is green", "verdict=green" in r["output"], r["output"])
 
-    # C21 the sample app's coverage is read under `debug`, as every module's is, and a report at a flavored
-    # path is not read: no build writes one.
+    # C21 the sample app's coverage is read from its `cardPresent` variant, the one the card-present job measures,
+    # and a report at the old `withTelemetry` flavor's path is not read: no build writes one.
     r = run_collector(make_repo({
         UNIT_XML: junit("S", [("a", None)]),
         INST_XML: junit("I", [("b", None)]),
@@ -3053,6 +3053,16 @@ def test_workflows():
                   "the refusal sits after the first read of API_ORIGIN")
         check("W2 and the base URL keeps the whole origin",
               'PAYABLI_API_BASE_URL="$API_ORIGIN/api"' in script, "base url not taken from the origin")
+        # Run 40999428148: a secret the caller did not pass is an empty string and GitHub says nothing, so
+        # the server started without an entry point. Run, each value empty in turn, with the others set.
+        # The refusal has to come before the server starts, so a run that reached it would hang here.
+        filled = {"ENVIRONMENT": "sandbox", "API_ORIGIN": "", "PAYABLI_CLIENT_ID": "id",
+                  "PAYABLI_CLIENT_SECRET": "secret", "PAYABLI_ENTRY": "entry"}
+        for empty in ("PAYABLI_CLIENT_ID", "PAYABLI_CLIENT_SECRET", "PAYABLI_ENTRY"):
+            status, _, _ = run_step({"run": script.split("nohup node", 1)[0] + "exit 0\n"},
+                                    {**filled, empty: ""})
+            check(f"W2 the token server refuses an empty {empty} before it starts", status == 1,
+                  f"status={status}")
 
     # Both suites run on every environment, and the same origin the token server got configures both. A run
     # that carried the environment for one and not the other would report a pay-in run against one service
@@ -4679,14 +4689,18 @@ def test_workflows():
     # print it. Every secret is an environment secret, and a job reads one only from an environment that
     # releases it to main, release/* and hotfix/* (ci-protected), to the release or the mirror after a reviewer, or,
     # for the one job that builds a pull request's code with the card reader credential, after a reviewer
-    # approves that run (ci-pull-request). A job calling a reusable workflow cannot name an environment, so
-    # it passes no secret either: the called job reads its own.
-    # The live callers pass no secret and name the credential set the called jobs read from ci-protected:
-    # a qa run reading the sandbox credentials would authenticate against the wrong service.
+    # approves that run (ci-pull-request). A job calling a reusable workflow cannot name an environment, and
+    # the called job can read an environment secret only when the caller passes it by name, so the caller
+    # passes exactly its own set and the called job, in ci-protected, resolves them.
+    # A qa run reading the sandbox credentials would authenticate against the wrong service, and a secret not
+    # passed reads as an empty string with no error, which is how run 40999428148 lost its entry point.
     for name, job_name, suffix in (("live-qa.yml", "qa", "QA"), ("live-sandbox.yml", "sandbox", "SBX")):
         caller = ((workflow_doc(name).get("jobs") or {}).get(job_name) or {})
-        check(f"W19 {name} passes no secret and reads the {suffix} credentials",
-              "secrets" not in caller and (caller.get("with") or {}).get("secrets-suffix") == suffix,
+        own = [f"PAYABLI_CLIENT_ID_{suffix}", f"PAYABLI_CLIENT_SECRET_{suffix}", f"PAYABLI_ENTRY_{suffix}",
+               "SLACK_BOT_TOKEN"]
+        expected = {key: "${{ secrets.%s }}" % key for key in own}
+        check(f"W19 {name} passes the {suffix} credentials by name, and no other secret",
+              caller.get("secrets") == expected and (caller.get("with") or {}).get("secrets-suffix") == suffix,
               f"secrets={caller.get('secrets')} suffix={(caller.get('with') or {}).get('secrets-suffix')}")
     CARD_PRESENT_ENV = "${{ github.event_name == 'pull_request' && 'ci-pull-request' || 'ci-protected' }}"
     allowed = {"ci-protected", "release", "card-reader-mirror"}
@@ -4700,6 +4714,11 @@ def test_workflows():
             held = sorted((set(re.findall(r"secrets\.([A-Za-z0-9_]+)", dumped)) - {"GITHUB_TOKEN"})
                           | ({"secrets[...]"} if "secrets[" in dumped else set()))
             if not held and job.get("secrets") != "inherit":
+                continue
+            # The two live callers are held by the row above, and the jobs they call by this loop, which reads
+            # them in their own file. Any other job passing secrets to a workflow is held here, where it fails:
+            # a caller cannot name an environment, so nothing has decided which branches its secrets reach.
+            if (path.name, name) in (("live-qa.yml", "qa"), ("live-sandbox.yml", "sandbox")):
                 continue
             environment = " ".join(str(job.get("environment", "")).split())
             # The two jobs that build a pull request's code with the card reader credential.
