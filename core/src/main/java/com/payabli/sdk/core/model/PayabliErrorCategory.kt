@@ -13,9 +13,13 @@ public enum class PayabliErrorCategory(
     /**
      * The SDK could not obtain or use a credential, a token or this device's setup.
      *
-     * The SDK asks the token provider again on the next call, so a provider that can return a working token
-     * repairs it. A session or a device setup that has ended, which the state reports, is established again
-     * by calling `initialize`.
+     * A provider that failed is asked again on the next call. [PayabliErrorType.TOKEN_EXPIRED] means a fresh
+     * token was refused too, so the session is finished until `initialize`, once the cause is fixed. It leaves
+     * the session usable when another call had already replaced the refused token, or was replacing it, and when
+     * a Tap to Pay device setup's own request was refused after the renewal, where the next setup call asks
+     * again. A setup call that fails with it at once, without calling the provider, means the session is
+     * finished: call `PayabliSession.initialize`, then create the terminal again from the new session. A device
+     * setup that has ended, which the state reports, is established again by calling `initialize`.
      */
     CREDENTIAL("CREDENTIAL"),
 

@@ -48,14 +48,14 @@ public class PayInFormLabels(
      *
      * @return the heading, or null for none.
      */
-    public fun titleOrNull(): String? = title?.takeIf { it.isNotBlank() }
+    internal fun titleOrNull(): String? = title?.takeIf { it.isNotBlank() }
 
     /**
      * The line under the heading, or null for none.
      *
      * @return the line, or null for none.
      */
-    public fun subtitleOrNull(): String? = subtitle?.takeIf { it.isNotBlank() }
+    internal fun subtitleOrNull(): String? = subtitle?.takeIf { it.isNotBlank() }
 
     /**
      * The wording on the submit button, or null for the operation's own: Pay, Authorize or Save. While a
@@ -63,14 +63,14 @@ public class PayInFormLabels(
      *
      * @return the wording, or null for the operation's own.
      */
-    public fun submitButtonOrNull(): String? = submitButton?.takeIf { it.isNotBlank() }
+    internal fun submitButtonOrNull(): String? = submitButton?.takeIf { it.isNotBlank() }
 
     /**
      * The label on the summary's Total row, or null to use the resource.
      *
      * @return the label, or null to use the resource.
      */
-    public fun totalOrNull(): String? = total?.takeIf { it.isNotBlank() }
+    internal fun totalOrNull(): String? = total?.takeIf { it.isNotBlank() }
 
     /**
      * As a `data class` would, over the copies rather than over what was handed in.

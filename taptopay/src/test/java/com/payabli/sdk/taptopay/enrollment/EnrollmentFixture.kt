@@ -95,7 +95,7 @@ internal class RouteScript(
     /**
      * The status for a path, or null for the default: the four POST device routes answer a refusal with its
      * `resultCode` as the HTTP status, as the service does, and everything else answers 200. `/config` is fed
-     * its refusals inside a 200 because the client still reads that route's status before its envelope.
+     * its refusals inside a 200 because the client reads only its 403 envelope before the status.
      */
     private val statusFor: (String) -> Int? = { null },
     private val headersFor: (String) -> Map<String, String> = { emptyMap() },

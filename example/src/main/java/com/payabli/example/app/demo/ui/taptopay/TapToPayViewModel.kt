@@ -166,10 +166,7 @@ class TapToPayViewModel(
             _uiState.update {
                 it.copy(
                     resultText =
-                        TerminalActionOutcome.failure(
-                            TerminalAction.Charge,
-                            NumberFormatException("That is not an amount"),
-                        ),
+                        TerminalActionOutcome.failure(NumberFormatException("That is not an amount")),
                     // This path returns before `run`, which is the only other thing that records a
                     // charge failure, so without it the step reads "do this next" over a stated one.
                     chargeFailure = "That is not an amount",
@@ -222,15 +219,7 @@ class TapToPayViewModel(
         _uiState.update { it.copy(workingAction = action) }
         viewModelScope.launch {
             val result = block()
-            // Read from the terminal, whose republished flow a collector may not have updated yet.
-            val outcome =
-                TerminalActionOutcome.from(
-                    action,
-                    result,
-                    readerDenied =
-                        terminal.currentFailureReason() == TerminalFailureReason.DeviceIneligible &&
-                            _uiState.value.readiness != Readiness.NotAvailable,
-                )
+            val outcome = TerminalActionOutcome.from(action, result)
             val reason = outcome.takeIf { result.isFailure }
             _uiState.update {
                 it.copy(

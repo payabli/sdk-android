@@ -6,6 +6,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliEnvelope
@@ -26,6 +27,7 @@ import kotlinx.serialization.SerializationException
 import java.net.HttpURLConnection.HTTP_BAD_REQUEST
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
 import java.net.HttpURLConnection.HTTP_INTERNAL_ERROR
+import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -180,8 +182,9 @@ internal class DeviceServiceClient(
      * routes.
      *
      * **A device that still owes activation is refused here, and the refusal can arrive either as an envelope
-     * decline or as a transport status.** Both become [DeviceServiceException.Forbidden], so a caller branches
-     * once, on a classification that is imprecise for the reason that type states.
+     * decline or as a transport status with no body.** Both become [DeviceServiceException.Forbidden], so a caller
+     * branches once, on a classification that is imprecise for the reason that type states. A refusal the
+     * service worded reaches [failureMapper] first, at either status.
      *
      * A refusal here is never retried in place. A rejection under [DeviceServiceException.NotAttested] means
      * the credential moved and the binding with it; attesting again from inside a failing call would spend a
@@ -200,8 +203,8 @@ internal class DeviceServiceClient(
             headers = assertion.asHeaders(),
             statusOverride = { statusCode ->
                 if (statusCode == HTTP_FORBIDDEN) {
-                    // The gateway's refusal carries no service text, and inventing one would put words in
-                    // its mouth that a caller could display.
+                    // Reached only by a 403 with no envelope declining under it: the gateway's refusal carries
+                    // no service text, and inventing one would put words in its mouth that a caller could display.
                     DeviceServiceException.Forbidden(statusCode, "")
                 } else {
                     null
@@ -364,9 +367,9 @@ internal class DeviceServiceClient(
     private fun elapsedMillis(startedAt: Long): Long = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
 
     /**
-     * Order is the contract. With [refusesAtStatus], a 4xx declining under its own code is the service refusing and
-     * an unenveloped 400 is a request this SDK built wrong; otherwise the status decides. Then the decline, then the
-     * payload. [emptyPayload] is settled here, where the success record is written, never by the caller.
+     * Order is the contract. A 4xx declining under its own code is the service refusing when [refusesAtStatus] is set
+     * or [statusOverride] claims that status; with [refusesAtStatus] an unenveloped 400 is this SDK's defect; otherwise
+     * the status decides. Then the decline, then the payload. [emptyPayload] is settled here, never by the caller.
      */
     private fun <T> read(
         route: String,
@@ -380,13 +383,15 @@ internal class DeviceServiceClient(
         val declineOutcome = PayabliEnvelope.declineOutcome(response.body)
         val status = response.statusCode
         val serviceRefused =
-            refusesAtStatus && status in HTTP_BAD_REQUEST until HTTP_INTERNAL_ERROR && declineOutcome?.code == status
+            status in HTTP_BAD_REQUEST until HTTP_INTERNAL_ERROR &&
+                declineOutcome?.code == status &&
+                (refusesAtStatus || statusOverride(status) != null)
         val transportFailure =
             when {
                 serviceRefused -> null
                 refusesAtStatus && status == HTTP_BAD_REQUEST && declineOutcome == null ->
                     DeviceServiceException.BadRequest(status, PayabliHttpErrors.from(response)?.reason.orEmpty())
-                else -> statusOverride(status) ?: PayabliHttpErrors.from(response)
+                else -> statusOverride(status) ?: pinnedRefusalOf(PayabliHttpErrors.from(response), status)
             }
         transportFailure?.let {
             logger.warn(
@@ -467,6 +472,24 @@ internal class DeviceServiceClient(
         ) { "the device service response could not be decoded" }
         return DeviceServiceException.Undecodable(cause)
     }
+
+    /**
+     * Marks a 401 as the refusal of the token this route was sent with. Every route here pins its credential, so
+     * the transport hands that 401 back unrefreshed.
+     *
+     * @param failure the transport's failure for the response, or null when it has none.
+     * @param status the response's status.
+     * @return a [PinnedTokenRefusal] for a 401, otherwise [failure] unchanged.
+     */
+    private fun pinnedRefusalOf(
+        failure: PayabliException?,
+        status: Int,
+    ): PayabliException? =
+        if (failure != null && status == HTTP_UNAUTHORIZED && failure.type == PayabliErrorType.TOKEN_EXPIRED) {
+            PinnedTokenRefusal(failure.reason)
+        } else {
+            failure
+        }
 
     internal companion object {
         private const val BASE = "/api/v2/device/taptopay"

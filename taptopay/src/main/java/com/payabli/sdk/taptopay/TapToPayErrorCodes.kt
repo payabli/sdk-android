@@ -9,6 +9,7 @@ import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
+import com.payabli.sdk.taptopay.network.CustomerDataRefusal
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import com.payabli.sdk.taptopay.session.TapToPaySessionException
@@ -62,7 +63,12 @@ internal object TapToPayErrorCodes {
             paymentTransId = paymentTransId,
             capture = capture,
             retryAfterMillis = retryAfterOf(failure),
+            refusal = refusalOf(failure),
         )
+
+    /** The charge's own refusal [failure] carries, or null when it is not one. */
+    private fun refusalOf(failure: Throwable): TapToPayChargeRefusal? =
+        (failure as? CustomerDataRefusal)?.let { TapToPayChargeRefusal.CustomerDataRefused(it.requiredFields) }
 
     /** The wait on the first failure in [failure]'s chain that can carry one, which a session refusal wraps. */
     private fun retryAfterOf(failure: Throwable): Long? =
@@ -177,6 +183,7 @@ internal object TapToPayErrorCodes {
             is CardReaderException.DeviceDenied -> PayabliErrorType.READER_DEVICE_REFUSED
             is CardReaderException.SessionUnusable -> PayabliErrorType.READER_SESSION_EXPIRED
             is CardReaderException.ReadFailed -> PayabliErrorType.TAP_NOT_COMPLETED
+            is CardReaderException.ContactlessDisabled -> PayabliErrorType.CONTACTLESS_DISABLED
         }
 
     private fun transactionCode(failure: TTPTransactionException): PayabliErrorType =

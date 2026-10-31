@@ -88,6 +88,7 @@ class TapToPayErrorCodesTest {
             CardReaderException.DeviceDenied(null) to PayabliErrorType.READER_DEVICE_REFUSED,
             CardReaderException.SessionUnusable(null) to PayabliErrorType.READER_SESSION_EXPIRED,
             CardReaderException.ReadFailed(null) to PayabliErrorType.TAP_NOT_COMPLETED,
+            CardReaderException.ContactlessDisabled(null) to PayabliErrorType.CONTACTLESS_DISABLED,
             TTPTransactionException.NotEnabled() to PayabliErrorType.CARD_PRESENT_NOT_ENABLED,
             TTPTransactionException.Refused("D", "refused") to PayabliErrorType.PAYMENT_NOT_OPENED,
             TTPTransactionException.ServiceRejected("E", "refused") to PayabliErrorType.PAYMENT_NOT_OPENED,
@@ -98,7 +99,7 @@ class TapToPayErrorCodesTest {
             TapToPayCallException.NoDeviceToChargeAs() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             TapToPayCallException.PaymentNotHeld() to PayabliErrorType.PAYMENT_NOT_HELD,
             ChargeKeyStoreFullException(4) to PayabliErrorType.TOO_MANY_OPEN_CHARGES,
-            TapToPayArgumentException("a charge has to name the payer it is for") to PayabliErrorType.VALIDATION_ERROR,
+            TapToPayArgumentException("an amount has to be greater than zero") to PayabliErrorType.VALIDATION_ERROR,
             IllegalArgumentException("a decoder's own complaint") to PayabliErrorType.UNKNOWN,
             IllegalStateException("refused transition") to PayabliErrorType.SDK_INTERNAL_ERROR,
             RuntimeException("unexamined") to PayabliErrorType.UNKNOWN,
@@ -113,14 +114,15 @@ class TapToPayErrorCodesTest {
 
     @Test
     fun `every card-present code this platform can produce has a cause`() {
-        // No cause asks a merchant to accept terms. Only the runner knows a failed close or a resent key, so it
-        // names those codes. No failure proves a device cannot attest: "not available" also means the
-        // integrity service is off or the store is out of date.
+        // No cause asks a merchant to accept terms. Only the runner knows a failed close, the processor holding
+        // no record of the payment, or a resent key, so it names those codes. No failure proves a device cannot
+        // attest: "not available" also means the integrity service is off or the store is out of date.
         val notFromACause =
             setOf(
                 PayabliErrorType.TERMS_NOT_ACCEPTED,
                 PayabliErrorType.PAYMENT_NOT_CLOSED,
                 PayabliErrorType.CHARGE_NOT_FINISHED,
+                PayabliErrorType.PAYMENT_NOT_TAKEN,
                 PayabliErrorType.DEVICE_SETUP_UNSUPPORTED,
             )
         val cardPresent = PayabliErrorType.entries.filter { it.code in 3001..3999 }.toSet()

@@ -106,21 +106,6 @@ class TerminalStateTest {
     }
 
     @Test
-    fun `a refused reader carries the error's message, naming neither step nor reader`() {
-        // The step list leaves setup done and fails the payment step, so a line naming the step
-        // contradicts the list beside it, and the list is the one that is right. The error's
-        // message says what was refused without naming either.
-        val line =
-            TerminalActionOutcome.failure(
-                TerminalAction.Initialize,
-                IllegalStateException("the reader refused this device"),
-                readerDenied = true,
-            )
-
-        assertEquals("✗ the reader refused this device", line)
-    }
-
-    @Test
     fun `a success with detail appends it`() {
         assertEquals(
             "✓ Charge: demo-txn-0001",
@@ -129,11 +114,10 @@ class TerminalStateTest {
     }
 
     @Test
-    fun `a failure carries the error's own message`() {
+    fun `a failure carries the error's own message and names no step`() {
         assertEquals(
-            "✗ Charge failed: Enter an amount greater than zero",
+            "✗ Enter an amount greater than zero",
             TerminalActionOutcome.failure(
-                TerminalAction.Charge,
                 IllegalArgumentException("Enter an amount greater than zero"),
             ),
         )
@@ -142,9 +126,8 @@ class TerminalStateTest {
     @Test
     fun `a terminal failure shows its screen line, not its message`() {
         assertEquals(
-            "✗ Charge failed: The card was declined. (3020)",
+            "✗ The card was declined. (3020)",
             TerminalActionOutcome.failure(
-                TerminalAction.Charge,
                 TerminalFailure("The card was declined. (3020)", RuntimeException("CARD_DECLINED")),
             ),
         )
@@ -153,8 +136,10 @@ class TerminalStateTest {
     @Test
     fun `a failure with no message falls back to the exception type`() {
         assertEquals(
-            "✗ Activate device failed: IllegalStateException",
-            TerminalActionOutcome.failure(TerminalAction.Activate, IllegalStateException()),
+            "✗ IllegalStateException",
+            TerminalActionOutcome.failure(
+                IllegalStateException(),
+            ),
         )
     }
 
@@ -232,7 +217,7 @@ class TerminalStateTest {
         assertEquals(
             refused,
             chargeStepFailure(
-                "✗ Charge failed: The card was declined. (3020)",
+                "✗ The card was declined. (3020)",
                 TerminalSessionState.Error,
                 TerminalFailureReason.DeviceIneligible,
                 deviceMessage = refused,
@@ -243,9 +228,9 @@ class TerminalStateTest {
     @Test
     fun `a charge's own outcome is the line when no ineligible landing stands`() {
         assertEquals(
-            "✗ Charge failed: The card was declined. (3020)",
+            "✗ The card was declined. (3020)",
             chargeStepFailure(
-                "✗ Charge failed: The card was declined. (3020)",
+                "✗ The card was declined. (3020)",
                 TerminalSessionState.Ready,
                 null,
             ),
@@ -273,7 +258,7 @@ class TerminalStateTest {
             TerminalActionOutcome.from(TerminalAction.Reinitialize, Result.success("")),
         )
         assertEquals(
-            "✗ Re-initialize failed: nope",
+            "✗ nope",
             TerminalActionOutcome.from(TerminalAction.Reinitialize, Result.failure(IllegalStateException("nope"))),
         )
     }

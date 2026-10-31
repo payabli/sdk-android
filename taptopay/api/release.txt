@@ -1,0 +1,207 @@
+// Signature format: 4.0
+package com.payabli.sdk.taptopay {
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class CardPresentModule {
+    field public static final com.payabli.sdk.taptopay.CardPresentModule INSTANCE;
+  }
+
+  public final class PayabliTTP {
+    method public suspend Object? activateDevice(String activationCode, kotlin.coroutines.Continuation<? super kotlin.Unit>);
+    method public suspend Object? charge(com.payabli.sdk.taptopay.model.TapToPayPaymentDetails paymentDetails, optional com.payabli.sdk.taptopay.model.TapToPayCustomerData customer, optional com.payabli.sdk.taptopay.model.TapToPayInvoiceData invoice, optional String? orderDescription, optional com.payabli.sdk.core.model.PayabliAttempt attempt, kotlin.coroutines.Continuation<? super com.payabli.sdk.taptopay.TapToPayResult>);
+    method public suspend Object? closeCapturedCharge(String paymentTransId, kotlin.coroutines.Continuation<? super kotlin.Unit>);
+    method @InaccessibleFromKotlin public kotlinx.coroutines.flow.StateFlow<com.payabli.sdk.taptopay.session.TapToPaySessionState> getSessionState();
+    method public suspend Object? initialize(kotlin.coroutines.Continuation<? super kotlin.Unit>);
+    method @InaccessibleFromKotlin public kotlinx.coroutines.flow.StateFlow<java.lang.Boolean> isReady();
+    method public static boolean isSupported(android.content.Context context);
+    property public kotlinx.coroutines.flow.StateFlow<java.lang.Boolean> isReady;
+    property public kotlinx.coroutines.flow.StateFlow<com.payabli.sdk.taptopay.session.TapToPaySessionState> sessionState;
+    field public static final com.payabli.sdk.taptopay.PayabliTTP.Companion Companion;
+  }
+
+  public static final class PayabliTTP.Companion {
+    method public suspend Object? create(com.payabli.sdk.core.PayabliSession session, android.content.Context context, kotlin.coroutines.Continuation<? super com.payabli.sdk.taptopay.PayabliTTP>);
+    method public boolean isSupported(android.content.Context context);
+  }
+
+  public enum TapToPayCapture {
+    enum_constant public static final com.payabli.sdk.taptopay.TapToPayCapture CHARGED;
+    enum_constant public static final com.payabli.sdk.taptopay.TapToPayCapture NOT_CHARGED;
+    enum_constant public static final com.payabli.sdk.taptopay.TapToPayCapture UNKNOWN;
+  }
+
+  public abstract sealed exhaustive class TapToPayChargeRefusal {
+  }
+
+  public static final class TapToPayChargeRefusal.CustomerDataRefused extends com.payabli.sdk.taptopay.TapToPayChargeRefusal {
+    ctor public TapToPayChargeRefusal.CustomerDataRefused(java.util.List<java.lang.String> requiredFields);
+    method @InaccessibleFromKotlin public java.util.List<java.lang.String> getRequiredFields();
+    property public java.util.List<java.lang.String> requiredFields;
+  }
+
+  public final class TapToPayException extends com.payabli.sdk.core.model.PayabliException implements com.payabli.sdk.core.model.PayabliRetryAfter {
+    method @InaccessibleFromKotlin public com.payabli.sdk.taptopay.TapToPayCapture getCapture();
+    method @InaccessibleFromKotlin public String? getPaymentTransId();
+    method @InaccessibleFromKotlin public com.payabli.sdk.taptopay.TapToPayChargeRefusal? getRefusal();
+    method @InaccessibleFromKotlin public Long? getRetryAfterMillis();
+    property public com.payabli.sdk.taptopay.TapToPayCapture capture;
+    property public String? paymentTransId;
+    property public com.payabli.sdk.taptopay.TapToPayChargeRefusal? refusal;
+    property public Long? retryAfterMillis;
+  }
+
+  public final class TapToPayResult {
+    ctor public TapToPayResult(String paymentTransId, String? cardNetwork);
+    method @InaccessibleFromKotlin public String? getCardNetwork();
+    method @InaccessibleFromKotlin public String getPaymentTransId();
+    property public String? cardNetwork;
+    property public String paymentTransId;
+  }
+
+}
+
+package com.payabli.sdk.taptopay.model {
+
+  public final class TapToPayCustomerData {
+    ctor public TapToPayCustomerData();
+    ctor public TapToPayCustomerData(optional Long? customerId, optional String? customerNumber, optional String? firstName, optional String? lastName, optional String? company, optional String? email, optional String? phone, optional String? billingAddress1, optional String? billingAddress2, optional String? billingCity, optional String? billingState, optional String? billingZip, optional String? billingCountry, optional String? billingPhone, optional String? billingEmail, optional String? shippingAddress1, optional String? shippingAddress2, optional String? shippingCity, optional String? shippingState, optional String? shippingZip, optional String? shippingCountry);
+    method @InaccessibleFromKotlin public String? getBillingAddress1();
+    method @InaccessibleFromKotlin public String? getBillingAddress2();
+    method @InaccessibleFromKotlin public String? getBillingCity();
+    method @InaccessibleFromKotlin public String? getBillingCountry();
+    method @InaccessibleFromKotlin public String? getBillingEmail();
+    method @InaccessibleFromKotlin public String? getBillingPhone();
+    method @InaccessibleFromKotlin public String? getBillingState();
+    method @InaccessibleFromKotlin public String? getBillingZip();
+    method @InaccessibleFromKotlin public String? getCompany();
+    method @InaccessibleFromKotlin public Long? getCustomerId();
+    method @InaccessibleFromKotlin public String? getCustomerNumber();
+    method @InaccessibleFromKotlin public String? getEmail();
+    method @InaccessibleFromKotlin public String? getFirstName();
+    method @InaccessibleFromKotlin public String? getLastName();
+    method @InaccessibleFromKotlin public String? getPhone();
+    method @InaccessibleFromKotlin public String? getShippingAddress1();
+    method @InaccessibleFromKotlin public String? getShippingAddress2();
+    method @InaccessibleFromKotlin public String? getShippingCity();
+    method @InaccessibleFromKotlin public String? getShippingCountry();
+    method @InaccessibleFromKotlin public String? getShippingState();
+    method @InaccessibleFromKotlin public String? getShippingZip();
+    property public String? billingAddress1;
+    property public String? billingAddress2;
+    property public String? billingCity;
+    property public String? billingCountry;
+    property public String? billingEmail;
+    property public String? billingPhone;
+    property public String? billingState;
+    property public String? billingZip;
+    property public String? company;
+    property public Long? customerId;
+    property public String? customerNumber;
+    property public String? email;
+    property public String? firstName;
+    property public String? lastName;
+    property public String? phone;
+    property public String? shippingAddress1;
+    property public String? shippingAddress2;
+    property public String? shippingCity;
+    property public String? shippingCountry;
+    property public String? shippingState;
+    property public String? shippingZip;
+  }
+
+  public final class TapToPayInvoiceData {
+    ctor public TapToPayInvoiceData();
+    ctor public TapToPayInvoiceData(optional String? invoiceNumber);
+    method @InaccessibleFromKotlin public String? getInvoiceNumber();
+    property public String? invoiceNumber;
+  }
+
+  public final class TapToPayPaymentDetails {
+    ctor public TapToPayPaymentDetails(java.math.BigDecimal amount, optional java.math.BigDecimal serviceFee, optional String? currency, optional String? paymentDescription);
+    method @InaccessibleFromKotlin public java.math.BigDecimal getAmount();
+    method @InaccessibleFromKotlin public String? getCurrency();
+    method @InaccessibleFromKotlin public String? getPaymentDescription();
+    method @InaccessibleFromKotlin public java.math.BigDecimal getServiceFee();
+    property public java.math.BigDecimal amount;
+    property public String? currency;
+    property public String? paymentDescription;
+    property public java.math.BigDecimal serviceFee;
+  }
+
+}
+
+package com.payabli.sdk.taptopay.session {
+
+  public enum TapToPayChargeActivity {
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayChargeActivity CLOSING;
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayChargeActivity OPENING;
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayChargeActivity WAITING_FOR_CARD;
+  }
+
+  public enum TapToPayFailureReason {
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason CONFIGURATION_REJECTED;
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason CONTACTLESS_DISABLED;
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason DEVICE_INELIGIBLE;
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason DEVICE_KEY_UNAVAILABLE;
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason DEVICE_SETUP_REQUIRED;
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason SDK_INTERNAL_ERROR;
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason SERVICE_UNAVAILABLE;
+    enum_constant public static final com.payabli.sdk.taptopay.session.TapToPayFailureReason SESSION_ENDED;
+  }
+
+  public sealed exhaustive interface TapToPaySessionState {
+  }
+
+  public static final class TapToPaySessionState.AttestingDevice implements com.payabli.sdk.taptopay.session.TapToPaySessionState {
+    field public static final com.payabli.sdk.taptopay.session.TapToPaySessionState.AttestingDevice INSTANCE;
+  }
+
+  public static final class TapToPaySessionState.Charging implements com.payabli.sdk.taptopay.session.TapToPaySessionState {
+    ctor public TapToPaySessionState.Charging(com.payabli.sdk.taptopay.session.TapToPayChargeActivity activity);
+    method public com.payabli.sdk.taptopay.session.TapToPayChargeActivity component1();
+    method public com.payabli.sdk.taptopay.session.TapToPaySessionState.Charging copy(optional com.payabli.sdk.taptopay.session.TapToPayChargeActivity activity);
+    method @InaccessibleFromKotlin public com.payabli.sdk.taptopay.session.TapToPayChargeActivity getActivity();
+    property public com.payabli.sdk.taptopay.session.TapToPayChargeActivity activity;
+  }
+
+  public static final class TapToPaySessionState.Failed implements com.payabli.sdk.taptopay.session.TapToPaySessionState {
+    ctor public TapToPaySessionState.Failed(com.payabli.sdk.taptopay.session.TapToPayFailureReason reason);
+    method public com.payabli.sdk.taptopay.session.TapToPayFailureReason component1();
+    method public com.payabli.sdk.taptopay.session.TapToPaySessionState.Failed copy(optional com.payabli.sdk.taptopay.session.TapToPayFailureReason reason);
+    method @InaccessibleFromKotlin public com.payabli.sdk.taptopay.session.TapToPayFailureReason getReason();
+    property public com.payabli.sdk.taptopay.session.TapToPayFailureReason reason;
+  }
+
+  public static final class TapToPaySessionState.FetchingConfig implements com.payabli.sdk.taptopay.session.TapToPaySessionState {
+    field public static final com.payabli.sdk.taptopay.session.TapToPaySessionState.FetchingConfig INSTANCE;
+  }
+
+  public static final class TapToPaySessionState.Idle implements com.payabli.sdk.taptopay.session.TapToPaySessionState {
+    field public static final com.payabli.sdk.taptopay.session.TapToPaySessionState.Idle INSTANCE;
+  }
+
+  public static final class TapToPaySessionState.InitializingReader implements com.payabli.sdk.taptopay.session.TapToPaySessionState {
+    field public static final com.payabli.sdk.taptopay.session.TapToPaySessionState.InitializingReader INSTANCE;
+  }
+
+  public static final class TapToPaySessionState.PendingActivation implements com.payabli.sdk.taptopay.session.TapToPaySessionState {
+    ctor public TapToPaySessionState.PendingActivation(String activationId);
+    method public String component1();
+    method public com.payabli.sdk.taptopay.session.TapToPaySessionState.PendingActivation copy(optional String activationId);
+    method @InaccessibleFromKotlin public String getActivationId();
+    property public String activationId;
+  }
+
+  public static final class TapToPaySessionState.Ready implements com.payabli.sdk.taptopay.session.TapToPaySessionState {
+    field public static final com.payabli.sdk.taptopay.session.TapToPaySessionState.Ready INSTANCE;
+  }
+
+  public static final class TapToPaySessionState.Reinitializing implements com.payabli.sdk.taptopay.session.TapToPaySessionState {
+    field public static final com.payabli.sdk.taptopay.session.TapToPaySessionState.Reinitializing INSTANCE;
+  }
+
+  public static final class TapToPaySessionState.SessionExpired implements com.payabli.sdk.taptopay.session.TapToPaySessionState {
+    field public static final com.payabli.sdk.taptopay.session.TapToPaySessionState.SessionExpired INSTANCE;
+  }
+
+}
+

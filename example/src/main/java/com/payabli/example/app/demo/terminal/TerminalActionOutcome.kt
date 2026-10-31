@@ -23,26 +23,12 @@ object TerminalActionOutcome {
     ): String = if (detail.isEmpty()) "✓ ${action.label} succeeded" else "✓ ${action.label}: $detail"
 
     /**
-     * A denial carries the error's own words alone, and every other failure names the step.
+     * The error's own words, with no step name: the step list beside the line shows which step failed.
      *
-     * The step list leaves setup and activation done and fails the payment step, so a denial
-     * naming the step contradicts the list beside it, and the list is the one that is right.
-     *
-     * @param action the action that failed, named in the line unless the reader was refused.
      * @param error the failure the action met, whose own words the line carries.
-     * @param readerDenied true when the reader refused the device, so the line names no step.
      * @return the line the screen shows for the action's outcome.
      */
-    fun failure(
-        action: TerminalAction,
-        error: Throwable,
-        readerDenied: Boolean = false,
-    ): String =
-        if (readerDenied) {
-            "✗ ${describe(error)}"
-        } else {
-            "✗ ${action.label} failed: ${describe(error)}"
-        }
+    fun failure(error: Throwable): String = "✗ ${describe(error)}"
 
     private fun describe(error: Throwable): String =
         (error as? TerminalFailure)?.shown ?: error.message ?: error.javaClass.simpleName
@@ -51,10 +37,9 @@ object TerminalActionOutcome {
     fun from(
         action: TerminalAction,
         result: Result<String>,
-        readerDenied: Boolean = false,
     ): String =
         result.fold(
             onSuccess = { success(action, it) },
-            onFailure = { failure(action, it, readerDenied) },
+            onFailure = { failure(it) },
         )
 }
