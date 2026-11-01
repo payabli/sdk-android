@@ -1,6 +1,7 @@
 package com.payabli.example.app.sdk
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
@@ -24,7 +25,9 @@ internal class PayInOutcomeLatch(
     val holds: Boolean get() = pending.get()
 
     init {
-        scope.launch {
+        // Unconfined, so the watcher runs inside the flag's setter. Dispatched, it can resume after a
+        // flight has already ended and read only the false, leaving the window shut on an undelivered outcome.
+        scope.launch(Dispatchers.Unconfined) {
             flight.collect { inFlight ->
                 if (inFlight && !direct.get()) pending.set(true)
             }
