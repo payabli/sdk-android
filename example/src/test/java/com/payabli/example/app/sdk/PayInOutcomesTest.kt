@@ -3,13 +3,13 @@ package com.payabli.example.app.sdk
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransaction
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -71,7 +71,7 @@ class PayInOutcomesTest {
         // What the capture screen reads to call an approval a failure. A fabricated empty transaction here
         // would have it announce a captured payment against a response that named none.
         val result =
-            PayInSubmissionState.Succeeded
+            PayInFormSuccess
                 .Payment(
                     PayInResult("A0000", reason = null, explanation = null, action = null, transaction = null),
                 ).toPaymentResult()
@@ -94,7 +94,7 @@ class PayInOutcomesTest {
     fun `a stored method with no result code still describes what was stored`() {
         // The identifier is what the screen exists to show, and the service can approve without a code.
         val outcome =
-            PayInSubmissionState.Succeeded.Method(
+            PayInFormSuccess.Method(
                 PayInStoredMethod(
                     storedMethodId = "tok-1",
                     method = PayInStoredMethodType.Card,
@@ -173,7 +173,7 @@ class PayInOutcomesTest {
             )
 
         failures.forEach { cause ->
-            val error = PayInSubmissionState.Failed(cause).toPaymentError()
+            val error = cause.toPaymentError()
             assertTrue("$cause did not map to Payabli", error is PaymentError.Payabli)
             assertEquals(cause.reason, (error as PaymentError.Payabli).reason)
             assertTrue("$cause arrived with nothing to show", error.displayMessage.isNotBlank())
@@ -185,7 +185,7 @@ class PayInOutcomesTest {
         netAmount: BigDecimal?,
         gatewayTransId: String? = "gtw-9",
         feeAmount: BigDecimal? = null,
-    ) = PayInSubmissionState.Succeeded.Payment(
+    ) = PayInFormSuccess.Payment(
         PayInResult(
             code = "A0000",
             reason = "Approved",

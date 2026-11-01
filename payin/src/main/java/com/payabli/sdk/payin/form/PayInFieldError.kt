@@ -6,7 +6,7 @@ package com.payabli.sdk.payin.form
  * A value, not a message. The wording lives in `strings.xml` and the Compose layer turns these into
  * text. Each case carries the numbers its message needs.
  */
-public sealed interface PayInFieldError {
+internal sealed interface PayInFieldError {
     /** Something that is not a digit reached a digits-only field. */
     public data object DigitsOnly : PayInFieldError
 

@@ -6,11 +6,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
 import com.payabli.sdk.payin.form.PayInMethodType
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.narrowingKey
 import com.payabli.sdk.payin.payment.offering
@@ -63,7 +63,7 @@ import com.payabli.sdk.payin.ui.PayInSubmitText
  * @param labels wording decided at runtime; anything left out or blank comes from string resources.
  * @param style null takes `LocalPayInFormStyle`, then the host's theme.
  * @param onCompleted the service accepted it.
- * @param onFailed it did not complete, with the typed cause and the fields the service rejected; where the outcome is unknown the cause is `Unsettled` and the operation may have been carried out.
+ * @param onFailed it did not complete, with the typed cause; where the outcome is unknown the cause is `Unsettled` and the operation may have been carried out.
  * @param onMethodChanged the displayed method moved, by a payer switch or a configuration change; the values do not cross into the callback.
  */
 @Composable
@@ -74,8 +74,8 @@ public fun PayabliPayInForm(
     modifier: Modifier = Modifier,
     labels: PayInFormLabels = PayInFormLabels(),
     style: PayInFormStyle? = null,
-    onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
-    onFailed: (PayInSubmissionState.Failed) -> Unit,
+    onCompleted: (PayInFormSuccess) -> Unit,
+    onFailed: (PayabliException) -> Unit,
     onMethodChanged: (PayInMethodType) -> Unit,
 ) {
     // The typed values, the reports and the submission the tap starts are this module's, not the contract's:
@@ -87,7 +87,7 @@ public fun PayabliPayInForm(
         when (payIn) {
             is PayInPaymentFlow -> payIn
         }
-    val submission by payIn.state.collectAsState()
+    val submission by impl.submissionState.collectAsState()
 
     // An authorization takes entered card data only, so a bank tab beside it is a form no request can be
     // made from.

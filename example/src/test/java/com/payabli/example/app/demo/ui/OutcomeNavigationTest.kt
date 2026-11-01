@@ -12,8 +12,8 @@ import com.payabli.example.app.sdk.readyStartup
 import com.payabli.example.app.sdk.refusedOutcome
 import com.payabli.example.app.sdk.storedMethodOutcome
 import com.payabli.example.app.sdk.toOutcome
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.model.PayInResult
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -287,7 +287,7 @@ class OutcomeNavigationTest {
     }
 
     private fun approvalWithoutTransaction() =
-        PayInSubmissionState.Succeeded
+        PayInFormSuccess
             .Payment(
                 PayInResult("A0000", reason = null, explanation = null, action = null, transaction = null),
             ).toOutcome()

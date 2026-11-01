@@ -56,11 +56,11 @@ the activity misses the outcome. Every call is a `suspend` function.
 `PayabliPayInForm` is a Composable card and bank account form. `operation` says what a submission does:
 
 ```kotlin
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import java.math.BigDecimal
 
@@ -72,11 +72,11 @@ PayabliPayInForm(
     configuration = PayInFormConfiguration(),
     onCompleted = { succeeded ->
         when (succeeded) { // store the ID; don't log it
-            is PayInSubmissionState.Succeeded.Payment -> order.paymentTransId = succeeded.result.transaction?.paymentTransId
-            is PayInSubmissionState.Succeeded.Method -> order.storedMethodId = succeeded.storedMethod.storedMethodId
+            is PayInFormSuccess.Payment -> order.paymentTransId = succeeded.result.transaction?.paymentTransId
+            is PayInFormSuccess.Method -> order.storedMethodId = succeeded.storedMethod.storedMethodId
         }
     },
-    onFailed = { failed -> /* failed.cause says why; see Outcomes and errors */ },
+    onFailed = { error -> /* error.type says why it failed; see Outcomes and errors */ },
     onMethodChanged = { },
 )
 ```
@@ -156,8 +156,8 @@ and the same `orderId` when the first attempt set one. A retry that describes a 
 
 Every call returns a `Result`, except when it is cancelled: cancellation is rethrown as
 `CancellationException`. A cancelled `storeMethod` may already have saved the method, so read the stored
-methods back before storing again. A form reports through `onCompleted` and `onFailed`. Only `onFailed`'s argument, a
-`PayInSubmissionState.Failed`, has a `cause`, which is the exception.
+methods back before storing again. A form reports through `onCompleted` and `onFailed`: a success arrives as
+a `PayInFormSuccess`, and a failure as the exception the table below matches.
 
 A success means what the call did, which depends on the call:
 
@@ -186,10 +186,10 @@ have gone through.
 | A core `PayabliException`, such as a refused credential, a rate limit or `TOKEN_PROVIDER_FAILED` | On a charge, not charged: an unknown outcome arrives as `Unsettled` instead. On `storeMethod`, a network failure may have saved the method | Branch on its `type`, or its `category` for the remedy. After a network failure on `storeMethod`, read the stored methods back before storing again |
 | `PayInException.Interrupted` (form only) | On a charge, cancelled before anything was sent. On `StoreMethod`, the method may have been saved | Retry a charge. Read the stored methods back before storing again |
 
-When a form submission fails, `PayInSubmissionState.Failed` carries:
-
-- `cause`, which says whether a payment may be outstanding. Read it before anything else.
-- `fieldErrors`, what the refusal blamed, per field. It's empty when it blamed none.
+When a form submission fails, `onFailed` receives the exception, and whether it is a
+`PayInException.Unsettled` is what says a payment may be outstanding. Check for that type before anything
+else: `Unsettled` carries its cause's `type`, so the exception's `type` says why the payment failed but
+never whether one may be outstanding. The form marks the fields the service rejected.
 
 `PayInException.Refused` and `PayInException.ServiceError` carry `failure`, a `PayInFailure` with the service's
 `code`, `reason`, `explanation` and `action`, and `paymentTransId`, the transaction it belongs to when the

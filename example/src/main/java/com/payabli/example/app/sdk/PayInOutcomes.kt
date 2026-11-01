@@ -5,9 +5,9 @@ import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.payment.StoredMethod
 import com.payabli.example.app.demo.payment.Transaction
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoredMethod
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -21,10 +21,10 @@ import kotlinx.serialization.json.buildJsonObject
  *
  * **No instrument crosses this boundary**, because none is in what the SDK returns.
  */
-internal fun PayInSubmissionState.Succeeded.toPaymentResult(): PaymentResult =
+internal fun PayInFormSuccess.toPaymentResult(): PaymentResult =
     when (this) {
-        is PayInSubmissionState.Succeeded.Payment -> result.toPaymentResult()
-        is PayInSubmissionState.Succeeded.Method -> storedMethod.toPaymentResult()
+        is PayInFormSuccess.Payment -> result.toPaymentResult()
+        is PayInFormSuccess.Method -> storedMethod.toPaymentResult()
     }
 
 internal fun PayInResult.toPaymentResult(): PaymentResult =
@@ -104,16 +104,10 @@ private fun com.payabli.sdk.payin.model.PayInTransaction?.asJson(
     }
 
 /**
- * The failure in this app's words.
- *
- * [PayabliException.reason] and [PayabliException.detail] are the displayable pair the SDK documents, and
- * `PaymentError.Payabli` already keeps them apart, so a decline reads as a decline rather than as whatever a
- * message happened to say. Anything that is not a `PayabliException` cannot come from the SDK's own paths and
- * reads as unexpected.
+ * The failure in this app's words, for a failure the SDK handed over as an exception: the form's
+ * refusal arm and a call that throws both reach this. Reason and detail are the displayable pair, so a
+ * decline reads as a decline; anything not a `PayabliException` reads as unexpected.
  */
-internal fun PayInSubmissionState.Failed.toPaymentError(): PaymentError = cause.toPaymentError()
-
-/** The same reading for a call that throws its failure rather than publishing it as a state. */
 internal fun Throwable.toPaymentError(): PaymentError =
     when (this) {
         is PayabliException -> PaymentError.Payabli(reason = reason, detail = detail)

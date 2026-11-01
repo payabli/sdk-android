@@ -8,7 +8,6 @@ import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 
@@ -19,8 +18,8 @@ import kotlinx.coroutines.flow.StateFlow
  * at a time, so a form submission and a call made here cannot overlap in either order.
  *
  * **Hold one per screen, in whatever survives that screen's configuration changes** — a `ViewModel`, a
- * Decompose component, a presenter. [state] replays its latest value, so a collector arriving after a
- * rotation sees `Submitting` or the outcome rather than nothing.
+ * Decompose component, a presenter. [isSubmitting] replays its latest value, so a collector arriving
+ * after a rotation still reads whether a submission is in flight.
  *
  * **A form is one way to build a request, never the only way to reach an operation.** A host that has already
  * collected the instrument, or that draws its own checkout, calls the member and reads what it returns.
@@ -40,14 +39,13 @@ import kotlinx.coroutines.flow.StateFlow
  */
 public sealed class PayabliPayIn {
     /**
-     * Where the form's current submission has got to: what the form renders, and what a host reads for its
-     * own chrome.
-     *
-     * **A call made directly does not appear here.** Nothing is drawing it, and a terminal state on this flow
-     * stands until the form has delivered it, so an outcome published by a call the form did not start would
-     * wait for a reader that never comes. Such a call answers with its return value instead.
+     * Whether a submission is in flight, however it was started, and nothing else. It survives a
+     * rotation, which is the one thing a callback cannot do. It is the exclusion made observable:
+     * a second submission is refused while it is true, so a host that cannot see a direct call
+     * here cannot tell why its own next call was refused. What a direct call does not publish is
+     * its outcome, which its return value carries.
      */
-    public abstract val state: StateFlow<PayInSubmissionState>
+    public abstract val isSubmitting: StateFlow<Boolean>
 
     /**
      * Takes the payment [request] describes, returning what the service said.
