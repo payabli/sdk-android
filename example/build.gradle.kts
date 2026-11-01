@@ -210,6 +210,15 @@ android {
     }
 }
 
+// The source audits in src/test read every variant's sources as files, which no compile input covers, so a
+// change in one variant's sources would otherwise leave the other variant's test task up to date.
+tasks.withType<Test>().configureEach {
+    inputs
+        .files(fileTree("src") { include("main/**", "cardPresent/**", "cardNotPresent/**") })
+        .withPropertyName("auditedSources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 dependencies {
     // The SDK's payment form. An integrator would take the umbrella; this app takes the module
     // directly because it is in the same build.
