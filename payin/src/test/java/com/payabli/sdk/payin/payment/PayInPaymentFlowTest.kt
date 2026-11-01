@@ -732,18 +732,7 @@ class PayInPaymentFlowTest {
     @Test
     fun `every direct call reports its submission in flight, and none once it has answered`() =
         runTest(timeout = timeout) {
-            val calls: List<Triple<String, String, suspend (PayInPaymentFlow) -> Unit>> =
-                listOf(
-                    Triple("a capture", APPROVED_TRANSACTION) { it.capture(cardRequest()) },
-                    Triple("an authorization", APPROVED_TRANSACTION) { it.authorize(cardRequest()) },
-                    Triple("a store", STORED_METHOD) { it.storeMethod(cardStoreRequest()) },
-                    Triple("an authorization's capture", APPROVED_TRANSACTION) {
-                        it.captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
-                    },
-                    Triple("a void", APPROVED_TRANSACTION) { it.voidTransaction("101-abc") },
-                )
-
-            calls.forEach { (what, answers, call) ->
+            directCalls().forEach { (what, answers, call) ->
                 val transport = GatedPayInTransport.answering(answers)
                 val flow = flowOver(transport)
 
@@ -754,6 +743,53 @@ class PayInPaymentFlowTest {
                 transport.release()
                 running.join()
                 assertFalse("$what was still reported as in flight", flow.isSubmitting.value)
+            }
+        }
+
+    /** Every paying entry point a host calls directly, what it answers, and the call. */
+    private fun directCalls(): List<Triple<String, String, suspend (PayInPaymentFlow) -> Result<*>>> =
+        listOf(
+            Triple("a capture", APPROVED_TRANSACTION) { it.capture(cardRequest()) },
+            Triple("an authorization", APPROVED_TRANSACTION) { it.authorize(cardRequest()) },
+            Triple("a store", STORED_METHOD) { it.storeMethod(cardStoreRequest()) },
+            Triple("an authorization's capture", APPROVED_TRANSACTION) {
+                it.captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+            },
+            Triple("a void", APPROVED_TRANSACTION) { it.voidTransaction("101-abc") },
+        )
+
+    @Test
+    fun `every direct call the transport fails clears the flag, and the next call is not refused`() =
+        runTest(timeout = timeout) {
+            directCalls().forEach { (what, _, call) ->
+                val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+                call(flow)
+                assertFalse("$what's failure was still reported as in flight", flow.isSubmitting.value)
+
+                val next = call(flow).exceptionOrNull()
+                assertFalse("$what's failure left the flight held: $next", next is PayInException.AlreadySubmitting)
+            }
+        }
+
+    @Test
+    fun `every direct call cancelled after its request arrived clears the flag, and the next call is not refused`() =
+        runTest(timeout = timeout) {
+            directCalls().forEach { (what, answers, call) ->
+                val transport = GatedPayInTransport.answering(answers)
+                val flow = flowOver(transport)
+
+                val running = launch { call(flow) }
+                transport.arrived.await()
+                running.cancelAndJoin()
+                assertFalse("$what's cancellation was still reported as in flight", flow.isSubmitting.value)
+
+                transport.release()
+                val next = call(flow).exceptionOrNull()
+                assertFalse(
+                    "$what's cancellation left the flight held: $next",
+                    next is PayInException.AlreadySubmitting,
+                )
             }
         }
 
