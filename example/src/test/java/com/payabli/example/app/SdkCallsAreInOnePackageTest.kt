@@ -5,27 +5,15 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Every call into the Payabli SDK is in `sdk` or `demo/simple`, and nothing else names an SDK type.
- *
- * The point of this app is to be read, and the first question a reader has is which of it talks to the SDK.
- * A package answers that only while it stays true, and the `sdk` import that drifts into a screen is the one
- * nobody notices. So it is read out of the source rather than agreed.
- *
- * **Two packages, for two different readers.** `sdk` is this app's integration layer, which four screens
- * share and which hands back types the app owns. `demo/simple` calls the SDK directly, so the fewest calls a
- * capture takes can be read in one file. Anywhere else is still a drift.
- *
- * `src/main` only. A test doubles the SDK's types to build a fixture, which is the same work by a different
- * name.
+ * Every call into the Payabli SDK is in `sdk` or `demo/simple`, so a reader finds them by package. Reads every
+ * variant's app sources and no test source, since a test doubles the SDK's types to build a fixture.
  */
 class SdkCallsAreInOnePackageTest {
     private val appSources: List<File> =
-        // The source-set root, not `java`: AGP compiles `src/main/kotlin` too, and a file there is a file
-        // this has to read.
-        File("src/main")
-            .walkTopDown()
-            .filter { it.isFile && it.extension == "kt" }
-            .toList()
+        // Source-set roots, not `java`: AGP compiles `src/<set>/kotlin` too.
+        listOf("src/main", "src/cardPresent", "src/cardNotPresent").flatMap { root ->
+            File(root).walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        }
 
     @Test
     fun `nothing outside the sdk package names the SDK`() {
