@@ -95,80 +95,6 @@ package com.payabli.sdk.payin.form {
     enum_constant public static final com.payabli.sdk.payin.form.PayInField SurchargeFee;
   }
 
-  public sealed exhaustive interface PayInFieldError {
-  }
-
-  public static final class PayInFieldError.CardNumberNotValid implements com.payabli.sdk.payin.form.PayInFieldError {
-    field public static final com.payabli.sdk.payin.form.PayInFieldError.CardNumberNotValid INSTANCE;
-  }
-
-  public static final class PayInFieldError.DigitsOnly implements com.payabli.sdk.payin.form.PayInFieldError {
-    field public static final com.payabli.sdk.payin.form.PayInFieldError.DigitsOnly INSTANCE;
-  }
-
-  public static final class PayInFieldError.EmailNotValid implements com.payabli.sdk.payin.form.PayInFieldError {
-    field public static final com.payabli.sdk.payin.form.PayInFieldError.EmailNotValid INSTANCE;
-  }
-
-  public static final class PayInFieldError.ExpiryIncomplete implements com.payabli.sdk.payin.form.PayInFieldError {
-    field public static final com.payabli.sdk.payin.form.PayInFieldError.ExpiryIncomplete INSTANCE;
-  }
-
-  public static final class PayInFieldError.ExpiryPast implements com.payabli.sdk.payin.form.PayInFieldError {
-    field public static final com.payabli.sdk.payin.form.PayInFieldError.ExpiryPast INSTANCE;
-  }
-
-  public static final class PayInFieldError.LongerThan implements com.payabli.sdk.payin.form.PayInFieldError {
-    ctor public PayInFieldError.LongerThan(int maximum);
-    method public int component1();
-    method public com.payabli.sdk.payin.form.PayInFieldError.LongerThan copy(optional int maximum);
-    method @InaccessibleFromKotlin public int getMaximum();
-    property public int maximum;
-  }
-
-  public static final class PayInFieldError.NotAccepted implements com.payabli.sdk.payin.form.PayInFieldError {
-    field public static final com.payabli.sdk.payin.form.PayInFieldError.NotAccepted INSTANCE;
-  }
-
-  public static final class PayInFieldError.NotExactly implements com.payabli.sdk.payin.form.PayInFieldError {
-    ctor public PayInFieldError.NotExactly(int length);
-    method public int component1();
-    method public com.payabli.sdk.payin.form.PayInFieldError.NotExactly copy(optional int length);
-    method @InaccessibleFromKotlin public int getLength();
-    property public int length;
-  }
-
-  public static final class PayInFieldError.OutsideRange implements com.payabli.sdk.payin.form.PayInFieldError {
-    ctor public PayInFieldError.OutsideRange(int minimum, int maximum);
-    method public int component1();
-    method public int component2();
-    method public com.payabli.sdk.payin.form.PayInFieldError.OutsideRange copy(optional int minimum, optional int maximum);
-    method @InaccessibleFromKotlin public int getMaximum();
-    method @InaccessibleFromKotlin public int getMinimum();
-    property public int maximum;
-    property public int minimum;
-  }
-
-  public static final class PayInFieldError.RoutingNumberNotValid implements com.payabli.sdk.payin.form.PayInFieldError {
-    field public static final com.payabli.sdk.payin.form.PayInFieldError.RoutingNumberNotValid INSTANCE;
-  }
-
-  public static final class PayInFieldError.ShorterThan implements com.payabli.sdk.payin.form.PayInFieldError {
-    ctor public PayInFieldError.ShorterThan(int minimum);
-    method public int component1();
-    method public com.payabli.sdk.payin.form.PayInFieldError.ShorterThan copy(optional int minimum);
-    method @InaccessibleFromKotlin public int getMinimum();
-    property public int minimum;
-  }
-
-  public static final class PayInFieldError.TooManyCharacters implements com.payabli.sdk.payin.form.PayInFieldError {
-    ctor public PayInFieldError.TooManyCharacters(int maximum);
-    method public int component1();
-    method public com.payabli.sdk.payin.form.PayInFieldError.TooManyCharacters copy(optional int maximum);
-    method @InaccessibleFromKotlin public int getMaximum();
-    property public int maximum;
-  }
-
   public enum PayInFieldInput {
     enum_constant public static final com.payabli.sdk.payin.form.PayInFieldInput Choice;
     enum_constant public static final com.payabli.sdk.payin.form.PayInFieldInput Email;
@@ -176,21 +102,6 @@ package com.payabli.sdk.payin.form {
     enum_constant public static final com.payabli.sdk.payin.form.PayInFieldInput Number;
     enum_constant public static final com.payabli.sdk.payin.form.PayInFieldInput Secret;
     enum_constant public static final com.payabli.sdk.payin.form.PayInFieldInput Text;
-  }
-
-  public final class PayInFieldRules {
-    method public com.payabli.sdk.payin.form.PayInFieldError? error(com.payabli.sdk.payin.form.PayInField field, char[] value, optional com.payabli.sdk.payin.model.ExpiryValue? today);
-    method public com.payabli.sdk.payin.form.PayInFieldError? error(com.payabli.sdk.payin.form.PayInField field, String value, optional com.payabli.sdk.payin.model.ExpiryValue? today);
-    method public String filter(com.payabli.sdk.payin.form.PayInField field, String raw);
-    method public java.util.Set<com.payabli.sdk.payin.form.PayInField> instrumentFields(com.payabli.sdk.payin.form.PayInMethodType method);
-    method public boolean isDigitsOnly(com.payabli.sdk.payin.form.PayInField field);
-    method public Integer? maxLength(com.payabli.sdk.payin.form.PayInField field);
-    method public boolean missing(com.payabli.sdk.payin.form.PayInField field, String value);
-    method public boolean passesAbaChecksum(char[] digits);
-    method public boolean passesAbaChecksum(String digits);
-    method public boolean passesLuhn(char[] digits);
-    method public boolean passesLuhn(String digits);
-    field public static final com.payabli.sdk.payin.form.PayInFieldRules INSTANCE;
   }
 
   @androidx.compose.runtime.Immutable public final class PayInFormConfiguration {
