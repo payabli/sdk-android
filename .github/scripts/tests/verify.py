@@ -3058,6 +3058,8 @@ def test_workflows():
         # The refusal has to come before the server starts, so a run that reached it would hang here.
         filled = {"ENVIRONMENT": "sandbox", "API_ORIGIN": "", "PAYABLI_CLIENT_ID": "id",
                   "PAYABLI_CLIENT_SECRET": "secret", "PAYABLI_ENTRY": "entry"}
+        status, _, _ = run_step({"run": script.split("nohup node", 1)[0] + "exit 0\n"}, filled)
+        check("W2 the token server starts when every value is set", status == 0, f"status={status}")
         for empty in ("PAYABLI_CLIENT_ID", "PAYABLI_CLIENT_SECRET", "PAYABLI_ENTRY"):
             status, _, _ = run_step({"run": script.split("nohup node", 1)[0] + "exit 0\n"},
                                     {**filled, empty: ""})

@@ -1493,6 +1493,9 @@ MUTATIONS = [
     ("The token server starts with whatever the caller passed, empty or not", LIVE_FLOWS, "workflows",
      "            if [ -z \"${!name}\" ]; then\n", "            if false; then\n"),
 
+    ("The token server refuses every run, set or not", LIVE_FLOWS, "workflows",
+     "            if [ -z \"${!name}\" ]; then\n", "            if true; then\n"),
+
     ("The token server stops checking the entry point it was passed", LIVE_FLOWS, "workflows",
      "          for name in PAYABLI_CLIENT_ID PAYABLI_CLIENT_SECRET PAYABLI_ENTRY; do\n",
      "          for name in PAYABLI_CLIENT_ID PAYABLI_CLIENT_SECRET; do\n"),
