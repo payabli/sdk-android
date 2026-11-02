@@ -405,15 +405,13 @@ package com.payabli.sdk.payin.model {
   }
 
   public final class PayInBankAccountData {
-    ctor public PayInBankAccountData(com.payabli.sdk.payin.model.SensitiveDigits accountNumber, String routingNumber, com.payabli.sdk.payin.model.PayInAccountType accountType, String holderName, optional com.payabli.sdk.payin.model.PayInAccountHolderType? holderType, optional com.payabli.sdk.payin.model.PayInSecCode? secCode, optional String? deviceId);
-    method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.SensitiveDigits getAccountNumber();
+    ctor public PayInBankAccountData(String accountNumber, String routingNumber, com.payabli.sdk.payin.model.PayInAccountType accountType, String holderName, optional com.payabli.sdk.payin.model.PayInAccountHolderType? holderType, optional com.payabli.sdk.payin.model.PayInSecCode? secCode, optional String? deviceId);
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInAccountType getAccountType();
     method @InaccessibleFromKotlin public String? getDeviceId();
     method @InaccessibleFromKotlin public String getHolderName();
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInAccountHolderType? getHolderType();
     method @InaccessibleFromKotlin public String getRoutingNumber();
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInSecCode? getSecCode();
-    property public com.payabli.sdk.payin.model.SensitiveDigits accountNumber;
     property public com.payabli.sdk.payin.model.PayInAccountType accountType;
     property public String? deviceId;
     property public String holderName;
@@ -423,17 +421,13 @@ package com.payabli.sdk.payin.model {
   }
 
   public final class PayInCardData {
-    ctor public PayInCardData(com.payabli.sdk.payin.model.SensitiveDigits cardNumber, com.payabli.sdk.payin.model.ExpiryValue expiry, com.payabli.sdk.payin.model.SensitiveDigits securityCode, String holderName, String postalCode);
-    method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.SensitiveDigits getCardNumber();
+    ctor public PayInCardData(String cardNumber, com.payabli.sdk.payin.model.ExpiryValue expiry, String securityCode, String holderName, String postalCode);
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.ExpiryValue getExpiry();
     method @InaccessibleFromKotlin public String getHolderName();
     method @InaccessibleFromKotlin public String getPostalCode();
-    method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.SensitiveDigits getSecurityCode();
-    property public com.payabli.sdk.payin.model.SensitiveDigits cardNumber;
     property public com.payabli.sdk.payin.model.ExpiryValue expiry;
     property public String holderName;
     property public String postalCode;
-    property public com.payabli.sdk.payin.model.SensitiveDigits securityCode;
   }
 
   public final class PayInCustomerData {
@@ -828,18 +822,6 @@ package com.payabli.sdk.payin.model {
     property public String? name;
     property public String? phone;
     property public String? vendorNumber;
-  }
-
-  public final class SensitiveDigits implements java.lang.AutoCloseable {
-    method public void close();
-    method @InaccessibleFromKotlin public int getLength();
-    property public int length;
-    field public static final com.payabli.sdk.payin.model.SensitiveDigits.Companion Companion;
-  }
-
-  public static final class SensitiveDigits.Companion {
-    method public com.payabli.sdk.payin.model.SensitiveDigits of(char[] source);
-    method public com.payabli.sdk.payin.model.SensitiveDigits ofString(String source);
   }
 
 }

@@ -48,24 +48,24 @@ class SensitiveDigitsTest {
     }
 
     @Test
-    fun `the source array is copied, so the caller can wipe its own`() {
-        val source = pan.toCharArray()
-        val value = SensitiveDigits.of(source)
+    fun `closing a copy leaves the original intact`() {
+        val value = SensitiveDigits.ofString(pan)
+        val copy = value.copy()
 
-        source.fill(SensitiveDigits.WIPED)
+        copy.close()
 
-        assertEquals(pan.length, value.length)
+        assertTrue(copy.rawCopy().all { it == SensitiveDigits.WIPED })
         assertEquals(pan, String(value.read()))
     }
 
     @Test
-    fun `wiping the value leaves the caller's array alone`() {
-        val source = pan.toCharArray()
-        val value = SensitiveDigits.of(source)
+    fun `closing the original leaves a copy intact`() {
+        val value = SensitiveDigits.ofString(pan)
+        val copy = value.copy()
 
         value.close()
 
-        assertEquals(pan, String(source))
+        assertEquals(pan, String(copy.read()))
     }
 
     @Test
@@ -128,10 +128,13 @@ class SensitiveDigitsTest {
         // to resolve a synthetic method, which is what makes the annotation the enforcement.
         val reaching =
             SensitiveDigits::class.java.declaredMethods.filter {
-                it.name.substringBefore('$') in setOf("read", "useDigits", "rawCopy", "isWiped")
-            }
+                it.name.substringBefore('$') in setOf("read", "useDigits", "rawCopy", "isWiped", "copy", "getLength")
+            } +
+                SensitiveDigits.Companion::class.java.declaredMethods.filter {
+                    it.name.substringBefore('$') == "ofString"
+                }
 
-        assertEquals(4, reaching.size)
+        assertEquals(7, reaching.size)
         reaching.forEach { assertTrue("${it.name} is reachable from Java", it.isSynthetic) }
     }
 

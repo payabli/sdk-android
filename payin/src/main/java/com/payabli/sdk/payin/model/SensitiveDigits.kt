@@ -1,38 +1,18 @@
 package com.payabli.sdk.payin.model
 
 /**
- * A card number, security code or bank account number, held so it can be overwritten.
- *
- * A `String` cannot be erased: it is immutable, the collector may move it, and nothing can say when the
- * last copy is gone. This holds the digits in a [CharArray] instead, and [close] overwrites them.
- *
- * ```kotlin
- * SensitiveDigits.of(typed).use { pan ->
- *     client.capture(entry, request(pan))
- * }
- * ```
- *
- * **The guarantee starts here and runs to the socket, not from the keystroke.** Whoever supplies the digits
- * decides what they were held in before this, and a text field holds its value as a `String`. What this type
- * adds is that the SDK keeps no `String` of its own, exposes no accessor that would make one, and leaves the
- * buffers it owns overwritten once the request has been written. Encrypting at the field is what closes the
- * rest, and that is not this type's job.
- *
- * Every member that can reach the digits is `internal` **and** `@JvmSynthetic`. `internal` alone is a Kotlin
- * rule: the compiler emits `read$payin()` and the rest as public final methods, so Java in another module can
- * call them by their mangled names and take a copy of a card number. Measured with `javap` on the compiled
- * class. `@JvmSynthetic` marks them synthetic, which javac refuses to resolve, and costs Kotlin callers
- * inside this module nothing.
- *
- * Not thread-safe. One value belongs to one call.
+ * A card number, security code or account number in a [CharArray] that [close] overwrites, which a `String` can't
+ * be. Every member that makes one or reaches the digits is also `@JvmSynthetic`: `internal` alone compiles to a
+ * public method a Java caller can name. Not thread-safe; one value belongs to one call.
  */
-public class SensitiveDigits private constructor(
+internal class SensitiveDigits private constructor(
     private val digits: CharArray,
 ) : AutoCloseable {
     private var wiped: Boolean = false
 
     /** How many characters were supplied. Reads 0 after [close]. */
-    public val length: Int get() = if (wiped) 0 else digits.size
+    @get:JvmSynthetic
+    internal val length: Int get() = if (wiped) 0 else digits.size
 
     /**
      * Overwrites the digits. Idempotent, so `use` closing a value a caller already closed is not an error.
@@ -79,6 +59,14 @@ public class SensitiveDigits private constructor(
         }
     }
 
+    /**
+     * A second value holding the same digits, which closing either one leaves the other's intact.
+     *
+     * @return the copy, empty when this one is wiped.
+     */
+    @JvmSynthetic
+    internal fun copy(): SensitiveDigits = SensitiveDigits(read())
+
     /** True once [close] has run. */
     @get:JvmSynthetic
     internal val isWiped: Boolean get() = wiped
@@ -93,7 +81,7 @@ public class SensitiveDigits private constructor(
     @JvmSynthetic
     internal fun rawCopy(): CharArray = digits.copyOf()
 
-    public companion object {
+    internal companion object {
         /**
          * NUL, built rather than written as a character literal.
          *
@@ -105,22 +93,12 @@ public class SensitiveDigits private constructor(
         internal val WIPED: Char = Char(0)
 
         /**
-         * Takes a copy of [source], which the caller still owns and should overwrite in turn. A copy, so
-         * a caller reusing its buffer for the next field cannot change a body being built.
-         *
-         * @param source the digits to hold a copy of.
-         * @return the value holding a copy of [source].
-         */
-        public fun of(source: CharArray): SensitiveDigits = SensitiveDigits(source.copyOf())
-
-        /**
-         * For a value that is already a `String`, typically from a text field. **This cannot unmake the
-         * `String` it is given**, and no overload can: it is here because the form layer holds its values
-         * that way. Where the digits are assembled by the caller, prefer [of] with a [CharArray].
+         * The value a host passed as a `String`. **This cannot unmake the `String` it is given**, and nothing can.
          *
          * @param source the digits as a `String`, which this cannot unmake.
          * @return the value holding the digits.
          */
-        public fun ofString(source: String): SensitiveDigits = SensitiveDigits(source.toCharArray())
+        @JvmSynthetic
+        internal fun ofString(source: String): SensitiveDigits = SensitiveDigits(source.toCharArray())
     }
 }

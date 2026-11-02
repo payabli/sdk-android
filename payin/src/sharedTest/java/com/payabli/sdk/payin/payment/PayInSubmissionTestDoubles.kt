@@ -22,7 +22,6 @@ import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
-import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.serialization.KSerializer
@@ -267,9 +266,9 @@ internal fun cardStoreRequest(cardData: PayInCardData = testCardData()): PayInSt
 /** The same card [cardForm] describes, in the public type a host builds. */
 internal fun testCardData(): PayInCardData =
     PayInCardData(
-        cardNumber = SensitiveDigits.ofString(TEST_PAN),
+        cardNumber = TEST_PAN,
         expiry = TEST_EXPIRY,
-        securityCode = SensitiveDigits.ofString(TEST_SECURITY_CODE),
+        securityCode = TEST_SECURITY_CODE,
         holderName = "Integration Test",
         postalCode = "22039",
     )

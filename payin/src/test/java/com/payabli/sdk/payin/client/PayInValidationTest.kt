@@ -11,7 +11,6 @@ import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInValidationOptions
-import com.payabli.sdk.payin.model.SensitiveDigits
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -33,9 +32,9 @@ class PayInValidationTest {
         holderName: String = "A Payer",
         postalCode: String = "22039",
     ) = PayInCardData(
-        cardNumber = SensitiveDigits.ofString(pan),
+        cardNumber = pan,
         expiry = TEST_EXPIRY,
-        securityCode = SensitiveDigits.ofString(securityCode),
+        securityCode = securityCode,
         holderName = holderName,
         postalCode = postalCode,
     )
@@ -45,7 +44,7 @@ class PayInValidationTest {
         routing: String = "122105278",
         holderName: String = "A Payer",
     ) = PayInBankAccountData(
-        accountNumber = SensitiveDigits.ofString(number),
+        accountNumber = number,
         routingNumber = routing,
         accountType = PayInAccountType.Checking,
         holderName = holderName,
@@ -53,9 +52,9 @@ class PayInValidationTest {
 
     private fun cardExpiring(expiry: ExpiryValue) =
         PayInCardData(
-            cardNumber = SensitiveDigits.ofString("4111111111111111"),
+            cardNumber = "4111111111111111",
             expiry = expiry,
-            securityCode = SensitiveDigits.ofString("999"),
+            securityCode = "999",
             holderName = "A Payer",
             postalCode = "22039",
         )
@@ -378,7 +377,7 @@ class PayInValidationTest {
         refusal { PayInValidation.instrument(PayInInstrument.Card(data), PayInValidationOptions()) }
 
         // The value itself is untouched: validation reads it, it does not consume it.
-        assertEquals("4111111111111112", String(data.cardNumber.rawCopy()))
+        assertEquals("4111111111111112", String(data.cardNumberDigits.rawCopy()))
     }
 
     @Test
@@ -532,7 +531,7 @@ class PayInValidationTest {
     @Test
     fun `a closed buffer reads as a missing field rather than an exception`() {
         val data = card()
-        data.cardNumber.close()
+        data.cardNumberDigits.close()
 
         val refused = refusal { PayInValidation.instrument(PayInInstrument.Card(data), PayInValidationOptions()) }
 

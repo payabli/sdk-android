@@ -6,7 +6,6 @@ import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInSecCode
 import com.payabli.sdk.payin.model.PayInStoredMethodType
-import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
@@ -54,7 +53,7 @@ class PayInBodyWriterTest {
     fun `a bank fragment carries the values it was given`() {
         val data =
             com.payabli.sdk.payin.model.PayInBankAccountData(
-                accountNumber = SensitiveDigits.ofString(TEST_ACCOUNT),
+                accountNumber = TEST_ACCOUNT,
                 routingNumber = TEST_ROUTING,
                 accountType = com.payabli.sdk.payin.model.PayInAccountType.Savings,
                 holderName = "A Payer",
@@ -125,7 +124,7 @@ class PayInBodyWriterTest {
         assertTrue(failure is IllegalStateException)
         assertFalse(failure?.message?.contains("4111") ?: true)
         // The copy the writer read is overwritten on the way out, which the check throwing must not skip.
-        assertTrue(data.cardNumber.rawCopy().isNotEmpty())
+        assertTrue(data.cardNumberDigits.rawCopy().isNotEmpty())
     }
 
     @Test

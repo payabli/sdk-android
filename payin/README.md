@@ -83,9 +83,9 @@ PayabliPayInForm(
 
 ### Call the API from your own UI
 
-Card numbers and security codes travel in `SensitiveDigits` buffers. Collect them into `CharArray`s, never
-`String`s, which can't be erased. `SensitiveDigits.of` copies the array, so wipe yours once the buffer is
-built, and close the `SensitiveDigits` once the call returns; `use` does that.
+Pass the card number and security code as `String`s. The SDK copies them into buffers it overwrites once the
+request is written, keeps no `String` of its own, and has nothing for you to close. The same request can be sent
+again, including as a retry.
 
 ```kotlin
 import com.payabli.sdk.payin.model.ExpiryValue
@@ -94,26 +94,23 @@ import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
-import com.payabli.sdk.payin.model.SensitiveDigits
 import java.math.BigDecimal
 
-// numberChars and cvvChars are CharArrays your UI filled.
-val number = SensitiveDigits.of(numberChars).also { numberChars.fill('0') }
-val cvv = SensitiveDigits.of(cvvChars).also { cvvChars.fill('0') }
-
 val result =
-    number.use { number ->
-        cvv.use { cvv ->
-            payIn.capture(
-                PayInRequest(
-                    paymentMethod = PayInPaymentMethod.Card(
-                        PayInCardData(number, ExpiryValue(12, 2030), cvv, "Jane Doe", "12345"),
-                    ),
-                    options = PayInTransactionOptions(PayInPaymentDetails(totalAmount = BigDecimal("12.34"))),
+    payIn.capture(
+        PayInRequest(
+            paymentMethod = PayInPaymentMethod.Card(
+                PayInCardData(
+                    cardNumber = cardNumber,
+                    expiry = ExpiryValue(12, 2030),
+                    securityCode = securityCode,
+                    holderName = "Jane Doe",
+                    postalCode = "12345",
                 ),
-            )
-        }
-    }
+            ),
+            options = PayInTransactionOptions(PayInPaymentDetails(totalAmount = BigDecimal("12.34"))),
+        ),
+    )
 
 result.onSuccess { order.paymentTransId = it.transaction?.paymentTransId } // store it; don't log it
 ```
