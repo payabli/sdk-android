@@ -35,3 +35,10 @@ jobs:
       # An origin, so no path: `live-flows.yml` appends `/api` for the token server, and the SDK's
       # environment generator refuses a value carrying one.
       api-origin: ${{ vars.PAYABLI_API_BASE_URL_QA }}
+    # By name, and only this run's own: a called workflow reads an environment secret only when its caller
+    # passes it. live-flows.yml resolves each one from ci-protected.
+    secrets:
+      PAYABLI_CLIENT_ID_QA: ${{ secrets.PAYABLI_CLIENT_ID_QA }}
+      PAYABLI_CLIENT_SECRET_QA: ${{ secrets.PAYABLI_CLIENT_SECRET_QA }}
+      PAYABLI_ENTRY_QA: ${{ secrets.PAYABLI_ENTRY_QA }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

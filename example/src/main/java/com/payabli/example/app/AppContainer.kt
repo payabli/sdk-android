@@ -13,36 +13,21 @@ import com.payabli.example.app.demo.preflight.DeviceFacts
 import com.payabli.example.app.demo.preflight.platform.DeviceFactsReader
 import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
-import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.sdk.DemoEnvironment
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.example.app.sdk.PayInStartup
-import com.payabli.example.app.sdk.TapToPayTerminal
 import com.payabli.example.app.sdk.payInFlowGate
 import com.payabli.example.app.sdk.payInStartup
-import kotlinx.coroutines.MainScope
 
 /**
- * Everything the app is built from, assembled once per process.
- *
- * The SDK admits no dependency-injection framework, so this is the whole of the wiring.
- *
- * Built once and never rebuilt, which is what makes the Setup screen honest. Everything a session captured when
- * it was created is read back there and cannot be changed, because a control over it would appear to change
- * something already decided. [demoCustomer] is the exception, and it is one because no session holds it: it is
- * read when a request is built.
- *
- * What can be written is written at startup, before anything composes, and none of it is a control: the
- * token host from a launch Intent, and the entry point and environment from an instrumented test. Both
- * overrides exist because what they carry is not knowable at build time on the machine that needs it.
- *
- * The card-present screen reaches the SDK through [terminal]; the card-not-present screens start it through
- * [payInStartup] and it submits for them.
+ * Everything the app is built from, built once per process and never rebuilt: the Setup screen reads back what
+ * each session captured, so nothing here changes after the first screen composes. [demoCustomer] is read per
+ * request and is the exception.
  */
 class AppContainer(
     context: Context,
 ) {
-    private val appContext = context.applicationContext
+    val appContext: Context = context.applicationContext
 
     /**
      * The build's settings, except in an instrumented test, which has no build settings to read.
@@ -86,27 +71,8 @@ class AppContainer(
     val diagnostics: DiagnosticsRegistry = DiagnosticsRegistry()
 
     /**
-     * The card-present SDK.
-     *
-     * Lazy for the reason [sessionSource] is: it captures [configuration], and both writes that can change
-     * it land before any screen asks for a terminal.
-     */
-    val terminal: TerminalController by lazy {
-        TapToPayTerminal(
-            appContext = appContext,
-            sessionSource = sessionSource,
-            entryPoint = configuration.entryPoint,
-            scope = MainScope(),
-            identity = sampleIdentity,
-        )
-    }
-
-    /**
-     * Where the token server is.
-     *
-     * `var` for one reason: the launch override arrives on the Intent, which the Activity sees after
-     * the Application has been created. [applyLaunchOverride] is the only thing that writes it, and
-     * it is called once before any screen composes.
+     * Where the token server is. A `var` because the launch override arrives on the Intent after the Application
+     * exists. [applyLaunchOverride] is its only writer, and runs before any screen composes.
      */
     var tokenServer: TokenServerTarget = resolveTokenServer(launchOverride = null)
         private set
@@ -122,6 +88,9 @@ class AppContainer(
      * with, and an override would reach the Setup screen but not the SDK.
      */
     val sessionSource by lazy { PayInSessionSource(appContext, { tokenClient }, configuration) }
+
+    /** The card-present SDK, which only the variant linking the card reader fills. */
+    val cardPresent = CardPresentContainer(this)
 
     /** Whether the Simple Capture tab is shown. Starts from the saved choice, and off on a first launch. */
     val simpleCapture: SimpleCaptureSetting =

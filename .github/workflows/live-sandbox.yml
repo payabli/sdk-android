@@ -28,3 +28,10 @@ jobs:
     with:
       environment: sandbox
       secrets-suffix: SBX
+    # By name, and only this run's own: a called workflow reads an environment secret only when its caller
+    # passes it. live-flows.yml resolves each one from ci-protected.
+    secrets:
+      PAYABLI_CLIENT_ID_SBX: ${{ secrets.PAYABLI_CLIENT_ID_SBX }}
+      PAYABLI_CLIENT_SECRET_SBX: ${{ secrets.PAYABLI_CLIENT_SECRET_SBX }}
+      PAYABLI_ENTRY_SBX: ${{ secrets.PAYABLI_ENTRY_SBX }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

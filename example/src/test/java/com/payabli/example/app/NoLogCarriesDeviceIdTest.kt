@@ -12,10 +12,9 @@ import java.io.File
  */
 class NoLogCarriesDeviceIdTest {
     private val appSources: List<File> =
-        File("src/main")
-            .walkTopDown()
-            .filter { it.isFile && it.extension == "kt" }
-            .toList()
+        listOf("src/main", "src/cardPresent", "src/cardNotPresent").flatMap { root ->
+            File(root).walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        }
 
     @Test
     fun `no file that names the device ID writes to a log`() {

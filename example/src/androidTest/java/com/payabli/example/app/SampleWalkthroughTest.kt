@@ -23,31 +23,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The four card-not-present flows, driven through the form this app actually shows, against a real environment.
- *
- * `NavigationSmokeTest` walks the same screens against a fake token endpoint and stops before submitting. This
- * one submits, so it needs a reachable token server and a configured paypoint, and it sends real requests. It
- * is excluded by name in `example/build.gradle.kts` unless `payabli.sampleWalkthrough=true`, so an ordinary run
- * neither sends a payment nor reports a skip for one it did not send.
- *
- * Driving the form is what puts the flow on the screen, so several devices run it together and each shows
- * what it is doing. What makes the resulting rows attributable is the prefill: it fills the form from the
- * device's own model, so no two devices submit the same customer.
- *
- * ```
- * adb -s <serial> reverse tcp:8787 tcp:8787
- * ANDROID_SERIAL=<serial> ./gradlew :example:connectedDebugAndroidTest \
- *   -Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true \
- *   -Ppayabli.demo.environment=sandbox -Ppayabli.demo.entryPoint=<entry>
- * ```
- *
- * Given the three `payabli.liveTest.*` values instead, the address, entry point and environment come from the
- * run rather than from what the build compiled in, which is how CI points the app at the server it started. A
- * token server is required either way, and holds the client credential the app never sees.
- *
- * **The device has to be unlocked.** A phone that locked while idle is awake and still shows the keyguard, so
- * no activity reaches the foreground and every flow here fails with "No compose hierarchies found in the app",
- * which names Compose and not the lock. Dismiss the keyguard on every target before starting a run.
+ * Submits the four card-not-present flows through the form against a real environment, and is excluded unless
+ * `payabli.sampleWalkthrough=true`. The device must be unlocked: the keyguard fails every flow with "No compose
+ * hierarchies found", which names Compose and not the lock. The run command is in `example/build.gradle.kts`.
  */
 @RunWith(AndroidJUnit4::class)
 class SampleWalkthroughTest {

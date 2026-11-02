@@ -245,7 +245,7 @@ class TapToPayViewModel(
     companion object {
         fun from(container: AppContainer): TapToPayViewModel =
             TapToPayViewModel(
-                terminal = container.terminal,
+                terminal = container.cardPresent.terminal,
                 tokenClient = container.tokenClient,
                 configuration = container.configuration,
                 readDeviceFacts = container.readDeviceFacts,

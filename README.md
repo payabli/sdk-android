@@ -432,7 +432,9 @@ card-not-present form, `PayabliPayInForm`, is a Jetpack Compose composable.
 
 [`example/`](example/README.md) is a Compose app that takes card-not-present and Tap to Pay payments
 against your sandbox paypoint, and [`example-server/`](example-server/README.md) is its token server.
-Their READMEs say how to configure and run both. In sandbox, use Payabli's
+The app has two variants: `cardPresent` takes both kinds of payment and needs the card reader repository's
+credentials, and `cardNotPresent` leaves out Tap to Pay and needs none. Their READMEs say how to configure and
+run both. In sandbox, use Payabli's
 [test cards](https://docs.payabli.com/guides/test-accounts-reference).
 
 ## Privacy and data collection

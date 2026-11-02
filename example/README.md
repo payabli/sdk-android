@@ -12,9 +12,24 @@ What integrating the Payabli Android SDK looks like.
 ## Running it
 
 ```bash
-./gradlew :example:installDebug
+./gradlew :example:installCardPresentDebug
 adb shell am start -n com.payabli.example.app/.MainActivity
 ```
+
+### Variants
+
+The app comes in two variants:
+
+- **`cardPresent`** has every screen, Tap to pay included. It links `:taptopay`, so it needs the card reader
+  repository's credentials (`payabli.maven.user` and `payabli.maven.password` in `~/.gradle/gradle.properties`), and
+  it runs only on an arm64 phone.
+- **`cardNotPresent`** has every screen except Tap to pay. It needs no reader credential and installs on an
+  x86_64 emulator. The live walkthrough runs on it.
+
+Tap to pay's screen, its view model and the two files that call the card-present SDK are in
+`src/cardPresent`. `src/cardNotPresent` holds the same two seams with nothing behind them:
+`demo/ui/nav/CardPresentGraph.kt`, which adds the tab, and `sdk/CardPresentSupport.kt`, which answers
+whether the device supports card-present payments.
 
 ### Settings
 
@@ -28,7 +43,7 @@ run instead: `-Ppayabli.demo.entryPoint=entry0000`.
 exported into, or from CI, where there is no file to edit:
 
 ```bash
-PAYABLI_DEMO_ENTRYPOINT=entry0000 ./gradlew :example:installDebug
+PAYABLI_DEMO_ENTRYPOINT=entry0000 ./gradlew :example:installCardPresentDebug
 ```
 
 The default is what the build falls back to when nothing is set. The template prefills two of them,
@@ -101,8 +116,9 @@ Inside `sdk/`:
 - `PayInOutcomes.kt` maps what the SDK answers onto this app's own `PaymentResult` and `PaymentError`, so a
   screen reads a demo type.
 
-Card-present runs on the Tap to Pay SDK: `AppContainer.kt` builds `sdk/TapToPayTerminal.kt`, which
-implements `demo/terminal/TerminalController.kt` so the screens never name the SDK.
+Card-present runs on the Tap to Pay SDK, in the `cardPresent` variant: `CardPresentContainer.kt` builds
+`sdk/TapToPayTerminal.kt`, which implements `demo/terminal/TerminalController.kt` so the screens never name
+the SDK.
 
 ### The smallest capture there is
 
@@ -145,9 +161,11 @@ system font.
 ## Verifying
 
 ```bash
-./gradlew :example:assembleDebug :example:test :example:ktlintCheck :example:lint
+./gradlew :example:assembleDebug :example:test :example:ktlintCheck   # both variants
+./gradlew :example:lintCardPresentDebug :example:lintCardNotPresentDebug  # plain `lint` runs one variant
+./gradlew :example:assembleCardNotPresentDebug :example:testCardNotPresentDebugUnitTest  # no reader credential
 ./gradlew :example:ktlintFormat --no-configuration-cache   # the flag is required
-./gradlew :example:connectedAndroidTest                    # local only; CI has no emulator
+./gradlew :example:connectedCardNotPresentDebugAndroidTest # local; an emulator runs this variant
 ```
 
 Naming `SdkState`, `PayabliSession.state` or `PayabliSession.transport` is a Lint error, and Compose's own
