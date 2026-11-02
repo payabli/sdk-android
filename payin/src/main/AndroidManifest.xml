@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Transparent, so only the contract's own screen shows. No screenOrientation: on API 26 a translucent Activity
-  that sets one crashes on launch.
--->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application>
+        <!--
+          Transparent, so only the contract's own screen shows. No screenOrientation: on API 26 a translucent
+          Activity that sets one crashes on launch.
+        -->
         <activity
             android:name="com.payabli.sdk.payin.presentation.PayInPresentationActivity"
             android:exported="false"
