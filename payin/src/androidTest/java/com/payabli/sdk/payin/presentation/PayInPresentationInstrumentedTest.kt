@@ -132,6 +132,22 @@ class PayInPresentationInstrumentedTest {
     }
 
     @Test
+    fun aReaderThatThrowsFailsTheCall() {
+        val outcome =
+            present(Intent(host(), EchoActivity::class.java)) {
+                throw IllegalStateException(UNREADABLE)
+            }
+        awaitEcho()
+
+        EchoActivity.answer(Activity.RESULT_OK)
+
+        val error = assertThrows(IllegalStateException::class.java) { await(outcome) }
+        assertEquals(UNREADABLE, error.message)
+        awaitUntil("the presentation Activity outlived its failed read") { presentationActivities().isEmpty() }
+        assertEquals(0, PayInPresentation.pendingCount())
+    }
+
+    @Test
     fun anActivityFromADeadProcessDoesNotBindToANewCall() {
         val outcome = present("approved")
         awaitEcho()
@@ -177,12 +193,16 @@ class PayInPresentationInstrumentedTest {
      * Starts a presentation that launches [input] for a result from the host Activity.
      *
      * @param input the Intent the contract starts.
+     * @param reader reads the contract's result as an outcome.
      * @return the outcome the waiting call receives.
      */
-    private fun present(input: Intent): Deferred<PayInPresentationOutcome<String?>> {
+    private fun present(
+        input: Intent,
+        reader: (ActivityResult) -> PayInPresentationOutcome<String?> = ::outcomeOf,
+    ): Deferred<PayInPresentationOutcome<String?>> {
         val activity = host()
         return scope.async {
-            PayInPresentation.present(activity, ActivityResultContracts.StartActivityForResult(), input, ::outcomeOf)
+            PayInPresentation.present(activity, ActivityResultContracts.StartActivityForResult(), input, reader)
         }
     }
 
@@ -243,5 +263,6 @@ class PayInPresentationInstrumentedTest {
         const val TIMEOUT_MS = 10_000L
         const val POLL_MS = 50L
         const val NO_SUCH_ACTION = "com.payabli.sdk.payin.presentation.test.NO_SUCH_ACTION"
+        const val UNREADABLE = "the result could not be read"
     }
 }

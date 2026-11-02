@@ -120,7 +120,7 @@ internal object PayInPresentation {
      * Throws [error] into the call waiting on [id], once, as [deliver] hands it an outcome.
      *
      * @param id the presentation's id.
-     * @param error what launching the contract raised.
+     * @param error what launching the contract, or reading its answer, raised.
      */
     fun fail(
         id: Long,
@@ -151,13 +151,25 @@ internal object PayInPresentation {
          * @param activity the presentation Activity, in `onCreate`.
          * @param launch false when a recreated instance is waiting on a contract already launched.
          * @param onOutcome receives the contract's answer, read through this presentation's reader.
+         * @param onFailure receives what the reader raised, which would otherwise end the process from the main thread.
          */
         fun start(
             activity: ComponentActivity,
             launch: Boolean,
             onOutcome: (PayInPresentationOutcome<R>) -> Unit,
+            onFailure: (RuntimeException) -> Unit,
         ) {
-            val launcher = activity.registerForActivityResult(contract) { onOutcome(outcome(it)) }
+            val launcher =
+                activity.registerForActivityResult(contract) { output ->
+                    val read =
+                        try {
+                            outcome(output)
+                        } catch (e: RuntimeException) {
+                            onFailure(e)
+                            return@registerForActivityResult
+                        }
+                    onOutcome(read)
+                }
             if (launch) launcher.launch(input)
         }
 
@@ -175,7 +187,7 @@ internal object PayInPresentation {
         /**
          * Resumes the waiting call by throwing [error].
          *
-         * @param error what launching the contract raised.
+         * @param error what launching the contract, or reading its answer, raised.
          */
         fun fail(error: RuntimeException) {
             continuation.resumeWithException(error)

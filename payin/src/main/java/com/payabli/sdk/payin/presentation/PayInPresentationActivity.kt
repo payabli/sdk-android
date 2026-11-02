@@ -24,12 +24,10 @@ internal class PayInPresentationActivity : ComponentActivity() {
         }
         launched = savedInstanceState?.getBoolean(KEY_LAUNCHED) == true
         try {
-            presentation.start(this, launch = !launched) { deliver(it) }
+            presentation.start(this, launch = !launched, onOutcome = ::deliver, onFailure = ::fail)
         } catch (e: RuntimeException) {
             // Thrown out of onCreate it would end the process. The call that asked for the launch receives it instead.
-            delivered = true
-            PayInPresentation.fail(id, e)
-            finish()
+            fail(e)
             return
         }
         launched = true
@@ -50,6 +48,12 @@ internal class PayInPresentationActivity : ComponentActivity() {
     private fun deliver(outcome: PayInPresentationOutcome<*>) {
         delivered = true
         PayInPresentation.deliver(id, outcome)
+        finish()
+    }
+
+    private fun fail(error: RuntimeException) {
+        delivered = true
+        PayInPresentation.fail(id, error)
         finish()
     }
 
