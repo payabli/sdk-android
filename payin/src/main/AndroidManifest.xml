@@ -3,6 +3,10 @@
 
     <application>
         <!--
+          No allowBackup or usesCleartextTraffic. A library's application attributes merge into the host app's and
+          override its choice, so both belong to the app's own manifest.
+        -->
+        <!--
           Transparent, so only the contract's own screen shows. No screenOrientation: on API 26 a translucent
           Activity that sets one crashes on launch.
         -->
