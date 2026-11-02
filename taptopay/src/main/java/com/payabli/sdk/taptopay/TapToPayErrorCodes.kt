@@ -95,10 +95,16 @@ internal object TapToPayErrorCodes {
             .firstOrNull { (status, code) -> status != null || code != null }
             ?: (null to null)
 
+    /**
+     * The status and the service's code [failure] itself carries, without reading its causes.
+     *
+     * @param failure one link of a chain.
+     * @return the status and the code, each null when [failure] carries none. A card-present failure's code
+     *   counts only beside a status, since one read off the card reader names the gateway's state.
+     */
     private fun ownAnswerOf(failure: Throwable): Pair<Int?, String?> =
         when (failure) {
             is PayabliException -> failure.httpStatus to failure.rawCode
-            // A code read off the card reader names the gateway's state, not anything a response said.
             is TTPTransactionException -> failure.httpStatus to failure.code?.takeIf { failure.httpStatus != null }
             is DeviceServiceException -> failure.httpStatus to null
             else -> null to null

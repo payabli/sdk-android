@@ -128,7 +128,8 @@ public object PayabliHttpErrors {
      * @param response the answered request whose status classifies the failure.
      * @param statusOverride consulted first for any non-2xx, and wins when it returns non-null, which is
      *   how a capability attaches meaning to a shared status. Not consulted for a 2xx.
-     * @return the typed error for [response], or null when it is 2xx.
+     * @return the typed error for [response], or null when it is 2xx. It carries the response's status and the
+     *   code its body names, and neither when the status is below 100, where no status line was parsed.
      */
     public fun from(
         response: PayabliResponse,
@@ -138,9 +139,7 @@ public object PayabliHttpErrors {
         val status = response.statusCode
         statusOverride(status)?.let { return it }
         val body = response.bodyAsText()
-        // A status line below 100 was not parsed, so there is no status to report.
         val answered = status.takeIf { it >= HTTP_MIN_VALID }
-        // A response with no status line was not read as an answer, so its body names no code either.
         val code = answered?.let { PayabliJson.decodeOrNull(ErrorDetails.serializer(), body)?.rawCode }
 
         fun generic(

@@ -44,6 +44,8 @@ internal class TokenStorageClient(
      * @param options everything about storing a method other than the instrument.
      * @param entered what the payer typed, for the customer data.
      * @return the stored method, identified for later use.
+     * @throws PayInException.Refused when the service refuses the method inside a 200. It carries no code: the
+     *   route answers one result code for every refusal, which names no condition.
      */
     suspend fun storeMethod(
         entryPoint: String,
@@ -124,8 +126,6 @@ internal class TokenStorageClient(
                 // number a reader would take for a real one.
                 LogField.safe("errorCode", stored?.resultCode?.toString()),
             ) { "the service refused to store the method" }
-            // The route answers the same result code for every refusal, so it names no condition and is not
-            // the service's code for this one.
             throw PayInException.Refused(
                 PayInFailure(
                     code = null,
