@@ -311,7 +311,7 @@ class TapToPayErrorCodesTest {
     @Test
     fun `the status and code come from one answer, the first in the chain`() {
         val inner = PayabliHttpErrors.from(PayabliResponse(503, body = """{"code":"E0001"}""".toByteArray()))
-        val outer = TTPTransactionException.Undecodable(inner, httpStatus = 201)
+        val outer = StatusOnly(requireNotNull(inner))
 
         val thrown = reported(outer)
 
@@ -358,4 +358,11 @@ private class NoWait(
 ) : Exception(cause),
     PayabliRetryAfter {
     override val retryAfterMillis: Long? = null
+}
+
+/** A failure read from an answer that named no code, wrapping one whose answer did. */
+private class StatusOnly(
+    cause: Throwable,
+) : PayabliException(PayabliErrorType.UNKNOWN, "status only", null, cause) {
+    override val httpStatus: Int = 201
 }

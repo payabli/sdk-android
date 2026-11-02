@@ -639,6 +639,16 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `a repeated key reports the 409 it was answered with and no code`() =
+        runTest(timeout = timeout) {
+            val failure = failureOf("Duplicated idempotencyKey", 409) as? PayabliException
+
+            assertTrue("$failure", failure is PayInKeyRefusal)
+            assertEquals(409, failure?.httpStatus)
+            assertNull(failure?.rawCode)
+        }
+
+    @Test
     fun `an answer that cannot be read still names its transaction`() =
         runTest(timeout = timeout) {
             // A malformed sibling field fails the envelope, and must not take the identifier with it.
