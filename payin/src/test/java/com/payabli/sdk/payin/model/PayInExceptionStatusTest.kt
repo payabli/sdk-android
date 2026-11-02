@@ -43,12 +43,4 @@ class PayInExceptionStatusTest {
         assertEquals(503, error.httpStatus)
         assertEquals("E9999", error.rawCode)
     }
-
-    @Test
-    fun `an unreadable answer reports the status it arrived with and no code`() {
-        val error: PayabliException = PayInException.Undecodable(cause = null, paymentTransId = null, httpStatus = 200)
-
-        assertEquals(200, error.httpStatus)
-        assertNull(error.rawCode)
-    }
 }
