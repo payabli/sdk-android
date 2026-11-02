@@ -32,6 +32,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <application>
+        <!--
+          No allowBackup or usesCleartextTraffic. A library's application attributes merge into the host app's and
+          override its choice, so both belong to the app's own manifest.
+        -->
         <activity
             android:name="com.magiccube.tnp.TnPActivity"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar"
