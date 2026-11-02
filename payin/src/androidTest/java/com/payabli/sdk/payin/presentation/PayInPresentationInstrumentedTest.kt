@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.presentation
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResult
@@ -8,21 +9,26 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.lifecycle.ActivityLifecycleCallback
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * The SDK-owned Activity launches one contract and hands its result back to the call waiting on it. [EchoActivity]
@@ -43,6 +49,8 @@ class PayInPresentationInstrumentedTest {
 
     @After
     fun tearDown() {
+        // A test that failed still holds its call, and the table is shared by every test in the process.
+        scope.cancel()
         // A test that failed with the echo still up leaves it over the host.
         if (EchoActivity.CURRENT.get() != null) EchoActivity.answer(Activity.RESULT_CANCELED)
         scenario.close()
@@ -114,20 +122,74 @@ class PayInPresentationInstrumentedTest {
         assertEquals(0, PayInPresentation.pendingCount())
     }
 
+    @Test
+    fun aContractThatCannotLaunchFailsTheCall() {
+        val outcome = present(Intent(NO_SUCH_ACTION))
+
+        assertThrows(ActivityNotFoundException::class.java) { await(outcome) }
+        awaitUntil("the presentation Activity outlived its failed launch") { presentationActivities().isEmpty() }
+        assertEquals(0, PayInPresentation.pendingCount())
+    }
+
+    @Test
+    fun anActivityFromADeadProcessDoesNotBindToANewCall() {
+        val outcome = present("approved")
+        awaitEcho()
+        val live = awaitPresentation()
+        val id = live.intent.getLongExtra(PayInPresentation.EXTRA_ID, 0L)
+        val restored = CountDownLatch(1)
+        val monitor = ActivityLifecycleMonitorRegistry.getInstance()
+        val callback =
+            ActivityLifecycleCallback { activity, stage ->
+                if (activity is PayInPresentationActivity && activity !== live && stage == Stage.DESTROYED) {
+                    restored.countDown()
+                }
+            }
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { monitor.addLifecycleCallback(callback) }
+        try {
+            // The same id, as an Activity restored into this process from a dead one would carry.
+            val stale =
+                Intent(live, PayInPresentationActivity::class.java)
+                    .putExtra(PayInPresentation.EXTRA_ID, id)
+                    .putExtra(PayInPresentation.EXTRA_PROCESS, "a process that died")
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { live.startActivity(stale) }
+            assertTrue("the stale Activity never finished", restored.await(TIMEOUT_MS, TimeUnit.MILLISECONDS))
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { monitor.removeLifecycleCallback(callback) }
+        }
+
+        assertEquals("the stale Activity launched the contract for the live call", 1, EchoActivity.LAUNCHES.get())
+        EchoActivity.answer(Activity.RESULT_OK)
+        val result = await(outcome)
+        assertTrue("the live call lost its answer: $result", result is PayInPresentationOutcome.Completed)
+    }
+
     /**
      * Starts a presentation of [EchoActivity] from the host Activity, as a presented path would.
      *
      * @param value what the echo returns on `RESULT_OK`.
      * @return the outcome the waiting call receives.
      */
-    private fun present(value: String): Deferred<PayInPresentationOutcome<String?>> {
-        var host: ComponentActivity? = null
-        scenario.onActivity { host = it }
-        val activity = requireNotNull(host)
-        val input = Intent(activity, EchoActivity::class.java).putExtra(EchoActivity.EXTRA_VALUE, value)
+    private fun present(value: String): Deferred<PayInPresentationOutcome<String?>> =
+        present(Intent(host(), EchoActivity::class.java).putExtra(EchoActivity.EXTRA_VALUE, value))
+
+    /**
+     * Starts a presentation that launches [input] for a result from the host Activity.
+     *
+     * @param input the Intent the contract starts.
+     * @return the outcome the waiting call receives.
+     */
+    private fun present(input: Intent): Deferred<PayInPresentationOutcome<String?>> {
+        val activity = host()
         return scope.async {
             PayInPresentation.present(activity, ActivityResultContracts.StartActivityForResult(), input, ::outcomeOf)
         }
+    }
+
+    private fun host(): ComponentActivity {
+        var host: ComponentActivity? = null
+        scenario.onActivity { host = it }
+        return requireNotNull(host)
     }
 
     private fun outcomeOf(result: ActivityResult): PayInPresentationOutcome<String?> =
@@ -180,5 +242,6 @@ class PayInPresentationInstrumentedTest {
     private companion object {
         const val TIMEOUT_MS = 10_000L
         const val POLL_MS = 50L
+        const val NO_SUCH_ACTION = "com.payabli.sdk.payin.presentation.test.NO_SUCH_ACTION"
     }
 }

@@ -6,7 +6,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContract
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.UUID
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * Launches one activity-result contract from the SDK's own [PayInPresentationActivity] and suspends until it answers.
@@ -14,6 +16,10 @@ import kotlin.coroutines.resume
  */
 internal object PayInPresentation {
     internal const val EXTRA_ID = "com.payabli.sdk.payin.presentation.ID"
+    internal const val EXTRA_PROCESS = "com.payabli.sdk.payin.presentation.PROCESS"
+
+    // Ids count from 1 in every process, so an Activity restored into a new process carries an id a new call may hold.
+    private val process = UUID.randomUUID().toString()
 
     // A plain map under a monitor, not ConcurrentHashMap.computeIfAbsent, which is API 24 against this module's 23.
     private val lock = Any()
@@ -29,6 +35,8 @@ internal object PayInPresentation {
      * @param input what [contract] is launched with.
      * @param outcome reads the contract's output as a completion or a cancel.
      * @return the contract's answer, or [PayInPresentationOutcome.Cancelled] if the Activity finished without one.
+     * @throws RuntimeException what starting the presentation, or launching [contract], raised, such as
+     *   `ActivityNotFoundException` when nothing answers the contract's Intent.
      */
     suspend fun <I, O, R> present(
         activity: Activity,
@@ -46,11 +54,27 @@ internal object PayInPresentation {
                 }
             continuation.invokeOnCancellation { withdraw(id)?.close() }
             try {
-                activity.startActivity(Intent(activity, PayInPresentationActivity::class.java).putExtra(EXTRA_ID, id))
+                activity.startActivity(
+                    Intent(activity, PayInPresentationActivity::class.java)
+                        .putExtra(EXTRA_ID, id)
+                        .putExtra(EXTRA_PROCESS, process),
+                )
             } catch (e: RuntimeException) {
                 withdraw(id)
                 throw e
             }
+        }
+
+    /**
+     * Reads the presentation id from [intent], if this process started it.
+     *
+     * @param intent the presentation Activity's Intent.
+     * @return the id, or null when the Intent is missing one or comes from a process that has since died.
+     */
+    fun idOf(intent: Intent): Long? =
+        intent.getLongExtra(EXTRA_ID, 0L).takeIf {
+            it > 0L &&
+                intent.getStringExtra(EXTRA_PROCESS) == process
         }
 
     /**
@@ -90,6 +114,19 @@ internal object PayInPresentation {
         outcome: PayInPresentationOutcome<*>,
     ) {
         withdraw(id)?.resume(outcome)
+    }
+
+    /**
+     * Throws [error] into the call waiting on [id], once, as [deliver] hands it an outcome.
+     *
+     * @param id the presentation's id.
+     * @param error what launching the contract raised.
+     */
+    fun fail(
+        id: Long,
+        error: RuntimeException,
+    ) {
+        withdraw(id)?.fail(error)
     }
 
     /** Presentations still waiting. Process state for tests. */
@@ -133,6 +170,15 @@ internal object PayInPresentation {
         @Suppress("UNCHECKED_CAST")
         fun resume(value: PayInPresentationOutcome<*>) {
             continuation.resume(value as PayInPresentationOutcome<R>)
+        }
+
+        /**
+         * Resumes the waiting call by throwing [error].
+         *
+         * @param error what launching the contract raised.
+         */
+        fun fail(error: RuntimeException) {
+            continuation.resumeWithException(error)
         }
 
         /** Finishes the instance showing this presentation, if one is bound, on its main thread. */

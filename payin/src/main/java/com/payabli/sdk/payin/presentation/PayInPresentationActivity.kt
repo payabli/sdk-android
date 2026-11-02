@@ -14,7 +14,7 @@ internal class PayInPresentationActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        id = intent.getLongExtra(PayInPresentation.EXTRA_ID, NO_ID)
+        id = PayInPresentation.idOf(intent) ?: NO_ID
         val presentation = PayInPresentation.attach(id, this)
         if (presentation == null) {
             // A restored process: the call that opened this died with the old one, so nothing waits for an answer.
@@ -23,7 +23,15 @@ internal class PayInPresentationActivity : ComponentActivity() {
             return
         }
         launched = savedInstanceState?.getBoolean(KEY_LAUNCHED) == true
-        presentation.start(this, launch = !launched) { deliver(it) }
+        try {
+            presentation.start(this, launch = !launched) { deliver(it) }
+        } catch (e: RuntimeException) {
+            // Thrown out of onCreate it would end the process. The call that asked for the launch receives it instead.
+            delivered = true
+            PayInPresentation.fail(id, e)
+            finish()
+            return
+        }
         launched = true
     }
 
