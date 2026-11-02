@@ -138,28 +138,39 @@ public object PayabliHttpErrors {
         val status = response.statusCode
         statusOverride(status)?.let { return it }
         val body = response.bodyAsText()
+        // A status line below 100 was not parsed, so there is no status to report.
+        val answered = status.takeIf { it >= HTTP_MIN_VALID }
+        val code = PayabliJson.decodeOrNull(ErrorDetails.serializer(), body)?.rawCode
+
+        fun generic(
+            type: PayabliErrorType,
+            reason: String,
+        ) = PayabliGenericException(type, reason, null, null, answered, code)
         return when {
             status == HTTP_BAD_REQUEST -> validation(status, body)
-            status == HTTP_UNAUTHORIZED -> PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "Unauthorized (401)")
-            status == HTTP_PAYMENT_REQUIRED -> decline(body)
-            status == HTTP_FORBIDDEN -> PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, "Forbidden (403)")
-            status == HTTP_GONE -> PayabliGenericException(PayabliErrorType.SESSION_BURNED, "Session burned (410)")
+            status == HTTP_UNAUTHORIZED -> generic(PayabliErrorType.TOKEN_EXPIRED, "Unauthorized (401)")
+            status == HTTP_PAYMENT_REQUIRED -> decline(status, body)
+            status == HTTP_FORBIDDEN -> generic(PayabliErrorType.PERMISSION_DENIED, "Forbidden (403)")
+            status == HTTP_GONE -> generic(PayabliErrorType.SESSION_BURNED, "Session burned (410)")
             // The reason is fixed rather than read from the body: on the money-in routes that body
             // quotes the request's own idempotency key, and reason is displayable.
-            status == HTTP_CONFLICT -> PayabliGenericException(PayabliErrorType.CONFLICT, "Conflict (409)")
-            status == HTTP_TOO_MANY_REQUESTS -> PayabliRateLimitException(retryAfterMillis(response))
+            status == HTTP_CONFLICT -> generic(PayabliErrorType.CONFLICT, "Conflict (409)")
+            status == HTTP_TOO_MANY_REQUESTS ->
+                PayabliRateLimitException(
+                    retryAfterMillis(response),
+                    PayabliRateLimitException.DEFAULT_REASON,
+                    null,
+                    status,
+                    code,
+                )
             // Anything at or above 500, including the 6xx-plus codes a proxy may invent: RFC 9110 says a
             // client "SHOULD process the response as if it had a 5xx (Server Error) status code". Do not
             // narrow this to 500..599.
             status >= HTTP_INTERNAL_ERROR -> server(status, body, retryAfterMillis(response))
             // getResponseCode returns -1 when no status line could be parsed, which is a broken response
             // rather than an unclassified one, so it is retryable.
-            status < HTTP_MIN_VALID ->
-                PayabliGenericException(
-                    PayabliErrorType.NETWORK_ERROR,
-                    "Malformed HTTP response",
-                )
-            else -> PayabliGenericException(PayabliErrorType.UNKNOWN, "HTTP $status")
+            status < HTTP_MIN_VALID -> generic(PayabliErrorType.NETWORK_ERROR, "Malformed HTTP response")
+            else -> generic(PayabliErrorType.UNKNOWN, "HTTP $status")
         }
     }
 
@@ -286,13 +297,17 @@ public object PayabliHttpErrors {
         return null
     }
 
-    private fun decline(body: String): PayabliDeclineException {
+    private fun decline(
+        status: Int,
+        body: String,
+    ): PayabliDeclineException {
         val declined = PayabliJson.decodeOrNull(DeclineBody.serializer(), body)
         return PayabliDeclineException(
             rawCode = declined?.rawCode,
             reason = declined?.reason ?: PayabliDeclineException.DEFAULT_REASON,
             explanation = declined?.explanation,
             action = declined?.action,
+            httpStatus = status,
         )
     }
 
