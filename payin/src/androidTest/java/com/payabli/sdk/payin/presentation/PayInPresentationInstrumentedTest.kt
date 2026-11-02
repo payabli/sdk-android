@@ -27,6 +27,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -140,13 +141,14 @@ class PayInPresentationInstrumentedTest {
     fun aReaderThatThrowsFailsTheCall() {
         val outcome =
             present(Intent(host(), EchoActivity::class.java)) {
-                throw IllegalStateException(UNREADABLE)
+                // Checked, as the SDK's own exceptions are, so a catch of RuntimeException alone misses it.
+                throw IOException(UNREADABLE)
             }
         awaitEcho()
 
         EchoActivity.answer(Activity.RESULT_OK)
 
-        val error = assertThrows(IllegalStateException::class.java) { await(outcome) }
+        val error = assertThrows(IOException::class.java) { await(outcome) }
         assertEquals(UNREADABLE, error.message)
         awaitUntil("the presentation Activity outlived its failed read") { presentationActivities().isEmpty() }
         assertEquals(0, PayInPresentation.pendingCount())

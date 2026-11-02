@@ -25,7 +25,7 @@ internal class PayInPresentationActivity : ComponentActivity() {
         launched = savedInstanceState?.getBoolean(KEY_LAUNCHED) == true
         try {
             presentation.start(this, launch = !launched, onOutcome = ::deliver, onFailure = ::fail)
-        } catch (e: RuntimeException) {
+        } catch (e: Exception) {
             // Thrown out of onCreate it would end the process. The call that asked for the launch receives it instead.
             fail(e)
             return
@@ -51,7 +51,7 @@ internal class PayInPresentationActivity : ComponentActivity() {
         finish()
     }
 
-    private fun fail(error: RuntimeException) {
+    private fun fail(error: Exception) {
         delivered = true
         PayInPresentation.fail(id, error)
         finish()

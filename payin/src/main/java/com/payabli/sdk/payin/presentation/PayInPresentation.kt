@@ -35,7 +35,7 @@ internal object PayInPresentation {
      * @param input what [contract] is launched with.
      * @param outcome reads the contract's output as a completion or a cancel.
      * @return the contract's answer, or [PayInPresentationOutcome.Cancelled] if the Activity finished without one.
-     * @throws RuntimeException what starting the presentation, or launching [contract], raised, such as
+     * @throws Exception what starting the presentation, launching [contract] or reading its answer raised, such as
      *   `ActivityNotFoundException` when nothing answers the contract's Intent.
      */
     suspend fun <I, O, R> present(
@@ -124,7 +124,7 @@ internal object PayInPresentation {
      */
     fun fail(
         id: Long,
-        error: RuntimeException,
+        error: Exception,
     ) {
         withdraw(id)?.fail(error)
     }
@@ -157,14 +157,14 @@ internal object PayInPresentation {
             activity: ComponentActivity,
             launch: Boolean,
             onOutcome: (PayInPresentationOutcome<R>) -> Unit,
-            onFailure: (RuntimeException) -> Unit,
+            onFailure: (Exception) -> Unit,
         ) {
             val launcher =
                 activity.registerForActivityResult(contract) { output ->
                     val read =
                         try {
                             outcome(output)
-                        } catch (e: RuntimeException) {
+                        } catch (e: Exception) {
                             onFailure(e)
                             return@registerForActivityResult
                         }
@@ -189,7 +189,7 @@ internal object PayInPresentation {
          *
          * @param error what launching the contract, or reading its answer, raised.
          */
-        fun fail(error: RuntimeException) {
+        fun fail(error: Exception) {
             continuation.resumeWithException(error)
         }
 
