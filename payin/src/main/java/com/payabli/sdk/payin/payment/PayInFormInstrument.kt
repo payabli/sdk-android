@@ -13,20 +13,10 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInSecCode
-import com.payabli.sdk.payin.model.SensitiveDigits
 
 /**
- * Turns what the payer typed into the typed instrument, and overwrites every buffer it made.
- *
- * The values arrive as `String`, which is what a text field holds and what nothing can erase. What these two
- * functions add is that every [SensitiveDigits] built from them is closed before the call returns, however the
- * block ends: a client that throws with the request half sent leaves no readable card number behind.
- *
- * Everything that can refuse the form is read before the first buffer is built, so a refusal leaves nothing to
- * clean up.
- *
- * The instrument lives for the block only. Both functions close its buffers on the way out, so a caller keeping
- * a reference keeps one whose digits read as empty.
+ * Turns what the payer typed into the typed instrument and closes its buffers however the block ends. Everything
+ * that can refuse the form is read before a buffer is built, so a refusal leaves nothing behind.
  */
 internal object PayInFormInstrument {
     /**
@@ -40,16 +30,15 @@ internal object PayInFormInstrument {
         values: PayInFormValues,
         block: suspend (PayInInstrument) -> T,
     ): T {
-        val buffers = Buffers()
+        val instrument =
+            when (values.method) {
+                PayInMethodType.Card -> PayInInstrument.Card(card(values))
+                PayInMethodType.BankAccount -> PayInInstrument.BankAccount(bankAccount(values))
+            }
         try {
-            val instrument =
-                when (values.method) {
-                    PayInMethodType.Card -> PayInInstrument.Card(buffers.card(values))
-                    PayInMethodType.BankAccount -> PayInInstrument.BankAccount(buffers.bankAccount(values))
-                }
             return block(instrument)
         } finally {
-            buffers.close()
+            instrument.closeDigits()
         }
     }
 
@@ -64,20 +53,19 @@ internal object PayInFormInstrument {
         values: PayInFormValues,
         block: suspend (PayInPaymentMethod) -> T,
     ): T {
-        val buffers = Buffers()
+        val method =
+            when (values.method) {
+                PayInMethodType.Card -> PayInPaymentMethod.Card(card(values))
+                PayInMethodType.BankAccount -> PayInPaymentMethod.BankAccount(bankAccount(values))
+            }
         try {
-            val method =
-                when (values.method) {
-                    PayInMethodType.Card -> PayInPaymentMethod.Card(buffers.card(values))
-                    PayInMethodType.BankAccount -> PayInPaymentMethod.BankAccount(buffers.bankAccount(values))
-                }
             return block(method)
         } finally {
-            buffers.close()
+            method.closeDigits()
         }
     }
 
-    private fun Buffers.card(values: PayInFormValues): PayInCardData {
+    private fun card(values: PayInFormValues): PayInCardData {
         // Parsed before the first buffer exists, so an expiry this cannot read has no card number to leave
         // behind.
         val expiry =
@@ -87,22 +75,22 @@ internal object PayInFormInstrument {
                     "The expiry is not a month and a year",
                 )
         return PayInCardData(
-            cardNumber = of(values[PayInField.CardNumber]),
+            cardNumber = values[PayInField.CardNumber],
             expiry = expiry,
-            securityCode = of(values[PayInField.CardSecurityCode]),
+            securityCode = values[PayInField.CardSecurityCode],
             holderName = values[PayInField.CardholderName],
             postalCode = values[PayInField.CardPostalCode],
         )
     }
 
-    private fun Buffers.bankAccount(values: PayInFormValues): PayInBankAccountData {
+    private fun bankAccount(values: PayInFormValues): PayInBankAccountData {
         // The three choices first, as the card's expiry is: each can refuse the form, and a refusal before the
         // account number is buffered leaves nothing to clean up.
         val accountType = accountType(values[PayInField.AccountType])
         val holderType = holderType(values[PayInField.AccountHolderType])
         val secCode = secCode(values[PayInField.SecCode])
         return PayInBankAccountData(
-            accountNumber = of(values[PayInField.AccountNumber]),
+            accountNumber = values[PayInField.AccountNumber],
             routingNumber = values[PayInField.RoutingNumber],
             accountType = accountType,
             holderName = values[PayInField.AccountHolder],
@@ -181,20 +169,5 @@ internal object PayInFormInstrument {
         if (choice.isEmpty()) return null
         return options.firstOrNull { wireName(it).equals(choice, ignoreCase = true) }
             ?: throw PayInException.InvalidInput(field, "$subject this SDK does not offer was chosen")
-    }
-
-    /**
-     * The buffers built for one instrument, closed together.
-     *
-     * A list, so closing does not have to know which instrument was built or which of its fields are buffered.
-     */
-    private class Buffers {
-        private val opened = mutableListOf<SensitiveDigits>()
-
-        fun of(value: String): SensitiveDigits = SensitiveDigits.ofString(value).also { opened += it }
-
-        fun close() {
-            opened.forEach { it.close() }
-        }
     }
 }

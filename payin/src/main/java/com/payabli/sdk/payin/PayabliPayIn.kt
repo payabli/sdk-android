@@ -54,10 +54,9 @@ public sealed class PayabliPayIn {
      * defect. The failure is a `PayabliException` and only some of them are a `PayInException`, on the same
      * terms as [captureAuthorizedTransaction].
      *
-     * **The buffers inside the request are the caller's to close.** A `SensitiveDigits` this SDK did not build
-     * is not overwritten here, so close what you built once the call has returned — `use` is the ordinary way.
-     * The form's own path builds the instrument per submission and closes it, which is why a form caller has
-     * nothing to do.
+     * **Each call sends from its own copy of the card number, security code or account number, and overwrites that
+     * copy however the call ends.** The request keeps its digits, unreadable, until it is released, so the same
+     * request can be sent again.
      *
      * **This call moves money, so it always carries an idempotency key, which the SDK mints and holds.** The
      * payment is named by [PayInTransactionOptions.paymentReference], or, for a new payment, by one the SDK mints
@@ -78,7 +77,7 @@ public sealed class PayabliPayIn {
      * [PayabliErrorType.RETRY_REFUSED].** It says the earlier attempt reached the service, and nothing about
      * whether the payment was taken. Check that payment before trying again.
      *
-     * @param request the payment to take, its buffers the caller's to close.
+     * @param request the payment to take.
      * @return the outcome, or the failure.
      */
     public abstract suspend fun capture(request: PayInRequest): Result<PayInResult>
@@ -87,10 +86,10 @@ public sealed class PayabliPayIn {
      * Stores [request]'s instrument, so a later transaction charges it without the details again.
      *
      * The failure is a `PayabliException` and never [PayInException.Unsettled], because storing moves no money.
-     * The buffers are the caller's to close, as on [capture]. No idempotency key is sent, so calling again after
+     * The digits are handled as on [capture]. No idempotency key is sent, so calling again after
      * a failure can store a second copy.
      *
-     * @param request the method to store, its buffers the caller's to close.
+     * @param request the method to store.
      * @return the stored method, or the failure.
      */
     public abstract suspend fun storeMethod(request: PayInStoreRequest): Result<PayInStoredMethod>
@@ -102,9 +101,9 @@ public sealed class PayabliPayIn {
      * Takes a card, a stored card, and a cloud device. Refuses every other method before sending the
      * request.
      *
-     * Everything [capture] says about the failure, the buffers and the idempotency key holds here too.
+     * Everything [capture] says about the failure, the digits and the idempotency key holds here too.
      *
-     * @param request the payment to hold, its buffers the caller's to close.
+     * @param request the payment to hold.
      * @return the outcome, or the failure.
      */
     public abstract suspend fun authorize(request: PayInRequest): Result<PayInResult>

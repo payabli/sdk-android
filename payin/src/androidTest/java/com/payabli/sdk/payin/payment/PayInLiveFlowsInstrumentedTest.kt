@@ -37,7 +37,6 @@ import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.model.PayInTransactionStatus
-import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -153,8 +152,8 @@ class PayInLiveFlowsInstrumentedTest {
 
                 assertTrue("a stored method with no identifier: $stored", stored.storedMethodId.isNotBlank())
             } finally {
-                data.cardNumber.close()
-                data.securityCode.close()
+                data.cardNumberDigits.close()
+                data.securityCodeDigits.close()
             }
         }
 
@@ -170,7 +169,7 @@ class PayInLiveFlowsInstrumentedTest {
 
                 assertTrue("a stored method with no identifier: $stored", stored.storedMethodId.isNotBlank())
             } finally {
-                data.accountNumber.close()
+                data.accountNumberDigits.close()
             }
         }
 
@@ -516,9 +515,9 @@ class PayInLiveFlowsInstrumentedTest {
     /** [card] as a host that collected it itself would build it. */
     private fun hostCard() =
         PayInCardData(
-            cardNumber = SensitiveDigits.ofString("4111111111111111"),
+            cardNumber = "4111111111111111",
             expiry = ExpiryValue(9, 2030),
-            securityCode = SensitiveDigits.ofString("999"),
+            securityCode = "999",
             holderName = "Sample Tester",
             postalCode = "22039",
         )
@@ -526,7 +525,7 @@ class PayInLiveFlowsInstrumentedTest {
     /** [bankAccount] as a host that collected it itself would build it. */
     private fun hostBankAccount() =
         PayInBankAccountData(
-            accountNumber = SensitiveDigits.ofString("1234567890"),
+            accountNumber = "1234567890",
             routingNumber = "121000248",
             accountType = PayInAccountType.Checking,
             holderName = "Sample Tester",

@@ -26,9 +26,9 @@ class PayInRedactionTest {
 
     private fun card() =
         PayInCardData(
-            cardNumber = SensitiveDigits.ofString(pan),
+            cardNumber = pan,
             expiry = ExpiryValue(12, 2030),
-            securityCode = SensitiveDigits.ofString(securityCode),
+            securityCode = securityCode,
             holderName = "A Payer",
             postalCode = "22039",
         )
@@ -49,7 +49,7 @@ class PayInRedactionTest {
     fun `bank data carries no account number`() {
         val data =
             PayInBankAccountData(
-                accountNumber = SensitiveDigits.ofString(account),
+                accountNumber = account,
                 routingNumber = "122105278",
                 accountType = PayInAccountType.Checking,
                 holderName = "A Payer",
@@ -227,7 +227,7 @@ class PayInRedactionTest {
             )
         val bank =
             PayInBankAccountData(
-                accountNumber = SensitiveDigits.ofString(account),
+                accountNumber = account,
                 routingNumber = "122105278",
                 accountType = PayInAccountType.Checking,
                 holderName = "A Payer",

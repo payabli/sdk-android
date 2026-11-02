@@ -147,11 +147,11 @@ internal class PayInSubmission(
     /**
      * Takes a payment from a request a caller built, rather than from a form. Reads no form.
      *
-     * The buffers inside [request] belong to whoever built them and are not closed here, which is the
-     * opposite of the form's path: there the instrument is built per submission and closed with it.
+     * Sends from a copy of [request]'s digits and overwrites the copy on every exit, so [request] can be sent
+     * again.
      *
      * @param entryPoint the partner integration point the payment is attributed to.
-     * @param request the payment to take, its buffers the caller's.
+     * @param request the payment to take, left intact.
      * @return the terminal state, or null when a submission was already in flight.
      */
     suspend fun capture(
@@ -172,10 +172,12 @@ internal class PayInSubmission(
                     refusal = refusalOf(request.options),
                 ),
         ) { retry ->
-            val key = retry.reserve(PayInPaymentDescription.of(request.paymentMethod, request.options))
-            PayInSubmissionState.Succeeded.Payment(
-                moneyIn.capture(entryPoint, request, PayInEnteredDetails.NONE, key),
-            )
+            PayInCallDigits.useCopy(request) { copy ->
+                val key = retry.reserve(PayInPaymentDescription.of(copy.paymentMethod, copy.options))
+                PayInSubmissionState.Succeeded.Payment(
+                    moneyIn.capture(entryPoint, copy, PayInEnteredDetails.NONE, key),
+                )
+            }
         }
     }
 
@@ -183,7 +185,7 @@ internal class PayInSubmission(
      * Places a hold from a request a caller built, on the same terms as [capture]. Reads no form.
      *
      * @param entryPoint the partner integration point the payment is attributed to.
-     * @param request the payment to place a hold on, its buffers the caller's.
+     * @param request the payment to place a hold on, left intact.
      * @return the terminal state, or null when a submission was already in flight.
      */
     suspend fun authorize(
@@ -204,19 +206,21 @@ internal class PayInSubmission(
                     refusal = refusalOf(request.options),
                 ),
         ) { retry ->
-            val key = retry.reserve(PayInPaymentDescription.of(request.paymentMethod, request.options))
-            PayInSubmissionState.Succeeded.Payment(
-                moneyIn.authorize(entryPoint, request, PayInEnteredDetails.NONE, key),
-            )
+            PayInCallDigits.useCopy(request) { copy ->
+                val key = retry.reserve(PayInPaymentDescription.of(copy.paymentMethod, copy.options))
+                PayInSubmissionState.Succeeded.Payment(
+                    moneyIn.authorize(entryPoint, copy, PayInEnteredDetails.NONE, key),
+                )
+            }
         }
     }
 
     /**
-     * Stores the instrument in a request a caller built, on the same terms as [capture] for the buffers.
+     * Stores the instrument in a request a caller built, on the same terms as [capture] for the digits.
      * Reads no form, and sends no idempotency key: the store route has none to read.
      *
      * @param entryPoint the partner integration point the method is stored against.
-     * @param request the method to store, its buffers the caller's.
+     * @param request the method to store, left intact.
      * @return the terminal state, or null when a submission was already in flight.
      */
     suspend fun storeMethod(
@@ -230,7 +234,9 @@ internal class PayInSubmission(
             movesMoney = false,
             retry = RetryKey(entryPoint, payment = null),
         ) {
-            PayInSubmissionState.Succeeded.Method(storage.storeMethod(entryPoint, request.instrument, request.options))
+            PayInCallDigits.useCopy(request) { copy ->
+                PayInSubmissionState.Succeeded.Method(storage.storeMethod(entryPoint, copy.instrument, copy.options))
+            }
         }
 
     /**

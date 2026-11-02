@@ -220,7 +220,7 @@ class PayInPaymentFlowTest {
         }
 
     @Test
-    fun `a direct store leaves the caller's buffers intact`() =
+    fun `a direct store leaves the host's card to be sent again`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(STORED_METHOD)
             val flow: PayabliPayIn = flowOver(transport)
@@ -229,13 +229,13 @@ class PayInPaymentFlowTest {
             flow.storeMethod(cardStoreRequest(cardData))
 
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
-            assertEquals(TEST_PAN, String(cardData.cardNumber.rawCopy()))
-            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCode.rawCopy()))
+            assertEquals(TEST_PAN, String(cardData.cardNumberDigits.rawCopy()))
+            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCodeDigits.rawCopy()))
 
-            cardData.cardNumber.close()
-            cardData.securityCode.close()
-            assertEquals(0, cardData.cardNumber.length)
-            assertEquals(0, cardData.securityCode.length)
+            val again = flow.storeMethod(cardStoreRequest(cardData))
+            assertTrue("${again.exceptionOrNull()}", again.isSuccess)
+            assertEquals(2, transport.count)
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
         }
 
     /** Storing moves no money, so a dropped link is the failure it is rather than an open outcome. */
@@ -282,15 +282,9 @@ class PayInPaymentFlowTest {
             assertNotNull("an authorization went out under no key", authorized.sentKey())
         }
 
-    /**
-     * The buffers came from the caller, so the call does not close them.
-     *
-     * The form's own path builds the instrument per submission and closes it with the submission. A host
-     * that built its own has to be able to close it when it decides to, and a member that closed it first
-     * would leave a second call reading a wiped card.
-     */
+    /** Each call sends from its own copy, so a host can send the same card again, a declared retry included. */
     @Test
-    fun `a direct capture leaves the caller's buffers intact`() =
+    fun `a direct capture leaves the host's card to be sent again`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
             val flow: PayabliPayIn = flowOver(transport)
@@ -304,19 +298,19 @@ class PayInPaymentFlowTest {
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
 
             // Both buffers, because a card carries two and wiping either one is the same defect.
-            assertEquals(TEST_PAN, String(cardData.cardNumber.rawCopy()))
-            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCode.rawCopy()))
+            assertEquals(TEST_PAN, String(cardData.cardNumberDigits.rawCopy()))
+            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCodeDigits.rawCopy()))
 
-            // Still the caller's to close, and closing them still works.
-            cardData.cardNumber.close()
-            cardData.securityCode.close()
-            assertEquals(0, cardData.cardNumber.length)
-            assertEquals(0, cardData.securityCode.length)
+            val again = flow.capture(cardRequest(cardData = cardData))
+            assertTrue("${again.exceptionOrNull()}", again.isSuccess)
+            assertEquals(2, transport.count)
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_SECURITY_CODE))
         }
 
-    /** The same ownership on the other money-moving member, which delegates separately and can regress alone. */
+    /** The same on the other money-moving member, which delegates separately and can regress alone. */
     @Test
-    fun `a direct authorization leaves the caller's buffers intact`() =
+    fun `a direct authorization leaves the host's card to be sent again`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
             val flow: PayabliPayIn = flowOver(transport)
@@ -327,13 +321,13 @@ class PayInPaymentFlowTest {
             assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
 
-            assertEquals(TEST_PAN, String(cardData.cardNumber.rawCopy()))
-            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCode.rawCopy()))
+            assertEquals(TEST_PAN, String(cardData.cardNumberDigits.rawCopy()))
+            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCodeDigits.rawCopy()))
 
-            cardData.cardNumber.close()
-            cardData.securityCode.close()
-            assertEquals(0, cardData.cardNumber.length)
-            assertEquals(0, cardData.securityCode.length)
+            val again = flow.authorize(cardRequest(cardData = cardData))
+            assertTrue("${again.exceptionOrNull()}", again.isSuccess)
+            assertEquals(2, transport.count)
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
         }
 
     /** A decline is an outcome the caller acts on, so it comes back rather than being thrown. */

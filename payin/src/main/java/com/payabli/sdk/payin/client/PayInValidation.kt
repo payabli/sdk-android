@@ -103,7 +103,7 @@ internal object PayInValidation {
         data: PayInCardData,
         options: PayInValidationOptions,
     ) {
-        data.cardNumber.useDigits { number ->
+        data.cardNumberDigits.useDigits { number ->
             if (number.isMissing()) {
                 throw PayInException.InvalidInput(FIELD_CARD_NUMBER, "A card number is required")
             }
@@ -116,7 +116,7 @@ internal object PayInValidation {
             }
         }
 
-        data.securityCode.useDigits { securityCode ->
+        data.securityCodeDigits.useDigits { securityCode ->
             if (securityCode.isMissing()) {
                 throw PayInException.InvalidInput(FIELD_CARD_CVV, "A security code is required")
             }
@@ -144,7 +144,7 @@ internal object PayInValidation {
         data: PayInBankAccountData,
         options: PayInValidationOptions,
     ) {
-        data.accountNumber.useDigits { account ->
+        data.accountNumberDigits.useDigits { account ->
             if (account.isMissing()) {
                 throw PayInException.InvalidInput(FIELD_ACH_ACCOUNT, "An account number is required")
             }

@@ -35,11 +35,11 @@ class PayInFormInstrumentTest {
             PayInFormInstrument.usePaymentMethod(cardForm()) { method ->
                 retained = (method as PayInPaymentMethod.Card).data
                 // Readable inside the block, which is the whole window they exist for.
-                assertEquals(TEST_PAN.length, retained?.cardNumber?.length)
+                assertEquals(TEST_PAN.length, retained?.cardNumberDigits?.length)
             }
 
-            assertWiped("card number", retained?.cardNumber)
-            assertWiped("security code", retained?.securityCode)
+            assertWiped("card number", retained?.cardNumberDigits)
+            assertWiped("security code", retained?.securityCodeDigits)
         }
 
     @Test
@@ -56,8 +56,8 @@ class PayInFormInstrumentTest {
                 }.exceptionOrNull()
 
             assertTrue("the block's failure was swallowed", raised is IllegalStateException)
-            assertWiped("card number", retained?.cardNumber)
-            assertWiped("security code", retained?.securityCode)
+            assertWiped("card number", retained?.cardNumberDigits)
+            assertWiped("security code", retained?.securityCodeDigits)
         }
 
     @Test
@@ -67,10 +67,10 @@ class PayInFormInstrumentTest {
 
             PayInFormInstrument.useInstrument(bankForm()) { instrument ->
                 retained = (instrument as PayInInstrument.BankAccount).data
-                assertEquals(TEST_ACCOUNT.length, retained?.accountNumber?.length)
+                assertEquals(TEST_ACCOUNT.length, retained?.accountNumberDigits?.length)
             }
 
-            assertWiped("account number", retained?.accountNumber)
+            assertWiped("account number", retained?.accountNumberDigits)
         }
 
     // --- what the values map to ---
@@ -83,7 +83,7 @@ class PayInFormInstrumentTest {
                 assertEquals("Integration Test", card.holderName)
                 assertEquals("22039", card.postalCode)
                 assertEquals(12, card.expiry.month)
-                assertEquals(TEST_SECURITY_CODE.length, card.securityCode.length)
+                assertEquals(TEST_SECURITY_CODE.length, card.securityCodeDigits.length)
             }
         }
 
