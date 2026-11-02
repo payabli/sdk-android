@@ -59,7 +59,7 @@ fun CaptureScreen(
                     backendReachable = state.backendReachable,
                     backendChecked = state.tokenCheckText.isNotEmpty() && !state.isCheckingToken,
                     isCheckingBackend = state.isCheckingToken,
-                    isSubmitting = isSubmitting,
+                    isSubmitting = formSubmitting(isSubmitting, state.isVoiding),
                     submitFailed = state.submitFailed,
                     finished = state.finished,
                 ),
@@ -70,6 +70,20 @@ fun CaptureScreen(
         modifier = modifier,
     )
 }
+
+/**
+ * Whether the form step reads as submitting. A void sets the SDK's flag as any submission does, but it
+ * reverses the transaction on screen rather than submitting the form, so it leaves that step finished and
+ * the transaction it is reversing in view.
+ *
+ * @param isSubmitting the SDK's flag.
+ * @param isVoiding a void of the shown transaction is running.
+ * @return whether the form step is in flight.
+ */
+internal fun formSubmitting(
+    isSubmitting: Boolean,
+    isVoiding: Boolean,
+): Boolean = isSubmitting && !isVoiding
 
 /**
  * The full transaction, as the API described it.

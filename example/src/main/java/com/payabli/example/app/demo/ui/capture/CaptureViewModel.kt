@@ -74,8 +74,8 @@ data class CaptureUiState(
     /**
      * A void is in flight.
      *
-     * Its own flag rather than the flow's state: the SDK publishes a void nowhere, because nothing is
-     * drawing it, so `payments.isSubmitting()` stays false throughout one.
+     * This screen's own state: the void's outcome arrives on the call's return value, never on a form
+     * callback, so the step is drawn from here.
      */
     override val isVoiding: Boolean = false,
     /** The transaction this screen has already reversed, so the control cannot offer it twice. */

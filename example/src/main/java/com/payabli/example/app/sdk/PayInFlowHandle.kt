@@ -47,8 +47,9 @@ interface PayInFlowHandle {
     fun isSubmitting(): Boolean
 
     /**
-     * Reverses [transId] under the key the SDK holds for it, so a repeated reversal is recognised. Not in
-     * [isSubmitting] or [isBusy]: the SDK publishes a void to no state, so a screen tracks its own flag.
+     * Reverses [transId] under the key the SDK holds for it, so a repeated reversal is recognised. In
+     * [isSubmitting] and [isBusy] while it runs, with the outcome on the return value as a direct
+     * call's is, so it opens no window for [outcomeTaken] to close.
      */
     suspend fun voidTransaction(transId: String): PayInOutcome
 
@@ -84,7 +85,8 @@ internal class SdkPayInFlowHandle(
         return submitting
     }
 
-    override suspend fun voidTransaction(transId: String): PayInOutcome = payIn.voidTransaction(transId).toOutcome()
+    override suspend fun voidTransaction(transId: String): PayInOutcome =
+        outcomes.withoutLatching { payIn.voidTransaction(transId).toOutcome() }
 
     override suspend fun readTransaction(transId: String): PayInReadOutcome =
         payIn.readTransaction(transId).toReadOutcome()

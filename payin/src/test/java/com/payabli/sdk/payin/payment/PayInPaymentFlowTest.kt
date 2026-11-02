@@ -725,6 +725,92 @@ class PayInPaymentFlowTest {
             assertFalse("the ended submission was still reported as in flight", flow.isSubmitting.value)
         }
 
+    /**
+     * The flight is one per flow, whatever started it, and a host refused by a flight it cannot see has only
+     * this flag for when that flight ends.
+     */
+    @Test
+    fun `every direct call reports its submission in flight, and none once it has answered`() =
+        runTest(timeout = timeout) {
+            directCalls().forEach { (what, answers, call) ->
+                val transport = GatedPayInTransport.answering(answers)
+                val flow = flowOver(transport)
+
+                val running = launch { call(flow) }
+                transport.arrived.await()
+                assertTrue("$what did not report its submission in flight", flow.isSubmitting.value)
+
+                transport.release()
+                running.join()
+                assertFalse("$what was still reported as in flight", flow.isSubmitting.value)
+            }
+        }
+
+    /** Every paying entry point a host calls directly, what it answers, and the call. */
+    private fun directCalls(): List<Triple<String, String, suspend (PayInPaymentFlow) -> Result<*>>> =
+        listOf(
+            Triple("a capture", APPROVED_TRANSACTION) { it.capture(cardRequest()) },
+            Triple("an authorization", APPROVED_TRANSACTION) { it.authorize(cardRequest()) },
+            Triple("a store", STORED_METHOD) { it.storeMethod(cardStoreRequest()) },
+            Triple("an authorization's capture", APPROVED_TRANSACTION) {
+                it.captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+            },
+            Triple("a void", APPROVED_TRANSACTION) { it.voidTransaction("101-abc") },
+        )
+
+    @Test
+    fun `every direct call the transport fails clears the flag, and the next call is not refused`() =
+        runTest(timeout = timeout) {
+            directCalls().forEach { (what, _, call) ->
+                val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+                call(flow)
+                assertFalse("$what's failure was still reported as in flight", flow.isSubmitting.value)
+
+                val next = call(flow).exceptionOrNull()
+                assertFalse("$what's failure left the flight held: $next", next is PayInException.AlreadySubmitting)
+            }
+        }
+
+    @Test
+    fun `every direct call cancelled after its request arrived clears the flag, and the next call is not refused`() =
+        runTest(timeout = timeout) {
+            directCalls().forEach { (what, answers, call) ->
+                val transport = GatedPayInTransport.answering(answers)
+                val flow = flowOver(transport)
+
+                val running = launch { call(flow) }
+                transport.arrived.await()
+                running.cancelAndJoin()
+                assertFalse("$what's cancellation was still reported as in flight", flow.isSubmitting.value)
+
+                transport.release()
+                val next = call(flow).exceptionOrNull()
+                assertFalse(
+                    "$what's cancellation left the flight held: $next",
+                    next is PayInException.AlreadySubmitting,
+                )
+            }
+        }
+
+    @Test
+    fun `a refused second call leaves the flag to the submission in flight`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val flow = flowOver(transport)
+
+            val running = launch { flow.capture(cardRequest()) }
+            transport.arrived.await()
+            val refused = flow.capture(cardRequest())
+
+            assertTrue("$refused", refused.exceptionOrNull() is PayInException.AlreadySubmitting)
+            assertTrue("the refusal cleared the submission's flag", flow.isSubmitting.value)
+
+            transport.release()
+            running.join()
+            assertFalse("the ended submission was still reported as in flight", flow.isSubmitting.value)
+        }
+
     @Test
     fun `a submission the transport fails clears isSubmitting`() =
         runTest(timeout = timeout) {
