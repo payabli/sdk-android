@@ -3,7 +3,7 @@ package com.payabli.sdk.payin.model
 /**
  * A card number, security code or account number in a [CharArray] that [close] overwrites, which a `String` can't
  * be. Every member that makes one or reaches the digits is also `@JvmSynthetic`: `internal` alone compiles to a
- * public method a Java caller can name. Not thread-safe; one value belongs to one call.
+ * public method a Java caller can name. Reads may run concurrently; [close] must not run beside one.
  */
 internal class SensitiveDigits private constructor(
     private val digits: CharArray,

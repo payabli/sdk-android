@@ -59,9 +59,9 @@ public enum class PayInStoredMethodType(
 }
 
 /**
- * A card, as the payer entered it. The card number and security code are copied into buffers the SDK overwrites,
- * and can't be read back; each call sends from its own copy. [expiry] is an [ExpiryValue], so `MM/YY` is produced
- * in one place.
+ * A card, as the payer entered it. The card number and security code are copied into buffers that can't be read
+ * back; each call sends from its own copy and overwrites that copy. [expiry] is an [ExpiryValue], so `MM/YY` is
+ * produced in one place.
  */
 public class PayInCardData private constructor(
     cardNumber: SensitiveDigits,
