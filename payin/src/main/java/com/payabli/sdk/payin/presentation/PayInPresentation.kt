@@ -124,12 +124,18 @@ internal object PayInPresentation {
             if (launch) launcher.launch(input)
         }
 
+        /**
+         * Resumes the waiting call with [value]. The cast holds because only this presentation's Activity delivers to
+         * it, and only what its own reader produced or a cancel.
+         *
+         * @param value how the presentation ended.
+         */
         @Suppress("UNCHECKED_CAST")
         fun resume(value: PayInPresentationOutcome<*>) {
-            // Only this presentation's Activity delivers to it, and only what its own reader produced.
             continuation.resume(value as PayInPresentationOutcome<R>)
         }
 
+        /** Finishes the instance showing this presentation, if one is bound, on its main thread. */
         fun close() {
             val shown = synchronized(lock) { activity }
             shown?.runOnUiThread { shown.finish() }
