@@ -36,10 +36,19 @@ public abstract class PayabliException protected constructor(
     /** What a host does about this failure. */
     public val category: PayabliErrorCategory get() = type.category
 
-    /** The status line the response carried, never a body's own `status` field. Null when no response was read. */
+    /**
+     * The status line of the response this failure was read from, never a body's own `status` field.
+     *
+     * Null when no response was read: the request never reached the service, its answer was lost, or this SDK
+     * refused the call before sending it.
+     */
     public open val httpStatus: Int? get() = null
 
-    /** The service's own code, for example `E1001`. Null when the response carried none. */
+    /**
+     * The service's own code for this failure, for example `E1001`.
+     *
+     * Null when no response was read, when the response named no code, or when its body could not be read.
+     */
     public open val rawCode: String? get() = null
 
     /**
