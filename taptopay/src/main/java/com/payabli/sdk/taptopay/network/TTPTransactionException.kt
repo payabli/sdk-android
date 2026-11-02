@@ -24,7 +24,6 @@ internal sealed class TTPTransactionException(
     val code: String?,
     val reason: String?,
     cause: Throwable? = null,
-    /** The status of the response this was read from, or null when it was not read from a response. */
     val httpStatus: Int? = null,
 ) : Exception(message, cause) {
     /** Never [reason]: it is service text that can echo what was sent. */

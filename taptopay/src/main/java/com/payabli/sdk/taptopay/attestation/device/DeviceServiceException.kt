@@ -20,7 +20,6 @@ internal sealed class DeviceServiceException(
     val resultCode: Int?,
     val reason: String,
     cause: Throwable? = null,
-    /** The status of the response this was read from, or null when it was not read from a response. */
     val httpStatus: Int? = null,
 ) : Exception(message, cause) {
     /** Never [reason]: it is server text that can quote what was sent. */
