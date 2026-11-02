@@ -138,8 +138,12 @@ class TokenStorageClientTest {
                 }.exceptionOrNull()
 
             assertTrue(failure is PayInException.Refused)
-            assertEquals("2", (failure as PayInException.Refused).failure.code)
-            assertEquals("Card not supported", failure.failure.reason)
+            assertEquals("Card not supported", (failure as PayInException.Refused).failure.reason)
+            // The route answers one result code for every refusal, which names no condition.
+            assertNull(failure.failure.code)
+            val root: PayabliException = failure
+            assertNull(root.rawCode)
+            assertEquals(200, root.httpStatus)
         }
 
     @Test

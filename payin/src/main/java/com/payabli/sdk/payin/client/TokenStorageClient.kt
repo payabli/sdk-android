@@ -124,9 +124,11 @@ internal class TokenStorageClient(
                 // number a reader would take for a real one.
                 LogField.safe("errorCode", stored?.resultCode?.toString()),
             ) { "the service refused to store the method" }
+            // The route answers the same result code for every refusal, so it names no condition and is not
+            // the service's code for this one.
             throw PayInException.Refused(
                 PayInFailure(
-                    code = stored?.resultCode?.toString(),
+                    code = null,
                     reason = stored?.resultText ?: envelope.responseText,
                     explanation = null,
                     action = null,
