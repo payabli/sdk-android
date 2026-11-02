@@ -17,12 +17,12 @@ import java.util.Collections
  *   body as a whole rather than a field in it, which is how a missing required property reports itself.
  */
 public class PayabliValidationException(
-    public val httpStatus: Int,
+    override val httpStatus: Int,
     reason: String = DEFAULT_REASON,
     detail: String? = null,
     public val problemType: String? = null,
     public val instance: String? = null,
-    public val rawCode: String? = null,
+    override val rawCode: String? = null,
     fieldErrors: Map<String, List<PayabliFieldError>> = emptyMap(),
 ) : PayabliException(PayabliErrorType.VALIDATION_ERROR, reason, detail) {
     /** Copied and wrapped at both levels: the lists arrive from the decoder as `ArrayList`. */

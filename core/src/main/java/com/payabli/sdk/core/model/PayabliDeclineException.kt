@@ -15,7 +15,7 @@ package com.payabli.sdk.core.model
  * @property action the remediation the server suggests.
  */
 public class PayabliDeclineException(
-    public val rawCode: String? = null,
+    override val rawCode: String? = null,
     reason: String = DEFAULT_REASON,
     public val explanation: String? = null,
     public val action: String? = null,

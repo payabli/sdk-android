@@ -275,7 +275,6 @@ package com.payabli.sdk.core.model {
     ctor public PayabliDeclineException(optional String? rawCode, optional String reason, optional String? explanation, optional String? action);
     method @InaccessibleFromKotlin public String? getAction();
     method @InaccessibleFromKotlin public String? getExplanation();
-    method @InaccessibleFromKotlin public String? getRawCode();
     property public String? action;
     property public String? explanation;
     property public String? rawCode;
@@ -379,11 +378,15 @@ package com.payabli.sdk.core.model {
     method @InaccessibleFromKotlin public final com.payabli.sdk.core.model.PayabliErrorCategory getCategory();
     method @InaccessibleFromKotlin public final int getCode();
     method @InaccessibleFromKotlin public final String? getDetail();
+    method @InaccessibleFromKotlin public Integer? getHttpStatus();
+    method @InaccessibleFromKotlin public String? getRawCode();
     method @InaccessibleFromKotlin public final String getReason();
     method @InaccessibleFromKotlin public final com.payabli.sdk.core.model.PayabliErrorType getType();
     property public final com.payabli.sdk.core.model.PayabliErrorCategory category;
     property public final int code;
     property public final String? detail;
+    property public Integer? httpStatus;
+    property public String? rawCode;
     property public final String reason;
     property public final com.payabli.sdk.core.model.PayabliErrorType type;
   }
@@ -420,10 +423,8 @@ package com.payabli.sdk.core.model {
 
   public final class PayabliServerException extends com.payabli.sdk.core.model.PayabliException implements com.payabli.sdk.core.model.PayabliRetryAfter {
     ctor public PayabliServerException(int httpStatus, optional String reason, optional String? detail, optional String? problemType, optional String? instance, optional String? rawCode, optional Long? retryAfterMillis);
-    method @InaccessibleFromKotlin public int getHttpStatus();
     method @InaccessibleFromKotlin public String? getInstance();
     method @InaccessibleFromKotlin public String? getProblemType();
-    method @InaccessibleFromKotlin public String? getRawCode();
     method @InaccessibleFromKotlin public Long? getRetryAfterMillis();
     property public int httpStatus;
     property public String? instance;
@@ -441,10 +442,8 @@ package com.payabli.sdk.core.model {
   public final class PayabliValidationException extends com.payabli.sdk.core.model.PayabliException {
     ctor public PayabliValidationException(int httpStatus, optional String reason, optional String? detail, optional String? problemType, optional String? instance, optional String? rawCode, optional java.util.Map<java.lang.String,? extends java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> fieldErrors);
     method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> getFieldErrors();
-    method @InaccessibleFromKotlin public int getHttpStatus();
     method @InaccessibleFromKotlin public String? getInstance();
     method @InaccessibleFromKotlin public String? getProblemType();
-    method @InaccessibleFromKotlin public String? getRawCode();
     property public java.util.Map<java.lang.String,java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> fieldErrors;
     property public int httpStatus;
     property public String? instance;
