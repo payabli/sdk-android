@@ -15,10 +15,8 @@ internal class SensitiveDigits private constructor(
     internal val length: Int get() = if (wiped) 0 else digits.size
 
     /**
-     * Overwrites the digits. Idempotent, so `use` closing a value a caller already closed is not an error.
-     *
-     * After this the value behaves as empty rather than throwing: a request built from a closed value fails
-     * validation as a missing field, which is a better failure than an exception from inside a body writer.
+     * Overwrites the digits. Idempotent. Afterwards the value reads as empty, so a request built from it fails
+     * validation as a missing field.
      */
     override fun close() {
         digits.fill(WIPED)
@@ -33,9 +31,7 @@ internal class SensitiveDigits private constructor(
     override fun toString(): String = "SensitiveDigits(length=$length)"
 
     /**
-     * The digits, for a rule that reads them. Internal, so no caller can turn this back into a `String`.
-     * Returns a copy, which the reader is responsible for: every use inside this module is a validator
-     * that reads the copy and drops it.
+     * A copy of the digits, which the caller overwrites. Readers go through [useDigits], which does that.
      *
      * @return a copy of the digits, empty once wiped.
      */
@@ -43,8 +39,8 @@ internal class SensitiveDigits private constructor(
     internal fun read(): CharArray = if (wiped) CharArray(0) else digits.copyOf()
 
     /**
-     * Runs [block] over the digits and overwrites the copy before returning, including when [block]
-     * throws — the only way to read these that leaves nothing behind.
+     * Runs [block] over a copy of the digits and overwrites the copy before returning, including when [block]
+     * throws.
      *
      * @param block the rule to run over the digits.
      * @return what [block] returned, the copy overwritten first.
@@ -72,9 +68,8 @@ internal class SensitiveDigits private constructor(
     internal val isWiped: Boolean get() = wiped
 
     /**
-     * The backing array as it stands, wiped or not, so a test can assert the overwrite actually happened:
-     * [read] answers empty once wiped, which is right for a reader and useless for proving the digits
-     * are gone.
+     * The backing array as it stands, wiped or not, so a test can assert the overwrite happened; [read]
+     * answers empty once wiped.
      *
      * @return the backing array as it stands, wiped or not.
      */
@@ -83,19 +78,15 @@ internal class SensitiveDigits private constructor(
 
     internal companion object {
         /**
-         * NUL, built rather than written as a character literal.
-         *
-         * `Char(0)` because putting the character itself in this file puts a real NUL byte in the source: it
-         * compiles, and then every text tool treats the file as binary, with `grep` reporting no matches at
-         * all rather than saying why. Measured here, on this file, before this comment existed. `Char(0)`
-         * costs the `const` modifier, which buys nothing on a private value.
+         * NUL, as `Char(0)`. A NUL character literal puts a NUL byte in the source, and text tools then treat
+         * the file as binary: `grep` reports no matches and does not say why.
          */
         internal val WIPED: Char = Char(0)
 
         /**
-         * The value a host passed as a `String`. **This cannot unmake the `String` it is given**, and nothing can.
+         * A value holding a copy of [source]. The `String` itself stays in memory until it is collected.
          *
-         * @param source the digits as a `String`, which this cannot unmake.
+         * @param source the digits as the host passed them.
          * @return the value holding the digits.
          */
         @JvmSynthetic

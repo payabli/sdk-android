@@ -56,7 +56,7 @@ public sealed class PayabliPayIn {
      *
      * **The SDK keeps no copy of the card number, security code or account number once the request is written.**
      * Each call sends from its own copy of the digits and overwrites it however the call ends, so the same request
-     * can be sent again. There is nothing to close.
+     * can be sent again.
      *
      * **This call moves money, so it always carries an idempotency key, which the SDK mints and holds.** The
      * payment is named by [PayInTransactionOptions.paymentReference], or, for a new payment, by one the SDK mints

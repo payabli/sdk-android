@@ -84,8 +84,7 @@ PayabliPayInForm(
 ### Call the API from your own UI
 
 Pass the card number and security code as `String`s. The SDK copies them into buffers it overwrites once the
-request is written, keeps no `String` of its own, and has nothing for you to close. The same request can be sent
-again, including as a retry.
+request is written, and keeps no `String` of its own. The same request can be sent again, including as a retry.
 
 ```kotlin
 import com.payabli.sdk.payin.model.ExpiryValue

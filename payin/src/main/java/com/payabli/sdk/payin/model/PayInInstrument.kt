@@ -125,7 +125,7 @@ public class PayInCardData private constructor(
 
 /**
  * A bank account, as the payer entered it. The account number is buffered as [PayInCardData]'s card number is;
- * the routing number identifies a bank and is published, so it stays a `String`.
+ * the routing number identifies a bank, isn't secret, and is held as a `String`.
  */
 public class PayInBankAccountData private constructor(
     accountNumber: SensitiveDigits,
