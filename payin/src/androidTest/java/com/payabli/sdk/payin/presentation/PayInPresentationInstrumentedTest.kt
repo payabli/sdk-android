@@ -52,7 +52,12 @@ class PayInPresentationInstrumentedTest {
         // A test that failed still holds its call, and the table is shared by every test in the process.
         scope.cancel()
         // A test that failed with the echo still up leaves it over the host.
-        if (EchoActivity.CURRENT.get() != null) EchoActivity.answer(Activity.RESULT_CANCELED)
+        if (EchoActivity.CURRENT.get() != null) {
+            EchoActivity.answer(Activity.RESULT_CANCELED)
+            // The host is still returning to the front, and closing the scenario mid-transition throws.
+            awaitUntil("the contract's screen never closed") { EchoActivity.CURRENT.get() == null }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+        }
         scenario.close()
     }
 
