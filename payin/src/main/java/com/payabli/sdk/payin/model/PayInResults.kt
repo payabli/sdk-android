@@ -197,6 +197,7 @@ public sealed class PayInException(
     public class Undecodable internal constructor(
         cause: Throwable?,
         internal val paymentTransId: String?,
+        override val httpStatus: Int? = null,
     ) : PayInException(
             PayabliErrorType.DECODING_ERROR,
             DEFAULT_UNDECODABLE_REASON,
@@ -278,6 +279,10 @@ public sealed class PayInException(
          * to read the transaction back.
          */
         public val paymentTransId: String? = cause.namedTransaction()
+
+        override val httpStatus: Int? = cause.httpStatus
+
+        override val rawCode: String? = cause.rawCode
 
         override fun toString(): String = "PayInException.Unsettled(code=${type.wireName})"
     }

@@ -515,14 +515,17 @@ package com.payabli.sdk.payin.model {
   public static final class PayInException.Undecodable extends com.payabli.sdk.payin.model.PayInException {
     ctor public PayInException.Undecodable();
     ctor public PayInException.Undecodable(optional Throwable? cause);
+    property public Integer? httpStatus;
   }
 
   public static final class PayInException.Unsettled extends com.payabli.sdk.payin.model.PayInException {
     ctor public PayInException.Unsettled(com.payabli.sdk.core.model.PayabliException cause, optional String? paymentReference);
     method @InaccessibleFromKotlin public String? getPaymentReference();
     method @InaccessibleFromKotlin public String? getPaymentTransId();
+    property public Integer? httpStatus;
     property public String? paymentReference;
     property public String? paymentTransId;
+    property public String? rawCode;
   }
 
   public final class PayInFailure {

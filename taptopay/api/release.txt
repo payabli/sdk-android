@@ -44,7 +44,9 @@ package com.payabli.sdk.taptopay {
     method @InaccessibleFromKotlin public com.payabli.sdk.taptopay.TapToPayChargeRefusal? getRefusal();
     method @InaccessibleFromKotlin public Long? getRetryAfterMillis();
     property public com.payabli.sdk.taptopay.TapToPayCapture capture;
+    property public Integer? httpStatus;
     property public String? paymentTransId;
+    property public String? rawCode;
     property public com.payabli.sdk.taptopay.TapToPayChargeRefusal? refusal;
     property public Long? retryAfterMillis;
   }
