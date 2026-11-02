@@ -140,7 +140,8 @@ public object PayabliHttpErrors {
         val body = response.bodyAsText()
         // A status line below 100 was not parsed, so there is no status to report.
         val answered = status.takeIf { it >= HTTP_MIN_VALID }
-        val code = PayabliJson.decodeOrNull(ErrorDetails.serializer(), body)?.rawCode
+        // A response with no status line was not read as an answer, so its body names no code either.
+        val code = answered?.let { PayabliJson.decodeOrNull(ErrorDetails.serializer(), body)?.rawCode }
 
         fun generic(
             type: PayabliErrorType,

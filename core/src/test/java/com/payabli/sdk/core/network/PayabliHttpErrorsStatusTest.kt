@@ -79,10 +79,11 @@ class PayabliHttpErrorsStatusTest {
     }
 
     @Test
-    fun `a response with no status line carries no status`() {
-        val mapped = map(-1)
+    fun `a response with no status line carries no status and no code`() {
+        val mapped = map(-1, """{"code":"E9999"}""")
 
         assertNull(mapped.httpStatus)
+        assertNull(mapped.rawCode)
         assertEquals(PayabliErrorType.NETWORK_ERROR, mapped.type)
     }
 }
