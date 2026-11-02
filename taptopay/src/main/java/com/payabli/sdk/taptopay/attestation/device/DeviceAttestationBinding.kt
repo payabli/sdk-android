@@ -41,7 +41,7 @@ internal object DeviceAttestationBinding {
             try {
                 Base64.getDecoder().decode(challenge)
             } catch (malformed: IllegalArgumentException) {
-                throw DeviceServiceException.Undecodable(malformed)
+                throw DeviceServiceException.Undecodable(malformed, httpStatus = null)
             }
         val digest = MessageDigest.getInstance(SHA_256).digest(material)
         return AttestationChallenge.classic(Base64.getUrlEncoder().withoutPadding().encodeToString(digest))

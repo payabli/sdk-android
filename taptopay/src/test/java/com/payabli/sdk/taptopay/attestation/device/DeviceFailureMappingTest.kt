@@ -260,6 +260,7 @@ class DeviceFailureMappingTest {
             // filing that as a refusal would lose the cause.
             assertTrue(failure is DeviceServiceException.Undecodable)
             assertNull((failure as DeviceServiceException).resultCode)
+            assertEquals(200, failure.httpStatus)
         }
 
     @Test

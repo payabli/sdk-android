@@ -161,7 +161,7 @@ internal class TokenStorageClient(
             LogField.safe("route", PayInRoutes.STORE_METHOD),
             LogField.safe("statusCode", statusCode),
         ) { "the stored-method response could not be read" }
-        return PayInException.Undecodable(cause)
+        return PayInException.Undecodable(cause, null, statusCode)
     }
 
     private companion object {

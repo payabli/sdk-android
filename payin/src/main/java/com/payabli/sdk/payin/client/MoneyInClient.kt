@@ -376,7 +376,7 @@ internal class MoneyInClient(
             LogField.safe("route", route),
             LogField.safe("statusCode", statusCode),
         ) { "the transaction response could not be read" }
-        return PayInException.Undecodable(cause, paymentTransId)
+        return PayInException.Undecodable(cause, paymentTransId, statusCode)
     }
 }
 
@@ -461,7 +461,9 @@ private class AnswerFields(
  *
  * A conflict like any other until the flow reads it, which tells a resent held key from a new one.
  */
-internal class PayInKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)")
+internal class PayInKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)") {
+    override val httpStatus: Int get() = HttpURLConnection.HTTP_CONFLICT
+}
 
 /**
  * Whether this body is a JSON object, which the idempotency check's refusal never is. No field is read, so

@@ -511,4 +511,50 @@ class TTPTransactionClientTest {
             assertEquals(PayabliErrorType.VALIDATION_ERROR, (failure as PayabliException).type)
             assertEquals("Customer data is required", failure.detail)
         }
+
+    // The answer each failure was read from
+
+    @Test
+    fun `a declined opening carries the status and code it was answered with`() =
+        runTest(timeout = timeout) {
+            val (_, client) = client(answer(declined(code = "D05"), 201))
+
+            val failure = runCatching { client.open() }.exceptionOrNull() as? TTPTransactionException
+
+            assertEquals(201, failure?.httpStatus)
+            assertEquals("D05", failure?.code)
+        }
+
+    @Test
+    fun `an opening that cannot be read carries its status`() =
+        runTest(timeout = timeout) {
+            val (_, client) = client(answer("""{"code":"A01"}""", 201))
+
+            val failure = runCatching { client.open() }.exceptionOrNull()
+
+            assertTrue("$failure", failure is TTPTransactionException.Undecodable)
+            assertEquals(201, (failure as TTPTransactionException).httpStatus)
+        }
+
+    @Test
+    fun `a refused key reports the 409 it was answered with and no code`() =
+        runTest(timeout = timeout) {
+            val (_, client) = client(answer("Duplicated idempotencyKey", 409))
+
+            val failure = runCatching { client.open() }.exceptionOrNull() as? PayabliException
+
+            assertTrue("$failure", failure is ChargeKeyRefusal)
+            assertEquals(409, failure?.httpStatus)
+            assertNull(failure?.rawCode)
+        }
+
+    @Test
+    fun `a refused customer reports the status and code of the validation error it is`() =
+        runTest(timeout = timeout) {
+            val failure = refusedCustomer("Missing customer identifiers: Email") as? PayabliException
+
+            assertTrue("$failure", failure is CustomerDataRefusal)
+            assertEquals(400, failure?.httpStatus)
+            assertEquals("E7020", failure?.rawCode)
+        }
 }

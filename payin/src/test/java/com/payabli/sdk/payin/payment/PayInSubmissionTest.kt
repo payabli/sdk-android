@@ -1864,6 +1864,20 @@ class PayInSubmissionTest {
         }
 
     @Test
+    fun `a 5xx that leaves the outcome open reports its status and code through the base type`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(SERVICE_ERROR_NAMING_TRANSACTION, statusCode = 503)
+            val submission = submissionOver(transport)
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            val cause: PayabliException = failed(submission.state.value).cause
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(503, cause.httpStatus)
+            assertEquals("E0001", cause.rawCode)
+        }
+
+    @Test
     fun `a money-moving cancellation before the reservation reports itself, nothing having been sent`() =
         runTest(timeout = timeout) {
             // The window the rule is actually about: a capture, so money is in play, canceled between the

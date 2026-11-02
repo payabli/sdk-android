@@ -2,10 +2,13 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliRateLimitException
 import com.payabli.sdk.core.model.PayabliRetryAfter
 import com.payabli.sdk.core.model.PayabliServerException
+import com.payabli.sdk.core.network.PayabliHttpErrors
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
@@ -54,7 +57,7 @@ class TapToPayErrorCodesTest {
             DeviceServiceException.NotFound(404, "refused") to PayabliErrorType.ENTRY_POINT_REFUSED,
             DeviceServiceException.ServerFailure(500, "refused") to PayabliErrorType.SERVER_ERROR,
             DeviceServiceException.Unclassified(null, "refused") to PayabliErrorType.UNKNOWN,
-            DeviceServiceException.Undecodable(null) to PayabliErrorType.DECODING_ERROR,
+            DeviceServiceException.Undecodable(null, null) to PayabliErrorType.DECODING_ERROR,
             DeviceActivationException.CodeMalformed() to PayabliErrorType.ACTIVATION_CODE_MALFORMED,
             DeviceActivationException.CodeIncorrect(400, "refused") to PayabliErrorType.ACTIVATION_CODE_INCORRECT,
             DeviceActivationException.CodeExpired(400, "refused") to PayabliErrorType.ACTIVATION_CODE_EXPIRED,
@@ -90,8 +93,8 @@ class TapToPayErrorCodesTest {
             CardReaderException.ReadFailed(null) to PayabliErrorType.TAP_NOT_COMPLETED,
             CardReaderException.ContactlessDisabled(null) to PayabliErrorType.CONTACTLESS_DISABLED,
             TTPTransactionException.NotEnabled() to PayabliErrorType.CARD_PRESENT_NOT_ENABLED,
-            TTPTransactionException.Refused("D", "refused") to PayabliErrorType.PAYMENT_NOT_OPENED,
-            TTPTransactionException.ServiceRejected("E", "refused") to PayabliErrorType.PAYMENT_NOT_OPENED,
+            TTPTransactionException.Refused("D", "refused", 200) to PayabliErrorType.PAYMENT_NOT_OPENED,
+            TTPTransactionException.ServiceRejected("E", "refused", 200) to PayabliErrorType.PAYMENT_NOT_OPENED,
             TTPTransactionException.CardRefused("DECLINED") to PayabliErrorType.CARD_DECLINED,
             TTPTransactionException.OutcomeUnknown(null) to PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN,
             TTPTransactionException.Undecodable() to PayabliErrorType.DECODING_ERROR,
@@ -158,7 +161,7 @@ class TapToPayErrorCodesTest {
 
     @Test
     fun `a card-present cause carries its code's text as the reason and the service's words as the detail`() {
-        val refused = TTPTransactionException.Refused("D", "the service's own words")
+        val refused = TTPTransactionException.Refused("D", "the service's own words", 200)
 
         val thrown =
             TapToPayErrorCodes.exceptionFor(
@@ -197,7 +200,7 @@ class TapToPayErrorCodesTest {
             DeviceActivationException.NotEnrolled(),
             DeviceActivationException.RegistrationReplaced(),
             DeviceServiceException.Forbidden(403, ""),
-            DeviceServiceException.Undecodable(null),
+            DeviceServiceException.Undecodable(null, null),
         ).forEach { failure ->
             val thrown =
                 TapToPayErrorCodes.exceptionFor(
@@ -282,6 +285,70 @@ class TapToPayErrorCodesTest {
                 TapToPayCapture.NOT_CHARGED,
             )
         return (thrown as PayabliRetryAfter).retryAfterMillis
+    }
+
+    // The answer behind a failure
+
+    private fun reported(failure: Throwable): TapToPayException =
+        TapToPayErrorCodes.exceptionFor(
+            failure,
+            TapToPayErrorCodes.typeFor(failure),
+            null,
+            TapToPayCapture.NOT_CHARGED,
+        )
+
+    @Test
+    fun `a wrapped service failure reports its status and code`() {
+        val answer = PayabliResponse(503, body = """{"title":"Unavailable","code":"D0329"}""".toByteArray())
+        val wrapped = TapToPaySessionException.AttestationRequired(PayabliHttpErrors.from(answer))
+
+        val thrown: PayabliException = reported(wrapped)
+
+        assertEquals(503, thrown.httpStatus)
+        assertEquals("D0329", thrown.rawCode)
+    }
+
+    @Test
+    fun `the status and code come from one answer, the first in the chain`() {
+        val inner = PayabliHttpErrors.from(PayabliResponse(503, body = """{"code":"E0001"}""".toByteArray()))
+        val outer = TTPTransactionException.Undecodable(inner, httpStatus = 201)
+
+        val thrown = reported(outer)
+
+        assertEquals(201, thrown.httpStatus)
+        assertNull(thrown.rawCode)
+    }
+
+    @Test
+    fun `a refused opening reports the envelope's code and the status it came on`() {
+        val thrown = reported(TTPTransactionException.Refused("D05", "refused", 200))
+
+        assertEquals(200, thrown.httpStatus)
+        assertEquals("D05", thrown.rawCode)
+    }
+
+    @Test
+    fun `the reader's state is not reported as the service's code`() {
+        val thrown = reported(TTPTransactionException.CardRefused("DECLINED"))
+
+        assertNull(thrown.httpStatus)
+        assertNull(thrown.rawCode)
+    }
+
+    @Test
+    fun `an unreadable device answer reports its status`() {
+        val thrown = reported(DeviceServiceException.Undecodable(null, httpStatus = 200))
+
+        assertEquals(200, thrown.httpStatus)
+        assertNull(thrown.rawCode)
+    }
+
+    @Test
+    fun `a failure no answer was read for reports neither`() {
+        val thrown = reported(CardReaderException.ReadFailed(null))
+
+        assertNull(thrown.httpStatus)
+        assertNull(thrown.rawCode)
     }
 }
 

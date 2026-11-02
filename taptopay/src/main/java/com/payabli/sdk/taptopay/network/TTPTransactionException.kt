@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.network
 
 import com.payabli.sdk.taptopay.attestation.device.RedactedCause
+import java.net.HttpURLConnection.HTTP_NOT_FOUND
 
 /**
  * A refusal from one of the two MoneyIn routes a card-present charge uses.
@@ -23,6 +24,8 @@ internal sealed class TTPTransactionException(
     val code: String?,
     val reason: String?,
     cause: Throwable? = null,
+    /** The status of the response this was read from, or null when it was not read from a response. */
+    val httpStatus: Int? = null,
 ) : Exception(message, cause) {
     /** Never [reason]: it is service text that can echo what was sent. */
     override fun toString(): String = "${javaClass.simpleName}(code=$code)"
@@ -40,19 +43,22 @@ internal sealed class TTPTransactionException(
             "the paypoint is not enabled for card-present payments",
             code = null,
             reason = null,
+            httpStatus = HTTP_NOT_FOUND,
         )
 
     /** The payment was refused. A `D` code. */
     class Refused(
         code: String,
         reason: String?,
-    ) : TTPTransactionException("the payment was refused", code, reason)
+        httpStatus: Int?,
+    ) : TTPTransactionException("the payment was refused", code, reason, httpStatus = httpStatus)
 
     /** The service did not approve and did not decline, so the problem is the request or the service. */
     class ServiceRejected(
         code: String,
         reason: String?,
-    ) : TTPTransactionException("the service did not approve the transaction", code, reason)
+        httpStatus: Int?,
+    ) : TTPTransactionException("the service did not approve the transaction", code, reason, httpStatus = httpStatus)
 
     /**
      * The processor refused the card.
@@ -78,6 +84,7 @@ internal sealed class TTPTransactionException(
     /** An approval carrying none of the fields it is an approval for. */
     class Undecodable(
         cause: Throwable? = null,
+        httpStatus: Int? = null,
     ) : TTPTransactionException(
             "the transaction response could not be read",
             code = null,
@@ -89,5 +96,6 @@ internal sealed class TTPTransactionException(
             // message buys nothing while a cause underneath it carries the body, because a crash reporter
             // renders the whole chain and the host's reporter is outside anything this SDK scrubs.
             cause = cause?.let { RedactedCause(it) },
+            httpStatus = httpStatus,
         )
 }

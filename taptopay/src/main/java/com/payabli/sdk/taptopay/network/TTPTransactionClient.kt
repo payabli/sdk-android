@@ -24,6 +24,7 @@ import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
+import java.net.HttpURLConnection.HTTP_CONFLICT
 import java.net.HttpURLConnection.HTTP_NOT_FOUND
 import java.util.Locale
 
@@ -225,9 +226,9 @@ internal class TTPTransactionClient(
             // Only a `D` is the payment being refused. Anything else is the service reporting a problem, and
             // a caller acts on the two differently.
             throw if (envelope.isDeclined) {
-                TTPTransactionException.Refused(envelope.code, envelope.reason)
+                TTPTransactionException.Refused(envelope.code, envelope.reason, response.statusCode)
             } else {
-                TTPTransactionException.ServiceRejected(envelope.code, envelope.reason)
+                TTPTransactionException.ServiceRejected(envelope.code, envelope.reason, response.statusCode)
             }
         }
         // Blank counts as absent. The field is required, so kotlinx accepts `""` and the identifier is the
@@ -286,7 +287,7 @@ internal class TTPTransactionClient(
             LogField.safe("route", route),
             LogField.safe("statusCode", statusCode),
         ) { "the transaction response could not be read" }
-        return TTPTransactionException.Undecodable(cause)
+        return TTPTransactionException.Undecodable(cause, statusCode)
     }
 
     private companion object {
@@ -339,7 +340,9 @@ internal fun String.isUsableTransId(): Boolean {
  *
  * A conflict like any other until the charge reads it, which tells a resent held key from a new one.
  */
-internal class ChargeKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)")
+internal class ChargeKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)") {
+    override val httpStatus: Int get() = HTTP_CONFLICT
+}
 
 /**
  * The service refused the customer the opening carried, before any card was read.
@@ -353,6 +356,10 @@ internal class CustomerDataRefusal(
     val validation: PayabliValidationException,
     val requiredFields: List<String>,
 ) : PayabliException(PayabliErrorType.VALIDATION_ERROR, validation.reason, validation.detail, validation) {
+    override val httpStatus: Int get() = validation.httpStatus
+
+    override val rawCode: String? get() = validation.rawCode
+
     companion object {
         private const val CODE = "E7020"
         private const val FIELD = "customerData"

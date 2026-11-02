@@ -470,7 +470,7 @@ internal class DeviceServiceClient(
             LogField.safe("route", route),
             LogField.safe("statusCode", statusCode),
         ) { "the device service response could not be decoded" }
-        return DeviceServiceException.Undecodable(cause)
+        return DeviceServiceException.Undecodable(cause, statusCode)
     }
 
     /**
@@ -486,7 +486,7 @@ internal class DeviceServiceClient(
         status: Int,
     ): PayabliException? =
         if (failure != null && status == HTTP_UNAUTHORIZED && failure.type == PayabliErrorType.TOKEN_EXPIRED) {
-            PinnedTokenRefusal(failure.reason)
+            PinnedTokenRefusal(failure)
         } else {
             failure
         }

@@ -20,6 +20,8 @@ internal sealed class DeviceServiceException(
     val resultCode: Int?,
     val reason: String,
     cause: Throwable? = null,
+    /** The status of the response this was read from, or null when it was not read from a response. */
+    val httpStatus: Int? = null,
 ) : Exception(message, cause) {
     /** Never [reason]: it is server text that can quote what was sent. */
     override fun toString(): String = "${javaClass.simpleName}(resultCode=$resultCode)"
@@ -159,6 +161,7 @@ internal sealed class DeviceServiceException(
         // that never claimed success is one — but every call site knows which case it is in, and a default
         // would let one omit the cause by accident rather than by decision.
         original: Throwable?,
+        httpStatus: Int?,
     ) : DeviceServiceException(
             "the device service response could not be decoded",
             null,
@@ -168,6 +171,7 @@ internal sealed class DeviceServiceException(
             // holds a challenge, a challengeId and a deviceId. Redacting `toString` on this class buys nothing
             // if a cause chain underneath it carries the body, and a crash reporter renders the whole chain.
             original?.let { RedactedCause(it) },
+            httpStatus,
         )
 
     internal companion object {

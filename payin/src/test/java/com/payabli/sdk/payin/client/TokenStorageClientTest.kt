@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
@@ -11,6 +12,7 @@ import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.time.Duration.Companion.seconds
@@ -221,6 +223,22 @@ class TokenStorageClientTest {
 
             assertTrue(failure is PayInException.Undecodable)
             assertEquals(PayabliErrorType.DECODING_ERROR, (failure as PayInException).type)
+        }
+
+    @Test
+    fun `an answer that will not decode reports its status and no code`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering("<html>bad gateway</html>", statusCode = 202)
+
+            val failure =
+                runCatching {
+                    TokenStorageClient(transport, RecordingSdkLogger())
+                        .storeMethod("e", PayInInstrument.Card(testCard()))
+                }.exceptionOrNull() as? PayabliException
+
+            assertTrue("$failure", failure is PayInException.Undecodable)
+            assertEquals(202, failure?.httpStatus)
+            assertNull(failure?.rawCode)
         }
 
     @Test

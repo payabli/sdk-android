@@ -66,7 +66,7 @@ class TapToPaySessionFailuresTest {
             DeviceServiceException.NotFound(404, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceServiceException.BadRequest(400, REASON) to failed(SDK_INTERNAL_ERROR),
             DeviceServiceException.ServerFailure(500, REASON) to failed(SERVICE_UNAVAILABLE),
-            DeviceServiceException.Undecodable(null) to failed(SDK_INTERNAL_ERROR),
+            DeviceServiceException.Undecodable(null, null) to failed(SDK_INTERNAL_ERROR),
             DeviceServiceException.Unclassified(418, REASON) to failed(SERVICE_UNAVAILABLE),
             DeviceActivationException.AttestationRevoked(403, REASON) to failed(DEVICE_SETUP_REQUIRED),
             DeviceActivationException.DeviceUnknown(404, REASON) to failed(DEVICE_SETUP_REQUIRED),

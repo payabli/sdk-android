@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
@@ -686,6 +687,20 @@ class MoneyInClientTest {
                 assertTrue(body, failure is PayInException.Undecodable)
                 assertEquals(body, PayabliErrorType.DECODING_ERROR, (failure as PayInException).type)
             }
+        }
+
+    @Test
+    fun `an answer that will not decode reports its status and no code`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering("<html>502</html>", statusCode = 202)
+
+            val failure: PayabliException? =
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                    .exceptionOrNull() as? PayabliException
+
+            assertTrue("$failure", failure is PayInException.Undecodable)
+            assertEquals(202, failure?.httpStatus)
+            assertNull(failure?.rawCode)
         }
 
     @Test
