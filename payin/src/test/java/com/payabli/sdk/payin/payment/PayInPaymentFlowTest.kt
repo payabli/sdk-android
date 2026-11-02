@@ -232,7 +232,9 @@ class PayInPaymentFlowTest {
             assertEquals(TEST_PAN, String(cardData.cardNumberDigits.rawCopy()))
             assertEquals(TEST_SECURITY_CODE, String(cardData.securityCodeDigits.rawCopy()))
 
-            flow.storeMethod(cardStoreRequest(cardData))
+            val again = flow.storeMethod(cardStoreRequest(cardData))
+            assertTrue("${again.exceptionOrNull()}", again.isSuccess)
+            assertEquals(2, transport.count)
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
         }
 
@@ -299,7 +301,9 @@ class PayInPaymentFlowTest {
             assertEquals(TEST_PAN, String(cardData.cardNumberDigits.rawCopy()))
             assertEquals(TEST_SECURITY_CODE, String(cardData.securityCodeDigits.rawCopy()))
 
-            flow.capture(cardRequest(cardData = cardData))
+            val again = flow.capture(cardRequest(cardData = cardData))
+            assertTrue("${again.exceptionOrNull()}", again.isSuccess)
+            assertEquals(2, transport.count)
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_SECURITY_CODE))
         }
@@ -320,7 +324,9 @@ class PayInPaymentFlowTest {
             assertEquals(TEST_PAN, String(cardData.cardNumberDigits.rawCopy()))
             assertEquals(TEST_SECURITY_CODE, String(cardData.securityCodeDigits.rawCopy()))
 
-            flow.authorize(cardRequest(cardData = cardData))
+            val again = flow.authorize(cardRequest(cardData = cardData))
+            assertTrue("${again.exceptionOrNull()}", again.isSuccess)
+            assertEquals(2, transport.count)
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
         }
 
