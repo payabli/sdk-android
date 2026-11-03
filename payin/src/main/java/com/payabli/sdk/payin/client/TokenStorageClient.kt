@@ -6,10 +6,13 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
@@ -86,7 +89,8 @@ internal class TokenStorageClient(
                 body.fill(0)
             }
 
-        PayabliHttpErrors.from(response)?.let { failure ->
+        PayabliHttpErrors.from(response)?.let { mapped ->
+            val failure = blockedByFraudControl(response, mapped) ?: mapped
             logger.warn(
                 LogField.safe("event", "payin_store_failed"),
                 LogField.safe("route", PayInRoutes.STORE_METHOD),
@@ -154,6 +158,35 @@ internal class TokenStorageClient(
         )
     }
 
+    /**
+     * The store's fraud block, which the service answers as a 400 but is a refusal of the payer, not of the request.
+     *
+     * @param response the store's answer.
+     * @param mapped what the shared status mapping read from [response].
+     * @return the refusal, carrying the 400 and its code, or null for any other failure.
+     */
+    private fun blockedByFraudControl(
+        response: PayabliResponse,
+        mapped: PayabliException,
+    ): PayInException.Refused? {
+        if (mapped !is PayabliValidationException || mapped.rawCode != BLOCKED_BY_FRAUD_CONTROL) return null
+        val said =
+            try {
+                PayabliJson.format.decodeFromString(StoredMethodEnvelope.serializer(), response.bodyAsText())
+            } catch (_: SerializationException) {
+                null
+            }
+        return PayInException.Refused(
+            PayInFailure(
+                code = mapped.rawCode,
+                reason = said?.responseText,
+                explanation = null,
+                action = null,
+                httpStatus = mapped.httpStatus,
+            ),
+        )
+    }
+
     private fun undecodable(
         statusCode: Int,
         cause: Throwable?,
@@ -169,6 +202,9 @@ internal class TokenStorageClient(
     private companion object {
         /** The older envelope's own approval number, which is not an HTTP status. */
         const val RESULT_CODE_APPROVED = 1
+
+        /** The store's 400 when fraud control blocks the payer. */
+        const val BLOCKED_BY_FRAUD_CONTROL = "9005"
     }
 }
 
