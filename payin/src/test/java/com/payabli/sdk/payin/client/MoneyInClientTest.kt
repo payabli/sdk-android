@@ -781,6 +781,17 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `a 5xx naming a transaction keeps its code when another field will not decode`() =
+        runTest(timeout = timeout) {
+            val body = """{"code":"E0001","title":{},"data":{"paymentTransId":"101-abc"}}"""
+
+            val failure = failureOf(body, 503) as? PayInException.ServiceError
+
+            assertEquals("101-abc", failure?.failure?.paymentTransId)
+            assertEquals("E0001", failure?.rawCode)
+        }
+
+    @Test
     fun `the body bytes are overwritten once the call returns`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)

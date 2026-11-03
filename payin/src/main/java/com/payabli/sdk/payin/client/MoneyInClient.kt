@@ -306,7 +306,8 @@ internal class MoneyInClient(
             throw if (failure.type == PayabliErrorType.CONFLICT && !text.isJsonObject()) {
                 PayInKeyRefusal()
             } else if (failure.type.leavesThePaymentOpen && said.paymentTransId != null) {
-                PayInException.ServiceError(said.failure(response.statusCode, failure.rawCode), failure.type)
+                val code = said.code ?: failure.rawCode
+                PayInException.ServiceError(said.failure(response.statusCode, code), failure.type)
             } else {
                 failure
             }
@@ -406,7 +407,8 @@ private class AnswerFields(
      * The failure these fields describe.
      *
      * @param httpStatus the status the answer arrived with.
-     * @param code the code to report, where the status mapping read one from a body shape these fields do not.
+     * @param code the code to report: the body's own `code` where it has one, so a field that fails to decode
+     *   costs only that field, else the code the status mapping read from the older body.
      * @return the failure, naming the transaction where the answer named one.
      */
     fun failure(
