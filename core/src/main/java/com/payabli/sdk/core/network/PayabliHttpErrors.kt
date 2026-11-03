@@ -129,7 +129,8 @@ public object PayabliHttpErrors {
      * @param statusOverride consulted first for any non-2xx, and wins when it returns non-null, which is
      *   how a capability attaches meaning to a shared status. Not consulted for a 2xx.
      * @return the typed error for [response], or null when it is 2xx. It carries the response's status and the
-     *   code its body names, and neither when the status is below 100, where no status line was parsed.
+     *   code its body names, and neither when the status is below 100, where no status line was parsed. An error
+     *   [statusOverride] returns is returned as it is.
      */
     public fun from(
         response: PayabliResponse,
