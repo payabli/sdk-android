@@ -50,7 +50,7 @@ internal fun PayInResult.toPaymentResult(): PaymentResult =
             },
     )
 
-/** Its result code and text are the service's constant words for a save, so only the identifier crosses. */
+/** A stored method carries no result code, so only the identifier crosses. */
 private fun PayInStoredMethod.toPaymentResult(): PaymentResult =
     PaymentResult(
         code = "",

@@ -107,7 +107,7 @@ fun TapToPayScreen(
 
         StepRow(index = 2, step = steps[1]) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-                FailureReason(steps[1], sessionFailureReason(state.session, state.failureReason))
+                FailureReason(steps[1], sessionFailureReason(state.session, state.failureReason, state.deviceFailure))
                 ProminentButton(
                     text = "Set up the terminal",
                     icon = DemoIcons.TapToPay,

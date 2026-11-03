@@ -84,9 +84,7 @@ internal fun formSubmitting(
 ): Boolean = isSubmitting && !isVoiding
 
 /**
- * The full transaction, as the API described it.
- *
- * The summary and the raw response together.
+ * The full transaction: its code and identifiers.
  */
 @Composable
 fun CaptureResultScreen(
@@ -112,11 +110,6 @@ fun CaptureResultScreen(
                     text = "Payment submitted",
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "Code: ${result.code}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

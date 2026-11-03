@@ -250,7 +250,7 @@ class TapToPayTerminal(
  * never its `reason`, which is the service's text. The code stays on the cause, in the failure's `toString`.
  */
 internal fun PayabliException.forScreen(): TerminalFailure =
-    TerminalFailure(ineligibleLine ?: FailureText.terminal(toPaymentError().kind), this)
+    TerminalFailure(ineligibleLine ?: FailureText.terminal(toPaymentError().kind), this, code.toString())
 
 /**
  * This app's own line for an error whose landing is the ineligible reason, or null when it landed another.

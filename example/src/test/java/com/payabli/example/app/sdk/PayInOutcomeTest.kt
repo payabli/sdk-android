@@ -104,7 +104,10 @@ class PayInOutcomeTest {
     fun `what a refusal records carries no server text`() {
         val outcome = PayInException.Refused(serviceFailure()).toOutcome()
 
-        assertEquals("PayInException.Refused(code=D0001)", outcome.diagnostic)
+        assertEquals(
+            "PayInException.Refused(code=D0001)\ncode=${PayabliErrorType.PAYMENT_DECLINED.code}",
+            outcome.diagnostic,
+        )
     }
 }
 

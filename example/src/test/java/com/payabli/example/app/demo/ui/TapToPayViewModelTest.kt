@@ -274,7 +274,7 @@ class TapToPayViewModelTest {
         }
 
     @Test
-    fun `an ineligible device's line is collected, and the result line keeps the code`() =
+    fun `an ineligible device's line is collected and is the result line`() =
         runTest {
             val viewModel = model(terminal = RefusedDeviceTerminal())
             viewModel.enableTerminal()
@@ -285,7 +285,7 @@ class TapToPayViewModelTest {
                 state.deviceFailure,
             )
             assertEquals(
-                "✗ the reader refused this device (3015)",
+                "✗ This device isn't set up for Tap to Pay. Contact Payabli support with the device ID.",
                 state.resultText,
             )
         }
@@ -395,10 +395,8 @@ private class RefusedDeviceTerminal : TerminalController {
     override suspend fun initialize(): Result<Unit> =
         Result.failure(
             TerminalFailure(
-                "the reader refused this device (3015)",
-                RuntimeException(
-                    "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID.",
-                ),
+                "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID.",
+                RuntimeException("This device is not set up for Tap to Pay with this app."),
             ),
         )
 

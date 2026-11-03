@@ -41,9 +41,9 @@ data class TapToPayUiState(
     /** Why the session failed, as the SDK named it. Null while it has not. */
     val failureReason: TerminalFailureReason? = null,
     /**
-     * Why this device cannot take contactless payments, as the error that was thrown said it, or
-     * null when no such error has been caught. Four error codes land the ineligible reason and
-     * only the thrown message says which, so the terminal carries it beside the reason.
+     * Why this device cannot take contactless payments, in this app's line for the error's type, or
+     * null when no such error has been caught. Four error codes land the ineligible reason, so the
+     * terminal carries the line beside the reason.
      */
     val deviceFailure: String? = null,
     /**

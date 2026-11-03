@@ -151,6 +151,16 @@ class PayInOutcomesTest {
         }
     }
 
+    @Test
+    fun `every failure records its catalog code, whether or not its own description names one`() {
+        val invalid = PayInException.InvalidInput("paymentMethod.cardnumber", "The card number is not valid")
+
+        val refused = Result.failure<PayInResult>(invalid).toOutcome() as PayInOutcome.Refused
+
+        assertTrue(refused.diagnostic.endsWith("code=${invalid.code}"))
+        assertFalse(refused.diagnostic.contains("The card number is not valid"))
+    }
+
     private fun payment(
         totalAmount: BigDecimal?,
         netAmount: BigDecimal?,

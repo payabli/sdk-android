@@ -155,7 +155,7 @@ class PaymentMethodViewModel(
                 // must never do. The Tap to pay screen has always done this; these two had not.
                 "✓ Stored method: ${method.storedMethodId}"
             }
-        record("RESPONSE paymentMethod\ncode=${result.code}")
+        record("RESPONSE paymentMethod")
         _uiState.update {
             it.copy(
                 resultText = text,

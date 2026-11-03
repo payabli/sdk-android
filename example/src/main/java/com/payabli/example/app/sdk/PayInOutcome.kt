@@ -56,9 +56,10 @@ internal fun Result<PayInResult>.toOutcome(): PayInOutcome =
     fold(
         onSuccess = { PayInOutcome.Approved(it.toPaymentResult()) },
         onFailure = { failure ->
+            val error = failure.toPaymentError()
             PayInOutcome.Refused(
-                error = failure.toPaymentError(),
-                diagnostic = failure.toString(),
+                error = error,
+                diagnostic = diagnosticOf(failure, error),
                 keepsItsPaymentReference = failure.keepsThePaymentOpen(),
                 isOutcomeUnknown = failure is PayInException.Unsettled,
                 isRetryRefused = (failure as? PayabliException)?.type == PayabliErrorType.RETRY_REFUSED,
@@ -67,12 +68,23 @@ internal fun Result<PayInResult>.toOutcome(): PayInOutcome =
     )
 
 internal fun PayabliException.toOutcome(): PayInOutcome.Refused =
-    PayInOutcome.Refused(
-        error = toPaymentError(),
-        diagnostic = toString(),
-        keepsItsPaymentReference = keepsThePaymentOpen(),
-        isOutcomeUnknown = this is PayInException.Unsettled,
-    )
+    toPaymentError().let { error ->
+        PayInOutcome.Refused(
+            error = error,
+            diagnostic = diagnosticOf(this, error),
+            keepsItsPaymentReference = keepsThePaymentOpen(),
+            isOutcomeUnknown = this is PayInException.Unsettled,
+        )
+    }
+
+/**
+ * The line a failure records: its own classification and the catalog code, so every failure's code reaches the
+ * log whether or not its `toString` names one.
+ */
+private fun diagnosticOf(
+    failure: Throwable,
+    error: PaymentError,
+): String = "$failure\ncode=${error.code}"
 
 /** Whether the payment this failure belongs to is still the one to retry. */
 private fun Throwable.keepsThePaymentOpen(): Boolean =
