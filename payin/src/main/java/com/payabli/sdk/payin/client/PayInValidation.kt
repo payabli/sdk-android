@@ -132,7 +132,7 @@ internal object PayInValidation {
         if (data.expiryMonth !in EXPIRY_MONTHS) {
             throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The expiry month is not 1 to 12")
         }
-        // Only the last two digits are sent, so a two-digit year would go out as a different card's expiry.
+        // Only the last two digits are sent, so 12030 and 2030 write the same expiry.
         if (data.expiryYear !in EXPIRY_YEARS) {
             throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The expiry year is not four digits")
         }
