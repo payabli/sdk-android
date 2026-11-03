@@ -10,6 +10,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -24,6 +25,7 @@ import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.client.TEST_ACCOUNT
 import com.payabli.sdk.payin.client.TEST_ROUTING
 import com.payabli.sdk.payin.form.BANK_INSTRUMENT_FIELDS
+import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.PayInFailureMessagePlacement
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
@@ -98,6 +100,24 @@ class PayInFailureNoticeInstrumentedTest {
 
         rule.onNodeWithText("This payment may have gone through. Check before paying again.").assertExists()
         rule.onNodeWithText("The payment couldn't be completed. Please try again.").assertDoesNotExist()
+    }
+
+    @Test
+    fun switchingInstrumentKeepsTheUnknownOutcomeWarning() {
+        failAfterSubmitting(
+            failing(PayInException.Unsettled(PayabliGenericException(PayabliErrorType.RATE_LIMITED, "slow"))),
+            configuration =
+                bankForm().copy(
+                    allowedMethods = listOf(PayInMethodType.BankAccount, PayInMethodType.Card),
+                    cardSections = listOf(PayInFormSection(fields = CARD_INSTRUMENT_FIELDS)),
+                ),
+        )
+
+        rule.onNode(hasClickAction() and hasText(string(R.string.payabli_payin_method_card))).performClick()
+        rule.waitForIdle()
+
+        rule.onNode(hasSetTextAction() and hasText(string(R.string.payabli_payin_field_card_number))).assertExists()
+        rule.onNodeWithText("This payment may have gone through. Check before paying again.").assertExists()
     }
 
     @Test
