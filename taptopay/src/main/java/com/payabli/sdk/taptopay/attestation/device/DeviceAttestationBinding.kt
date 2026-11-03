@@ -58,5 +58,17 @@ internal object DeviceAttestationBinding {
     fun attestationField(token: AttestationToken): String =
         Base64.getEncoder().encodeToString(token.value.toByteArray(Charsets.UTF_8))
 
+    /**
+     * @param challenge the challenge as the device service issued it.
+     * @return true when [nonceChallenge] can decode [challenge].
+     */
+    fun isChallengeDecodable(challenge: String): Boolean =
+        try {
+            Base64.getDecoder().decode(challenge)
+            true
+        } catch (_: IllegalArgumentException) {
+            false
+        }
+
     private const val SHA_256 = "SHA-256"
 }

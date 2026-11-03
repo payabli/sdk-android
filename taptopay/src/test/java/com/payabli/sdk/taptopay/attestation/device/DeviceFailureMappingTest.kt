@@ -282,6 +282,15 @@ class DeviceFailureMappingTest {
         }
 
     @Test
+    fun `a challenge that is not base64 is undecodable at the status it arrived with`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val failure = challengeAgainst(successEnvelope("""{"challengeId":"c","challenge":"not%%base64"}"""))
+
+            assertTrue(failure is DeviceServiceException.Undecodable)
+            assertEquals(200, (failure as DeviceServiceException).httpStatus)
+        }
+
+    @Test
     fun `a decline is logged with its code and never with the server's words`() =
         runTest(timeout = TEST_TIMEOUT) {
             challengeAgainst(declineEnvelope(400, ECHOING_REASON))

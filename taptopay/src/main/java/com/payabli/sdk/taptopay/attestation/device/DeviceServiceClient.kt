@@ -59,6 +59,7 @@ internal class DeviceServiceClient(
             bodySerializer = ChallengeRequest.serializer(),
             payloadSerializer = ChallengeResponse.serializer(),
             failureMapper = failureMapper,
+            isUsable = { DeviceAttestationBinding.isChallengeDecodable(it.challenge) },
         )
 
     /**
@@ -242,6 +243,7 @@ internal class DeviceServiceClient(
         failureMapper: DeviceFailureMapper,
         headers: Map<String, String> = emptyMap(),
         emptyPayload: T? = null,
+        isUsable: (T) -> Boolean = { true },
     ): T {
         // The four POSTs resolve to their own template, because none of them embeds an identifier. Passed
         // anyway, because `route` is the only form the transport may log and defaulting it to null would cost
@@ -264,6 +266,7 @@ internal class DeviceServiceClient(
                 failureMapper = failureMapper,
                 emptyPayload = emptyPayload,
                 refusesAtStatus = true,
+                isUsable = isUsable,
             )
         }
     }
@@ -379,6 +382,7 @@ internal class DeviceServiceClient(
         emptyPayload: T? = null,
         refusesAtStatus: Boolean = false,
         statusOverride: (Int) -> Throwable? = { null },
+        isUsable: (T) -> Boolean = { true },
     ): T {
         val declineOutcome = PayabliEnvelope.declineOutcome(response.body)
         val status = response.statusCode
@@ -445,6 +449,9 @@ internal class DeviceServiceClient(
                 throw undecodable(route, response.statusCode, failure)
             }
         val resolved = payload ?: emptyPayload ?: throw undecodable(route, response.statusCode, null)
+        if (!isUsable(resolved)) {
+            throw undecodable(route, response.statusCode, null)
+        }
         logger.debug(
             LogField.safe("event", "device_call_succeeded"),
             LogField.safe("route", route),
