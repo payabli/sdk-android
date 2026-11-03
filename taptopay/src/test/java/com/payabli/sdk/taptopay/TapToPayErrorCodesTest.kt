@@ -92,7 +92,7 @@ class TapToPayErrorCodesTest {
             CardReaderException.SessionUnusable(null) to PayabliErrorType.READER_SESSION_EXPIRED,
             CardReaderException.ReadFailed(null) to PayabliErrorType.TAP_NOT_COMPLETED,
             CardReaderException.ContactlessDisabled(null) to PayabliErrorType.CONTACTLESS_DISABLED,
-            TTPTransactionException.NotEnabled() to PayabliErrorType.CARD_PRESENT_NOT_ENABLED,
+            TTPTransactionException.NotEnabled(code = null) to PayabliErrorType.CARD_PRESENT_NOT_ENABLED,
             TTPTransactionException.Refused("D", "refused", 200) to PayabliErrorType.PAYMENT_NOT_OPENED,
             TTPTransactionException.ServiceRejected("E", "refused", 200) to PayabliErrorType.PAYMENT_NOT_OPENED,
             TTPTransactionException.CardRefused("DECLINED") to PayabliErrorType.CARD_DECLINED,

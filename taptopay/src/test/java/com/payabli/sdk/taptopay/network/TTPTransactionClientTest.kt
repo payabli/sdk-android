@@ -358,6 +358,21 @@ class TTPTransactionClientTest {
             assertEquals("a switch nobody flipped is not worth three attempts", 1, closeTransport.requests.size)
         }
 
+    @Test
+    fun `a paypoint that cannot take card-present payments carries the 404 and the body's code`() =
+        runTest(timeout = timeout) {
+            val (_, coded) = client(answer("""{"code":"E0404","reason":"not enabled"}""", 404))
+            val (_, bare) = client(answer("", 404))
+
+            val withCode = runCatching { coded.open() }.exceptionOrNull() as TTPTransactionException.NotEnabled
+            val withoutCode = runCatching { bare.open() }.exceptionOrNull() as TTPTransactionException.NotEnabled
+
+            assertEquals(404, withCode.httpStatus)
+            assertEquals("E0404", withCode.code)
+            assertEquals(404, withoutCode.httpStatus)
+            assertNull(withoutCode.code)
+        }
+
     // The seam between the reader and the close
 
     @Test

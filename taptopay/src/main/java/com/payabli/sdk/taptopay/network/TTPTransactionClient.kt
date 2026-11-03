@@ -262,7 +262,7 @@ internal class TTPTransactionClient(
     ): Throwable? {
         val failure =
             if (response.statusCode == HTTP_NOT_FOUND) {
-                TTPTransactionException.NotEnabled()
+                TTPTransactionException.NotEnabled(PayabliHttpErrors.from(response)?.rawCode)
             } else {
                 PayabliHttpErrors.from(response)
             } ?: return null

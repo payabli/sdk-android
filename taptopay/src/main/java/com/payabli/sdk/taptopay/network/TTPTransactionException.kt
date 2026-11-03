@@ -37,10 +37,11 @@ internal sealed class TTPTransactionException(
      * opposite of every other failure on these routes: an account change, and no number of retries reaches
      * it.
      */
-    class NotEnabled :
-        TTPTransactionException(
+    class NotEnabled(
+        code: String?,
+    ) : TTPTransactionException(
             "the paypoint is not enabled for card-present payments",
-            code = null,
+            code = code,
             reason = null,
             httpStatus = HTTP_NOT_FOUND,
         )
