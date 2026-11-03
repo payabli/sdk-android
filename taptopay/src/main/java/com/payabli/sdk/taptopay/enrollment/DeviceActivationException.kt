@@ -11,7 +11,7 @@ package com.payabli.sdk.taptopay.enrollment
  * [resultCode] is a diagnostic and is the same value across most of the table, which is exactly why the
  * taxonomy cannot be built on it.
  *
- * [reason] is the refusal's own wording. Displayable, and **never logged** — it can quote what was sent,
+ * [reason] is the refusal's own wording. Never shown, and **never logged** — it can quote what was sent,
  * which is the same rule `DeviceServiceException` states for the same field.
  */
 internal sealed class DeviceActivationException(

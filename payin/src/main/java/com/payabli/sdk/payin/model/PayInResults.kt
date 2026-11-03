@@ -77,8 +77,8 @@ public class PayInTransaction(
  * void answers `A0003` and calls itself canceled, where a capture answers `A0000`. A caller showing the
  * outcome needs what the service called it, and reducing every approval to its code throws that away.
  *
- * @property reason displayable, and never loggable: the same rule [PayInFailure.reason] carries, for the
- *   same reason.
+ * @property reason the service's text: never shown to a payer and never logged, the same rule
+ *   [PayInFailure.reason] carries, for the same reason.
  */
 public class PayInResult(
     public val code: String,
@@ -99,11 +99,12 @@ public class PayInResult(
  * Why the service refused, in the shape it refuses in.
  *
  * The same type covers a declined transaction, a service error and a refused stored method, because a caller
- * does the same three things with any of them: show [reason], act on [action], and record [code]. Which of
- * the three it was is the exception carrying it.
+ * does the same three things with any of them: show a message for its category, act on [action], and record
+ * [code]. Which of the three it was is the exception carrying it.
  *
  * @property code the unified response code, `D`-prefixed for a decline and `E`-prefixed for an error.
- * @property reason displayable, and never loggable: some of these can quote what was submitted.
+ * @property reason the service's text: never shown to a payer and never logged, because some of it can quote
+ *   what was submitted.
  * @property paymentTransId the transaction this failure belongs to, or null where the service named none.
  *   Carried for every non-approved answer, so a service error names its transaction as a decline does: a
  *   caller that means to reconcile one reads this whichever kind of failure it holds.
@@ -135,7 +136,7 @@ public sealed class PayInException(
      * A value this module refused before sending it.
      *
      * [field] carries the wire spelling for the field at fault, where there is one, so a form can mark it
-     * without a second mapping. [reason] is displayable and carries no submitted value.
+     * without a second mapping. [reason] is this module's own text and carries no submitted value.
      */
     public class InvalidInput(
         public val field: String?,
@@ -326,7 +327,7 @@ private fun PayabliException.redactedOnce(): Throwable = cause?.takeIf { it is R
 
 /**
  * The transaction this failure named, where it named one. The identifier only, and none of the rest of
- * [PayInFailure]: `reason`, `explanation` and `action` are displayable and never loggable, and a type
+ * [PayInFailure]: `reason`, `explanation` and `action` are the service's text, neither shown nor logged, and a type
  * whose work is to withhold a message does not republish them in another slot.
  *
  * @return the transaction the answer named, or null where none was named.

@@ -129,7 +129,7 @@ class PayInRedactionTest {
 
     @Test
     fun `a result and a failure carry the code and not the prose`() {
-        // The service text on an approval is displayable and never loggable, exactly as a failure's is, and
+        // The service text on an approval is neither shown nor logged, exactly as a failure's is, and
         // an approval can echo what was submitted just as a refusal can.
         val approval =
             PayInResult(

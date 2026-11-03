@@ -21,8 +21,9 @@ package com.payabli.sdk.core.model
  * prose. Log `LogField.safe("errorCode", type)` instead; `errorCode` is allowlisted.
  *
  * @property type the catalog entry. Switch on this, or on [category], not on the concrete subclass.
- * @property reason short human-readable summary. Displayable; never loggable.
- * @property detail longer explanation when the server or the SDK has one. Displayable; never loggable.
+ * @property reason short summary, which can be the service's text. Never shown to a payer or an operator, and never
+ *   logged: it can quote what was submitted. Show a message for [category] instead.
+ * @property detail longer explanation when the server or the SDK has one. Never shown and never logged, as [reason].
  */
 public abstract class PayabliException internal constructor(
     public val type: PayabliErrorType,

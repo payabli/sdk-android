@@ -154,7 +154,7 @@ public object PayabliHttpErrors {
             status == HTTP_FORBIDDEN -> generic(PayabliErrorType.PERMISSION_DENIED, "Forbidden (403)")
             status == HTTP_GONE -> generic(PayabliErrorType.SESSION_BURNED, "Session burned (410)")
             // The reason is fixed rather than read from the body: on the money-in routes that body
-            // quotes the request's own idempotency key, and reason is displayable.
+            // quotes the request's own idempotency key, and reason reaches a host.
             status == HTTP_CONFLICT -> generic(PayabliErrorType.CONFLICT, "Conflict (409)")
             status == HTTP_TOO_MANY_REQUESTS ->
                 PayabliRateLimitException(

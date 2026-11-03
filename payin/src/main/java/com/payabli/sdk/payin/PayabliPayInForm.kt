@@ -38,9 +38,9 @@ import com.payabli.sdk.payin.ui.PayInSubmitText
  * and account number are emptied after an approval or a refusal by the service, and kept after a refusal before
  * that, such as an amount the request cannot send. A field the service rejects is marked; the payer's details stay.
  *
- * **Nothing in a failure is loggable.** [onFailed] carries the failure so a host can show it or navigate away
- * from it. `PayabliException.reason` and `detail` are displayable only: some of them can quote what was
- * submitted, so a record of a failure takes the exception's code, not its text.
+ * **Nothing in a failure is loggable.** [onFailed] carries the failure so a host can act on its category or
+ * navigate away from it. `PayabliException.reason` and `detail` are neither shown nor logged: some of them can
+ * quote what was submitted, so a screen shows a message for the category and a record takes the code.
  *
  * **Consumes no window insets.** Give it a scrolling viewport that accounts for the keyboard.
  *

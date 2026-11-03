@@ -16,7 +16,7 @@ import java.net.HttpURLConnection.HTTP_NOT_FOUND
  * `PayabliHttpErrors`, so which type is raised here says which layer failed.
  *
  * [reason] is text this SDK did not author, so treat it as able to carry back anything the request
- * contained: displayable, and **never loggable**. That is how `PayabliException` treats the same field.
+ * contained: never shown, and **never loggable**. That is how `PayabliException` treats the same field.
  */
 internal sealed class TTPTransactionException(
     message: String,

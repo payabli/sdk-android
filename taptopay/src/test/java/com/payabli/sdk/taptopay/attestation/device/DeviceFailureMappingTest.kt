@@ -23,7 +23,7 @@ private val TEST_TIMEOUT = 5.seconds
 
 private const val ENTRY = "a-test-entrypoint"
 
-/** Server text that echoes what was sent, which is why `reason` is displayable and never loggable. */
+/** Server text that echoes what was sent, which is why `reason` is neither shown nor logged. */
 private const val ECHOING_REASON = "Invalid activation code."
 
 /** Placeholders: these tests are about what comes back, so nothing here reaches an assertion on the request. */
@@ -340,7 +340,7 @@ class DeviceFailureMappingTest {
             val record = logger.records.single()
             assertEquals(LogLevel.WARN, record.level)
             assertEquals(listOf("event", "route", "errorCode"), record.fieldNames)
-            // The reason can quote what was sent, so it is displayable and never loggable. `statusCode` is
+            // The reason can quote what was sent, so it is neither shown nor logged. `statusCode` is
             // absent from this record because the status was 200, and printing it beside a failure would
             // read as a contradiction.
             assertFalse(record.message.contains(ECHOING_REASON))
