@@ -373,6 +373,17 @@ class TTPTransactionClientTest {
             assertNull(withoutCode.code)
         }
 
+    @Test
+    fun `a paypoint that cannot take card-present payments keeps its code beside a field that will not decode`() =
+        runTest(timeout = timeout) {
+            val (_, coded) = client(answer("""{"code":"E0404","title":{}}""", 404))
+
+            val failure = runCatching { coded.open() }.exceptionOrNull() as TTPTransactionException.NotEnabled
+
+            assertEquals(404, failure.httpStatus)
+            assertEquals("E0404", failure.code)
+        }
+
     // The seam between the reader and the close
 
     @Test

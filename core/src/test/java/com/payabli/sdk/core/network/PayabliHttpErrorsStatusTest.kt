@@ -115,4 +115,26 @@ class PayabliHttpErrorsStatusTest {
         assertNull(mapped.rawCode)
         assertEquals(PayabliErrorType.NETWORK_ERROR, mapped.type)
     }
+
+    @Test
+    fun `a display field that will not decode costs only that field, never the code`() {
+        mapOf(
+            400 to """{"code":"E1001","title":{}}""",
+            401 to """{"code":"E1001","title":{}}""",
+            402 to """{"code":"E1001","reason":{}}""",
+            403 to """{"code":"E1001","title":{}}""",
+            404 to """{"code":"E1001","detail":[]}""",
+            409 to """{"code":"E1001","title":{}}""",
+            410 to """{"code":"E1001","title":{}}""",
+            429 to """{"code":"E1001","title":{}}""",
+            500 to """{"code":"E1001","detail":{}}""",
+        ).forEach { (status, body) ->
+            assertEquals("status $status", "E1001", map(status, body).rawCode)
+        }
+    }
+
+    @Test
+    fun `an older envelope's responseCode survives a display field that will not decode`() {
+        assertEquals("9001", map(403, """{"responseCode":9001,"title":7}""").rawCode)
+    }
 }

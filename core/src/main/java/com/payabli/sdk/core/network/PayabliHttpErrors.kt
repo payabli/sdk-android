@@ -141,16 +141,16 @@ public object PayabliHttpErrors {
         statusOverride(status)?.let { return it }
         val body = response.bodyAsText()
         val answered = status.takeIf { it >= HTTP_MIN_VALID }
-        val code = answered?.let { PayabliJson.decodeOrNull(ErrorDetails.serializer(), body)?.rawCode }
+        val code = answered?.let { PayabliJson.decodeOrNull(ServiceCode.serializer(), body)?.rawCode }
 
         fun generic(
             type: PayabliErrorType,
             reason: String,
         ) = PayabliGenericException(type, reason, null, null, answered, code)
         return when {
-            status == HTTP_BAD_REQUEST -> validation(status, body)
+            status == HTTP_BAD_REQUEST -> validation(status, body, code)
             status == HTTP_UNAUTHORIZED -> generic(PayabliErrorType.TOKEN_EXPIRED, "Unauthorized (401)")
-            status == HTTP_PAYMENT_REQUIRED -> decline(status, body)
+            status == HTTP_PAYMENT_REQUIRED -> decline(status, body, code)
             status == HTTP_FORBIDDEN -> generic(PayabliErrorType.PERMISSION_DENIED, "Forbidden (403)")
             status == HTTP_GONE -> generic(PayabliErrorType.SESSION_BURNED, "Session burned (410)")
             // The reason is fixed rather than read from the body: on the money-in routes that body
@@ -167,7 +167,7 @@ public object PayabliHttpErrors {
             // Anything at or above 500, including the 6xx-plus codes a proxy may invent: RFC 9110 says a
             // client "SHOULD process the response as if it had a 5xx (Server Error) status code". Do not
             // narrow this to 500..599.
-            status >= HTTP_INTERNAL_ERROR -> server(status, body, retryAfterMillis(response))
+            status >= HTTP_INTERNAL_ERROR -> server(status, body, code, retryAfterMillis(response))
             // getResponseCode returns -1 when no status line could be parsed, which is a broken response
             // rather than an unclassified one, so it is retryable.
             status < HTTP_MIN_VALID -> generic(PayabliErrorType.NETWORK_ERROR, "Malformed HTTP response")
@@ -176,12 +176,25 @@ public object PayabliHttpErrors {
     }
 
     /**
-     * The `application/problem+json` body (RFC 9457) plus Payabli's `code`, and no `errors`.
+     * The service's code alone, so a display field in an unexpected shape never costs it.
      *
-     * Split from [ErrorsMap] because `errors` is the field most likely to arrive in an
-     * unexpected shape, and a single DTO would lose `title` and `detail` along with it. The body's own
-     * `status` is dropped because the response carries it, and `token` is dropped because it is a
-     * temporary page identifier that must not land on a `Throwable`.
+     * @property code the body's `code`.
+     * @property responseCode the older envelope's `responseCode`, kept as an element so a value that is not an
+     *   integer costs only this field.
+     */
+    @Serializable
+    internal class ServiceCode(
+        val code: String? = null,
+        val responseCode: JsonElement? = null,
+    ) {
+        /** [code], else [responseCode] as a string when it reads as an integer, quoted or not, else null. */
+        val rawCode: String? get() = code ?: (responseCode as? JsonPrimitive)?.intOrNull?.toString()
+    }
+
+    /**
+     * The `application/problem+json` body (RFC 9457) without `errors` or the code, so their shapes never cost `title`
+     * and `detail`. The body's `status` is dropped for the response's, and `token`, a temporary page identifier,
+     * must not land on a `Throwable`.
      */
     @Serializable
     internal class ErrorDetails(
@@ -189,11 +202,7 @@ public object PayabliHttpErrors {
         val detail: String? = null,
         val type: String? = null,
         val instance: String? = null,
-        val code: String? = null,
-        val responseCode: JsonElement? = null,
-    ) {
-        val rawCode: String? get() = rawCodeOf(code, responseCode)
-    }
+    )
 
     /** The `errors` map alone, so an unexpected shape there costs only the field list. */
     @Serializable
@@ -225,33 +234,19 @@ public object PayabliHttpErrors {
 
     /**
      * The 402 body. A dedicated shape rather than reusing [PayabliV2Envelope], so a decline can never
-     * retain the `data` blob and an absent `code` degrades a field instead of failing the decode.
+     * retain the `data` blob. Its code is read through [ServiceCode].
      */
     @Serializable
     internal class DeclineBody(
-        val code: String? = null,
-        val responseCode: JsonElement? = null,
         val reason: String? = null,
         val explanation: String? = null,
         val action: String? = null,
-    ) {
-        val rawCode: String? get() = rawCodeOf(code, responseCode)
-    }
-
-    /**
-     * @param code the body's `code`.
-     * @param responseCode the older envelope's `responseCode`, kept as an element so a value that is not an integer
-     *   costs only this field.
-     * @return [code], else [responseCode] as a string when it reads as an integer, quoted or not, else null.
-     */
-    private fun rawCodeOf(
-        code: String?,
-        responseCode: JsonElement?,
-    ): String? = code ?: (responseCode as? JsonPrimitive)?.intOrNull?.toString()
+    )
 
     private fun validation(
         status: Int,
         body: String,
+        code: String?,
     ): PayabliValidationException {
         val errorDetails = PayabliJson.decodeOrNull(ErrorDetails.serializer(), body)
         return PayabliValidationException(
@@ -260,7 +255,7 @@ public object PayabliHttpErrors {
             detail = errorDetails?.detail,
             problemType = errorDetails?.type,
             instance = errorDetails?.instance,
-            rawCode = errorDetails?.rawCode,
+            rawCode = code,
             fieldErrors = PayabliJson.decodeOrNull(ErrorsMap.serializer(), body)?.errors ?: emptyMap(),
         )
     }
@@ -268,6 +263,7 @@ public object PayabliHttpErrors {
     private fun server(
         status: Int,
         body: String,
+        code: String?,
         retryAfterMillis: Long?,
     ): PayabliServerException {
         val errorDetails = PayabliJson.decodeOrNull(ErrorDetails.serializer(), body)
@@ -277,7 +273,7 @@ public object PayabliHttpErrors {
             detail = errorDetails?.detail,
             problemType = errorDetails?.type,
             instance = errorDetails?.instance,
-            rawCode = errorDetails?.rawCode,
+            rawCode = code,
             retryAfterMillis = retryAfterMillis,
         )
     }
@@ -316,10 +312,11 @@ public object PayabliHttpErrors {
     private fun decline(
         status: Int,
         body: String,
+        code: String?,
     ): PayabliDeclineException {
         val declined = PayabliJson.decodeOrNull(DeclineBody.serializer(), body)
         return PayabliDeclineException(
-            rawCode = declined?.rawCode,
+            rawCode = code,
             reason = declined?.reason ?: PayabliDeclineException.DEFAULT_REASON,
             explanation = declined?.explanation,
             action = declined?.action,
