@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.payabli.sdk.core.model.PayabliErrorCategory
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -53,6 +54,12 @@ internal class PayInFormDraft {
      * A marked box whose value has changed no longer holds what was rejected.
      */
     var rejectedFields: Map<PayInField, PayInFieldError> by mutableStateOf(emptyMap())
+
+    /**
+     * The category of the last submission's failure where no box on screen was marked for it, or null for none.
+     * Cleared when the next submission starts and when one succeeds.
+     */
+    var failureNotice: PayabliErrorCategory? by mutableStateOf(null)
 
     /**
      * True from the tap until an outcome arrives, which is how a success this form sent is told from one the

@@ -21,12 +21,15 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.R
+import com.payabli.sdk.payin.form.PayInFailureMessagePlacement
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldRules
 import com.payabli.sdk.payin.form.PayInFormConfiguration
@@ -147,6 +150,13 @@ internal fun PayInFormContent(
 
         reports.refusedFields(rejected)
         draft.rejectedFields = rejected
+        // A failure that marks a box on screen is shown by the mark; any other failure draws the form's message.
+        // Every other state clears it, so a new submission starts without the last one's.
+        draft.failureNotice =
+            (outcome as? PayInSubmissionState.Failed)
+                ?.cause
+                ?.takeIf { !anyRejectedFieldStands(draft.method) }
+                ?.let(PayInFailureMessage::categoryOf)
         // On the composition's dispatcher; moving either call to the flow's coroutine needs withContext(Main).
         // Only once the service may have acted on it: a refusal before that, of any kind, leaves what the payer typed.
         val clearInstrument = { if (wasSent(outcome)) draft.clearInstrument() }
@@ -167,11 +177,21 @@ internal fun PayInFormContent(
 
     val complete = !anyRejectedFieldStands(method) && configuration.isComplete(typed, method, today)
 
+    val notice = draft.failureNotice?.takeIf { configuration.showsFailureMessage }
+    val noticeText =
+        notice?.let {
+            PayInFailureMessage.text(it, savesMethod = submitText == PayInSubmitText.StoreMethod, labels = labels)
+        }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(context.style.spacing.content),
     ) {
         FormHeader(labels, context.style)
+
+        if (noticeText != null && configuration.failureMessagePlacement == PayInFailureMessagePlacement.Top) {
+            FailureNotice(noticeText, context.style)
+        }
 
         if (configuration.methodsOffered.size > 1) {
             MethodSelector(configuration.methodsOffered, method, isSubmitting) { chosen ->
@@ -183,6 +203,12 @@ internal fun PayInFormContent(
             placeAmounts(sections, amounts, configuration.showsBaseAmount).forEach { drawn ->
                 FormSection(drawn, typed, context, draft::enter)
             }
+        }
+
+        if (noticeText != null &&
+            configuration.failureMessagePlacement == PayInFailureMessagePlacement.AboveSubmitButton
+        ) {
+            FailureNotice(noticeText, context.style)
         }
 
         PayInSubmitButton(
@@ -304,6 +330,24 @@ private fun FormHeader(
         title?.let { Text(text = it, style = style.title) }
         subtitle?.let { Text(text = it, style = style.subtitle) }
     }
+}
+
+/**
+ * The form's message for a failure no box on screen shows, announced to a screen reader when it appears.
+ *
+ * @param text what the payer reads.
+ * @param style the form's style.
+ */
+@Composable
+private fun FailureNotice(
+    text: String,
+    style: PayInFormStyle,
+) {
+    Text(
+        text = text,
+        style = style.error,
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+    )
 }
 
 @Composable
