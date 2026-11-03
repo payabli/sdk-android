@@ -81,14 +81,14 @@ public class PayInFormLabels(
      *
      * @return the message, or null to use the resource.
      */
-    public fun declinedMessageOrNull(): String? = declinedMessage?.takeIf { it.isNotBlank() }
+    internal fun declinedMessageOrNull(): String? = declinedMessage?.takeIf { it.isNotBlank() }
 
     /**
      * The payer's message when a failure's category is `retryLater`, or null to use the resource.
      *
      * @return the message, or null to use the resource.
      */
-    public fun retryLaterMessageOrNull(): String? = retryLaterMessage?.takeIf { it.isNotBlank() }
+    internal fun retryLaterMessageOrNull(): String? = retryLaterMessage?.takeIf { it.isNotBlank() }
 
     /**
      * The payer's message when a failure's category is `outcomeUnknown`, or null to use the
@@ -96,14 +96,14 @@ public class PayInFormLabels(
      *
      * @return the message, or null to use the resource.
      */
-    public fun outcomeUnknownMessageOrNull(): String? = outcomeUnknownMessage?.takeIf { it.isNotBlank() }
+    internal fun outcomeUnknownMessageOrNull(): String? = outcomeUnknownMessage?.takeIf { it.isNotBlank() }
 
     /**
      * The payer's message for a failure of any other category, or null to use the resource.
      *
      * @return the message, or null to use the resource.
      */
-    public fun otherMessageOrNull(): String? = otherMessage?.takeIf { it.isNotBlank() }
+    internal fun otherMessageOrNull(): String? = otherMessage?.takeIf { it.isNotBlank() }
 
     /**
      * As a `data class` would, over the copies rather than over what was handed in.
