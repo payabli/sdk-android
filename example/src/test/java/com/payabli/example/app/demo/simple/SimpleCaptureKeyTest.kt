@@ -4,6 +4,8 @@ import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.example.app.demo.ui.customize.FormSettings
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -153,6 +155,19 @@ class SimpleCaptureKeyTest {
         assertFalse(betweenPayments(isSubmitting = false, retryOpen = true))
         assertFalse(betweenPayments(isSubmitting = true, retryOpen = false))
         assertTrue(betweenPayments(isSubmitting = false, retryOpen = false))
+    }
+
+    @Test
+    fun `an open retry offers only the held attempt's method, and settling it offers every method again`() {
+        // A payer switching method under a held key would see a total the retry does not carry.
+        val form = PayInFormConfiguration()
+
+        val held = methodsWhileHeld(form, retryOpen = true, method = PayInMethodType.BankAccount)
+        val settled = methodsWhileHeld(form, retryOpen = false, method = PayInMethodType.BankAccount)
+
+        assertEquals(listOf(PayInMethodType.BankAccount), held.methodsOffered)
+        assertEquals(PayInMethodType.BankAccount, held.startingMethod)
+        assertEquals(form, settled)
     }
 
     @Test

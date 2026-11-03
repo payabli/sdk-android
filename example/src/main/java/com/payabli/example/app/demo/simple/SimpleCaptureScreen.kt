@@ -40,6 +40,7 @@ import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
+import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInException
 import kotlinx.coroutines.launch
@@ -120,6 +121,21 @@ internal fun betweenPayments(
     isSubmitting: Boolean,
     retryOpen: Boolean,
 ): Boolean = !isSubmitting && !retryOpen
+
+/**
+ * The form while a retry is open offers only the held attempt's method, so it draws no selector and the fee stays
+ * priced for the method the retry sends. Every method comes back once the outcome is settled.
+ *
+ * @param form the configuration the screen's settings build.
+ * @param retryOpen whether the last payment's outcome is unknown.
+ * @param method the method the held attempt was sent with.
+ * @return [form] limited to [method] while a retry is open, otherwise [form] unchanged.
+ */
+internal fun methodsWhileHeld(
+    form: PayInFormConfiguration,
+    retryOpen: Boolean,
+    method: PayInMethodType,
+): PayInFormConfiguration = if (retryOpen) form.copy(allowedMethods = listOf(method), defaultMethod = method) else form
 
 /** What the screen says when [operation] ends, for either instrument. */
 internal fun outcomeMessage(
@@ -340,7 +356,7 @@ fun SimpleCaptureScreen(
                                     attemptFor(viewModel.retryOpen),
                                     method,
                                 ),
-                            configuration = form,
+                            configuration = methodsWhileHeld(form, viewModel.retryOpen, method),
                             labels = FormCustomization.labels(settings, operation),
                             style = FormCustomization.style(settings.look),
                             onCompleted = {

@@ -152,6 +152,10 @@ A retry describes the same payment: the same amount, service fee, surcharge, cur
 and the same `orderId` when the first attempt set one. A retry that describes a different payment fails with
 `RETRY_NOT_SAME_PAYMENT` and isn't sent, and the earlier payment's key is kept for the retry that matches.
 
+On the form, while a payment's outcome is unknown, pass only that attempt's method in `allowedMethods`. The form
+then draws no method selector and keeps what the payer typed, so the total you show can't move to another method's
+fee. Pass the full list again once the outcome is settled.
+
 ## Outcomes and errors
 
 Every call returns a `Result`, except when it is cancelled: cancellation is rethrown as
