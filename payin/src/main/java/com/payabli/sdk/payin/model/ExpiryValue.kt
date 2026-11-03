@@ -43,7 +43,7 @@ internal data class ExpiryValue(
     companion object {
         /**
          * `MM/YY` for any month and year, in [Locale.ROOT]. Takes values outside the range this type holds,
-         * because card data carries its expiry unchecked until a call refuses it.
+         * because card data carries its expiry unchecked.
          *
          * @param month the month, written as two digits.
          * @param year the year; only its last two digits are written.
