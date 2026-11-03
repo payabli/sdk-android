@@ -8,11 +8,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
- * What the three readout types say when something stringifies them.
- *
- * They are `data class`es, so without their own `toString` each would synthesize one over every property,
- * and that reaches assertion failures, exception messages and crash reports without passing through
- * anything that redacts.
+ * What the three readout types say when stringified. Each is a `data class`, whose synthesized `toString` would
+ * render every property into assertion failures and crash reports, which nothing redacts.
  */
 class PaymentResultRedactionTest {
     @Test

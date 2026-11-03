@@ -34,11 +34,8 @@ data class Transaction(
 }
 
 /**
- * What the payment form produced.
- *
- * One type for both screens: a stored method fills [storedMethod] and a capture fills [transaction] and [code]. A
- * stored method carries no code, so [code] is empty for one. The service's own text is not carried: a screen shows
- * identifiers on a success.
+ * What the payment form produced: a stored method fills [storedMethod], with [code] empty because it carries none,
+ * and a capture fills [transaction] and [code]. The service's own text is not carried.
  */
 data class PaymentResult(
     val code: String,
