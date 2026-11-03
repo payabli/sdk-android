@@ -2487,6 +2487,37 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a bare 404 on the close of an approved tap is the payment not closed, carrying the 404`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The opening passed the same paypoint check moments earlier, so this 404 says nothing about
+            // card-present being enabled, and the card may already be charged.
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to listOf(approved("""{"paymentTransId":"$TRANS_ID"}""")),
+                        UPDATE to List(3) { "" },
+                        statusFor = { if (it == UPDATE) 404 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertEquals("the close was retried", 1, fixture.requestsTo(UPDATE).size)
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, failure.type)
+            assertEquals(404, failure.httpStatus)
+            assertNull(failure.rawCode)
+            assertEquals(TRANS_ID, failure.paymentTransId)
+            assertEquals(TapToPayCapture.CHARGED, failure.capture)
+        }
+
+    @Test
     fun `a close that failed says the card was charged`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The sharp case: the money has moved and charging again takes it twice, so a caller has to be
