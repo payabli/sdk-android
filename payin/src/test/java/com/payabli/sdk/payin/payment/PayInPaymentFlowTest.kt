@@ -627,7 +627,7 @@ class PayInPaymentFlowTest {
         }
 
     @Test
-    fun `a second call while one is in flight answers that one already is`() =
+    fun `a second call while one is in flight is refused as an invalid request`() =
         runTest(timeout = timeout) {
             val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
             val flow = flowOver(transport)
@@ -635,9 +635,10 @@ class PayInPaymentFlowTest {
             val first = launch { flow.capture(testOptions(), cardForm()) }
             transport.arrived.await()
 
-            val refused = flow.capture(testOptions(), cardForm())
+            val refused = flow.capture(testOptions(), cardForm()).exceptionOrNull()
 
-            assertTrue("$refused", refused.exceptionOrNull() is PayInException.AlreadySubmitting)
+            assertTrue("$refused", refused is PayInException.AlreadySubmitting)
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, (refused as PayInException).type)
             assertEquals("a request reached the wire twice", 1, transport.sent.size)
             transport.release()
             first.join()

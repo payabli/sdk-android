@@ -290,11 +290,11 @@ public sealed class PayInException(
     /**
      * A submission was already in flight, so this one was refused and nothing was sent.
      *
-     * A sequencing mistake by the caller rather than anything that came back, which is why it carries
-     * [PayabliErrorType.INVALID_CONFIGURATION] and no failure from the wire.
+     * It carries [PayabliErrorType.VALIDATION_ERROR] and no failure from the wire: a call made out of order
+     * is fixed by changing the call, not the configuration, as [PayabliErrorType.SESSION_NOT_INITIALIZED] is.
      */
     public class AlreadySubmitting :
-        PayInException(PayabliErrorType.INVALID_CONFIGURATION, DEFAULT_ALREADY_SUBMITTING_REASON) {
+        PayInException(PayabliErrorType.VALIDATION_ERROR, DEFAULT_ALREADY_SUBMITTING_REASON) {
         override fun toString(): String = "PayInException.AlreadySubmitting"
     }
 
