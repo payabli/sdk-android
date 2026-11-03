@@ -123,9 +123,8 @@ private fun TypedField(
         placeholder = PayInStrings.placeholder(field, context.labels)?.let { { Text(it) } },
         visualTransformation = field.transformation(context.configuration, revealed),
         keyboardOptions = field.keyboardOptions(),
-        // The scheme the digits name, once they name one, in the slot the configuration names. A card number
-        // under a mask is the payer's own to reveal first, so a masked field draws no badge in either slot.
-        leadingIcon = brandBadge(field, value, context).takeIf { !isMasked && badgePlacement == Leading },
+        // The scheme the digits name, once they name one, in the slot the configuration names.
+        leadingIcon = brandBadge(field, value, context).takeIf { badgePlacement == Leading },
         trailingIcon =
             if (!isMasked) {
                 brandBadge(field, value, context).takeIf { badgePlacement == Trailing }

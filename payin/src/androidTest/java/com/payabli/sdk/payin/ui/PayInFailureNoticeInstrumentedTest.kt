@@ -5,6 +5,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -67,6 +71,15 @@ class PayInFailureNoticeInstrumentedTest {
         failAfterSubmitting(failing(PayabliErrorType.PAYMENT_DECLINED))
 
         rule.onNodeWithText("The payment was declined. Try another payment method.").assertExists()
+    }
+
+    @Test
+    fun theMessageIsAPoliteLiveRegion() {
+        failAfterSubmitting(failing(PayabliErrorType.PAYMENT_DECLINED))
+
+        rule
+            .onNodeWithText("The payment was declined. Try another payment method.")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
     }
 
     @Test

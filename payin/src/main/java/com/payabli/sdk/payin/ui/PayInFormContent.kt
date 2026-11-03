@@ -151,7 +151,8 @@ internal fun PayInFormContent(
         reports.refusedFields(rejected)
         draft.rejectedFields = rejected
         // A failure that marks a box on screen is shown by the mark; any other failure draws the form's message.
-        // Every other state clears it, so a new submission starts without the last one's.
+        // The next submission's Submitting, or a success, clears it. The Idle that follows a failure never reaches
+        // here, because submissionPending is already false, so the message stays until the payer submits again.
         draft.failureNotice =
             (outcome as? PayInSubmissionState.Failed)
                 ?.cause
@@ -333,7 +334,7 @@ private fun FormHeader(
 }
 
 /**
- * The form's message for a failure no box on screen shows, announced to a screen reader when it appears.
+ * The form's message for a failure no box on screen shows, marked as a polite live region.
  *
  * @param text what the payer reads.
  * @param style the form's style.
