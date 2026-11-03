@@ -403,6 +403,29 @@ retry that describes a different payment fails with `RETRY_NOT_SAME_PAYMENT` and
 Each guide lists its errors in full: [card-not-present](payin/README.md#outcomes-and-errors) and
 [Tap to Pay](taptopay/README.md#outcomes-and-errors).
 
+### What an error carries
+
+Every error the SDK reports is a `PayabliException`, whichever way you take the payment, and it carries three
+fields:
+
+- `type` says what to do. Switch on it.
+- `httpStatus` is the status of the response the error came from. It's absent when no response came, such as a
+  network failure or a check the SDK made before sending anything.
+- `rawCode` is Payabli's code for the condition, such as `D0329`, `E1001` or `9005`. It's absent when the service
+  named no condition, as on Tap to Pay setup and activation refusals, where `type` already says which one it was.
+
+Two declined card-not-present charges have the same `type` and the same `httpStatus`. Only `rawCode` tells them
+apart:
+
+```kotlin
+// One decline                      // Another decline
+e.type        // PAYMENT_DECLINED      PAYMENT_DECLINED
+e.httpStatus  // 402                   402
+e.rawCode     // "D0329"               "D0583"
+```
+
+Act on `type`. Log `httpStatus` and `rawCode`, and quote them when you contact support.
+
 ## Go live
 
 - A **production** entry point, and production OAuth2 credentials with the permissions in
