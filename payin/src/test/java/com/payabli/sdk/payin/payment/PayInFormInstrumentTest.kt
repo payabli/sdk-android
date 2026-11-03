@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.payin.client.TEST_ACCOUNT
+import com.payabli.sdk.payin.client.TEST_EXPIRY
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.form.PayInField
@@ -76,13 +77,14 @@ class PayInFormInstrumentTest {
     // --- what the values map to ---
 
     @Test
-    fun `a card carries what the payer typed, and the expiry as a value rather than text`() =
+    fun `a card carries what the payer typed, and the expiry as a month and a four-digit year`() =
         runTest(timeout = timeout) {
             PayInFormInstrument.usePaymentMethod(cardForm()) { method ->
                 val card = (method as PayInPaymentMethod.Card).data
                 assertEquals("Integration Test", card.holderName)
                 assertEquals("22039", card.postalCode)
-                assertEquals(12, card.expiry.month)
+                assertEquals(12, card.expiryMonth)
+                assertEquals(TEST_EXPIRY.year, card.expiryYear)
                 assertEquals(TEST_SECURITY_CODE.length, card.securityCodeDigits.length)
             }
         }

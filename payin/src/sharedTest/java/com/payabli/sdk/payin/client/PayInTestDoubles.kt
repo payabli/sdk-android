@@ -116,7 +116,8 @@ internal fun testCard(
 ): PayInCardData =
     PayInCardData(
         cardNumber = pan,
-        expiry = expiry,
+        expiryMonth = expiry.month,
+        expiryYear = expiry.year,
         securityCode = securityCode,
         holderName = holderName,
         postalCode = postalCode,

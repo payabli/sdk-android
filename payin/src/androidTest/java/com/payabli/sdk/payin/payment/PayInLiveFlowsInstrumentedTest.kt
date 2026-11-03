@@ -21,7 +21,6 @@ import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
-import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAccountType
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInBankAccountData
@@ -516,7 +515,8 @@ class PayInLiveFlowsInstrumentedTest {
     private fun hostCard() =
         PayInCardData(
             cardNumber = "4111111111111111",
-            expiry = ExpiryValue(9, 2030),
+            expiryMonth = 9,
+            expiryYear = 2030,
             securityCode = "999",
             holderName = "Sample Tester",
             postalCode = "22039",

@@ -2,6 +2,7 @@ package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.payin.form.PayInFieldRules
+import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInInstrument
@@ -124,8 +125,7 @@ internal object PayInBodyWriter {
         fragment {
             field(PayInRoutes.FIELD_METHOD, PayInRoutes.METHOD_CARD)
             digits(PayInRoutes.FIELD_CARD_NUMBER, data.cardNumberDigits)
-            // MM/YY, produced by the expiry type so the format lives in one place.
-            field(PayInRoutes.FIELD_CARD_EXPIRY, data.expiry.format())
+            field(PayInRoutes.FIELD_CARD_EXPIRY, ExpiryValue.format(data.expiryMonth, data.expiryYear))
             digits(PayInRoutes.FIELD_CARD_SECURITY_CODE, data.securityCodeDigits)
             field(PayInRoutes.FIELD_CARD_HOLDER, data.holderName.trim())
             field(PayInRoutes.FIELD_CARD_POSTAL_CODE, data.postalCode.trim())

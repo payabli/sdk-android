@@ -127,7 +127,7 @@ internal object PayInValidation {
 
         // The form refuses a past expiry, and so would sending it, one round trip later.
         val today = ExpiryValue.today()
-        if (data.expiry.isExpired(today.year, today.month)) {
+        if (ExpiryValue.isExpired(data.expiryMonth, data.expiryYear, today.year, today.month)) {
             throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The card has expired")
         }
 

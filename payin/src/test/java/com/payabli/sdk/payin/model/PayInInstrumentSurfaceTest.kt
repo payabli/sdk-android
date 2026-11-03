@@ -57,8 +57,25 @@ class PayInInstrumentSurfaceTest {
             }
 
         assertEquals(String::class.java, card.parameterTypes[0])
-        assertEquals(String::class.java, card.parameterTypes[2])
+        assertEquals(String::class.java, card.parameterTypes[3])
         assertTrue("$bank", bank.isNotEmpty())
         bank.forEach { assertEquals(String::class.java, it.parameterTypes[0]) }
+    }
+
+    @Test
+    fun `the expiry is a month and a year, after the card number`() {
+        val card = PayInCardData::class.java.constructors.single { Modifier.isPublic(it.modifiers) }
+
+        assertEquals(Int::class.javaPrimitiveType, card.parameterTypes[1])
+        assertEquals(Int::class.javaPrimitiveType, card.parameterTypes[2])
+    }
+
+    @Test
+    fun `a card with an expiry the SDK will refuse can still be built`() {
+        // The call refuses it, the way it refuses every other bad field.
+        val card = PayInCardData("4111111111111111", 13, 30, "123", "Name", "22039")
+
+        assertEquals(13, card.expiryMonth)
+        assertEquals(30, card.expiryYear)
     }
 }

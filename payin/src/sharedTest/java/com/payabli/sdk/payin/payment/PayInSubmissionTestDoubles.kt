@@ -267,7 +267,8 @@ internal fun cardStoreRequest(cardData: PayInCardData = testCardData()): PayInSt
 internal fun testCardData(): PayInCardData =
     PayInCardData(
         cardNumber = TEST_PAN,
-        expiry = TEST_EXPIRY,
+        expiryMonth = TEST_EXPIRY.month,
+        expiryYear = TEST_EXPIRY.year,
         securityCode = TEST_SECURITY_CODE,
         holderName = "Integration Test",
         postalCode = "22039",

@@ -33,7 +33,8 @@ class PayInValidationTest {
         postalCode: String = "22039",
     ) = PayInCardData(
         cardNumber = pan,
-        expiry = TEST_EXPIRY,
+        expiryMonth = TEST_EXPIRY.month,
+        expiryYear = TEST_EXPIRY.year,
         securityCode = securityCode,
         holderName = holderName,
         postalCode = postalCode,
@@ -53,7 +54,8 @@ class PayInValidationTest {
     private fun cardExpiring(expiry: ExpiryValue) =
         PayInCardData(
             cardNumber = "4111111111111111",
-            expiry = expiry,
+            expiryMonth = expiry.month,
+            expiryYear = expiry.year,
             securityCode = "999",
             holderName = "A Payer",
             postalCode = "22039",

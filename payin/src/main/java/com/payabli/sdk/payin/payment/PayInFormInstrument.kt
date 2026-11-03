@@ -76,7 +76,8 @@ internal object PayInFormInstrument {
                 )
         return PayInCardData(
             cardNumber = values[PayInField.CardNumber],
-            expiry = expiry,
+            expiryMonth = expiry.month,
+            expiryYear = expiry.year,
             securityCode = values[PayInField.CardSecurityCode],
             holderName = values[PayInField.CardholderName],
             postalCode = values[PayInField.CardPostalCode],

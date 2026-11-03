@@ -27,7 +27,8 @@ class PayInRedactionTest {
     private fun card() =
         PayInCardData(
             cardNumber = pan,
-            expiry = ExpiryValue(12, 2030),
+            expiryMonth = 12,
+            expiryYear = 2030,
             securityCode = securityCode,
             holderName = "A Payer",
             postalCode = "22039",

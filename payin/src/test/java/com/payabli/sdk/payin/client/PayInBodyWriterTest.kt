@@ -2,6 +2,7 @@ package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.payin.model.PayInAccountHolderType
+import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInSecCode
@@ -35,6 +36,23 @@ class PayInBodyWriterTest {
                 """"cardcvv":"$TEST_SECURITY_CODE","cardHolder":"Integration Test","cardzip":"22039"}""",
             fragmentText(fragment),
         )
+    }
+
+    @Test
+    fun `the expiry goes out as MM slash YY from the month and the four-digit year`() {
+        val card =
+            PayInCardData(
+                cardNumber = TEST_PAN,
+                expiryMonth = 4,
+                expiryYear = 2030,
+                securityCode = TEST_SECURITY_CODE,
+                holderName = "Integration Test",
+                postalCode = "22039",
+            )
+
+        val fragment = parsed(PayInBodyWriter.instrumentFragment(PayInInstrument.Card(card)))
+
+        assertEquals(JsonPrimitive("04/30"), fragment["cardexp"])
     }
 
     @Test

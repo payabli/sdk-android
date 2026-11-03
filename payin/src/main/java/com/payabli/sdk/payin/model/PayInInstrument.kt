@@ -60,12 +60,13 @@ public enum class PayInStoredMethodType(
 
 /**
  * A card, as the payer entered it. The card number and security code are copied into buffers that can't be read
- * back; each call sends from its own copy and overwrites that copy. [expiry] is an [ExpiryValue], so `MM/YY` is
- * produced in one place.
+ * back; each call sends from its own copy and overwrites that copy. The expiry is checked when the card is sent,
+ * not when it is built.
  */
 public class PayInCardData private constructor(
     cardNumber: SensitiveDigits,
-    public val expiry: ExpiryValue,
+    public val expiryMonth: Int,
+    public val expiryYear: Int,
     securityCode: SensitiveDigits,
     public val holderName: String,
     public val postalCode: String,
@@ -74,20 +75,23 @@ public class PayInCardData private constructor(
      * The card the payer entered.
      *
      * @param cardNumber the card number, copied and not kept as a `String`.
-     * @param expiry the month and year the card expires.
+     * @param expiryMonth the month the card expires, 1 to 12.
+     * @param expiryYear the year the card expires, in four digits.
      * @param securityCode the security code, copied and not kept as a `String`.
      * @param holderName the cardholder's name.
      * @param postalCode the billing postal code.
      */
     public constructor(
         cardNumber: String,
-        expiry: ExpiryValue,
+        expiryMonth: Int,
+        expiryYear: Int,
         securityCode: String,
         holderName: String,
         postalCode: String,
     ) : this(
         SensitiveDigits.ofString(cardNumber),
-        expiry,
+        expiryMonth,
+        expiryYear,
         SensitiveDigits.ofString(securityCode),
         holderName,
         postalCode,
@@ -106,7 +110,14 @@ public class PayInCardData private constructor(
      */
     @JvmSynthetic
     internal fun copyForCall(): PayInCardData =
-        PayInCardData(cardNumberDigits.copy(), expiry, securityCodeDigits.copy(), holderName, postalCode)
+        PayInCardData(
+            cardNumberDigits.copy(),
+            expiryMonth,
+            expiryYear,
+            securityCodeDigits.copy(),
+            holderName,
+            postalCode,
+        )
 
     /** Overwrites both buffers. */
     @JvmSynthetic
