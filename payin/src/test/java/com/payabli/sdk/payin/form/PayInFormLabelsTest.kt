@@ -63,10 +63,25 @@ class PayInFormLabelsTest {
 
     @Test
     fun `copy keeps the failure messages, and can replace them`() {
-        val labels = PayInFormLabels(title = "Pay", declinedMessage = "No")
+        val labels =
+            PayInFormLabels(
+                title = "Pay",
+                declinedMessage = "Declined",
+                retryLaterMessage = "Retry later",
+                outcomeUnknownMessage = "Unknown",
+                otherMessage = "Other",
+            )
 
-        assertEquals("No", labels.copy(title = "Checkout").declinedMessage)
-        assertEquals("Not taken", labels.copy(declinedMessage = "Not taken").declinedMessage)
+        val kept = labels.copy(title = "Checkout")
+        assertEquals("Declined", kept.declinedMessage)
+        assertEquals("Retry later", kept.retryLaterMessage)
+        assertEquals("Unknown", kept.outcomeUnknownMessage)
+        assertEquals("Other", kept.otherMessage)
+
+        assertEquals("Declined 2", labels.copy(declinedMessage = "Declined 2").declinedMessage)
+        assertEquals("Retry later 2", labels.copy(retryLaterMessage = "Retry later 2").retryLaterMessage)
+        assertEquals("Unknown 2", labels.copy(outcomeUnknownMessage = "Unknown 2").outcomeUnknownMessage)
+        assertEquals("Other 2", labels.copy(otherMessage = "Other 2").otherMessage)
     }
 
     @Test
