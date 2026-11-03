@@ -161,13 +161,25 @@ class SimpleCaptureKeyTest {
     fun `an open retry offers only the held attempt's method, and settling it offers every method again`() {
         // A payer switching method under a held key would see a total the retry does not carry.
         val form = PayInFormConfiguration()
+        val bank = PayInMethodType.BankAccount
 
-        val held = methodsWhileHeld(form, retryOpen = true, method = PayInMethodType.BankAccount)
-        val settled = methodsWhileHeld(form, retryOpen = false, method = PayInMethodType.BankAccount)
+        val held = methodsWhileHeld(form, FormOperation.Capture, heldFor = FormOperation.Capture, method = bank)
+        val settled = methodsWhileHeld(form, FormOperation.Capture, heldFor = null, method = bank)
 
-        assertEquals(listOf(PayInMethodType.BankAccount), held.methodsOffered)
-        assertEquals(PayInMethodType.BankAccount, held.startingMethod)
+        assertEquals(listOf(bank), held.methodsOffered)
+        assertEquals(bank, held.startingMethod)
         assertEquals(form, settled)
+    }
+
+    @Test
+    fun `a save while a payment's retry is open keeps every method`() {
+        // A save moves no money and sends no retry, so the held payment's method does not bind it.
+        val form = PayInFormConfiguration()
+
+        val save =
+            methodsWhileHeld(form, FormOperation.Tokenize, heldFor = FormOperation.Capture, PayInMethodType.BankAccount)
+
+        assertEquals(form, save)
     }
 
     @Test

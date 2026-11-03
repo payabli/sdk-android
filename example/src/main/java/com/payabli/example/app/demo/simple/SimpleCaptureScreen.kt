@@ -123,19 +123,23 @@ internal fun betweenPayments(
 ): Boolean = !isSubmitting && !retryOpen
 
 /**
- * The form while a retry is open offers only the held attempt's method, so it draws no selector and the fee stays
- * priced for the method the retry sends. Every method comes back once the outcome is settled.
+ * The form for the operation an open retry belongs to offers only the held attempt's method, so it draws no
+ * selector and the fee stays priced for the method the retry sends. Any other operation, such as a save, keeps every
+ * method, and so does this one once the outcome is settled.
  *
  * @param form the configuration the screen's settings build.
- * @param retryOpen whether the last payment's outcome is unknown.
+ * @param operation the operation on screen.
+ * @param heldFor the operation the open retry belongs to, or null when none is open.
  * @param method the method the held attempt was sent with.
- * @return [form] limited to [method] while a retry is open, otherwise [form] unchanged.
+ * @return [form] limited to [method] while [operation] holds the open retry, otherwise [form] unchanged.
  */
 internal fun methodsWhileHeld(
     form: PayInFormConfiguration,
-    retryOpen: Boolean,
+    operation: FormOperation,
+    heldFor: FormOperation?,
     method: PayInMethodType,
-): PayInFormConfiguration = if (retryOpen) form.copy(allowedMethods = listOf(method), defaultMethod = method) else form
+): PayInFormConfiguration =
+    if (operation == heldFor) form.copy(allowedMethods = listOf(method), defaultMethod = method) else form
 
 /** What the screen says when [operation] ends, for either instrument. */
 internal fun outcomeMessage(
@@ -356,7 +360,7 @@ fun SimpleCaptureScreen(
                                     attemptFor(viewModel.retryOpen),
                                     method,
                                 ),
-                            configuration = methodsWhileHeld(form, viewModel.retryOpen, method),
+                            configuration = methodsWhileHeld(form, operation, viewModel.heldFor, method),
                             labels = FormCustomization.labels(settings, operation),
                             style = FormCustomization.style(settings.look),
                             onCompleted = {
