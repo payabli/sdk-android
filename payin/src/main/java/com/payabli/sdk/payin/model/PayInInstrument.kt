@@ -60,7 +60,8 @@ public enum class PayInStoredMethodType(
 
 /**
  * A card, as the payer entered it. The card number and security code are copied into buffers that can't be read
- * back; each call sends from its own copy and overwrites that copy. Building one doesn't check the expiry.
+ * back; each call sends from its own copy and overwrites that copy. The expiry is checked when the card is sent,
+ * not when it is built.
  */
 public class PayInCardData private constructor(
     cardNumber: SensitiveDigits,
