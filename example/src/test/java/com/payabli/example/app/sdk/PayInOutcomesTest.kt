@@ -9,8 +9,6 @@ import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
-import com.payabli.sdk.payin.model.PayInStoredMethod
-import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransaction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -88,27 +86,6 @@ class PayInOutcomesTest {
         assertEquals("tok-77", result.storedMethod?.storedMethodId)
         assertEquals("a save's result code is the service's constant, so none crosses", "", result.code)
         assertNull("a stored method is not a transaction", result.transaction)
-    }
-
-    @Test
-    fun `a stored method with no result code still describes what was stored`() {
-        // The identifier is what the screen exists to show, and the service can approve without a code.
-        val outcome =
-            PayInFormSuccess.Method(
-                PayInStoredMethod(
-                    storedMethodId = "tok-1",
-                    method = PayInStoredMethodType.Card,
-                    methodReferenceId = null,
-                    customerId = null,
-                    resultCode = null,
-                    resultText = null,
-                ),
-            )
-
-        val result = outcome.toPaymentResult()
-
-        assertEquals("", result.code)
-        assertEquals("tok-1", result.storedMethod?.storedMethodId)
     }
 
     @Test

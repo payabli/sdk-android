@@ -24,8 +24,6 @@ internal fun storedMethodOutcome() =
                 method = PayInStoredMethodType.Card,
                 methodReferenceId = "tok-77-225810",
                 customerId = 88L,
-                resultCode = 1,
-                resultText = "Approved",
             ),
         ).toOutcome()
 
