@@ -178,15 +178,18 @@ export function Checkout({ orderId, amount }: { orderId: string; amount: number 
 
   async function pay(way: 'card' | 'tap') {
     setBusy(true);
+    let canPayAgain = true;
     try {
       const request = { amount, orderId };
       const outcome = way === 'card' ? await Payabli.payWithCard(request) : await Payabli.tapToPay(request);
+      canPayAgain = outcome.status === 'notCharged' || outcome.status === 'unsupported';
       setMessage(describe(outcome));
     } catch (e) {
       const error = e as { code?: string; message: string };
       setMessage(`Couldn't take the payment (${error.code ?? 'ERROR'})`);
     } finally {
-      setBusy(false);
+      // A charged order isn't paid again, and an unknown one stays blocked until checkWithBackend settles it.
+      if (canPayAgain) setBusy(false);
     }
   }
 
@@ -215,8 +218,8 @@ function describe(outcome: PaymentOutcome): string {
 }
 ```
 
-A native error arrives as a JavaScript `Error` with `code` and `message`. Branch on `code`; the message is for logs
-and support.
+A native error arrives as a JavaScript `Error` with `code` and `message`. Branch on `code`, and log only the code: an
+SDK error's message can quote what the customer entered.
 
 ### 5. The Kotlin half
 
@@ -255,7 +258,8 @@ import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import java.math.BigDecimal
 
-// In the Activity's setContent { }, with payIn = PayabliPayIn(session, entryPoint, lifecycleScope).
+// In the Activity's setContent { }. payIn = PayabliPayIn(session, entryPoint, viewModelScope), held in the
+// Activity's ViewModel, so a rotation keeps the submission and its outcome.
 PayabliPayInForm(
     payIn = payIn,
     operation = PayabliPayInOperation.Capture(
@@ -274,8 +278,9 @@ PayabliPayInForm(
 )
 ```
 
-`finish` completes the outcome and closes the Activity. When the customer closes it without paying, complete
-`notCharged` if the outcome isn't complete yet, so the call doesn't wait forever.
+`finish` completes the outcome once and closes the Activity. When the customer closes it before the SDK reports,
+complete `unknown` if the outcome isn't complete yet: a submission may already be in flight, so your app checks the
+payment before charging again.
 
 Map the SDK's errors to the outcome as [Handle the outcome](../README.md#handle-the-outcome) does:
 
@@ -453,26 +458,30 @@ A failure that isn't a payment outcome reaches Dart as a `PlatformException` wit
 ```dart
 Future<void> _pay({required bool tap}) async {
   setState(() => _busy = true);
+  var canPayAgain = true;
   try {
     final outcome = tap
         ? await widget.payabli.tapToPay(12.34, 'A-1001')
         : await widget.payabli.payWithCard(12.34, 'A-1001');
-    if (!mounted) return;
-    setState(() {
-      _message = switch (outcome) {
-        Charged(:final paymentTransId) => _saved(paymentTransId), // store it; don't log it
-        NotCharged() => 'Not charged. Try again.',
-        OutcomeUnknown(:final paymentTransId) => _check(paymentTransId), // look it up first
-        Unsupported() => "Tap to Pay isn't available on this phone.",
-      };
-    });
+    final message = switch (outcome) {
+      Charged(:final paymentTransId) => _saved(paymentTransId), // store it; don't log it
+      NotCharged() => 'Not charged. Try again.',
+      OutcomeUnknown(:final paymentTransId) => _check(paymentTransId), // look it up first
+      Unsupported() => "Tap to Pay isn't available on this phone.",
+    };
+    canPayAgain = outcome is NotCharged || outcome is Unsupported;
+    if (mounted) setState(() => _message = message);
   } on PlatformException catch (e) {
     if (mounted) setState(() => _message = "Couldn't take the payment (${e.code})");
   } finally {
-    if (mounted) setState(() => _busy = false);
+    // A charged order isn't paid again, and an unknown one stays blocked until _check settles it.
+    if (canPayAgain && mounted) setState(() => _busy = false);
   }
 }
 ```
+
+`_saved` and `_check` run before the `mounted` check, so the outcome is recorded even when the screen has gone. In
+your app, put them in a service that outlives the widget.
 
 Because `PaymentOutcome` is `sealed`, the `switch` must cover every case, and the analyzer flags a missing one. Show
 the Tap to Pay button only where it works, for example `if (Platform.isIOS)`.
@@ -481,8 +490,8 @@ the Tap to Pay button only where it works, for example `if (Platform.isIOS)`.
 
 Implement the generated `PayabliHostApi` in Kotlin with the calls in [The Kotlin half](#5-the-kotlin-half) of the
 React Native section, and map errors with the same `cardOutcome`. Run the SDK calls from a coroutine scope the
-module owns, and complete each callback once. Throw `FlutterError` for a failure that isn't a payment outcome; Dart
-receives it as a `PlatformException`.
+module owns, and complete each callback once. Complete the callback with `Result.failure(FlutterError(...))` for a failure that
+isn't a payment outcome; Dart receives it as a `PlatformException`.
 
 Register it in `MainActivity.configureFlutterEngine`:
 
