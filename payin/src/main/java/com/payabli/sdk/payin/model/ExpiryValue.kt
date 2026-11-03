@@ -42,11 +42,10 @@ internal data class ExpiryValue(
 
     companion object {
         /**
-         * `MM/YY` for any month and year, in [Locale.ROOT], without the range this type holds. The card data
-         * carries its expiry unchecked until the call refuses it, so it is written from here rather than through
-         * a value whose constructor would throw.
+         * `MM/YY` for any month and year, in [Locale.ROOT]. Takes values outside the range this type holds,
+         * because card data carries its expiry unchecked until a call refuses it.
          *
-         * @param month the month.
+         * @param month the month, written as two digits.
          * @param year the year; only its last two digits are written.
          * @param separator what sits between the month and the year.
          * @return the month and the two-digit year, with [separator] between.
@@ -60,8 +59,8 @@ internal data class ExpiryValue(
             String.format(Locale.ROOT, "%02d", month) + separator + String.format(Locale.ROOT, "%02d", year % 100)
 
         /**
-         * Whether a card expiring in [month] of [year] has passed its last good day, without the range this type
-         * holds, for the same reason as [format].
+         * Whether a card expiring in [month] of [year] has passed its last good day. Takes values outside the
+         * range this type holds, as [format] does.
          *
          * @param month the month the card expires.
          * @param year the year the card expires.

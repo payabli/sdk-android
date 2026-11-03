@@ -72,7 +72,6 @@ class PayInInstrumentSurfaceTest {
 
     @Test
     fun `a card with an expiry the SDK will refuse can still be built`() {
-        // The call refuses it, the way it refuses every other bad field.
         val card = PayInCardData("4111111111111111", 13, 30, "123", "Name", "22039")
 
         assertEquals(13, card.expiryMonth)
