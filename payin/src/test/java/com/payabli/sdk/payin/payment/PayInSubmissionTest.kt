@@ -1319,6 +1319,8 @@ class PayInSubmissionTest {
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertEquals(PayabliErrorType.RETRY_REFUSED, cause.type)
             assertEquals("order-1", (cause as PayInException.Unsettled).paymentReference)
+            assertEquals(409, cause.httpStatus)
+            assertNull(cause.rawCode)
         }
 
     /** A refused retry does not keep the key past the window, so a later retry is a new payment. */
@@ -1539,7 +1541,10 @@ class PayInSubmissionTest {
 
             submission.submit(TEST_ENTRY_POINT, captureOf("order-1", PayabliAttempt.Retry), cardForm())
 
-            assertEquals(PayabliErrorType.CONFLICT, failed(submission.state.value).cause.type)
+            val cause = failed(submission.state.value).cause
+            assertEquals(PayabliErrorType.CONFLICT, cause.type)
+            assertEquals(409, cause.httpStatus)
+            assertNull(cause.rawCode)
         }
 
     /** The single flight is still shared, so a void cannot slip past a submission the form started. */

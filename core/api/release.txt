@@ -401,6 +401,7 @@ package com.payabli.sdk.core.model {
 
   public final class PayabliGenericException extends com.payabli.sdk.core.model.PayabliException {
     ctor public PayabliGenericException(com.payabli.sdk.core.model.PayabliErrorType type, String reason, optional String? detail, optional Throwable? cause);
+    ctor @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public PayabliGenericException(com.payabli.sdk.core.model.PayabliErrorType type, String reason, String? detail, Throwable? cause, Integer? httpStatus, String? rawCode);
   }
 
   public final class PayabliRateLimitException extends com.payabli.sdk.core.model.PayabliException implements com.payabli.sdk.core.model.PayabliRetryAfter {
