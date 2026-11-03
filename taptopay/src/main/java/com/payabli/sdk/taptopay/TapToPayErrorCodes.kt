@@ -107,6 +107,7 @@ internal object TapToPayErrorCodes {
             is PayabliException -> failure.httpStatus to failure.rawCode
             is TTPTransactionException -> failure.httpStatus to failure.code?.takeIf { failure.httpStatus != null }
             is DeviceServiceException -> failure.httpStatus to null
+            is DeviceActivationException -> failure.httpStatus to null
             else -> null to null
         }
 

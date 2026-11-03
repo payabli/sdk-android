@@ -206,7 +206,7 @@ internal class DeviceServiceClient(
                 if (statusCode == HTTP_FORBIDDEN) {
                     // Reached only by a 403 with no envelope declining under it: the gateway's refusal carries
                     // no service text, and inventing one would put words in its mouth that a caller could display.
-                    DeviceServiceException.Forbidden(statusCode, "")
+                    DeviceServiceException.Forbidden(statusCode, "", statusCode)
                 } else {
                     null
                 }
@@ -394,7 +394,11 @@ internal class DeviceServiceClient(
             when {
                 serviceRefused -> null
                 refusesAtStatus && status == HTTP_BAD_REQUEST && declineOutcome == null ->
-                    DeviceServiceException.BadRequest(status, PayabliHttpErrors.from(response)?.reason.orEmpty())
+                    DeviceServiceException.BadRequest(
+                        status,
+                        PayabliHttpErrors.from(response)?.reason.orEmpty(),
+                        status,
+                    )
                 else -> statusOverride(status) ?: pinnedRefusalOf(PayabliHttpErrors.from(response), status)
             }
         transportFailure?.let {
@@ -414,8 +418,8 @@ internal class DeviceServiceClient(
                 // sent.
                 LogField.safe("errorCode", declined.code?.toString()),
             ) { "the device service declined the call" }
-            throw failureMapper.map(declined.code, declined.reason)
-                ?: DeviceServiceException.of(declined.code, declined.reason)
+            throw failureMapper.map(declined.code, declined.reason, status)
+                ?: DeviceServiceException.of(declined.code, declined.reason, status)
         }
         val body = response.bodyAsText()
         // Success has to be *claimed*, not merely not-denied. `declineOutcome` above reads an absent or null

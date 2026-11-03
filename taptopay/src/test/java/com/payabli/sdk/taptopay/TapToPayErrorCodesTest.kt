@@ -43,38 +43,42 @@ class TapToPayErrorCodesTest {
             AttestationException.Misconfigured(null) to PayabliErrorType.DEVICE_SETUP_NOT_CONFIGURED,
             AttestationException.ChallengeReused() to PayabliErrorType.SDK_INTERNAL_ERROR,
             TapToPaySessionException.PendingActivation() to PayabliErrorType.DEVICE_PENDING_ACTIVATION,
-            TapToPaySessionException.NotPermitted(DeviceServiceException.Forbidden(403, "refused")) to
+            TapToPaySessionException.NotPermitted(DeviceServiceException.Forbidden(403, "refused", 403)) to
                 PayabliErrorType.PERMISSION_DENIED,
             TapToPaySessionException.AttestationRequired() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             TapToPaySessionException.NotRecoverable(TapToPaySessionState.PendingActivation("an-activation-id")) to
                 PayabliErrorType.TERMINAL_NOT_READY,
             TapToPaySessionException.SetupAbandoned() to PayabliErrorType.UNKNOWN,
             TapToPaySessionException.SetupFailed() to PayabliErrorType.SDK_INTERNAL_ERROR,
-            DeviceServiceException.BadRequest(400, "refused") to PayabliErrorType.SDK_INTERNAL_ERROR,
-            DeviceServiceException.NotAttested(401, "refused") to PayabliErrorType.DEVICE_SETUP_REQUIRED,
-            DeviceServiceException.Forbidden(403, "refused") to PayabliErrorType.DEVICE_PENDING_ACTIVATION,
-            DeviceServiceException.EntryPointUnusable(403, "refused") to PayabliErrorType.ENTRY_POINT_REFUSED,
-            DeviceServiceException.NotFound(404, "refused") to PayabliErrorType.ENTRY_POINT_REFUSED,
-            DeviceServiceException.ServerFailure(500, "refused") to PayabliErrorType.SERVER_ERROR,
-            DeviceServiceException.Unclassified(null, "refused") to PayabliErrorType.UNKNOWN,
+            DeviceServiceException.BadRequest(400, "refused", 400) to PayabliErrorType.SDK_INTERNAL_ERROR,
+            DeviceServiceException.NotAttested(401, "refused", 401) to PayabliErrorType.DEVICE_SETUP_REQUIRED,
+            DeviceServiceException.Forbidden(403, "refused", 403) to PayabliErrorType.DEVICE_PENDING_ACTIVATION,
+            DeviceServiceException.EntryPointUnusable(403, "refused", 403) to PayabliErrorType.ENTRY_POINT_REFUSED,
+            DeviceServiceException.NotFound(404, "refused", 404) to PayabliErrorType.ENTRY_POINT_REFUSED,
+            DeviceServiceException.ServerFailure(500, "refused", 500) to PayabliErrorType.SERVER_ERROR,
+            DeviceServiceException.Unclassified(null, "refused", null) to PayabliErrorType.UNKNOWN,
             DeviceServiceException.Undecodable(null, null) to PayabliErrorType.DECODING_ERROR,
             DeviceActivationException.CodeMalformed() to PayabliErrorType.ACTIVATION_CODE_MALFORMED,
-            DeviceActivationException.CodeIncorrect(400, "refused") to PayabliErrorType.ACTIVATION_CODE_INCORRECT,
-            DeviceActivationException.CodeExpired(400, "refused") to PayabliErrorType.ACTIVATION_CODE_EXPIRED,
-            DeviceActivationException.AttemptsExhausted(400, "refused") to
+            DeviceActivationException.CodeIncorrect(400, "refused", 400) to PayabliErrorType.ACTIVATION_CODE_INCORRECT,
+            DeviceActivationException.CodeExpired(400, "refused", 400) to PayabliErrorType.ACTIVATION_CODE_EXPIRED,
+            DeviceActivationException.AttemptsExhausted(400, "refused", 400) to
                 PayabliErrorType.ACTIVATION_ATTEMPTS_EXHAUSTED,
-            DeviceActivationException.CodeNotIssued(400, "refused") to PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED,
-            DeviceActivationException.CodeUnreadable(400, "refused") to PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED,
-            DeviceActivationException.DeviceNotPending(400, "refused") to PayabliErrorType.DEVICE_NOT_PENDING,
-            DeviceActivationException.AssertionRejected(400, "refused") to PayabliErrorType.DEVICE_SETUP_REQUIRED,
-            DeviceActivationException.RequestRejected(400, "refused") to PayabliErrorType.SDK_INTERNAL_ERROR,
-            DeviceActivationException.AttestationRevoked(401, "refused") to PayabliErrorType.DEVICE_SETUP_REQUIRED,
-            DeviceActivationException.EntryPointUnusable(403, "refused") to PayabliErrorType.ENTRY_POINT_REFUSED,
-            DeviceActivationException.DeviceUnknown(404, "refused") to PayabliErrorType.DEVICE_SETUP_REQUIRED,
+            DeviceActivationException.CodeNotIssued(400, "refused", 400) to PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED,
+            DeviceActivationException.CodeUnreadable(
+                400,
+                "refused",
+                400,
+            ) to PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED,
+            DeviceActivationException.DeviceNotPending(400, "refused", 400) to PayabliErrorType.DEVICE_NOT_PENDING,
+            DeviceActivationException.AssertionRejected(400, "refused", 400) to PayabliErrorType.DEVICE_SETUP_REQUIRED,
+            DeviceActivationException.RequestRejected(400, "refused", 400) to PayabliErrorType.SDK_INTERNAL_ERROR,
+            DeviceActivationException.AttestationRevoked(401, "refused", 401) to PayabliErrorType.DEVICE_SETUP_REQUIRED,
+            DeviceActivationException.EntryPointUnusable(403, "refused", 403) to PayabliErrorType.ENTRY_POINT_REFUSED,
+            DeviceActivationException.DeviceUnknown(404, "refused", 404) to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             DeviceActivationException.NotEnrolled() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             DeviceActivationException.RegistrationReplaced() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
-            DeviceActivationException.CredentialMismatch(409, "refused") to PayabliErrorType.CONFLICT,
-            DeviceActivationException.Unclassified(400, "refused") to PayabliErrorType.UNKNOWN,
+            DeviceActivationException.CredentialMismatch(409, "refused", 409) to PayabliErrorType.CONFLICT,
+            DeviceActivationException.Unclassified(400, "refused", 400) to PayabliErrorType.UNKNOWN,
             SecureStorageException.CryptoUnavailable() to PayabliErrorType.DEVICE_KEY_UNAVAILABLE,
             SecureStorageException.StorageUnavailable() to PayabliErrorType.DEVICE_KEY_UNAVAILABLE,
             SecureStorageException.KeyInvalidated() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
@@ -199,7 +203,7 @@ class TapToPayErrorCodesTest {
             DeviceActivationException.CodeMalformed(),
             DeviceActivationException.NotEnrolled(),
             DeviceActivationException.RegistrationReplaced(),
-            DeviceServiceException.Forbidden(403, ""),
+            DeviceServiceException.Forbidden(403, "", 403),
             DeviceServiceException.Undecodable(null, null),
         ).forEach { failure ->
             val thrown =
@@ -217,7 +221,7 @@ class TapToPayErrorCodesTest {
     fun `the service's words reach the detail when the session wrapped its refusal`() {
         val wrapped =
             TapToPaySessionException.PendingActivation(
-                DeviceServiceException.Forbidden(403, "the service's own words"),
+                DeviceServiceException.Forbidden(403, "the service's own words", 403),
             )
 
         val thrown =
@@ -263,7 +267,7 @@ class TapToPayErrorCodesTest {
     @Test
     fun `a failure with no wait carries none`() {
         assertNull(retryAfterOn(PayabliRateLimitException()))
-        assertNull(retryAfterOn(DeviceServiceException.ServerFailure(500, "refused")))
+        assertNull(retryAfterOn(DeviceServiceException.ServerFailure(500, "refused", 500)))
     }
 
     @Test
@@ -341,6 +345,19 @@ class TapToPayErrorCodesTest {
 
         assertEquals(200, thrown.httpStatus)
         assertNull(thrown.rawCode)
+    }
+
+    @Test
+    fun `a device or activation refusal reports its status and no code`() {
+        listOf(
+            DeviceServiceException.Forbidden(403, "refused", 403) to 403,
+            DeviceActivationException.CodeIncorrect(400, "refused", 400) to 400,
+        ).forEach { (refusal, status) ->
+            val thrown = reported(refusal)
+
+            assertEquals("$refusal", status, thrown.httpStatus)
+            assertNull("$refusal", thrown.rawCode)
+        }
     }
 
     @Test

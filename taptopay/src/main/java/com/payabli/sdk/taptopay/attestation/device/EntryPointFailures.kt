@@ -23,9 +23,10 @@ internal object EntryPointFailures : DeviceFailureMapper {
     override fun map(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ): Throwable? =
         if (resultCode == HTTP_FORBIDDEN && reason == ENTRY_POINT_UNUSABLE) {
-            DeviceServiceException.EntryPointUnusable(resultCode, reason)
+            DeviceServiceException.EntryPointUnusable(resultCode, reason, httpStatus)
         } else {
             null
         }
