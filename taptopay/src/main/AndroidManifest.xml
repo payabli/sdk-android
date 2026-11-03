@@ -32,6 +32,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <application>
+        <!--
+          No allowBackup or usesCleartextTraffic: both policies belong to the host app. Setting them here
+          supplies values when the app omits them and can cause merge conflicts with explicit app values.
+        -->
         <activity
             android:name="com.magiccube.tnp.TnPActivity"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar"
