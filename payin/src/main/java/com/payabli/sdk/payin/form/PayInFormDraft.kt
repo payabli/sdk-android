@@ -57,7 +57,7 @@ internal class PayInFormDraft {
 
     /**
      * The category of the last submission's failure where no box on screen was marked for it, or null for none.
-     * Cleared when the next submission starts and when one succeeds.
+     * Cleared when the next submission starts, when one succeeds, and with the rest of the draft.
      */
     var failureNotice: PayabliErrorCategory? by mutableStateOf(null)
 
@@ -138,6 +138,7 @@ internal class PayInFormDraft {
         seededFrom.set(null)
         entered.clear()
         rejectedFields = emptyMap()
+        failureNotice = null
         submissionPending = false
     }
 }

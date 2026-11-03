@@ -1,7 +1,9 @@
 package com.payabli.sdk.payin.form
 
+import com.payabli.sdk.core.model.PayabliErrorCategory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -159,10 +161,12 @@ class PayInFormDraftTest {
         draft.switchTo(PayInMethodType.BankAccount, configuration)
         draft.enter(PayInField.AccountHolder, "Ada Lovelace")
         draft.submissionPending = true
+        draft.failureNotice = PayabliErrorCategory.DECLINED
 
         draft.clear()
         assertTrue(draft.typed.isEmpty())
         assertFalse(draft.submissionPending)
+        assertNull(draft.failureNotice)
 
         // The instrument, because it is the only thing here that separates a seed that ran from one that
         // did not. The configuration is the one already seeded from, so a clear that kept what it was
