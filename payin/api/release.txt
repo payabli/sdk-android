@@ -500,12 +500,16 @@ package com.payabli.sdk.payin.model {
     ctor public PayInException.Refused(com.payabli.sdk.payin.model.PayInFailure failure);
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInFailure getFailure();
     property public com.payabli.sdk.payin.model.PayInFailure failure;
+    property public Integer? httpStatus;
+    property public String? rawCode;
   }
 
   public static final class PayInException.ServiceError extends com.payabli.sdk.payin.model.PayInException {
     ctor public PayInException.ServiceError(com.payabli.sdk.payin.model.PayInFailure failure);
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInFailure getFailure();
     property public com.payabli.sdk.payin.model.PayInFailure failure;
+    property public Integer? httpStatus;
+    property public String? rawCode;
   }
 
   public static final class PayInException.Undecodable extends com.payabli.sdk.payin.model.PayInException {

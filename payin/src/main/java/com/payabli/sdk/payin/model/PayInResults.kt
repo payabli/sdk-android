@@ -152,6 +152,10 @@ public sealed class PayInException(
             failure.reason ?: DEFAULT_REFUSED_REASON,
             failure.explanation,
         ) {
+        override val httpStatus: Int? get() = failure.httpStatus
+
+        override val rawCode: String? get() = failure.code
+
         override fun toString(): String = "PayInException.Refused(code=${failure.code})"
     }
 
@@ -170,6 +174,10 @@ public sealed class PayInException(
             failure.reason ?: DEFAULT_SERVICE_ERROR_REASON,
             failure.explanation,
         ) {
+        override val httpStatus: Int? get() = failure.httpStatus
+
+        override val rawCode: String? get() = failure.code
+
         /**
          * A service error, typed [PayabliErrorType.SERVER_ERROR].
          *
