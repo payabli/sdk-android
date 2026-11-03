@@ -2,9 +2,11 @@ package com.payabli.sdk.payin.presentation
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -155,6 +157,37 @@ class PayInPresentationInstrumentedTest {
     }
 
     @Test
+    fun aContractThatCannotParseItsResultFailsTheCall() {
+        val activity = host()
+        val unparseable =
+            object : ActivityResultContract<Intent, String?>() {
+                override fun createIntent(
+                    context: Context,
+                    input: Intent,
+                ): Intent = input
+
+                override fun parseResult(
+                    resultCode: Int,
+                    intent: Intent?,
+                ): String? = throw IOException(UNPARSEABLE)
+            }
+        val outcome =
+            scope.async {
+                PayInPresentation.present(activity, unparseable, Intent(activity, EchoActivity::class.java)) {
+                    PayInPresentationOutcome.Completed(it)
+                }
+            }
+        awaitEcho()
+
+        EchoActivity.answer(Activity.RESULT_OK)
+
+        val error = assertThrows(IOException::class.java) { await(outcome) }
+        assertEquals(UNPARSEABLE, error.message)
+        awaitUntil("the presentation Activity outlived its failed parse") { presentationActivities().isEmpty() }
+        assertEquals(0, PayInPresentation.pendingCount())
+    }
+
+    @Test
     fun anActivityFromADeadProcessDoesNotBindToANewCall() {
         val outcome = present("approved")
         awaitEcho()
@@ -271,5 +304,6 @@ class PayInPresentationInstrumentedTest {
         const val POLL_MS = 50L
         const val NO_SUCH_ACTION = "com.payabli.sdk.payin.presentation.test.NO_SUCH_ACTION"
         const val UNREADABLE = "the result could not be read"
+        const val UNPARSEABLE = "the result could not be parsed"
     }
 }

@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.presentation
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContract
@@ -135,6 +136,35 @@ internal object PayInPresentation {
 
     private fun withdraw(id: Long): Pending<*, *, *>? = synchronized(lock) { pending.remove(id) }
 
+    /**
+     * Runs [contract], holding what its `parseResult` throws instead of letting the registry raise it on the main
+     * thread.
+     */
+    private class Parsing<I, O>(
+        private val contract: ActivityResultContract<I, O>,
+    ) : ActivityResultContract<I, Result<O>>() {
+        override fun createIntent(
+            context: Context,
+            input: I,
+        ): Intent = contract.createIntent(context, input)
+
+        override fun parseResult(
+            resultCode: Int,
+            intent: Intent?,
+        ): Result<O> =
+            try {
+                Result.success(contract.parseResult(resultCode, intent))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+
+        override fun getSynchronousResult(
+            context: Context,
+            input: I,
+        ): SynchronousResult<Result<O>>? =
+            contract.getSynchronousResult(context, input)?.let { SynchronousResult(Result.success(it.value)) }
+    }
+
     /** One presentation: what to launch, how to read its answer, and the call waiting on it. */
     internal class Pending<I, O, R>(
         private val contract: ActivityResultContract<I, O>,
@@ -151,7 +181,8 @@ internal object PayInPresentation {
          * @param activity the presentation Activity, in `onCreate`.
          * @param launch false when a recreated instance is waiting on a contract already launched.
          * @param onOutcome receives the contract's answer, read through this presentation's reader.
-         * @param onFailure receives what the reader raised, which would otherwise end the process from the main thread.
+         * @param onFailure receives what parsing the result or the reader raised, which would otherwise end the process
+         *   from the main thread.
          */
         fun start(
             activity: ComponentActivity,
@@ -160,10 +191,10 @@ internal object PayInPresentation {
             onFailure: (Exception) -> Unit,
         ) {
             val launcher =
-                activity.registerForActivityResult(contract) { output ->
+                activity.registerForActivityResult(Parsing(contract)) { parsed ->
                     val read =
                         try {
-                            outcome(output)
+                            outcome(parsed.getOrThrow())
                         } catch (e: Exception) {
                             onFailure(e)
                             return@registerForActivityResult
