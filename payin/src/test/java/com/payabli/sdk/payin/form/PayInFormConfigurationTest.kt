@@ -433,12 +433,29 @@ class PayInFormConfigurationTest {
 
     @Test
     fun `copy keeps the placements, and can replace them`() {
-        val configuration = PayInFormConfiguration(cardBrandIconPlacement = PayInCardBrandIconPlacement.Hidden)
-        val moved = configuration.copy(failureMessagePlacement = PayInFailureMessagePlacement.Top)
+        val configuration =
+            PayInFormConfiguration(
+                cardBrandIconPlacement = PayInCardBrandIconPlacement.Hidden,
+                failureMessagePlacement = PayInFailureMessagePlacement.Top,
+                showsFailureMessage = false,
+            )
 
-        assertEquals(PayInCardBrandIconPlacement.Hidden, moved.cardBrandIconPlacement)
-        assertEquals(PayInFailureMessagePlacement.Top, moved.failureMessagePlacement)
-        assertFalse(configuration.copy(showsFailureMessage = false).showsFailureMessage)
+        val kept = configuration.copy(showsBaseAmount = true)
+        assertEquals(PayInCardBrandIconPlacement.Hidden, kept.cardBrandIconPlacement)
+        assertEquals(PayInFailureMessagePlacement.Top, kept.failureMessagePlacement)
+        assertFalse(kept.showsFailureMessage)
+
+        assertEquals(
+            PayInCardBrandIconPlacement.Leading,
+            configuration.copy(cardBrandIconPlacement = PayInCardBrandIconPlacement.Leading).cardBrandIconPlacement,
+        )
+        assertEquals(
+            PayInFailureMessagePlacement.AboveSubmitButton,
+            configuration
+                .copy(failureMessagePlacement = PayInFailureMessagePlacement.AboveSubmitButton)
+                .failureMessagePlacement,
+        )
+        assertTrue(configuration.copy(showsFailureMessage = true).showsFailureMessage)
     }
 
     @Test
