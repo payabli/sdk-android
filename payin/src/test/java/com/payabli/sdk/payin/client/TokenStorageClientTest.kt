@@ -246,6 +246,26 @@ class TokenStorageClientTest {
         }
 
     @Test
+    fun `a refusal in the older envelope carries its responseCode as the code`() =
+        runTest(timeout = timeout) {
+            val transport =
+                FakePayInTransport.answering(
+                    """{"isSuccess":false,"responseText":"Invalid","responseCode":9005}""",
+                    statusCode = 400,
+                )
+
+            val failure =
+                runCatching {
+                    TokenStorageClient(transport, RecordingSdkLogger())
+                        .storeMethod("e", PayInInstrument.Card(testCard()))
+                }.exceptionOrNull() as? PayabliException
+
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, failure?.type)
+            assertEquals(400, failure?.httpStatus)
+            assertEquals("9005", failure?.rawCode)
+        }
+
+    @Test
     fun `a transport failure keeps its own classification`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering("""{"title":"Server error"}""", statusCode = 500)

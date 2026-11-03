@@ -14,12 +14,12 @@ import com.payabli.sdk.core.model.PayabliRateLimitException
 import com.payabli.sdk.core.model.PayabliServerException
 import com.payabli.sdk.core.model.PayabliValidationException
 import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonTransformingSerializer
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.intOrNull
 import java.net.HttpURLConnection.HTTP_BAD_REQUEST
 import java.net.HttpURLConnection.HTTP_CONFLICT
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
@@ -189,9 +189,11 @@ public object PayabliHttpErrors {
         val detail: String? = null,
         val type: String? = null,
         val instance: String? = null,
-        @SerialName("code")
-        val rawCode: String? = null,
-    )
+        val code: String? = null,
+        val responseCode: JsonElement? = null,
+    ) {
+        val rawCode: String? get() = rawCodeOf(code, responseCode)
+    }
 
     /** The `errors` map alone, so an unexpected shape there costs only the field list. */
     @Serializable
@@ -227,12 +229,25 @@ public object PayabliHttpErrors {
      */
     @Serializable
     internal class DeclineBody(
-        @SerialName("code")
-        val rawCode: String? = null,
+        val code: String? = null,
+        val responseCode: JsonElement? = null,
         val reason: String? = null,
         val explanation: String? = null,
         val action: String? = null,
-    )
+    ) {
+        val rawCode: String? get() = rawCodeOf(code, responseCode)
+    }
+
+    /**
+     * @param code the body's `code`.
+     * @param responseCode the older envelope's `responseCode`, kept as an element so a value that is not a number
+     *   costs only this field.
+     * @return [code], else [responseCode] as a string when it is a number, else null.
+     */
+    private fun rawCodeOf(
+        code: String?,
+        responseCode: JsonElement?,
+    ): String? = code ?: (responseCode as? JsonPrimitive)?.intOrNull?.toString()
 
     private fun validation(
         status: Int,

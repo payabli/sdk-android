@@ -63,6 +63,35 @@ class PayabliHttpErrorsStatusTest {
     }
 
     @Test
+    fun `an older envelope's responseCode is the code when the body has no code`() {
+        val body = """{"isSuccess":false,"responseText":"Invalid","responseCode":9005}"""
+
+        listOf(400, 401, 402, 418, 500).forEach { status ->
+            assertEquals("status $status", "9005", map(status, body).rawCode)
+        }
+    }
+
+    @Test
+    fun `the body's code wins over its responseCode`() {
+        assertEquals("E1001", map(400, """{"code":"E1001","responseCode":9005}""").rawCode)
+        assertEquals("D0329", map(402, """{"code":"D0329","responseCode":9005}""").rawCode)
+    }
+
+    @Test
+    fun `an older envelope with text alone carries no code`() {
+        assertNull(map(400, """{"isSuccess":false,"responseText":"Invalid"}""").rawCode)
+        assertNull(map(400, """{"responseText":"Invalid","responseCode":null}""").rawCode)
+    }
+
+    @Test
+    fun `a responseCode that is not a number does not cost the rest of the body`() {
+        val mapped = map(400, """{"title":"Bad","responseCode":{"nested":1}}""")
+
+        assertNull(mapped.rawCode)
+        assertEquals("Bad", mapped.reason)
+    }
+
+    @Test
     fun `a decline carries its status and its code`() {
         val mapped = map(402, """{"code":"D1002","reason":"Declined"}""")
 
