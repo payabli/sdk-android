@@ -765,6 +765,22 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `a 409 naming a transaction keeps the older body's code beside it`() =
+        runTest(timeout = timeout) {
+            val duplicate = """{"isSuccess":false,"responseCode":9005,"responseData":{"referenceId":"101-first"}}"""
+            val transport = FakePayInTransport.answering(duplicate, statusCode = 409)
+
+            val failure =
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                    .exceptionOrNull() as? com.payabli.sdk.core.model.PayabliException
+
+            assertTrue("$failure", failure is PayInException.ServiceError)
+            assertEquals("101-first", (failure as PayInException.ServiceError).failure.paymentTransId)
+            assertEquals(409, failure.httpStatus)
+            assertEquals("9005", failure.rawCode)
+        }
+
+    @Test
     fun `the body bytes are overwritten once the call returns`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
