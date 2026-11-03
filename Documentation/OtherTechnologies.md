@@ -260,6 +260,14 @@ AsyncFunction("payWithCard") Coroutine { request: PaymentRequestRecord ->
 `PaymentRequest`. The Activity shows the form and completes the outcome once:
 
 ```kotlin
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
@@ -272,22 +280,25 @@ import java.math.BigDecimal
 
 // In the Activity's setContent { }. payIn = PayabliPayIn(session, entryPoint, viewModelScope), held in the
 // Activity's ViewModel, so a rotation keeps the submission and its outcome.
-PayabliPayInForm(
-    payIn = payIn,
-    operation = PayabliPayInOperation.Capture(
-        PayInTransactionOptions(
-            PayInPaymentDetails(totalAmount = BigDecimal(request.amount.toString())),
-            orderId = request.orderId,
+// The form doesn't scroll itself; this keeps the submit button reachable above the keyboard.
+Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
+    PayabliPayInForm(
+        payIn = payIn,
+        operation = PayabliPayInOperation.Capture(
+            PayInTransactionOptions(
+                PayInPaymentDetails(totalAmount = BigDecimal(request.amount.toString())),
+                orderId = request.orderId,
+            ),
         ),
-    ),
-    configuration = PayInFormConfiguration(),
-    onCompleted = { succeeded ->
-        val transId = (succeeded as? PayInFormSuccess.Payment)?.result?.transaction?.paymentTransId
-        finish(mapOf("status" to "charged", "paymentTransId" to transId))
-    },
-    onFailed = { error -> finish(cardOutcome(error)) },
-    onMethodChanged = { },
-)
+        configuration = PayInFormConfiguration(),
+        onCompleted = { succeeded ->
+            val transId = (succeeded as? PayInFormSuccess.Payment)?.result?.transaction?.paymentTransId
+            finish(mapOf("status" to "charged", "paymentTransId" to transId))
+        },
+        onFailed = { error -> finish(cardOutcome(error)) },
+        onMethodChanged = { },
+    )
+}
 ```
 
 `finish` completes the outcome once and closes the Activity. When the customer closes it before the SDK reports,
@@ -452,7 +463,8 @@ class PayabliService {
 
   Future<void> activateDevice(String code) => _api.activateDevice(code);
 
-  Stream<SessionState> get sessionStates => sessionState();
+  // Made once: each call opens the channel again, and a second open cuts off the first.
+  late final Stream<SessionState> sessionStates = sessionState();
 
   PaymentOutcome _outcome(PaymentResult result) => switch (result.status) {
         PaymentStatus.charged => Charged(result.paymentTransId),
