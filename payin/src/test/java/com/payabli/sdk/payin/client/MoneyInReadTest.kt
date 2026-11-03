@@ -106,6 +106,8 @@ class MoneyInReadTest {
 
             assertEquals(PayabliErrorType.TRANSACTION_NOT_FOUND, failure?.type)
             assertEquals(PayabliErrorType.TRANSACTION_NOT_FOUND.message, failure?.reason)
+            assertEquals(400, failure?.httpStatus)
+            assertEquals("7001", failure?.rawCode)
         }
 
     @Test
@@ -115,6 +117,8 @@ class MoneyInReadTest {
 
             assertEquals(PayabliErrorType.PERMISSION_DENIED, failure?.type)
             assertEquals(PayabliErrorType.PERMISSION_DENIED.message, failure?.reason)
+            assertEquals(401, failure?.httpStatus)
+            assertEquals("9001", failure?.rawCode)
         }
 
     @Test

@@ -553,20 +553,26 @@ private fun isNotPermitted(response: PayabliResponse): Boolean =
  * Maps the two refusals specific to a read. Any other failure goes to the shared status mapping.
  *
  * @param response the answered request.
- * @return the refusal, or null when the response is neither.
+ * @return the refusal, carrying the response's status and the older body's code, or null when the response is
+ *   neither.
  */
-private fun readRefusal(response: PayabliResponse): PayabliGenericException? =
-    when {
-        isNotPermitted(response) ->
-            PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, PayabliErrorType.PERMISSION_DENIED.message)
-        response.statusCode == HttpURLConnection.HTTP_BAD_REQUEST &&
-            legacyCode(response) == LegacyRefusal.NOT_VISIBLE ->
-            PayabliGenericException(
-                PayabliErrorType.TRANSACTION_NOT_FOUND,
-                PayabliErrorType.TRANSACTION_NOT_FOUND.message,
-            )
-        else -> null
-    }
+private fun readRefusal(response: PayabliResponse): PayabliGenericException? {
+    val type =
+        when {
+            isNotPermitted(response) -> PayabliErrorType.PERMISSION_DENIED
+            response.statusCode == HttpURLConnection.HTTP_BAD_REQUEST &&
+                legacyCode(response) == LegacyRefusal.NOT_VISIBLE -> PayabliErrorType.TRANSACTION_NOT_FOUND
+            else -> return null
+        }
+    return PayabliGenericException(
+        type,
+        type.message,
+        null,
+        null,
+        response.statusCode,
+        legacyCode(response)?.toString(),
+    )
+}
 
 /**
  * Only the flags that were set: an absent flag and a false one are different statements to the service.
