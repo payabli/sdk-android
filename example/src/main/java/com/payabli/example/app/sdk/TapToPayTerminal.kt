@@ -63,7 +63,7 @@ class TapToPayTerminal(
     override val failureReason: StateFlow<TerminalFailureReason?> = _failureReason.asStateFlow()
 
     /**
-     * The message of the error that landed the ineligible reason: set when one is caught, kept
+     * The line for the error that landed the ineligible reason: set when one is caught, kept
      * while the landing stands, cleared by any other state. The reason decides when it shows.
      */
     private val _deviceFailure = MutableStateFlow<String?>(null)
@@ -174,7 +174,7 @@ class TapToPayTerminal(
         _sessionState.value = shown
         _isReady.value = shown == TerminalSessionState.Ready
         _failureReason.value = (state as? TapToPaySessionState.Failed)?.reason?.asTerminalReason()
-        // The message lives as long as the landing does: kept while the reason is ineligible,
+        // The line lives as long as the landing does: kept while the reason is ineligible,
         // cleared by any other state, so a stale one cannot read as the current failure's.
         if (_failureReason.value != TerminalFailureReason.DeviceIneligible) _deviceFailure.value = null
         // A charge ending is not the reader coming up.
@@ -233,7 +233,7 @@ class TapToPayTerminal(
         } catch (withdrawn: CancellationException) {
             throw withdrawn
         } catch (failure: PayabliException) {
-            failure.ineligibleMessage?.let { _deviceFailure.value = it }
+            failure.ineligibleLine?.let { _deviceFailure.value = it }
             Result.failure(failure.forScreen())
         } catch (failure: Exception) {
             Result.failure(failure)
@@ -246,29 +246,28 @@ class TapToPayTerminal(
 }
 
 /**
- * The operator reads the message for the failure's category, never its `reason`, which is the service's text.
- * The code stays on the cause, in the failure's `toString`.
+ * The operator reads this app's line for an ineligible device, or else the message for the failure's category,
+ * never its `reason`, which is the service's text. The code stays on the cause, in the failure's `toString`.
  */
 internal fun PayabliException.forScreen(): TerminalFailure =
-    TerminalFailure(FailureText.terminal(toPaymentError().kind), this)
+    TerminalFailure(ineligibleLine ?: FailureText.terminal(toPaymentError().kind), this)
 
 /**
- * The message of an error whose landing is the ineligible reason, or null when it landed another.
+ * This app's own line for an error whose landing is the ineligible reason, or null when it landed another.
  *
- * Four error codes land that one reason and a line fixed to the reason cannot say which, so the
- * thrown error's message, which is its code's own text, is carried beside the reason.
+ * Four error codes land that one reason, so the line is chosen by the error's type. The code stays on the
+ * cause, in the failure's `toString`.
  */
-internal val PayabliException.ineligibleMessage: String?
-    get() = message.takeIf { type in INELIGIBLE_TYPES }
-
-/** The error codes whose landing is the ineligible reason, so their messages are its line. */
-internal val INELIGIBLE_TYPES: Set<PayabliErrorType> =
-    setOf(
-        PayabliErrorType.DEVICE_OS_UNSUPPORTED,
-        PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
-        PayabliErrorType.READER_DEVICE_REFUSED,
-        PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE,
-    )
+internal val PayabliException.ineligibleLine: String?
+    get() =
+        when (type) {
+            PayabliErrorType.DEVICE_OS_UNSUPPORTED -> "This phone's Android version is too old for Tap to Pay."
+            PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED -> "This phone can't take contactless payments."
+            PayabliErrorType.READER_DEVICE_REFUSED ->
+                "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID."
+            PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE -> "This phone couldn't be identified for Tap to Pay."
+            else -> null
+        }
 
 /**
  * A charge for the open sale's amount, compared in cents as the SDK charges it, so `1.0`, `1.00` and `1.001`

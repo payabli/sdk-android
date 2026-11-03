@@ -274,14 +274,14 @@ class TapToPayViewModelTest {
         }
 
     @Test
-    fun `an ineligible device's message is collected, and the result line keeps the code`() =
+    fun `an ineligible device's line is collected, and the result line keeps the code`() =
         runTest {
             val viewModel = model(terminal = RefusedDeviceTerminal())
             viewModel.enableTerminal()
 
             val state = viewModel.uiState.value
             assertEquals(
-                "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID.",
+                "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID.",
                 state.deviceFailure,
             )
             assertEquals(
@@ -301,7 +301,7 @@ class TapToPayViewModelTest {
             val state = viewModel.uiState.value
             assertNotNull("the charge's outcome was dropped", state.chargeFailure)
             assertEquals(
-                "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID.",
+                "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID.",
                 chargeStepFailure(state.chargeFailure, state.session, state.failureReason, state.deviceFailure),
             )
         }
@@ -386,10 +386,10 @@ private class RefusedDeviceTerminal : TerminalController {
 
     override val failureReason: StateFlow<TerminalFailureReason?> = reason.asStateFlow()
 
-    /** The thrown error's message, published the way the terminal publishes it for that landing. */
+    /** This app's line for the thrown error, published the way the terminal publishes it for that landing. */
     override val deviceFailure: StateFlow<String?> =
         MutableStateFlow(
-            "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID.",
+            "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID.",
         ).asStateFlow()
 
     override suspend fun initialize(): Result<Unit> =
