@@ -89,7 +89,7 @@ internal class TokenStorageClient(
             }
 
         PayabliHttpErrors.from(response)?.let { mapped ->
-            val failure = blockedByFraudControl(response, mapped) ?: mapped
+            val failure = blockedByFraudControl(response, mapped) ?: withRouteText(response, mapped)
             logger.warn(
                 LogField.safe("event", "payin_store_failed"),
                 LogField.safe("route", PayInRoutes.STORE_METHOD),
@@ -183,6 +183,39 @@ internal class TokenStorageClient(
                 action = null,
                 httpStatus = mapped.httpStatus,
             ),
+        )
+    }
+
+    /**
+     * A 400 from this route carries `responseText` and no field map, so that text is put in the validation
+     * error's `detail`, where it is the only explanation a developer gets.
+     *
+     * @param response the store's answer.
+     * @param mapped what the shared status mapping read from [response].
+     * @return [mapped] with the route's text as its `detail`, or [mapped] unchanged when it already has one.
+     */
+    private fun withRouteText(
+        response: PayabliResponse,
+        mapped: PayabliException,
+    ): PayabliException {
+        if (mapped !is PayabliValidationException || mapped.detail != null) return mapped
+        val text =
+            try {
+                PayabliJson.format
+                    .decodeFromString(StoredMethodEnvelope.serializer(), response.bodyAsText())
+                    .responseText
+                    ?.trimOrNull()
+            } catch (_: SerializationException) {
+                null
+            } ?: return mapped
+        return PayabliValidationException(
+            httpStatus = mapped.httpStatus,
+            reason = mapped.reason,
+            detail = text,
+            problemType = mapped.problemType,
+            instance = mapped.instance,
+            rawCode = mapped.rawCode,
+            fieldErrors = mapped.fieldErrors,
         )
     }
 
