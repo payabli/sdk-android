@@ -26,6 +26,10 @@ internal object PayInValidation {
     /** Letters, digits, spaces and the three punctuation marks a bank will accept in a name. */
     private val HOLDER_NAME = Regex("^[A-Za-z0-9 .'-]+$")
 
+    private val EXPIRY_MONTHS = 1..12
+
+    private val EXPIRY_YEARS = 1000..9999
+
     fun entryPoint(value: String) {
         if (value.isBlank()) throw PayInException.InvalidInput(FIELD_ENTRY_POINT, "An entry point is required")
     }
@@ -125,6 +129,13 @@ internal object PayInValidation {
                 ?.let { throw PayInException.InvalidInput(FIELD_CARD_CVV, "The security code is not valid") }
         }
 
+        if (data.expiryMonth !in EXPIRY_MONTHS) {
+            throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The expiry month is not 1 to 12")
+        }
+        // Only the last two digits are sent, so a two-digit year would go out as a different card's expiry.
+        if (data.expiryYear !in EXPIRY_YEARS) {
+            throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The expiry year is not four digits")
+        }
         // The service refuses a past expiry too; refusing it here saves the round trip.
         val today = ExpiryValue.today()
         if (ExpiryValue.isExpired(data.expiryMonth, data.expiryYear, today.year, today.month)) {

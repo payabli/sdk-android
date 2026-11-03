@@ -87,8 +87,9 @@ Pass the card number and security code as `String`s. The request copies them int
 back, and keeps no `String` of its own. Each call sends from its own copy and overwrites that copy however the call
 ends, so the same request can be sent again, including as a retry.
 
-Pass the expiry as a month and a four-digit year. The call refuses an expiry before the current month before anything
-is sent.
+Pass the expiry as a month and a four-digit year. Before anything is sent, the call refuses a month outside 1 to 12, a
+year that isn't four digits, or an expiry before the current month, with `PayInException.InvalidInput` at
+`paymentMethod.cardexp`.
 
 ```kotlin
 import com.payabli.sdk.payin.model.PayInCardData
