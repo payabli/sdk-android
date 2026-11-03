@@ -555,8 +555,8 @@ private fun isNotPermitted(response: PayabliResponse): Boolean =
  * Maps the two refusals specific to a read. Any other failure goes to the shared status mapping.
  *
  * @param response the answered request.
- * @return the refusal, carrying the response's status and the older body's code, or null when the response is
- *   neither.
+ * @return the refusal, carrying the response's status and the body's `code`, else its older `responseCode`, or
+ *   null when the response is neither.
  */
 private fun readRefusal(response: PayabliResponse): PayabliGenericException? {
     val type =
@@ -572,7 +572,7 @@ private fun readRefusal(response: PayabliResponse): PayabliGenericException? {
         null,
         null,
         response.statusCode,
-        legacyCode(response)?.toString(),
+        AnswerFields.of(response.bodyAsText()).code ?: legacyCode(response)?.toString(),
     )
 }
 

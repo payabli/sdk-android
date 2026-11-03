@@ -122,6 +122,18 @@ class MoneyInReadTest {
         }
 
     @Test
+    fun `a read refusal whose body names a code reports that code`() =
+        runTest(timeout = timeout) {
+            for ((status, legacy) in listOf(400 to 7001, 401 to 9001)) {
+                val body = """{"isSuccess":false,"code":"E1001","responseCode":$legacy}"""
+                val failure = read(FakePayInTransport.answering(body, statusCode = status)) as? PayabliException
+
+                assertEquals("$status", status, failure?.httpStatus)
+                assertEquals("$status", "E1001", failure?.rawCode)
+            }
+        }
+
+    @Test
     fun `the read tells the transport which rejection refuses its caller`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(RECORD)
