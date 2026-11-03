@@ -1,6 +1,7 @@
 package com.payabli.sdk.core.network.impl
 
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
@@ -18,6 +19,7 @@ internal const val REASON_DECODE_FAILED: String = "Failed to decode response env
  *
  * @param payloadSerializer the generated serializer the envelope's payload decodes through.
  * @return the decoded v2 envelope.
+ * @throws PayabliException the status's error, or a decoding error carrying the response's status and no code.
  */
 internal fun <T> PayabliResponse.asV2Envelope(payloadSerializer: KSerializer<T>): PayabliV2Envelope<T> {
     PayabliHttpErrors.from(this)?.let { throw it }
@@ -30,7 +32,10 @@ internal fun <T> PayabliResponse.asV2Envelope(payloadSerializer: KSerializer<T>)
         throw PayabliGenericException(
             PayabliErrorType.DECODING_ERROR,
             REASON_DECODE_FAILED,
-            cause = RedactedCause(e),
+            null,
+            RedactedCause(e),
+            statusCode,
+            null,
         )
     }
 }
