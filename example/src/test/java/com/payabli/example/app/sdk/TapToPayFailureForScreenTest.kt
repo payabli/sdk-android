@@ -10,12 +10,12 @@ import org.junit.Test
 
 class TapToPayFailureForScreenTest {
     @Test
-    fun `the screen reads the reason and the catalog number, not the classification`() {
+    fun `the operator reads the category's message, not the reason`() {
         val failure = PayabliGenericException(PayabliErrorType.CARD_DECLINED, "Do not honour, from the issuer")
 
         val shown = failure.forScreen()
 
-        assertEquals("Do not honour, from the issuer (3020)", shown.shown)
+        assertEquals("The payment was declined. Try another payment method.", shown.shown)
         assertFalse(shown.toString().contains("honour"))
         assertSame(failure, shown.cause)
         assertEquals("the reason stays out of the throwable", PayabliErrorType.CARD_DECLINED.message, shown.message)

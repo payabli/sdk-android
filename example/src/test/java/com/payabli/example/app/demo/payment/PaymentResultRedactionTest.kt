@@ -12,43 +12,29 @@ import org.junit.Test
  *
  * They are `data class`es, so without their own `toString` each would synthesize one over every property,
  * and that reaches assertion failures, exception messages and crash reports without passing through
- * anything that redacts. The service text these now carry can quote what was submitted.
+ * anything that redacts.
  */
 class PaymentResultRedactionTest {
-    private val pan = "4111111111111111"
-
     @Test
-    fun `a result carries its code and none of the service's words`() {
-        val result =
-            PaymentResult(
-                code = "A0003",
-                reason = "Card $pan was canceled",
-                explanation = "Card $pan is no longer held",
-                action = "None",
-            )
+    fun `a result names its code and not the method it stored`() {
+        val result = PaymentResult(code = "A0003", storedMethod = StoredMethod("tok-77"))
 
         assertEquals("PaymentResult(code=A0003)", result.toString())
-        assertFalse(result.toString().contains(pan))
+        assertFalse(result.toString().contains("tok-77"))
     }
 
     @Test
-    fun `a stored method names neither its token nor the service's words`() {
-        val stored =
-            StoredMethod(
-                storedMethodId = "tok-77",
-                responseText = "Card $pan stored",
-                resultText = "Card $pan stored",
-            )
+    fun `a stored method does not name its token`() {
+        val stored = StoredMethod(storedMethodId = "tok-77")
 
         assertEquals("StoredMethod", stored.toString())
         assertFalse(stored.toString().contains("tok-77"))
-        assertFalse(stored.toString().contains(pan))
     }
 
     /**
      * The stored-method screen's state, which quotes the identifier a later transaction charges.
      *
-     * `resultText` is built as "Stored method: <id>", so a synthesized `toString` over this class would carry
+     * The panel's text is built as "Stored method: <id>", so a synthesized `toString` over this class would carry
      * the token that `StoredMethod` above declares its own `toString` to keep out.
      */
     @Test
@@ -58,7 +44,7 @@ class PaymentResultRedactionTest {
                 setup = PayInForms.storePaymentMethod(),
                 sampleIdentity = SampleIdentity.from("Test Device"),
                 resultText = "✓ Stored method: tok-77",
-                storedMethod = StoredMethod("tok-77", "Approved", "Approved"),
+                storedMethod = StoredMethod("tok-77"),
             )
 
         val rendered = state.toString()

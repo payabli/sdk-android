@@ -6,6 +6,7 @@ import com.payabli.example.app.AppContainer
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
 import com.payabli.example.app.demo.net.checkToken
+import com.payabli.example.app.demo.payment.FailureText
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.sample.DemoCustomerSetting
@@ -230,11 +231,8 @@ class CaptureViewModel(
     }
 
     /**
-     * The SDK refused it.
-     *
-     * The panel records the failure's classification and nothing from the wire. What a screen shows is
-     * displayable and never loggable, because some of it can quote what was submitted, and this panel is on
-     * screen and gets copied into bug reports.
+     * The SDK refused it. The panel records the failure's code and nothing from the wire, and the screen shows the
+     * message for its category.
      */
     fun onFailed(outcome: PayInOutcome.Refused) {
         rotatePaymentReference(outcome)
@@ -253,7 +251,6 @@ class CaptureViewModel(
                 // Marked, and carrying the identifiers a reader would otherwise leave the screen for.
                 listOfNotNull(
                     "✓ Code: ${result.code}",
-                    result.reason?.let { "Reason: $it" },
                     transaction.paymentTransactionId.let { "Payment transaction: $it" },
                     transaction.gatewayTransactionId?.let { "Gateway transaction: $it" },
                     transaction.method?.let { "Method: $it" },
@@ -288,7 +285,7 @@ class CaptureViewModel(
             // transaction screen on top of the error just recorded, showing the previous payment as
             // though it were this one.
             it.copy(
-                resultText = "✗ ${error.displayMessage}",
+                resultText = "✗ ${FailureText.payment(error.kind)}",
                 outcomeReady = false,
                 lastResult = null,
                 submitFailed = true,
@@ -344,6 +341,7 @@ class CaptureViewModel(
                     _uiState.update { it.copy(isReading = false) }
                     throw cancellation
                 }
+            if (outcome is PayInReadOutcome.Failed) record("ERROR read\ncode=${outcome.error.code}")
             _uiState.update { it.afterReading(outcome, transId) }
         }
     }
@@ -374,7 +372,7 @@ class CaptureViewModel(
                             outcome.statusNumber?.let { "Status number: $it" },
                             outcome.paymentTransactionId?.let { "Payment transaction: $it" },
                         ).joinToString("\n")
-                    is PayInReadOutcome.Failed -> "✗ ${outcome.error.displayMessage}"
+                    is PayInReadOutcome.Failed -> "✗ ${FailureText.read(outcome.error.kind)}"
                 },
         )
 
@@ -403,7 +401,6 @@ class CaptureViewModel(
                     resultText =
                         listOfNotNull(
                             "✓ Voided: ${outcome.result.code}",
-                            outcome.result.reason?.let { "Reason: $it" },
                             "Payment transaction: $transId",
                         ).joinToString("\n"),
                 )
@@ -415,7 +412,7 @@ class CaptureViewModel(
                     voidKeyHeld = outcome.isOutcomeUnknown,
                     resultText =
                         listOfNotNull(
-                            "✗ ${outcome.error.displayMessage}",
+                            "✗ ${FailureText.void(outcome.error.kind)}",
                             if (outcome.isRetryRefused) {
                                 "The earlier reversal may still be running. Read this transaction again shortly."
                             } else {

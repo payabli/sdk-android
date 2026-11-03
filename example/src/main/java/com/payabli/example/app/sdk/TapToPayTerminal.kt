@@ -1,6 +1,7 @@
 package com.payabli.example.app.sdk
 
 import android.content.Context
+import com.payabli.example.app.demo.payment.FailureText
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.terminal.ChargeReceipt
 import com.payabli.example.app.demo.terminal.TerminalController
@@ -245,10 +246,11 @@ class TapToPayTerminal(
 }
 
 /**
- * An SDK failure's `message` is its classification, so the line a person reads is built from `reason` and the
- * catalog number support looks up.
+ * The operator reads the message for the failure's category, never its `reason`, which is the service's text.
+ * The code stays on the cause, in the failure's `toString`.
  */
-internal fun PayabliException.forScreen(): TerminalFailure = TerminalFailure("$reason ($code)", this)
+internal fun PayabliException.forScreen(): TerminalFailure =
+    TerminalFailure(FailureText.terminal(toPaymentError().kind), this)
 
 /**
  * The message of an error whose landing is the ineligible reason, or null when it landed another.

@@ -23,8 +23,8 @@ sealed class PayInOutcome {
     /**
      * It did not go through.
      *
-     * [diagnostic] is the failure's own classification and carries nothing from the wire, so it is the part
-     * safe to record. [error] is displayable and is what a screen shows.
+     * [diagnostic] is the failure's own classification and code and carries nothing from the wire, so it is the
+     * part safe to record. [error] picks the message a screen shows.
      *
      * @property isOutcomeUnknown whether the service may have applied the request without the answer arriving.
      * @property isRetryRefused whether the service refused a repeat of an earlier attempt that may still be running.

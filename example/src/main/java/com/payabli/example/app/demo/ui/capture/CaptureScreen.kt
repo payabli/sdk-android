@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.dp
 import com.payabli.example.app.demo.flow.PaymentProgress
 import com.payabli.example.app.demo.flow.PaymentSteps
 import com.payabli.example.app.demo.payment.PaymentResult
-import com.payabli.example.app.demo.payment.ResponseJson
 import com.payabli.example.app.demo.payment.Transaction
 import com.payabli.example.app.demo.payment.TransactionSummary
 import com.payabli.example.app.demo.sample.SampleIdentity
@@ -27,7 +26,6 @@ import com.payabli.example.app.demo.ui.components.DetailRow
 import com.payabli.example.app.demo.ui.components.PreviewSurface
 import com.payabli.example.app.demo.ui.components.ProminentButton
 import com.payabli.example.app.demo.ui.components.SectionHeader
-import com.payabli.example.app.demo.ui.components.SelectableMonospaceBlock
 import com.payabli.example.app.demo.ui.components.SuccessMark
 import com.payabli.example.app.demo.ui.payment.PaymentFlowActions
 import com.payabli.example.app.demo.ui.payment.PaymentFlowScreen
@@ -116,7 +114,7 @@ fun CaptureResultScreen(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = result.reason ?: result.explanation ?: result.code,
+                    text = "Code: ${result.code}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -128,11 +126,6 @@ fun CaptureResultScreen(
             TransactionSummary.rows(result).forEach { row ->
                 DetailRow(label = row.label, value = row.value)
             }
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-            SectionHeader(title = "Response", note = "Exactly what came back, with the keys sorted.")
-            SelectableMonospaceBlock(text = ResponseJson.render(result.apiResponse))
         }
 
         ProminentButton(text = "Done", icon = DemoIcons.Pass, onClick = onDone)
@@ -161,7 +154,7 @@ private fun CaptureScreenPreview() {
                             atMillis = 0,
                             suppliesDemoCustomer = true,
                         ),
-                    resultText = "Code: 1\nReason: Approved\nTransaction: demo-txn-0001",
+                    resultText = "✓ Code: 1\nPayment transaction: demo-txn-0001",
                 ),
             actions = PaymentFlowActions.none(),
         )
@@ -176,9 +169,6 @@ private fun CaptureResultScreenPreview() {
             result =
                 PaymentResult(
                     code = "1",
-                    reason = "Approved",
-                    explanation = "The payment was authorised and captured.",
-                    action = "None",
                     transaction =
                         Transaction(
                             paymentTransactionId = "demo-txn-0001",
