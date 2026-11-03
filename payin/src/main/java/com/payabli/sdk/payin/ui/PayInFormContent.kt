@@ -42,6 +42,7 @@ import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
 import com.payabli.sdk.payin.form.PayInSummaryRows
 import com.payabli.sdk.payin.model.ExpiryValue
+import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.telemetry.PayInFormReports
@@ -150,13 +151,13 @@ internal fun PayInFormContent(
 
         reports.refusedFields(rejected)
         draft.rejectedFields = rejected
-        // A failure that marks a box on screen is shown by the mark; any other failure draws the form's message.
-        // The next submission's Submitting, or a success, clears it. The Idle that follows a failure never reaches
-        // here, because submissionPending is already false, so the message stays until the payer submits again.
+        // A mark on screen replaces the message, except for an unknown outcome, which a mark can't express.
+        // The next Submitting, or a success, clears it. The Idle after a failure never reaches here, because
+        // submissionPending is already false, so the message stays until the payer submits again.
         draft.failureNotice =
             (outcome as? PayInSubmissionState.Failed)
                 ?.cause
-                ?.takeIf { !anyRejectedFieldStands(draft.method) }
+                ?.takeIf { it is PayInException.Unsettled || !anyRejectedFieldStands(draft.method) }
                 ?.let(PayInFailureMessage::categoryOf)
         // On the composition's dispatcher; moving either call to the flow's coroutine needs withContext(Main).
         // Only once the service may have acted on it: a refusal before that, of any kind, leaves what the payer typed.

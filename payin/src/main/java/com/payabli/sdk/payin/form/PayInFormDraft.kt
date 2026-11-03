@@ -56,7 +56,8 @@ internal class PayInFormDraft {
     var rejectedFields: Map<PayInField, PayInFieldError> by mutableStateOf(emptyMap())
 
     /**
-     * The category of the last submission's failure where no box on screen was marked for it, or null for none.
+     * The category of the last submission's failure where no box on screen was marked for it, or where its outcome
+     * is unknown, or null for none.
      * Cleared when the next submission starts, when one succeeds, and with the rest of the draft.
      */
     var failureNotice: PayabliErrorCategory? by mutableStateOf(null)

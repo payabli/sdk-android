@@ -144,6 +144,19 @@ class PayInFailureNoticeInstrumentedTest {
     }
 
     @Test
+    fun aFailureWhoseOutcomeIsUnknownDrawsTheMessageBesideItsMarks() {
+        failAfterSubmitting(
+            failing(
+                PayInException.Unsettled(PayabliGenericException(PayabliErrorType.VALIDATION_ERROR, "refused")),
+                mapOf(PayInField.AccountHolder to PayInFieldError.NotAccepted),
+            ),
+        )
+
+        rule.onNodeWithText(string(R.string.payabli_payin_error_not_accepted)).assertExists()
+        rule.onNodeWithText("This payment may have gone through. Check before paying again.").assertExists()
+    }
+
+    @Test
     fun aFailureNamingOnlyFieldsOffScreenDrawsTheMessage() {
         failAfterSubmitting(
             failing(
