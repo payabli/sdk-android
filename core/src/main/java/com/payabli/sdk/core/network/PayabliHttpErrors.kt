@@ -240,9 +240,9 @@ public object PayabliHttpErrors {
 
     /**
      * @param code the body's `code`.
-     * @param responseCode the older envelope's `responseCode`, kept as an element so a value that is not a number
+     * @param responseCode the older envelope's `responseCode`, kept as an element so a value that is not an integer
      *   costs only this field.
-     * @return [code], else [responseCode] as a string when it is a number, else null.
+     * @return [code], else [responseCode] as a string when it reads as an integer, quoted or not, else null.
      */
     private fun rawCodeOf(
         code: String?,
