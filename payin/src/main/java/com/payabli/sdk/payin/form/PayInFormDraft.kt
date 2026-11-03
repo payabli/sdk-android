@@ -56,11 +56,11 @@ internal class PayInFormDraft {
     var rejectedFields: Map<PayInField, PayInFieldError> by mutableStateOf(emptyMap())
 
     /**
-     * The category of the last submission's failure where no box on screen was marked for it, or where its outcome
-     * is unknown, or null for none.
+     * The last submission's failure where no box on screen was marked for it, or where its outcome is unknown, or
+     * null for none.
      * Cleared when the next submission starts, when one succeeds, and with the rest of the draft.
      */
-    var failureNotice: PayabliErrorCategory? by mutableStateOf(null)
+    var failureNotice: PayInFailureNotice? by mutableStateOf(null)
 
     /**
      * True from the tap until an outcome arrives, which is how a success this form sent is told from one the
@@ -142,4 +142,24 @@ internal class PayInFormDraft {
         failureNotice = null
         submissionPending = false
     }
+}
+
+/**
+ * A failure the form shows a message for, and whether the submission it describes saved a method.
+ *
+ * @property category the failure's catalog category, which picks the message.
+ * @property savesMethod true when the failed submission saved a payment method rather than paying.
+ */
+internal data class PayInFailureNotice(
+    val category: PayabliErrorCategory,
+    val savesMethod: Boolean,
+) {
+    /**
+     * The category to draw on a form doing [savesMethod]'s operation. A message about a payment is not drawn on a
+     * save form, or the reverse: it would describe a submission that form never sent.
+     *
+     * @param savesMethod true when the form on screen saves a payment method.
+     * @return [category], or null when the form's operation is not the one that failed.
+     */
+    fun categoryOn(savesMethod: Boolean): PayabliErrorCategory? = category.takeIf { this.savesMethod == savesMethod }
 }

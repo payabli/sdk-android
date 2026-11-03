@@ -156,12 +156,24 @@ class PayInFormDraftTest {
     }
 
     @Test
+    fun aFailureMessageIsDrawnOnlyOnTheOperationThatFailed() {
+        // A host switching a declined payment's form to a save would otherwise show a save failure that never ran.
+        val payment = PayInFailureNotice(PayabliErrorCategory.DECLINED, savesMethod = false)
+
+        assertEquals(PayabliErrorCategory.DECLINED, payment.categoryOn(savesMethod = false))
+        assertNull(payment.categoryOn(savesMethod = true))
+        assertNull(
+            PayInFailureNotice(PayabliErrorCategory.DECLINED, savesMethod = true).categoryOn(savesMethod = false),
+        )
+    }
+
+    @Test
     fun clearingTakesEverythingAndStartsTheFormAgainAfterwards() {
         draft.seed(configuration)
         draft.switchTo(PayInMethodType.BankAccount, configuration)
         draft.enter(PayInField.AccountHolder, "Ada Lovelace")
         draft.submissionPending = true
-        draft.failureNotice = PayabliErrorCategory.DECLINED
+        draft.failureNotice = PayInFailureNotice(PayabliErrorCategory.DECLINED, savesMethod = false)
 
         draft.clear()
         assertTrue(draft.typed.isEmpty())

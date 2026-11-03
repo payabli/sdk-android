@@ -30,6 +30,7 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.PayInFailureMessagePlacement
+import com.payabli.sdk.payin.form.PayInFailureNotice
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldRules
 import com.payabli.sdk.payin.form.PayInFormConfiguration
@@ -141,6 +142,8 @@ internal fun PayInFormContent(
     fun anyRejectedFieldStands(chosen: PayInMethodType): Boolean =
         draft.rejectedFields.keys.any { it in configuration.inputFieldsFor(chosen) }
 
+    val savesMethod = submitText == PayInSubmitText.StoreMethod
+
     // Keyed on the state itself, so a second rejection of the same field marks it again. `Succeeded` and
     // `Failed` are not data classes, so two identical consecutive rejections are two instances and the
     // StateFlow publishes both; `PayInSubmissionStateIdentityTest` pins that.
@@ -158,7 +161,7 @@ internal fun PayInFormContent(
             (outcome as? PayInSubmissionState.Failed)
                 ?.cause
                 ?.takeIf { it is PayInException.Unsettled || !anyRejectedFieldStands(draft.method) }
-                ?.let(PayInFailureMessage::categoryOf)
+                ?.let { PayInFailureNotice(PayInFailureMessage.categoryOf(it), savesMethod) }
         // On the composition's dispatcher; moving either call to the flow's coroutine needs withContext(Main).
         // Only once the service may have acted on it: a refusal before that, of any kind, leaves what the payer typed.
         val clearInstrument = { if (wasSent(outcome)) draft.clearInstrument() }
@@ -179,11 +182,8 @@ internal fun PayInFormContent(
 
     val complete = !anyRejectedFieldStands(method) && configuration.isComplete(typed, method, today)
 
-    val notice = draft.failureNotice?.takeIf { configuration.showsFailureMessage }
-    val noticeText =
-        notice?.let {
-            PayInFailureMessage.text(it, savesMethod = submitText == PayInSubmitText.StoreMethod, labels = labels)
-        }
+    val notice = draft.failureNotice?.categoryOn(savesMethod)?.takeIf { configuration.showsFailureMessage }
+    val noticeText = notice?.let { PayInFailureMessage.text(it, savesMethod = savesMethod, labels = labels) }
 
     Column(
         modifier = modifier.fillMaxWidth(),
