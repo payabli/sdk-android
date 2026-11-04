@@ -330,6 +330,22 @@ class AuthenticatedTransportTest {
             }
         }
 
+    @Test
+    fun `a refresh refused by the finished session carries no other request's answer`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to """{"responseCode":9001}""")
+                val auth = testAuth(tokenProvider = { REFRESHED })
+                failureFrom { stack(server, auth).execute(ping()) }
+
+                val later = runCatching { auth.invalidateAndRefresh(REFRESHED) }.exceptionOrNull() as? PayabliException
+
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, later?.type)
+                assertNull(later?.httpStatus)
+                assertNull(later?.rawCode)
+            }
+        }
+
     // ---- a run of failing calls --------------------------------------------------------------------
 
     @Test

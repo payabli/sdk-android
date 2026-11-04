@@ -112,7 +112,7 @@ internal class AuthenticatedTransport(
         // evidence about a token rather than about the session, and acting on it would end a session whose
         // next token works. `PayabliAuth` answers both questions and records the outcome in one lock
         // acquisition, so no refresh can start in the gap a check-then-act would leave open.
-        val exhausted = recovery.exhaustedBy(second)
+        val exhausted = recovery.exhausted()
         val sent = replayed.value
         val finished =
             // Nothing stamped means the chain did not run, which is not a state to be lenient about.
@@ -125,7 +125,7 @@ internal class AuthenticatedTransport(
 
         // Outside the lock: telling the session runs a listener, and a listener is foreign code.
         if (finished) onAuthFailure.onUnrecoverable(exhausted)
-        throw exhausted
+        throw recovery.exhaustedBy(second)
     }
 
     /**
