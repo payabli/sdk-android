@@ -88,8 +88,8 @@ back, and keeps no `String` of its own. Each call sends from its own copy and ov
 ends, so the same request can be sent again, including as a retry.
 
 Pass the expiry as a month and a four-digit year. Before anything is sent, the call refuses a month outside 1 to 12, a
-year that isn't four digits, or an expiry before the current month, with `PayInException.InvalidInput` at
-`paymentMethod.cardexp`.
+year that isn't four digits, a year after 2099, or an expiry before the current month, with
+`PayInException.InvalidInput` at `paymentMethod.cardexp`.
 
 ```kotlin
 import com.payabli.sdk.payin.model.PayInCardData

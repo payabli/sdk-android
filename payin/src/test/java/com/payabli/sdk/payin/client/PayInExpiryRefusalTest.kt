@@ -67,6 +67,7 @@ class PayInExpiryRefusalTest {
                     "month 13" to (13 to farYear),
                     "two-digit year" to (12 to 30),
                     "five-digit year" to (12 to 20300),
+                    "year after 2099" to (1 to 2100),
                     "last month" to lastMonth(),
                 )
 
@@ -88,13 +89,22 @@ class PayInExpiryRefusalTest {
         runTest(timeout = timeout) {
             // A card is good through the last day of its expiry month.
             val today = ExpiryValue.today()
-            listOf("capture", "authorize", "storeMethod").forEach { call ->
-                val transport = FakePayInTransport.failingWith(IOException("sent"))
-                val failure =
-                    runCatching { calls(transport).getValue(call)(card(today.month, today.year)) }.exceptionOrNull()
-
-                assertFalse("$call: $failure", failure is PayInException.InvalidInput)
-                assertEquals("$call did not send", 1, transport.count)
-            }
+            assertSent(today.month, today.year)
         }
+
+    @Test
+    fun `a card expiring in December 2099 is sent`() = runTest(timeout = timeout) { assertSent(12, 2099) }
+
+    private suspend fun assertSent(
+        month: Int,
+        year: Int,
+    ) {
+        listOf("capture", "authorize", "storeMethod").forEach { call ->
+            val transport = FakePayInTransport.failingWith(IOException("sent"))
+            val failure = runCatching { calls(transport).getValue(call)(card(month, year)) }.exceptionOrNull()
+
+            assertFalse("$call, $month/$year: $failure", failure is PayInException.InvalidInput)
+            assertEquals("$call, $month/$year did not send", 1, transport.count)
+        }
+    }
 }

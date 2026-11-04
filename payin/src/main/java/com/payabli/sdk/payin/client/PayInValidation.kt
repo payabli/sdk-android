@@ -31,6 +31,8 @@ internal object PayInValidation {
 
     private val EXPIRY_YEARS = 1000..9999
 
+    private const val LAST_EXPIRY_YEAR = 2099
+
     fun entryPoint(value: String) {
         if (value.isBlank()) throw PayInException.InvalidInput(FIELD_ENTRY_POINT, "An entry point is required")
     }
@@ -137,9 +139,12 @@ internal object PayInValidation {
         if (data.expiryMonth !in EXPIRY_MONTHS) {
             throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The expiry month is not 1 to 12")
         }
-        // Only the last two digits are sent, so 12030 and 2030 write the same expiry.
         if (data.expiryYear !in EXPIRY_YEARS) {
             throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The expiry year is not four digits")
+        }
+        // Only the year's last two digits are sent, and the service reads them as 20YY, so 2130 would be charged as 2030.
+        if (data.expiryYear > LAST_EXPIRY_YEAR) {
+            throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The expiry year is after $LAST_EXPIRY_YEAR")
         }
         // The service refuses a past expiry too; refusing it here saves the round trip.
         // Read as plain integers, so a device clock outside the years ExpiryValue holds can't throw here.
