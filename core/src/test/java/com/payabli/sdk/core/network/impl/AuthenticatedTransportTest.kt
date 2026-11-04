@@ -1342,10 +1342,11 @@ class AuthenticatedTransportTest {
         runTest(timeout = TEST_TIMEOUT) {
             val base = UnauthorizedUntilReplayed()
             val calls = AtomicInteger()
+            val auth = authWithCountingRefresh(calls)
             val subject =
                 AuthenticatedTransport(
                     base = base,
-                    auth = authWithCountingRefresh(calls),
+                    auth = auth,
                     recovery = AuthRecoveryPolicy(),
                     logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                 )
@@ -1355,6 +1356,7 @@ class AuthenticatedTransportTest {
             assertEquals("the rejection arrives as it came", UNAUTHORIZED, response.statusCode)
             assertEquals("no refresh", 0, calls.get())
             assertEquals("no replay", 1, base.sends.size)
+            assertNull("the session is not finished", auth.terminalFailure)
         }
 
     /** An expired credential is refreshed first, and the refusal only arrives on the replay. */

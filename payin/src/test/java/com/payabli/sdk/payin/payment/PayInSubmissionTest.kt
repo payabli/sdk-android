@@ -841,11 +841,15 @@ class PayInSubmissionTest {
         runTest(timeout = timeout) {
             listOf("E9005", "E9051").forEach { code ->
                 listOf(400, 401).forEach { status ->
-                    val (transport, submission) =
-                        scriptedFrom(
-                            ScriptedPayInTransport.failingWith(dropped()),
-                            ScriptedPayInTransport.answering(status, """{"code":"$code","reason":"Blocked"}"""),
+                    val transport =
+                        ScriptedPayInTransport(
+                            listOf(
+                                ScriptedPayInTransport.failingWith(dropped()),
+                                ScriptedPayInTransport.answering(status, """{"code":"$code","reason":"Blocked"}"""),
+                            ),
                         )
+                    // The authenticated transport takes the hand-off back on every 401, the declared ones too.
+                    val submission = submissionOver(LowersTheMarkOn401(transport))
                     val request = PayInAuthorizedRequest("101-abc", testDetails())
 
                     submission.captureAuthorized(TEST_ENTRY_POINT, request)
@@ -2314,6 +2318,21 @@ class PayInSubmissionTest {
             this.request = request
             throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the link dropped")
         }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("the PayIn clients decode their own envelopes")
+    }
+
+    /** Takes the hand-off back on a 401, as the authenticated transport does, around [base]. */
+    private class LowersTheMarkOn401(
+        private val base: PayabliTransport,
+    ) : PayabliTransport {
+        override suspend fun execute(request: PayabliRequest): PayabliResponse =
+            base.execute(request).also {
+                if (it.statusCode == 401) currentCoroutineContext()[PayabliSendMark]?.lower()
+            }
 
         override suspend fun <T> execute(
             request: PayabliRequest,
