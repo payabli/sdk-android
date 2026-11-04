@@ -3,6 +3,7 @@ package com.payabli.example.app.sdk
 import com.payabli.example.app.demo.payment.FailureText
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.taptopay.TapToPayCapture
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -87,5 +88,53 @@ class TapToPayFailureForScreenTest {
     @Test
     fun `an error that lands another reason has no ineligible line`() {
         assertNull(PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "the token expired").ineligibleLine)
+    }
+
+    @Test
+    fun `a charged card says not to charge it again, with the payment's ID`() {
+        val failure = PayabliGenericException(PayabliErrorType.PAYMENT_NOT_CLOSED, "a reason")
+
+        val shown = failure.forScreen(TapToPayCapture.CHARGED, paymentTransId = "txn-2").shown
+
+        assertEquals("The card was charged. Don't charge it again. · txn txn-2", shown)
+    }
+
+    @Test
+    fun `an unknown capture says the payment may have gone through, whatever the category`() {
+        val failure = PayabliGenericException(PayabliErrorType.CARD_DECLINED, "a reason")
+
+        val shown = failure.forScreen(TapToPayCapture.UNKNOWN, paymentTransId = "txn-1").shown
+
+        assertEquals("This payment may have gone through. Check before charging again. · txn txn-1", shown)
+    }
+
+    @Test
+    fun `a failure naming no payment carries no transaction ID`() {
+        val shown =
+            PayabliGenericException(PayabliErrorType.CARD_DECLINED, "a reason")
+                .forScreen(TapToPayCapture.UNKNOWN, paymentTransId = null)
+                .shown
+
+        assertEquals("This payment may have gone through. Check before charging again.", shown)
+    }
+
+    @Test
+    fun `an uncharged failure keeps its category's line and names no payment`() {
+        val shown =
+            PayabliGenericException(PayabliErrorType.CARD_DECLINED, "a reason")
+                .forScreen(TapToPayCapture.NOT_CHARGED, paymentTransId = "txn-3")
+                .shown
+
+        assertEquals("The payment was declined. Try another payment method.", shown)
+    }
+
+    @Test
+    fun `an uncharged ineligible device keeps its own line`() {
+        val shown =
+            PayabliGenericException(PayabliErrorType.DEVICE_OS_UNSUPPORTED, "a reason")
+                .forScreen(TapToPayCapture.NOT_CHARGED, paymentTransId = null)
+                .shown
+
+        assertEquals("This phone's Android version is too old for Tap to Pay.", shown)
     }
 }

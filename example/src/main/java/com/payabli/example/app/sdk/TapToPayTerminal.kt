@@ -262,16 +262,45 @@ class TapToPayTerminal(
 }
 
 /**
- * The operator reads this app's line for an ineligible device or a refused activation, or else the message for
- * the failure's category, never its `reason`, which is the service's text. The code stays on the cause, in the
- * failure's `toString`.
+ * The operator's line for a failure, read from a Tap to Pay failure's capture and payment when it is one.
+ *
+ * @return the failure in this app's words.
  */
 internal fun PayabliException.forScreen(): TerminalFailure =
+    (this as? TapToPayException).let { forScreen(it?.capture ?: TapToPayCapture.NOT_CHARGED, it?.paymentTransId) }
+
+/**
+ * Whether the card was charged is read first: the category alone can say try again after a sale that may be taken.
+ * An uncharged failure reads this app's ineligible-device or activation line, else its category's message, never
+ * its `reason`, which is the service's text. The code stays on the cause, in the failure's `toString`.
+ *
+ * @param capture whether the card was charged.
+ * @param paymentTransId the payment the failure belongs to, shown with a charged or may-have-been-charged line.
+ * @return the failure in this app's words.
+ */
+internal fun PayabliException.forScreen(
+    capture: TapToPayCapture,
+    paymentTransId: String?,
+): TerminalFailure =
     TerminalFailure(
-        ineligibleLine ?: activationLine ?: FailureText.terminal(toPaymentError().kind),
+        chargeLine(capture, paymentTransId) ?: ineligibleLine ?: activationLine
+            ?: FailureText.terminal(toPaymentError().kind),
         this,
         code.toString(),
     )
+
+private fun chargeLine(
+    capture: TapToPayCapture,
+    paymentTransId: String?,
+): String? {
+    val line =
+        when (capture) {
+            TapToPayCapture.CHARGED -> "The card was charged. Don't charge it again."
+            TapToPayCapture.UNKNOWN -> "This payment may have gone through. Check before charging again."
+            TapToPayCapture.NOT_CHARGED -> return null
+        }
+    return if (paymentTransId == null) line else "$line · txn $paymentTransId"
+}
 
 /**
  * This app's own line for a refused activation, naming what the operator does next, or null for any other error.
