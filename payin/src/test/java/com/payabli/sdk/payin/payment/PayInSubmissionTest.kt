@@ -836,6 +836,29 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
+    @Test
+    fun `a fraud block on the held key's repeat settles the payment, at 400 and at 401`() =
+        runTest(timeout = timeout) {
+            listOf("E9005", "E9051").forEach { code ->
+                listOf(400, 401).forEach { status ->
+                    val (transport, submission) =
+                        scriptedFrom(
+                            ScriptedPayInTransport.failingWith(dropped()),
+                            ScriptedPayInTransport.answering(status, """{"code":"$code","reason":"Blocked"}"""),
+                        )
+                    val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+                    submission.captureAuthorized(TEST_ENTRY_POINT, request)
+                    val held = sentKey(transport)
+                    submission.captureAuthorized(TEST_ENTRY_POINT, request)
+                    assertEquals("$code $status: the repeat carries the held key", held, sentKey(transport))
+                    submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+                    assertNotEquals("$code $status: the next capture is a new attempt", held, sentKey(transport))
+                }
+            }
+        }
+
     /** Two form submissions of equal value are two payments, so nothing is held across them. */
     @Test
     fun `a form submission holds no key for the next one`() =
