@@ -25,6 +25,7 @@ enum class TerminalEventCode {
     ActivationStarted,
     ActivationCompleted,
     ActivationFailed,
+    SetupFailed,
     ;
 
     /** camelCase, matching how these appear on the wire. */

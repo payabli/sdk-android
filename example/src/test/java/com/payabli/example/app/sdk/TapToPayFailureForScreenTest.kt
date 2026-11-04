@@ -1,5 +1,6 @@
 package com.payabli.example.app.sdk
 
+import com.payabli.example.app.demo.payment.FailureText
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import org.junit.Assert.assertEquals
@@ -48,6 +49,39 @@ class TapToPayFailureForScreenTest {
         val shown = PayabliGenericException(PayabliErrorType.DEVICE_OS_UNSUPPORTED, "a reason").forScreen().shown
 
         assertEquals("This phone's Android version is too old for Tap to Pay.", shown)
+    }
+
+    @Test
+    fun `each activation refusal has its own line, never the catalog message`() {
+        val types =
+            listOf(
+                PayabliErrorType.ACTIVATION_CODE_MALFORMED,
+                PayabliErrorType.ACTIVATION_CODE_INCORRECT,
+                PayabliErrorType.ACTIVATION_CODE_EXPIRED,
+                PayabliErrorType.ACTIVATION_ATTEMPTS_EXHAUSTED,
+                PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED,
+                PayabliErrorType.DEVICE_NOT_PENDING,
+            )
+
+        val lines =
+            types.map { type ->
+                val failure = PayabliGenericException(type, "a reason")
+                val shown = failure.forScreen().shown
+                assertNotEquals(type.message, shown)
+                assertNotEquals(FailureText.terminal(failure.toPaymentError().kind), shown)
+                shown
+            }
+
+        assertEquals("one line per code, so the operator can tell them apart", types.size, lines.toSet().size)
+        assertEquals("Enter the six-digit activation code.", lines.first())
+    }
+
+    @Test
+    fun `a failure's event line carries its code, before and after it is put in the screen's words`() {
+        val refused = PayabliGenericException(PayabliErrorType.ACTIVATION_CODE_INCORRECT, "a reason")
+
+        assertEquals("code=3024", failureEventDetail(refused))
+        assertEquals("code=3024", failureEventDetail(refused.forScreen()))
     }
 
     @Test

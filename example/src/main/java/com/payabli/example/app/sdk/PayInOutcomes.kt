@@ -58,13 +58,14 @@ private fun PayInStoredMethod.toPaymentResult(): PaymentResult =
     )
 
 /**
- * The failure in this app's words, for a failure the SDK handed over as an exception: the form's refusal arm and a
- * call that throws both reach this. Only the category and the code cross, so no screen can show the error's text.
- * A payment whose outcome is unknown keeps its cause's category, so the wrapper is read first.
+ * The failure in this app's words: only the category and the code cross, so no screen shows the error's text. An
+ * `Unsettled` wrapper is read before its cause's category, and a bare [PayInException.Interrupted] is a cancel made
+ * before anything was sent, since a later one arrives wrapped.
  */
 internal fun Throwable.toPaymentError(): PaymentError =
     when (this) {
         is PayInException.Unsettled -> PaymentError(FailureKind.OUTCOME_UNKNOWN, code.toString())
+        is PayInException.Interrupted -> PaymentError(FailureKind.CANCELED_UNSENT, code.toString())
         is PayabliException ->
             PaymentError(
                 kind =

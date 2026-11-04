@@ -133,6 +133,34 @@ class PayInOutcomesTest {
     }
 
     @Test
+    fun `a cancel reported as unsent says nothing was sent, and a later one still warns`() {
+        val unsent = PayInException.Interrupted().toPaymentError()
+        val afterSending = PayInException.Unsettled(PayInException.Interrupted()).toPaymentError()
+
+        assertEquals(FailureKind.CANCELED_UNSENT, unsent.kind)
+        assertEquals("The payment was canceled. Nothing was sent.", FailureText.payment(unsent.kind))
+        assertEquals("The void was canceled. Nothing was sent.", FailureText.void(unsent.kind))
+        assertEquals(
+            "This payment may have gone through. Check before paying again.",
+            FailureText.payment(afterSending.kind),
+        )
+    }
+
+    @Test
+    fun `a cancelled save may have stored the method, so it reads as unconfirmed`() {
+        assertEquals(
+            "We couldn't confirm the payment method was saved.",
+            FailureText.save(PayInException.Interrupted().toPaymentError().kind),
+        )
+    }
+
+    @Test
+    fun `a save whose answer was lost says it is unconfirmed, and every other failure says it failed`() {
+        assertEquals("We couldn't confirm the payment method was saved.", FailureText.save(FailureKind.OUTCOME_UNKNOWN))
+        assertEquals("The payment method couldn't be saved.", FailureText.save(FailureKind.OTHER))
+    }
+
+    @Test
     fun `every failure the SDK can raise arrives with its code, and a screen has a text for it`() {
         val failures =
             listOf(

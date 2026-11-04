@@ -46,8 +46,11 @@ data class PaymentResult(
     override fun toString(): String = "PaymentResult(code=$code)"
 }
 
-/** Which of the category's messages a failure shows. */
-enum class FailureKind { DECLINED, RETRY_LATER, OUTCOME_UNKNOWN, OTHER }
+/**
+ * Which of the category's messages a failure shows. [CANCELED_UNSENT] is a cancel the SDK reports as made before
+ * anything was sent, which the category alone can't tell from one made after.
+ */
+enum class FailureKind { DECLINED, RETRY_LATER, OUTCOME_UNKNOWN, CANCELED_UNSENT, OTHER }
 
 /**
  * What the payment form reported instead.
@@ -74,11 +77,13 @@ object FailureText {
             FailureKind.DECLINED -> "The payment was declined. Try another payment method."
             FailureKind.RETRY_LATER -> "The payment couldn't be completed. Please try again."
             FailureKind.OUTCOME_UNKNOWN -> "This payment may have gone through. Check before paying again."
+            FailureKind.CANCELED_UNSENT -> "The payment was canceled. Nothing was sent."
             FailureKind.OTHER -> "The payment couldn't be completed."
         }
 
     /**
-     * A save moves no money, so its texts never say a payment was declined or may have gone through.
+     * A save moves no money, so its texts never say a payment was declined. A cancelled save may already have
+     * stored the method, so it reads as unconfirmed, like a save whose answer was lost.
      *
      * @param kind the failure's kind.
      * @return the text for a payment method that wasn't saved.
@@ -87,7 +92,9 @@ object FailureText {
         when (kind) {
             FailureKind.DECLINED -> "This payment method couldn't be saved. Try another one."
             FailureKind.RETRY_LATER -> "The payment method couldn't be saved. Please try again."
-            FailureKind.OUTCOME_UNKNOWN, FailureKind.OTHER -> "The payment method couldn't be saved."
+            FailureKind.OUTCOME_UNKNOWN, FailureKind.CANCELED_UNSENT ->
+                "We couldn't confirm the payment method was saved."
+            FailureKind.OTHER -> "The payment method couldn't be saved."
         }
 
     /**
@@ -97,6 +104,7 @@ object FailureText {
     fun void(kind: FailureKind): String =
         when (kind) {
             FailureKind.OUTCOME_UNKNOWN -> "This void may have gone through. Read the transaction before voiding again."
+            FailureKind.CANCELED_UNSENT -> "The void was canceled. Nothing was sent."
             FailureKind.RETRY_LATER -> "The void couldn't be completed. Please try again."
             FailureKind.DECLINED, FailureKind.OTHER -> "The void couldn't be completed."
         }
@@ -111,7 +119,8 @@ object FailureText {
         when (kind) {
             FailureKind.DECLINED -> "The payment was declined. Try another payment method."
             FailureKind.RETRY_LATER -> "That couldn't be completed. Please try again."
-            FailureKind.OUTCOME_UNKNOWN -> "This payment may have gone through. Check before charging again."
+            FailureKind.OUTCOME_UNKNOWN, FailureKind.CANCELED_UNSENT ->
+                "This payment may have gone through. Check before charging again."
             FailureKind.OTHER -> "That couldn't be completed."
         }
 
