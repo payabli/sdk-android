@@ -12,11 +12,9 @@ import kotlinx.serialization.KSerializer
 /**
  * A scripted [PayabliTransport] for this module.
  *
- * `:core` has one of these and it cannot be borrowed: `FakePayabliTransport` lives in `:core`'s own test
- * source set and `LoopbackServer` in a `sharedTest` directory wired into `:core`'s compilations only, and both
- * are `internal` to that module besides. Widening a published security SDK's surface to share a test double
- * is not the trade, and the cross-module fixtures module is separate work. [PayabliTransport] is public, so
- * the cost of doing without is this file.
+ * `:core`'s `FakePayabliTransport` is `internal` to its own test source set, so it cannot be borrowed.
+ * `LoopbackServer`, in `:testutils`, serves real HTTP and so needs the whole client stack in front of it,
+ * which is more than these tests exercise.
  *
  * No decoration chain and no auth. What these tests exercise is a client's own request assembly and response
  * handling, and a fake that stamped an `Authorization` header would let one come to depend on a layer it is
