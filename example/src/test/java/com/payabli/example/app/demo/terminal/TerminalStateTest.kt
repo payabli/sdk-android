@@ -89,13 +89,32 @@ class TerminalStateTest {
         assertTrue(buffer.isEmpty)
     }
 
-    // --- wire names ---
+    // --- event names ---
 
     @Test
-    fun `event codes render as camelCase wire names`() {
-        assertEquals("attestationStarted", TerminalEventCode.AttestationStarted.wireName)
-        assertEquals("nfcFailed", TerminalEventCode.NfcFailed.wireName)
-        assertEquals("devicePendingActivation", TerminalEventCode.DevicePendingActivation.wireName)
+    fun `an event that is not a failed step shows its camelCase name and its detail`() {
+        val event = TerminalEvent(TerminalEventCode.NfcFailed, "reason=cardRemovedTooSoon")
+
+        assertEquals("nfcFailed", event.label)
+        assertEquals("reason=cardRemovedTooSoon", event.shownDetail)
+        assertEquals("attestationStarted", TerminalEvent(TerminalEventCode.AttestationStarted).label)
+        assertEquals("devicePendingActivation", TerminalEvent(TerminalEventCode.DevicePendingActivation).label)
+    }
+
+    @Test
+    fun `a failed step names the step in this app's words, then its code, on one line`() {
+        val lines =
+            listOf(
+                TerminalEventCode.SetupFailed,
+                TerminalEventCode.ActivationFailed,
+                TerminalEventCode.UpdateFailed,
+            ).map { TerminalEvent(it, "code=3024") }
+
+        assertEquals(
+            listOf("setup failed · code=3024", "activation failed · code=3024", "charge failed · code=3024"),
+            lines.map { it.label },
+        )
+        assertTrue(lines.all { it.shownDetail.isEmpty() })
     }
 
     // --- outcome wording ---

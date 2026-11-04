@@ -35,7 +35,9 @@ import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import com.payabli.example.app.demo.terminal.chargeStepFailure
 import com.payabli.example.app.demo.terminal.chipSpecFor
+import com.payabli.example.app.demo.terminal.label
 import com.payabli.example.app.demo.terminal.sessionFailureReason
+import com.payabli.example.app.demo.terminal.shownDetail
 import com.payabli.example.app.demo.ui.components.BorderedButton
 import com.payabli.example.app.demo.ui.components.ContextLine
 import com.payabli.example.app.demo.ui.components.DemoIcons
@@ -269,7 +271,7 @@ private fun ActivityBlock(
             Caption("No activity yet")
         } else {
             state.events.entries.forEach { event ->
-                EventRow(label = event.code.wireName, detail = event.detail)
+                EventRow(label = event.label, detail = event.shownDetail)
             }
         }
     }
