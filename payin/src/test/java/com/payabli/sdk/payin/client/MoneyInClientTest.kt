@@ -569,6 +569,24 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `a fraud block is a decline on every route, carrying the status and code it was answered with`() =
+        runTest(timeout = timeout) {
+            listOf("E9005", "E9051").forEach { code ->
+                listOf(400, 403).forEach { status ->
+                    routes.forEach { (name, call) ->
+                        val body = """{"code":"$code","reason":"Blocked","data":{"paymentTransId":null}}"""
+                        val failure = failureOf(body, status, call) as? PayInException.Refused
+
+                        assertEquals("$name $code $status", PayabliErrorType.PAYMENT_DECLINED, failure?.type)
+                        assertEquals("$name $code $status", status, failure?.httpStatus)
+                        assertEquals("$name $code $status", code, failure?.rawCode)
+                        assertEquals("$name $code $status", "Blocked", failure?.failure?.reason)
+                    }
+                }
+            }
+        }
+
+    @Test
     fun `any other code on a 400 is still the field refusal the status says`() =
         runTest(timeout = timeout) {
             val body = """{"code":"E9001","reason":"Bad entry","data":{"paymentTransId":"101-abc"}}"""

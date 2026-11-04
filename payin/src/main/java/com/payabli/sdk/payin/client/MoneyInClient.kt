@@ -271,7 +271,7 @@ internal class MoneyInClient(
     }
 
     /**
-     * Reads the outcome: a code that leaves it open, whatever the status; then the status; then the
+     * Reads the outcome: a code that leaves it open, or a fraud block, whatever the status; then the status; then the
      * envelope, because a decline behind a 2xx otherwise reads as an approval; then the payload. A success
      * is a 201 as often as a 200.
      *
@@ -293,6 +293,16 @@ internal class MoneyInClient(
                 LogField.safe("errorCode", said.code),
             ) { "the service left the transaction's outcome open" }
             throw PayInException.ServiceError(said.failure(response.statusCode), type)
+        }
+        // Before the status: the service answers it as a refusal of the request, but it refuses the payer.
+        if (said.code in FRAUD_BLOCK_CODES) {
+            logger.warn(
+                LogField.safe("event", "payin_transaction_not_approved"),
+                LogField.safe("route", route),
+                LogField.safe("statusCode", response.statusCode),
+                LogField.safe("errorCode", said.code),
+            ) { "fraud control blocked the payer" }
+            throw PayInException.Refused(said.failure(response.statusCode))
         }
         PayabliHttpErrors.from(response)?.let { failure ->
             logger.warn(
@@ -390,6 +400,9 @@ private val OPEN_OUTCOME_CODES: Map<String?, PayabliErrorType> =
         "E9060" to PayabliErrorType.UNKNOWN,
         "E9999" to PayabliErrorType.SERVER_ERROR,
     )
+
+/** Fraud control's blocks: the blacklist, and the risk workflow. */
+private val FRAUD_BLOCK_CODES: Set<String?> = setOf("E9005", "E9051")
 
 /**
  * The v2 envelope's fields, each read on its own, so a missing or malformed field costs only itself.
