@@ -3,6 +3,7 @@ package com.payabli.sdk.payin.client
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliValidationException
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInCustomerData
@@ -572,7 +573,7 @@ class MoneyInClientTest {
     fun `a fraud block is a decline on every route, carrying the status and code it was answered with`() =
         runTest(timeout = timeout) {
             listOf("E9005", "E9051").forEach { code ->
-                listOf(400, 403).forEach { status ->
+                listOf(400, 401, 403).forEach { status ->
                     routes.forEach { (name, call) ->
                         val body = """{"code":"$code","reason":"Blocked","data":{"paymentTransId":null}}"""
                         val failure = failureOf(body, status, call) as? PayInException.Refused
@@ -585,6 +586,31 @@ class MoneyInClientTest {
                 }
             }
         }
+
+    @Test
+    fun `a payment and an authorization declare a 401 fraud block as their caller's refusal, and no other 401`() =
+        runTest(timeout = timeout) {
+            listOf<Pair<String, suspend MoneyInClient.() -> Unit>>(
+                "capture" to { capture("e", cardRequest()) },
+                "authorize" to { authorize("e", cardRequest()) },
+            ).forEach { (name, call) ->
+                val transport = FakePayInTransport.answering(approved)
+                MoneyInClient(transport, RecordingSdkLogger()).call()
+                val isCallerRefusal = transport.request!!.isCallerRefusal
+
+                listOf("E9005", "E9051").forEach { code ->
+                    assertTrue("$name $code", isCallerRefusal(response(401, """{"code":"$code"}""")))
+                    assertFalse("$name $code on 400", isCallerRefusal(response(400, """{"code":"$code"}""")))
+                }
+                assertFalse("$name: a 401 with no body is the credential's", isCallerRefusal(response(401, "")))
+                assertFalse("$name: another code", isCallerRefusal(response(401, """{"code":"E9001"}""")))
+            }
+        }
+
+    private fun response(
+        status: Int,
+        body: String,
+    ) = PayabliResponse(status, emptyMap(), body.toByteArray(Charsets.UTF_8))
 
     @Test
     fun `any other code on a 400 is still the field refusal the status says`() =

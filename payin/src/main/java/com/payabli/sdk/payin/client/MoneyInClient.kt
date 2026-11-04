@@ -262,6 +262,7 @@ internal class MoneyInClient(
                         query = request.options.query(allowsAchValidation),
                         headers = request.options.headers(idempotencyKey),
                         body = body,
+                        isCallerRefusal = ::isFraudBlock,
                     ),
                 )
             } finally {
@@ -554,6 +555,17 @@ private fun legacyCode(response: PayabliResponse): Int? =
     } catch (_: SerializationException) {
         null
     }
+
+/**
+ * Whether a 401 is fraud control refusing the payer rather than the service refusing the token, which a refresh
+ * cannot fix and a replay would send again.
+ *
+ * @param response the answered request.
+ * @return true for a 401 whose body names a fraud block; false otherwise.
+ */
+private fun isFraudBlock(response: PayabliResponse): Boolean =
+    response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED &&
+        AnswerFields.of(response.bodyAsText()).code in FRAUD_BLOCK_CODES
 
 /**
  * Whether a read was refused because this caller may not read the transaction.
