@@ -319,14 +319,17 @@ class AuthenticatedTransportTest {
     fun `a second 401 reports the status and code it was answered with`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
-                server.respondInOrder(UNAUTHORIZED to """{"responseCode":9001}""")
+                server.respondInOrder(
+                    UNAUTHORIZED to """{"responseCode":9001}""",
+                    UNAUTHORIZED to """{"responseCode":9002}""",
+                )
                 val auth = testAuth(tokenProvider = { REFRESHED })
 
                 val failure = failureFrom { stack(server, auth).execute(ping()) }
 
                 assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure.type)
                 assertEquals(401, failure.httpStatus)
-                assertEquals("9001", failure.rawCode)
+                assertEquals("9002", failure.rawCode)
             }
         }
 
