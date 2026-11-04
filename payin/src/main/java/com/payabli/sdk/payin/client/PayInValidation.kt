@@ -13,6 +13,7 @@ import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInValidationOptions
+import java.util.Calendar
 
 /**
  * What this module refuses before it builds a request. A bound [PayInFieldRules] or [amountRefusal] carries is read
@@ -37,9 +38,10 @@ internal object PayInValidation {
     fun instrument(
         instrument: PayInInstrument,
         options: PayInValidationOptions,
+        nowMillis: () -> Long = System::currentTimeMillis,
     ) {
         when (instrument) {
-            is PayInInstrument.Card -> card(instrument.data, options)
+            is PayInInstrument.Card -> card(instrument.data, options, nowMillis)
             is PayInInstrument.BankAccount -> bankAccount(instrument.data, options)
         }
     }
@@ -47,9 +49,10 @@ internal object PayInValidation {
     fun paymentMethod(
         method: PayInPaymentMethod,
         options: PayInValidationOptions,
+        nowMillis: () -> Long = System::currentTimeMillis,
     ) {
         when (method) {
-            is PayInPaymentMethod.Card -> card(method.data, options)
+            is PayInPaymentMethod.Card -> card(method.data, options, nowMillis)
             is PayInPaymentMethod.BankAccount -> bankAccount(method.data, options)
             is PayInPaymentMethod.Stored ->
                 required(method.storedMethodId, "paymentMethod.storedMethodId", "A stored method id is required")
@@ -102,10 +105,12 @@ internal object PayInValidation {
      *
      * @param data the card to check.
      * @param options which structural checks run.
+     * @param nowMillis the clock a past expiry is judged against.
      */
     private fun card(
         data: PayInCardData,
         options: PayInValidationOptions,
+        nowMillis: () -> Long,
     ) {
         data.cardNumberDigits.useDigits { number ->
             if (number.isMissing()) {
@@ -137,8 +142,11 @@ internal object PayInValidation {
             throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The expiry year is not four digits")
         }
         // The service refuses a past expiry too; refusing it here saves the round trip.
-        val today = ExpiryValue.today()
-        if (ExpiryValue.isExpired(data.expiryMonth, data.expiryYear, today.year, today.month)) {
+        // Read as plain integers, so a device clock outside the years ExpiryValue holds can't throw here.
+        val now = Calendar.getInstance().apply { timeInMillis = nowMillis() }
+        val currentYear = now.get(Calendar.YEAR)
+        val currentMonth = now.get(Calendar.MONTH) + 1
+        if (ExpiryValue.isExpired(data.expiryMonth, data.expiryYear, currentYear, currentMonth)) {
             throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The card has expired")
         }
 
