@@ -251,7 +251,7 @@ The four failure messages replace the form's own text for a failure's category, 
 |---|---|---|
 | `declinedMessage` | "The payment was declined. Try another payment method." | "This payment method couldn't be saved. Try another one." |
 | `retryLaterMessage` | "The payment couldn't be completed. Please try again." | "The payment method couldn't be saved. Please try again." |
-| `outcomeUnknownMessage` | "This payment may have gone through. Check before paying again." | "The payment method couldn't be saved." |
+| `outcomeUnknownMessage` | "This payment may have gone through. Check before paying again." | "We couldn't confirm the payment method was saved." |
 | `otherMessage` | "The payment couldn't be completed." | "The payment method couldn't be saved." |
 
 A failure whose outcome is unknown, `PayInException.Unsettled`, takes `outcomeUnknownMessage` whatever its cause's

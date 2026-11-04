@@ -113,6 +113,7 @@
     <!-- The form's message when saving a payment method fails. -->
     <string name="payabli_payin_failure_save_declined">This payment method couldn\'t be saved. Try another one.</string>
     <string name="payabli_payin_failure_save_retry_later">The payment method couldn\'t be saved. Please try again.</string>
+    <string name="payabli_payin_failure_save_outcome_unknown">We couldn\'t confirm the payment method was saved.</string>
     <string name="payabli_payin_failure_save_other">The payment method couldn\'t be saved.</string>
 
 </resources>

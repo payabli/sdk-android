@@ -144,10 +144,11 @@ class PayInFailureNoticeInstrumentedTest {
     }
 
     @Test
-    fun aSaveWhoseOutcomeIsUnknownSaysOnlyThatItWasNotSaved() {
+    fun aSaveWhoseOutcomeIsUnknownSaysTheSaveIsUnconfirmed() {
         failAfterSubmitting(failing(PayabliErrorType.UNKNOWN), submitText = PayInSubmitText.StoreMethod)
 
-        rule.onNodeWithText("The payment method couldn't be saved.").assertExists()
+        rule.onNodeWithText("We couldn't confirm the payment method was saved.").assertExists()
+        rule.onNodeWithText("The payment method couldn't be saved.").assertDoesNotExist()
     }
 
     @Test

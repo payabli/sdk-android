@@ -26,8 +26,8 @@ internal object PayInFailureMessage {
         if (cause is PayInException.Unsettled) PayabliErrorCategory.OUTCOME_UNKNOWN else cause.category
 
     /**
-     * The SDK's own text for a category. A save moves no money, so its texts never say a payment was declined
-     * or may have gone through.
+     * The SDK's own text for a category. A save moves no money, so its texts never say a payment was declined,
+     * and a save whose answer was lost says only that it is unconfirmed.
      *
      * @param category the category the message is for.
      * @param savesMethod true when the form saves a payment method rather than paying.
@@ -42,6 +42,7 @@ internal object PayInFailureMessage {
             when (category) {
                 PayabliErrorCategory.DECLINED -> R.string.payabli_payin_failure_save_declined
                 PayabliErrorCategory.RETRY_LATER -> R.string.payabli_payin_failure_save_retry_later
+                PayabliErrorCategory.OUTCOME_UNKNOWN -> R.string.payabli_payin_failure_save_outcome_unknown
                 else -> R.string.payabli_payin_failure_save_other
             }
         } else {

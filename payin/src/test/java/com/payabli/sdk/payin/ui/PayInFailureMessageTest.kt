@@ -47,7 +47,7 @@ class PayInFailureMessageTest {
             PayInFailureMessage.defaultText(PayInFailureMessage.categoryOf(converted), savesMethod = false),
         )
         assertEquals(
-            R.string.payabli_payin_failure_save_other,
+            R.string.payabli_payin_failure_save_outcome_unknown,
             PayInFailureMessage.defaultText(PayInFailureMessage.categoryOf(converted), savesMethod = true),
         )
     }
@@ -73,12 +73,12 @@ class PayInFailureMessageTest {
     }
 
     @Test
-    fun `a save never says a payment was declined or may have gone through`() {
+    fun `a save never says a payment was declined, and a lost answer says the save is unconfirmed`() {
         val expected =
             mapOf(
                 PayabliErrorCategory.DECLINED to R.string.payabli_payin_failure_save_declined,
                 PayabliErrorCategory.RETRY_LATER to R.string.payabli_payin_failure_save_retry_later,
-                PayabliErrorCategory.OUTCOME_UNKNOWN to R.string.payabli_payin_failure_save_other,
+                PayabliErrorCategory.OUTCOME_UNKNOWN to R.string.payabli_payin_failure_save_outcome_unknown,
                 PayabliErrorCategory.CREDENTIAL to R.string.payabli_payin_failure_save_other,
                 PayabliErrorCategory.CONFIGURATION to R.string.payabli_payin_failure_save_other,
                 PayabliErrorCategory.INVALID_REQUEST to R.string.payabli_payin_failure_save_other,
