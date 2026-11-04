@@ -13,6 +13,16 @@ class ExpiryChoicesTest {
     // --- years ---
 
     @Test
+    fun `a device clock outside 2000 to 2099 is held to the nearest year the picker can offer`() {
+        // Mid-year, so no time zone moves either one into another year.
+        val in1970 = runCatching { ExpiryValue.today { 15_638_400_000L } }
+        val in2150 = runCatching { ExpiryValue.today { 5_695_920_000_000L } }
+
+        assertEquals(2000, ExpiryChoices.years(in1970.getOrThrow()).first())
+        assertEquals(listOf(2099), ExpiryChoices.years(in2150.getOrThrow()))
+    }
+
+    @Test
     fun `the year list starts at this year`() {
         assertEquals(2026, ExpiryChoices.years(august2026).first())
     }
