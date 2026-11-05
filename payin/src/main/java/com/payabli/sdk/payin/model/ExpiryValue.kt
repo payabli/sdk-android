@@ -6,9 +6,9 @@ import java.util.Locale
 /**
  * A card expiry, as a month and a four-digit year. The payer sees `MM/YY`.
  */
-public data class ExpiryValue(
-    public val month: Int,
-    public val year: Int,
+internal data class ExpiryValue(
+    val month: Int,
+    val year: Int,
 ) {
     init {
         // Everything downstream assumes it. A 13 formats to 13/30, which parse refuses, and it makes
@@ -26,9 +26,7 @@ public data class ExpiryValue(
      * @param separator what sits between the month and the year.
      * @return the month and the two-digit year, with [separator] between.
      */
-    public fun format(separator: String = "/"): String =
-        // A "%" in a caller's separator is an argument reference to String.format.
-        String.format(Locale.ROOT, "%02d", month) + separator + String.format(Locale.ROOT, "%02d", year % 100)
+    fun format(separator: String = "/"): String = format(month, year, separator)
 
     /**
      * A card is good through the last day of its expiry month, so that month is not yet expired.
@@ -37,27 +35,62 @@ public data class ExpiryValue(
      * @param currentMonth the month now.
      * @return true when the card's last good day has passed; false otherwise.
      */
-    public fun isExpired(
+    fun isExpired(
         currentYear: Int,
         currentMonth: Int,
-    ): Boolean = year < currentYear || (year == currentYear && month < currentMonth)
+    ): Boolean = isExpired(month, year, currentYear, currentMonth)
 
-    public companion object {
-        /** The century [parse] restores, which is the only one [format] can round-trip. */
-        public val SUPPORTED_YEARS: IntRange = 2000..2099
+    companion object {
+        /**
+         * `MM/YY` for any month and year, in [Locale.ROOT]. Takes values outside the range this type holds,
+         * because card data carries its expiry unchecked.
+         *
+         * @param month the month, written as two digits.
+         * @param year the year; only its last two digits are written.
+         * @param separator what sits between the month and the year.
+         * @return the month and the two-digit year, with [separator] between.
+         */
+        fun format(
+            month: Int,
+            year: Int,
+            separator: String = "/",
+        ): String =
+            // A "%" in a caller's separator is an argument reference to String.format.
+            String.format(Locale.ROOT, "%02d", month) + separator + String.format(Locale.ROOT, "%02d", year % 100)
 
         /**
-         * The current month, in the device's time zone. The only clock read in this file. `Calendar`
-         * because the module's floor is API 23 with no core library desugaring, so `LocalDate` is not
-         * on the device.
+         * Whether a card expiring in [month] of [year] has passed its last good day. Takes values outside the
+         * range this type holds, as [format] does.
          *
-         * @return the current month and year.
+         * @param month the month the card expires.
+         * @param year the year the card expires.
+         * @param currentYear the year now.
+         * @param currentMonth the month now.
+         * @return true when the card's last good day has passed; false otherwise.
          */
-        public fun today(): ExpiryValue {
-            val now = Calendar.getInstance()
+        fun isExpired(
+            month: Int,
+            year: Int,
+            currentYear: Int,
+            currentMonth: Int,
+        ): Boolean = year < currentYear || (year == currentYear && month < currentMonth)
+
+        /** The century [parse] restores, which is the only one [format] can round-trip. */
+        val SUPPORTED_YEARS: IntRange = 2000..2099
+
+        /**
+         * The current month, in the device's time zone, with a year outside [SUPPORTED_YEARS] held to the
+         * nearest one, so no clock throws here. `Calendar` because the module's floor is API 23 with no core
+         * library desugaring, so `LocalDate` is not on the device; Android's is always Gregorian.
+         *
+         * @param nowMillis the clock read.
+         * @return the current month and year, the year held to [SUPPORTED_YEARS].
+         */
+        fun today(nowMillis: () -> Long = System::currentTimeMillis): ExpiryValue {
+            val now = Calendar.getInstance().apply { timeInMillis = nowMillis() }
             return ExpiryValue(
                 month = now.get(Calendar.MONTH) + 1,
-                year = now.get(Calendar.YEAR),
+                year = now.get(Calendar.YEAR).coerceIn(SUPPORTED_YEARS),
             )
         }
 
@@ -68,7 +101,7 @@ public data class ExpiryValue(
          * @param text the expiry as typed.
          * @return the expiry, or null when the text is not one.
          */
-        public fun parse(text: String): ExpiryValue? {
+        fun parse(text: String): ExpiryValue? {
             val digits = Regex("^\\s*(\\d{1,2})\\D+(\\d{2})\\s*$").find(text) ?: return null
             val month = digits.groupValues[1].toInt()
             val shortYear = digits.groupValues[2].toInt()

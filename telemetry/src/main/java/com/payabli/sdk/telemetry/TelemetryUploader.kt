@@ -34,14 +34,9 @@ internal class TelemetryUploader(
      * Sends one batch and answers what happened to it.
      *
      * @param batch the events to send, oldest first.
-     * @param droppedSinceLastSend the queue evictions the batch reports, which a batch that is not
-     *   accepted hands back.
      * @return the batch's disposition, which says whether its events go back to the queue.
      */
-    suspend fun send(
-        batch: List<QueuedTelemetryEvent>,
-        droppedSinceLastSend: Int = 0,
-    ): SendOutcome {
+    suspend fun send(batch: List<QueuedTelemetryEvent>): SendOutcome {
         if (batch.isEmpty()) return SendOutcome.KEEP
 
         try {
@@ -51,7 +46,6 @@ internal class TelemetryUploader(
                 TelemetryBatchBody(
                     entry = context.entryPoint,
                     events = batch.map { it.toBody() },
-                    droppedSinceLastSend = droppedSinceLastSend.takeIf { it > 0 },
                 )
             val request =
                 PayabliRequest.json(

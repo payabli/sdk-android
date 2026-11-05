@@ -33,6 +33,12 @@ class PackageDirectionTest {
     }
 
     @Test
+    fun `presentation imports no other package`() {
+        assertTrue(File(root, "presentation").isDirectory)
+        assertEquals(emptySet<String>(), importedPackages("presentation"))
+    }
+
+    @Test
     fun `form imports only model and util`() {
         assertTrue(importedPackages("form").all { it in setOf("model", "util") })
     }

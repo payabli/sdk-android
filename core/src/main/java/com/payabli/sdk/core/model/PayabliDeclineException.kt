@@ -14,12 +14,31 @@ package com.payabli.sdk.core.model
  * @property explanation longer server explanation. Also surfaced as [detail].
  * @property action the remediation the server suggests.
  */
-public class PayabliDeclineException(
-    public val rawCode: String? = null,
-    reason: String = DEFAULT_REASON,
-    public val explanation: String? = null,
-    public val action: String? = null,
-) : PayabliException(PayabliErrorType.PAYMENT_DECLINED, reason, detail = explanation) {
+public class PayabliDeclineException internal constructor(
+    override val rawCode: String?,
+    reason: String,
+    public val explanation: String?,
+    public val action: String?,
+    httpStatus: Int?,
+) : PayabliException(PayabliErrorType.PAYMENT_DECLINED, reason, explanation, null, httpStatus, rawCode) {
+    /**
+     * A decline no response was read for.
+     *
+     * @param rawCode the processor decline code, when there is one.
+     * @param reason short human-readable summary.
+     * @param explanation longer server explanation, when there is one.
+     * @param action the remediation the server suggests, when there is one.
+     */
+    public constructor(
+        rawCode: String? = null,
+        reason: String = DEFAULT_REASON,
+        explanation: String? = null,
+        action: String? = null,
+    ) : this(rawCode, reason, explanation, action, null)
+
+    /** A decline with no code and the default reason. */
+    public constructor() : this(null)
+
     public companion object {
         public const val DEFAULT_REASON: String = "Payment declined (402)"
     }

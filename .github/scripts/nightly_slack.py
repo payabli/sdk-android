@@ -444,6 +444,22 @@ def thread_blocks(
     return [{"type": "section", "text": {"type": "mrkdwn", "text": text[:SLACK_BLOCK_LIMIT]}}]
 
 
+def nightly_run() -> dict:
+    """The nightly run this report is about: its id, commit and branch.
+
+    The report runs from `workflow_run`, where GITHUB_RUN_ID, GITHUB_SHA and GITHUB_REF_NAME describe the
+    reporting run and cannot be overwritten, so the triggering run's are passed as NIGHTLY_*. Run in the same
+    job as the nightly, the GITHUB_* values are that run's and are used as they are.
+
+    @return the run id, the full commit SHA and the branch name, each empty when neither name is set.
+    """
+    return {
+        "run_id": os.environ.get("NIGHTLY_RUN_ID") or os.environ.get("GITHUB_RUN_ID", ""),
+        "sha": os.environ.get("NIGHTLY_SHA") or os.environ.get("GITHUB_SHA", ""),
+        "ref": os.environ.get("NIGHTLY_REF_NAME") or os.environ.get("GITHUB_REF_NAME", ""),
+    }
+
+
 def trusted_run_links() -> dict[str, str]:
     """The run and commit URLs, rebuilt from this job's own environment rather than read from the facts.
 
@@ -460,9 +476,8 @@ def trusted_run_links() -> dict[str, str]:
     """
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     repo = os.environ.get("GITHUB_REPOSITORY", "")
-    run_id = os.environ.get("GITHUB_RUN_ID", "")
-    sha = os.environ.get("GITHUB_SHA", "")[:7]
-    ref = os.environ.get("GITHUB_REF_NAME", "")
+    run = nightly_run()
+    run_id, sha, ref = run["run_id"], run["sha"][:7], run["ref"]
     return {
         "url": f"{server}/{repo}/actions/runs/{run_id}" if repo and run_id else f"{server}/{repo}/actions",
         "commit_url": f"{server}/{repo}/commit/{sha}" if repo and sha else "",
@@ -540,9 +555,8 @@ def commits_since_last_green() -> dict | None:
     """
     token = os.environ.get("GITHUB_TOKEN", "").strip()
     repo = os.environ.get("GITHUB_REPOSITORY", "")
-    run_id = os.environ.get("GITHUB_RUN_ID", "")
-    sha = os.environ.get("GITHUB_SHA", "")
-    branch = os.environ.get("GITHUB_REF_NAME", "")
+    run = nightly_run()
+    run_id, sha, branch = run["run_id"], run["sha"], run["ref"]
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
     if not (token and repo and run_id and sha):
@@ -846,7 +860,7 @@ def unreported_blocks(job_result: str) -> tuple[list[dict], str]:
          "text": {"type": "mrkdwn", "text": f"{icon} *{platform} · Nightly · no report*\n{cause}"}}
     ]
     # Without a link the message names a problem and offers nowhere to go and look at it.
-    if os.environ.get("GITHUB_REPOSITORY") and os.environ.get("GITHUB_RUN_ID"):
+    if os.environ.get("GITHUB_REPOSITORY") and nightly_run()["run_id"]:
         blocks.append({
             "type": "context",
             "elements": [{"type": "mrkdwn", "text": f"<{trusted_run_links()['url']}|Open the run>"}],

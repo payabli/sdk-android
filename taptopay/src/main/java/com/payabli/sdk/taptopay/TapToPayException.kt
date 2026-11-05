@@ -27,11 +27,10 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
  * A repair does not always succeed on the next call: where the reader was refused, it succeeds once that
  * refusal is settled with the vendor.
  *
- * **`cause` is the SDK's own failure, and some of what it holds is displayable but not loggable.** The
- * service's `reason` text is written by the service rather than by this SDK, and it can echo what the
- * request carried. Showing it to a merchant is what it is for; sending the chain to a crash reporter is
- * not, and a reporter that reads fields rather than `toString` will find it. `toString` on those types
- * omits it.
+ * **`cause` is the SDK's own failure, and some of what it holds is neither shown nor logged.** The service's
+ * `reason` text is written by the service rather than by this SDK, and it can echo what the request carried.
+ * The operator's screen shows a message for the category instead, and a crash reporter that reads fields
+ * rather than `toString` will find it, so the chain is not sent to one. `toString` on those types omits it.
  *
  * [paymentTransId] is the payment this failure belongs to, or null when no identifier was received. Null is not
  * proof that nothing was opened: the call that opens a payment may have succeeded with its answer lost, which is
@@ -43,6 +42,12 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
  * different amount is not what to send next. There is no call that resolves such an attempt yet.
  *
  * [retryAfterMillis] is the wait the service asked for on the failure this wraps, or null when it asked for none.
+ * [httpStatus] and [rawCode] are the status and the service's code of the answer behind the failure this wraps,
+ * or null when it carried none.
+ *
+ * [refusal] is the charge's own refusal when this failure refused the charge, and null when it did not.
+ * It does not change the [type]: the classification is read exactly as for every other failure, and
+ * [refusal] is what a host branches on for what this one asks them to do.
  */
 public class TapToPayException private constructor(
     type: PayabliErrorType,
@@ -52,6 +57,9 @@ public class TapToPayException private constructor(
     public val paymentTransId: String?,
     public val capture: TapToPayCapture,
     override val retryAfterMillis: Long?,
+    public val refusal: TapToPayChargeRefusal? = null,
+    override val httpStatus: Int? = null,
+    override val rawCode: String? = null,
 ) : PayabliException(type, reason, detail, cause),
     PayabliRetryAfter {
     internal companion object {
@@ -70,6 +78,21 @@ public class TapToPayException private constructor(
             paymentTransId: String? = null,
             capture: TapToPayCapture = TapToPayCapture.NOT_CHARGED,
             retryAfterMillis: Long? = null,
-        ): TapToPayException = TapToPayException(type, reason, detail, cause, paymentTransId, capture, retryAfterMillis)
+            refusal: TapToPayChargeRefusal? = null,
+            httpStatus: Int? = null,
+            rawCode: String? = null,
+        ): TapToPayException =
+            TapToPayException(
+                type,
+                reason,
+                detail,
+                cause,
+                paymentTransId,
+                capture,
+                retryAfterMillis,
+                refusal,
+                httpStatus,
+                rawCode,
+            )
     }
 }

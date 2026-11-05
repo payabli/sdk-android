@@ -18,8 +18,10 @@ import com.payabli.example.app.demo.terminal.EventBuffer
 import com.payabli.example.app.demo.terminal.TerminalAction
 import com.payabli.example.app.demo.terminal.TerminalActionOutcome
 import com.payabli.example.app.demo.terminal.TerminalController
+import com.payabli.example.app.demo.terminal.TerminalFailure
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
+import com.payabli.example.app.demo.terminal.setupAskedAfter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,9 +43,9 @@ data class TapToPayUiState(
     /** Why the session failed, as the SDK named it. Null while it has not. */
     val failureReason: TerminalFailureReason? = null,
     /**
-     * Why this device cannot take contactless payments, as the error that was thrown said it, or
-     * null when no such error has been caught. Four error codes land the ineligible reason and
-     * only the thrown message says which, so the terminal carries it beside the reason.
+     * Why this device cannot take contactless payments, in this app's line for the error's type, or
+     * null when no such error has been caught. Four error codes land the ineligible reason, so the
+     * terminal carries the line beside the reason.
      */
     val deviceFailure: String? = null,
     /**
@@ -54,8 +56,12 @@ data class TapToPayUiState(
      * for a device that was refused and one that never needed activating.
      */
     val activationFailure: String? = null,
+    /** The last activation was refused because the device is not waiting for one, until a setup finishes. */
+    val setupAskedAgain: Boolean = false,
     /** Why the last charge failed. The session reports Ready either way. */
     val chargeFailure: String? = null,
+    /** [chargeFailure] says the card was or may have been charged. */
+    val chargeWarns: Boolean = false,
     /** An activation succeeded. [session] reads Ready whether one was needed or not. */
     val activated: Boolean = false,
     val charged: Boolean = false,
@@ -166,10 +172,7 @@ class TapToPayViewModel(
             _uiState.update {
                 it.copy(
                     resultText =
-                        TerminalActionOutcome.failure(
-                            TerminalAction.Charge,
-                            NumberFormatException("That is not an amount"),
-                        ),
+                        TerminalActionOutcome.failure(NumberFormatException("That is not an amount")),
                     // This path returns before `run`, which is the only other thing that records a
                     // charge failure, so without it the step reads "do this next" over a stated one.
                     chargeFailure = "That is not an amount",
@@ -222,28 +225,31 @@ class TapToPayViewModel(
         _uiState.update { it.copy(workingAction = action) }
         viewModelScope.launch {
             val result = block()
-            // Read from the terminal, whose republished flow a collector may not have updated yet.
-            val outcome =
-                TerminalActionOutcome.from(
-                    action,
-                    result,
-                    readerDenied =
-                        terminal.currentFailureReason() == TerminalFailureReason.DeviceIneligible &&
-                            _uiState.value.readiness != Readiness.NotAvailable,
-                )
+            val outcome = TerminalActionOutcome.from(action, result)
             val reason = outcome.takeIf { result.isFailure }
             _uiState.update {
                 it.copy(
                     resultText = outcome,
                     workingAction = null,
-                    // Only an activation attempt moves this, either way, so a later failure
-                    // elsewhere does not leave the activation step reporting one of its own.
+                    // An activation attempt moves this either way, and a setup clears a refusal that asked for one.
+                    // Nothing else does, so a later failure elsewhere is not reported by the activation step.
                     activationFailure =
-                        if (action == TerminalAction.Activate) reason else it.activationFailure,
+                        when {
+                            action == TerminalAction.Activate -> reason
+                            it.setupAskedAgain && action.setsUp -> null
+                            else -> it.activationFailure
+                        },
+                    setupAskedAgain = setupAskedAfter(it.setupAskedAgain, action, result),
                     activated =
                         it.activated || (action == TerminalAction.Activate && result.isSuccess),
                     chargeFailure =
                         if (action == TerminalAction.Charge) reason else it.chargeFailure,
+                    chargeWarns =
+                        if (action == TerminalAction.Charge) {
+                            (result.exceptionOrNull() as? TerminalFailure)?.warnsOfCharge == true
+                        } else {
+                            it.chargeWarns
+                        },
                     charged =
                         if (action == TerminalAction.Charge) result.isSuccess else it.charged,
                     isApprovalOpen =

@@ -149,7 +149,7 @@ class TapToPayReportsTest {
     @Test
     fun `a payment the service refused is the one thing that is declined`() {
         TapToPayReports.chargeFailed(
-            TTPTransactionException.Refused(code = "D0001", reason = null),
+            TTPTransactionException.Refused(code = "D0001", reason = null, httpStatus = 200),
             System.nanoTime(),
         )
 

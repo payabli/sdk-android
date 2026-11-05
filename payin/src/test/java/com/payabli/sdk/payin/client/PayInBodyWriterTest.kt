@@ -2,11 +2,11 @@ package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.payin.model.PayInAccountHolderType
+import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInSecCode
 import com.payabli.sdk.payin.model.PayInStoredMethodType
-import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
@@ -39,6 +39,23 @@ class PayInBodyWriterTest {
     }
 
     @Test
+    fun `the expiry goes out as MM slash YY from the month and the four-digit year`() {
+        val card =
+            PayInCardData(
+                cardNumber = TEST_PAN,
+                expiryMonth = 4,
+                expiryYear = 2030,
+                securityCode = TEST_SECURITY_CODE,
+                holderName = "Integration Test",
+                postalCode = "22039",
+            )
+
+        val fragment = parsed(PayInBodyWriter.instrumentFragment(PayInInstrument.Card(card)))
+
+        assertEquals(JsonPrimitive("04/30"), fragment["cardexp"])
+    }
+
+    @Test
     fun `a bank fragment defaults the authorization and omits what was not given`() {
         val fragment = PayInBodyWriter.instrumentFragment(PayInInstrument.BankAccount(testAccount()))
         val parsed = parsed(fragment)
@@ -54,7 +71,7 @@ class PayInBodyWriterTest {
     fun `a bank fragment carries the values it was given`() {
         val data =
             com.payabli.sdk.payin.model.PayInBankAccountData(
-                accountNumber = SensitiveDigits.ofString(TEST_ACCOUNT),
+                accountNumber = TEST_ACCOUNT,
                 routingNumber = TEST_ROUTING,
                 accountType = com.payabli.sdk.payin.model.PayInAccountType.Savings,
                 holderName = "A Payer",
@@ -125,7 +142,7 @@ class PayInBodyWriterTest {
         assertTrue(failure is IllegalStateException)
         assertFalse(failure?.message?.contains("4111") ?: true)
         // The copy the writer read is overwritten on the way out, which the check throwing must not skip.
-        assertTrue(data.cardNumber.rawCopy().isNotEmpty())
+        assertTrue(data.cardNumberDigits.rawCopy().isNotEmpty())
     }
 
     @Test

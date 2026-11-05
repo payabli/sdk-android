@@ -13,13 +13,14 @@ import org.junit.Test
  * This screen has the most states, and the only step that can be skipped.
  */
 class TerminalStepsTest {
-    /** Readiness, session, activation refused, charge failed, which action is in flight. */
+    /** Readiness, session, activation refused, charge failed, which action is in flight, setup asked for again. */
     private data class Combination(
         val readiness: Readiness,
         val session: TerminalSessionState,
         val activationFailed: Boolean,
         val chargeFailed: Boolean,
         val working: TerminalAction?,
+        val setupAskedAgain: Boolean,
     )
 
     private val everyState: List<Combination> =
@@ -27,8 +28,17 @@ class TerminalStepsTest {
             TerminalSessionState.entries.flatMap { session ->
                 listOf(true, false).flatMap { activationFailed ->
                     listOf(true, false).flatMap { chargeFailed ->
-                        (TerminalAction.entries + null).map { working ->
-                            Combination(readiness, session, activationFailed, chargeFailed, working)
+                        (TerminalAction.entries + null).flatMap { working ->
+                            listOf(true, false).map { setupAskedAgain ->
+                                Combination(
+                                    readiness,
+                                    session,
+                                    activationFailed,
+                                    chargeFailed,
+                                    working,
+                                    setupAskedAgain,
+                                )
+                            }
                         }
                     }
                 }
@@ -36,7 +46,14 @@ class TerminalStepsTest {
         }
 
     private fun steps(c: Combination) =
-        TerminalSteps.forCharging(c.readiness, c.session, c.activationFailed, c.chargeFailed, c.working)
+        TerminalSteps.forCharging(
+            c.readiness,
+            c.session,
+            c.activationFailed,
+            c.chargeFailed,
+            c.working,
+            setupAskedAgain = c.setupAskedAgain,
+        )
 
     @Test
     fun `no two steps ask for something at once, in any session state`() {
@@ -122,6 +139,21 @@ class TerminalStepsTest {
         val sequence = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.PendingActivation, true)
         assertEquals(StepStatus.Failed, sequence[2].status)
         assertTrue("the code field went with the failure", sequence[2].status.showsContent)
+        assertEquals(StepStatus.Blocked, sequence[3].status)
+    }
+
+    @Test
+    fun `an activation refused because the device is not waiting for one sends the sequence back to setup`() {
+        val sequence =
+            TerminalSteps.forCharging(
+                Readiness.Ready,
+                TerminalSessionState.PendingActivation,
+                activationFailed = true,
+                setupAskedAgain = true,
+            )
+        assertEquals(StepStatus.Failed, sequence[1].status)
+        assertTrue("the setup button went with the failure", sequence[1].status.showsContent)
+        assertEquals(StepStatus.Blocked, sequence[2].status)
         assertEquals(StepStatus.Blocked, sequence[3].status)
     }
 

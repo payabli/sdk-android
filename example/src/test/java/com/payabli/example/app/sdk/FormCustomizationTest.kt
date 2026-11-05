@@ -299,9 +299,9 @@ class FormCustomizationTest {
     @Test
     fun `custom wording renames the form and its fields`() {
         val labels = FormCustomization.labels(FormSettings(customWording = true), FormOperation.Capture)
-        assertEquals("Pay now", labels.submitButtonOrNull())
+        assertEquals("Pay now", labels.submitButton)
         assertNotNull(labels.labelFor(PayInField.CardNumber))
-        assertNull(FormCustomization.labels(FormSettings(), FormOperation.Capture).submitButtonOrNull())
+        assertNull(FormCustomization.labels(FormSettings(), FormOperation.Capture).submitButton)
     }
 
     @Test

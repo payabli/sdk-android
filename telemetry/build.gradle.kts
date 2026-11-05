@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     id("payabli.publish")
     id("payabli.quality")
+    id("payabli.api-surface")
 }
 
 android {

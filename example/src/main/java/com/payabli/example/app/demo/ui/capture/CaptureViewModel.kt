@@ -6,6 +6,7 @@ import com.payabli.example.app.AppContainer
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
 import com.payabli.example.app.demo.net.checkToken
+import com.payabli.example.app.demo.payment.FailureText
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.sample.DemoCustomerSetting
@@ -74,8 +75,8 @@ data class CaptureUiState(
     /**
      * A void is in flight.
      *
-     * Its own flag rather than the flow's state: the SDK publishes a void nowhere, because nothing is
-     * drawing it, so `payments.isSubmitting()` stays false throughout one.
+     * This screen's own state: the void's outcome arrives on the call's return value, never on a form
+     * callback, so the step is drawn from here.
      */
     override val isVoiding: Boolean = false,
     /** The transaction this screen has already reversed, so the control cannot offer it twice. */
@@ -230,11 +231,8 @@ class CaptureViewModel(
     }
 
     /**
-     * The SDK refused it.
-     *
-     * The panel records the failure's classification and nothing from the wire. What a screen shows is
-     * displayable and never loggable, because some of it can quote what was submitted, and this panel is on
-     * screen and gets copied into bug reports.
+     * The SDK refused it. The panel records the failure's code and nothing from the wire, and the screen shows the
+     * message for its category.
      */
     fun onFailed(outcome: PayInOutcome.Refused) {
         rotatePaymentReference(outcome)
@@ -253,7 +251,6 @@ class CaptureViewModel(
                 // Marked, and carrying the identifiers a reader would otherwise leave the screen for.
                 listOfNotNull(
                     "✓ Code: ${result.code}",
-                    result.reason?.let { "Reason: $it" },
                     transaction.paymentTransactionId.let { "Payment transaction: $it" },
                     transaction.gatewayTransactionId?.let { "Gateway transaction: $it" },
                     transaction.method?.let { "Method: $it" },
@@ -288,7 +285,7 @@ class CaptureViewModel(
             // transaction screen on top of the error just recorded, showing the previous payment as
             // though it were this one.
             it.copy(
-                resultText = "✗ ${error.displayMessage}",
+                resultText = "✗ ${FailureText.payment(error.kind)}",
                 outcomeReady = false,
                 lastResult = null,
                 submitFailed = true,
@@ -344,6 +341,7 @@ class CaptureViewModel(
                     _uiState.update { it.copy(isReading = false) }
                     throw cancellation
                 }
+            if (outcome is PayInReadOutcome.Failed) record("ERROR read\ncode=${outcome.error.code}")
             _uiState.update { it.afterReading(outcome, transId) }
         }
     }
@@ -374,7 +372,7 @@ class CaptureViewModel(
                             outcome.statusNumber?.let { "Status number: $it" },
                             outcome.paymentTransactionId?.let { "Payment transaction: $it" },
                         ).joinToString("\n")
-                    is PayInReadOutcome.Failed -> "✗ ${outcome.error.displayMessage}"
+                    is PayInReadOutcome.Failed -> "✗ ${FailureText.read(outcome.error.kind)}"
                 },
         )
 
@@ -384,7 +382,7 @@ class CaptureViewModel(
 
     /**
      * The state after a void: an approval marks the transaction reversed, and a refusal whose outcome is unknown
-     * withholds the control and says to check the status.
+     * withholds the control, and its reason says to read the transaction back.
      *
      * @param outcome what the void returned.
      * @param transId the transaction that was voided.
@@ -403,7 +401,6 @@ class CaptureViewModel(
                     resultText =
                         listOfNotNull(
                             "✓ Voided: ${outcome.result.code}",
-                            outcome.result.reason?.let { "Reason: $it" },
                             "Payment transaction: $transId",
                         ).joinToString("\n"),
                 )
@@ -415,13 +412,11 @@ class CaptureViewModel(
                     voidKeyHeld = outcome.isOutcomeUnknown,
                     resultText =
                         listOfNotNull(
-                            "✗ ${outcome.error.displayMessage}",
-                            when {
-                                outcome.isRetryRefused ->
-                                    "The earlier reversal may still be running. Read this transaction again shortly."
-                                outcome.isOutcomeUnknown ->
-                                    "Check this transaction's status to see whether it was voided."
-                                else -> null
+                            "✗ ${FailureText.void(outcome.error.kind)}",
+                            if (outcome.isRetryRefused) {
+                                "The earlier reversal may still be running. Read this transaction again shortly."
+                            } else {
+                                null
                             },
                         ).joinToString("\n"),
                 )

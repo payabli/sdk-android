@@ -1,7 +1,9 @@
 package com.payabli.sdk.payin.form
 
+import com.payabli.sdk.core.model.PayabliErrorCategory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -19,6 +21,29 @@ class PayInFormDraftTest {
         )
 
     private val draft = PayInFormDraft()
+
+    @Test
+    fun aSwitchWhileASubmissionIsPendingKeepsTheMethodSentAndWhatWasTyped() {
+        // The selector is disabled only once the form recomposes, so a tap in the frame after the submit lands.
+        draft.seed(configuration)
+        draft.enter(PayInField.CardNumber, "4111111111111111")
+        draft.submissionPending = true
+
+        draft.switchTo(PayInMethodType.BankAccount, configuration)
+
+        assertEquals(PayInMethodType.Card, draft.method)
+        assertEquals("4111111111111111", draft.typed[PayInField.CardNumber])
+    }
+
+    @Test
+    fun aSwitchOnceTheOutcomeArrivedMovesTheMethod() {
+        draft.seed(configuration)
+        draft.submissionPending = false
+
+        draft.switchTo(PayInMethodType.BankAccount, configuration)
+
+        assertEquals(PayInMethodType.BankAccount, draft.method)
+    }
 
     @Test
     fun seedingTwiceWithTheSameConfigurationKeepsWhatWasTypedInBetween() {
@@ -154,15 +179,29 @@ class PayInFormDraftTest {
     }
 
     @Test
+    fun aFailureMessageIsDrawnOnlyOnTheOperationThatFailed() {
+        // A host switching a declined payment's form to a save would otherwise show a save failure that never ran.
+        val payment = PayInFailureNotice(PayabliErrorCategory.DECLINED, savesMethod = false)
+
+        assertEquals(PayabliErrorCategory.DECLINED, payment.categoryOn(savesMethod = false))
+        assertNull(payment.categoryOn(savesMethod = true))
+        assertNull(
+            PayInFailureNotice(PayabliErrorCategory.DECLINED, savesMethod = true).categoryOn(savesMethod = false),
+        )
+    }
+
+    @Test
     fun clearingTakesEverythingAndStartsTheFormAgainAfterwards() {
         draft.seed(configuration)
         draft.switchTo(PayInMethodType.BankAccount, configuration)
         draft.enter(PayInField.AccountHolder, "Ada Lovelace")
         draft.submissionPending = true
+        draft.failureNotice = PayInFailureNotice(PayabliErrorCategory.DECLINED, savesMethod = false)
 
         draft.clear()
         assertTrue(draft.typed.isEmpty())
         assertFalse(draft.submissionPending)
+        assertNull(draft.failureNotice)
 
         // The instrument, because it is the only thing here that separates a seed that ran from one that
         // did not. The configuration is the one already seeded from, so a clear that kept what it was

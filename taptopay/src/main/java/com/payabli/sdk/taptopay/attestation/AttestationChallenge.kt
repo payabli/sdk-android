@@ -1,6 +1,4 @@
 package com.payabli.sdk.taptopay.attestation
-
-import androidx.annotation.RestrictTo
 import java.util.Base64
 
 /** Play Integrity's documented ceiling, in characters, for a `nonce` and for a `requestHash` alike. */
@@ -57,8 +55,7 @@ private val URL_SAFE_BASE64 = Regex("^[A-Za-z0-9_-]+={0,2}$")
  * Single use belongs to the value's issuer rather than to this type. A value is a value, and nothing about
  * it says whether it has been spent.
  */
-@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public class AttestationChallenge private constructor(
+internal class AttestationChallenge private constructor(
     /** Which request shape this is bound to, and therefore which field it lands in. */
     public val verdictClass: VerdictClass,
     /**

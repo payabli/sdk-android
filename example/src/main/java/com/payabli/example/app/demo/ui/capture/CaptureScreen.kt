@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.dp
 import com.payabli.example.app.demo.flow.PaymentProgress
 import com.payabli.example.app.demo.flow.PaymentSteps
 import com.payabli.example.app.demo.payment.PaymentResult
-import com.payabli.example.app.demo.payment.ResponseJson
 import com.payabli.example.app.demo.payment.Transaction
 import com.payabli.example.app.demo.payment.TransactionSummary
 import com.payabli.example.app.demo.sample.SampleIdentity
@@ -27,7 +26,6 @@ import com.payabli.example.app.demo.ui.components.DetailRow
 import com.payabli.example.app.demo.ui.components.PreviewSurface
 import com.payabli.example.app.demo.ui.components.ProminentButton
 import com.payabli.example.app.demo.ui.components.SectionHeader
-import com.payabli.example.app.demo.ui.components.SelectableMonospaceBlock
 import com.payabli.example.app.demo.ui.components.SuccessMark
 import com.payabli.example.app.demo.ui.payment.PaymentFlowActions
 import com.payabli.example.app.demo.ui.payment.PaymentFlowScreen
@@ -59,7 +57,7 @@ fun CaptureScreen(
                     backendReachable = state.backendReachable,
                     backendChecked = state.tokenCheckText.isNotEmpty() && !state.isCheckingToken,
                     isCheckingBackend = state.isCheckingToken,
-                    isSubmitting = isSubmitting,
+                    isSubmitting = formSubmitting(isSubmitting, state.isVoiding),
                     submitFailed = state.submitFailed,
                     finished = state.finished,
                 ),
@@ -72,9 +70,21 @@ fun CaptureScreen(
 }
 
 /**
- * The full transaction, as the API described it.
+ * Whether the form step reads as submitting. A void sets the SDK's flag as any submission does, but it
+ * reverses the transaction on screen rather than submitting the form, so it leaves that step finished and
+ * the transaction it is reversing in view.
  *
- * The summary and the raw response together.
+ * @param isSubmitting the SDK's flag.
+ * @param isVoiding a void of the shown transaction is running.
+ * @return whether the form step is in flight.
+ */
+internal fun formSubmitting(
+    isSubmitting: Boolean,
+    isVoiding: Boolean,
+): Boolean = isSubmitting && !isVoiding
+
+/**
+ * The full transaction: its code and identifiers.
  */
 @Composable
 fun CaptureResultScreen(
@@ -101,11 +111,6 @@ fun CaptureResultScreen(
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                Text(
-                    text = result.reason ?: result.explanation ?: result.code,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
 
@@ -114,11 +119,6 @@ fun CaptureResultScreen(
             TransactionSummary.rows(result).forEach { row ->
                 DetailRow(label = row.label, value = row.value)
             }
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-            SectionHeader(title = "Response", note = "Exactly what came back, with the keys sorted.")
-            SelectableMonospaceBlock(text = ResponseJson.render(result.apiResponse))
         }
 
         ProminentButton(text = "Done", icon = DemoIcons.Pass, onClick = onDone)
@@ -147,7 +147,7 @@ private fun CaptureScreenPreview() {
                             atMillis = 0,
                             suppliesDemoCustomer = true,
                         ),
-                    resultText = "Code: 1\nReason: Approved\nTransaction: demo-txn-0001",
+                    resultText = "✓ Code: 1\nPayment transaction: demo-txn-0001",
                 ),
             actions = PaymentFlowActions.none(),
         )
@@ -162,9 +162,6 @@ private fun CaptureResultScreenPreview() {
             result =
                 PaymentResult(
                     code = "1",
-                    reason = "Approved",
-                    explanation = "The payment was authorised and captured.",
-                    action = "None",
                     transaction =
                         Transaction(
                             paymentTransactionId = "demo-txn-0001",

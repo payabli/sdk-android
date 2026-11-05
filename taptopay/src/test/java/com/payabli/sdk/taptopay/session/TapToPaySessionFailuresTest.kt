@@ -12,6 +12,7 @@ import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.enrollment.StoredRegistration
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONTACTLESS_DISABLED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_INELIGIBLE
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_SETUP_REQUIRED
@@ -52,39 +53,39 @@ class TapToPaySessionFailuresTest {
     private val cases: List<Pair<Throwable, TapToPaySessionState?>> =
         listOf(
             TapToPaySessionException.PendingActivation() to TapToPaySessionState.PendingActivation(ACTIVATION_ID),
-            TapToPaySessionException.NotPermitted(DeviceServiceException.Forbidden(403, REASON)) to
+            TapToPaySessionException.NotPermitted(DeviceServiceException.Forbidden(403, REASON, 403)) to
                 failed(CONFIGURATION_REJECTED),
             TapToPaySessionException.AttestationRequired() to failed(DEVICE_SETUP_REQUIRED),
             TapToPaySessionException.NotRecoverable(TapToPaySessionState.Ready) to null,
             TapToPaySessionException.SetupAbandoned() to TapToPaySessionState.Idle,
             TapToPaySessionException.SetupFailed() to failed(SDK_INTERNAL_ERROR),
-            DeviceServiceException.Forbidden(403, REASON) to TapToPaySessionState.PendingActivation(ACTIVATION_ID),
-            DeviceServiceException.NotAttested(401, REASON) to failed(DEVICE_SETUP_REQUIRED),
-            DeviceServiceException.EntryPointUnusable(403, REASON) to failed(CONFIGURATION_REJECTED),
-            DeviceServiceException.AppNotRegistered(403, REASON) to failed(CONFIGURATION_REJECTED),
-            DeviceServiceException.NotFound(404, REASON) to failed(CONFIGURATION_REJECTED),
-            DeviceServiceException.BadRequest(400, REASON) to failed(SDK_INTERNAL_ERROR),
-            DeviceServiceException.ServerFailure(500, REASON) to failed(SERVICE_UNAVAILABLE),
-            DeviceServiceException.Undecodable(null) to failed(SDK_INTERNAL_ERROR),
-            DeviceServiceException.Unclassified(418, REASON) to failed(SERVICE_UNAVAILABLE),
-            DeviceActivationException.AttestationRevoked(403, REASON) to failed(DEVICE_SETUP_REQUIRED),
-            DeviceActivationException.DeviceUnknown(404, REASON) to failed(DEVICE_SETUP_REQUIRED),
+            DeviceServiceException.Forbidden(403, REASON, 403) to TapToPaySessionState.PendingActivation(ACTIVATION_ID),
+            DeviceServiceException.NotAttested(401, REASON, 401) to failed(DEVICE_SETUP_REQUIRED),
+            DeviceServiceException.EntryPointUnusable(403, REASON, 403) to failed(CONFIGURATION_REJECTED),
+            DeviceServiceException.AppNotRegistered(403, REASON, 403) to failed(CONFIGURATION_REJECTED),
+            DeviceServiceException.NotFound(404, REASON, 404) to failed(CONFIGURATION_REJECTED),
+            DeviceServiceException.BadRequest(400, REASON, 400) to failed(SDK_INTERNAL_ERROR),
+            DeviceServiceException.ServerFailure(500, REASON, 500) to failed(SERVICE_UNAVAILABLE),
+            DeviceServiceException.Undecodable(null, null) to failed(SDK_INTERNAL_ERROR),
+            DeviceServiceException.Unclassified(418, REASON, 418) to failed(SERVICE_UNAVAILABLE),
+            DeviceActivationException.AttestationRevoked(403, REASON, 403) to failed(DEVICE_SETUP_REQUIRED),
+            DeviceActivationException.DeviceUnknown(404, REASON, 404) to failed(DEVICE_SETUP_REQUIRED),
             DeviceActivationException.NotEnrolled() to failed(DEVICE_SETUP_REQUIRED),
             DeviceActivationException.RegistrationReplaced() to failed(DEVICE_SETUP_REQUIRED),
-            DeviceActivationException.EntryPointUnusable(403, REASON) to failed(CONFIGURATION_REJECTED),
+            DeviceActivationException.EntryPointUnusable(403, REASON, 403) to failed(CONFIGURATION_REJECTED),
             // A wrong code leaves the session alone: the device still owes one. So does everything else the
             // caller can answer by sending the code again, which is the rest of this group.
-            DeviceActivationException.CodeIncorrect(400, REASON) to null,
+            DeviceActivationException.CodeIncorrect(400, REASON, 400) to null,
             DeviceActivationException.CodeMalformed() to null,
-            DeviceActivationException.CodeExpired(400, REASON) to null,
-            DeviceActivationException.AttemptsExhausted(400, REASON) to null,
-            DeviceActivationException.CodeNotIssued(400, REASON) to null,
-            DeviceActivationException.CodeUnreadable(400, REASON) to null,
-            DeviceActivationException.DeviceNotPending(400, REASON) to null,
-            DeviceActivationException.AssertionRejected(400, REASON) to null,
-            DeviceActivationException.RequestRejected(400, REASON) to null,
-            DeviceActivationException.CredentialMismatch(409, REASON) to null,
-            DeviceActivationException.Unclassified(418, REASON) to null,
+            DeviceActivationException.CodeExpired(400, REASON, 400) to null,
+            DeviceActivationException.AttemptsExhausted(400, REASON, 400) to null,
+            DeviceActivationException.CodeNotIssued(400, REASON, 400) to null,
+            DeviceActivationException.CodeUnreadable(400, REASON, 400) to null,
+            DeviceActivationException.DeviceNotPending(400, REASON, 400) to null,
+            DeviceActivationException.AssertionRejected(400, REASON, 400) to null,
+            DeviceActivationException.RequestRejected(400, REASON, 400) to null,
+            DeviceActivationException.CredentialMismatch(409, REASON, 409) to null,
+            DeviceActivationException.Unclassified(418, REASON, 418) to null,
             // The key is gone, so the identity is: enrollment discards the record before raising it.
             DeviceKeyException.KeyLost() to failed(DEVICE_SETUP_REQUIRED),
             DeviceKeyException.SigningFailed() to failed(SDK_INTERNAL_ERROR),
@@ -116,6 +117,7 @@ class TapToPaySessionFailuresTest {
             CardReaderException.SessionUnusable(null) to TapToPaySessionState.SessionExpired,
             // A tap that did not complete says nothing about the session it ran on.
             CardReaderException.ReadFailed(null) to null,
+            CardReaderException.ContactlessDisabled(null) to failed(CONTACTLESS_DISABLED),
             PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, REASON) to
                 TapToPaySessionState.PendingActivation(ACTIVATION_ID),
             PayabliGenericException(PayabliErrorType.INVALID_CONFIGURATION, REASON) to
@@ -241,7 +243,7 @@ class TapToPaySessionFailuresTest {
 
     @Test
     fun `an app not registered on the paypoint is never pending activation, whatever is registered`() {
-        val refusal = DeviceServiceException.AppNotRegistered(403, REASON)
+        val refusal = DeviceServiceException.AppNotRegistered(403, REASON, 403)
 
         assertFalse(TapToPaySessionFailures.owesActivation(refusal))
 
@@ -257,12 +259,23 @@ class TapToPaySessionFailuresTest {
     }
 
     @Test
-    fun `the failure raised carries the code of the state landed`() {
+    fun `only a device the configuration found owing its code is reported pending, whatever is registered`() {
         for (failure in owingActivation()) {
             val name = failure::class.qualifiedName
             val held = TapToPaySessionFailures.raisedFor(failure, HELD)
-            assertEquals(name, PayabliErrorType.DEVICE_PENDING_ACTIVATION, TapToPayErrorCodes.typeFor(held))
-            if (failure !is TapToPaySessionException.PendingActivation) assertSame(name, failure, held.cause)
+            val expected =
+                if (failure is TapToPaySessionException.PendingActivation) {
+                    PayabliErrorType.DEVICE_PENDING_ACTIVATION
+                } else {
+                    PayabliErrorType.PERMISSION_DENIED
+                }
+            assertEquals(name, expected, TapToPayErrorCodes.typeFor(held))
+            // The service's own failure stays reachable, so its text still reaches the host.
+            if (failure is DeviceServiceException) {
+                assertSame(name, failure, held.cause)
+            } else {
+                assertSame(name, failure, held)
+            }
 
             val unregistered = TapToPaySessionFailures.raisedFor(failure, StoredRegistration.None)
             assertEquals(name, PayabliErrorType.PERMISSION_DENIED, TapToPayErrorCodes.typeFor(unregistered))
@@ -297,7 +310,7 @@ class TapToPaySessionFailuresTest {
     private fun owingActivation(): List<Exception> =
         listOf(
             TapToPaySessionException.PendingActivation(),
-            DeviceServiceException.Forbidden(403, REASON),
+            DeviceServiceException.Forbidden(403, REASON, 403),
             PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, REASON),
         )
 

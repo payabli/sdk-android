@@ -38,4 +38,18 @@ class AttestationTokenTest {
 
         assertEquals("attestation completed: AttestationToken(REDACTED)", "attestation completed: $token")
     }
+
+    @Test
+    fun `the token is not readable from Java`() {
+        // internal is a Kotlin rule only, so what keeps a Java caller out is the bytecode: an internal
+        // underlying property gets no getter, and the boxing members carry a hyphen javac cannot name.
+        val nameable =
+            AttestationToken::class.java.declaredMethods.filter { method ->
+                method.returnType == String::class.java &&
+                    !method.isSynthetic &&
+                    method.name.all(Character::isJavaIdentifierPart)
+            }
+
+        assertEquals(listOf("toString"), nameable.map { it.name })
+    }
 }

@@ -4,8 +4,9 @@ import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.example.app.demo.ui.customize.FormSettings
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInException
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -20,7 +21,7 @@ import org.junit.Test
 class SimpleCaptureKeyTest {
     @Test
     fun `an unresolved attempt makes the next one a retry of the same payment`() {
-        val dropped = failed(PayInException.Unsettled(network()))
+        val dropped = PayInException.Unsettled(network())
 
         assertTrue(retryAfter(open = false, FormOperation.Capture, dropped))
         assertEquals("ref-1", referenceAfter("ref-1", retryOpen = true))
@@ -30,7 +31,7 @@ class SimpleCaptureKeyTest {
     fun `a refused retry keeps the payment open`() {
         // The service has seen the payment and the outcome is still unknown, so a new payment is the one thing the
         // next tap must not be.
-        val refused = failed(PayInException.Unsettled(refusedRetry()))
+        val refused = PayInException.Unsettled(refusedRetry())
 
         assertTrue(retryAfter(open = true, FormOperation.Capture, refused))
     }
@@ -39,9 +40,7 @@ class SimpleCaptureKeyTest {
     fun `a retry refused for describing another payment keeps the retry open`() {
         // Nothing was sent and the earlier payment is still unknown, so the next tap of it must still be a retry.
         val mismatch =
-            failed(
-                SampleFailure(PayabliErrorType.RETRY_NOT_SAME_PAYMENT, PayabliErrorType.RETRY_NOT_SAME_PAYMENT.message),
-            )
+            SampleFailure(PayabliErrorType.RETRY_NOT_SAME_PAYMENT, PayabliErrorType.RETRY_NOT_SAME_PAYMENT.message)
 
         assertTrue(retryAfter(open = true, FormOperation.Capture, mismatch))
     }
@@ -49,7 +48,7 @@ class SimpleCaptureKeyTest {
     @Test
     fun `an answered attempt names a new payment next`() {
         // A decline settles the payment, so what the payer sends next is a different payment.
-        val declined = failed(SampleFailure(PayabliErrorType.PAYMENT_DECLINED, "Insufficient funds"))
+        val declined = SampleFailure(PayabliErrorType.PAYMENT_DECLINED, "Insufficient funds")
 
         assertFalse(retryAfter(open = true, FormOperation.Capture, declined))
         assertNotEquals("ref-1", referenceAfter("ref-1", retryOpen = false))
@@ -57,7 +56,7 @@ class SimpleCaptureKeyTest {
 
     @Test
     fun `a store leaves the capture's open retry in place`() {
-        val storeFailed = failed(SampleFailure(PayabliErrorType.PAYMENT_DECLINED, "Refused"))
+        val storeFailed = SampleFailure(PayabliErrorType.PAYMENT_DECLINED, "Refused")
 
         assertTrue(retryAfter(open = true, FormOperation.Tokenize, storeFailed))
         assertTrue(retryAfter(open = true, FormOperation.Tokenize, outcome = null))
@@ -70,13 +69,11 @@ class SimpleCaptureKeyTest {
 
     @Test
     fun `an authorization opens and closes a retry as a capture does`() {
-        val dropped = failed(PayInException.Unsettled(network()))
+        val dropped = PayInException.Unsettled(network())
 
         assertTrue(retryAfter(open = false, FormOperation.Authorize, dropped))
         assertFalse(retryAfter(open = true, FormOperation.Authorize, outcome = null))
     }
-
-    private fun failed(cause: PayabliException) = PayInSubmissionState.Failed(cause)
 
     private fun network() = SampleFailure(PayabliErrorType.NETWORK_ERROR, "The request did not complete")
 
@@ -91,13 +88,13 @@ class SimpleCaptureKeyTest {
             operationAfter(
                 FormOperation.Capture,
                 FormOperation.Tokenize,
-                PayInSubmissionState.Submitting,
+                isSubmitting = true,
                 heldFor = null,
             ),
         )
         assertEquals(
             FormOperation.Tokenize,
-            operationAfter(FormOperation.Capture, FormOperation.Tokenize, PayInSubmissionState.Idle, heldFor = null),
+            operationAfter(FormOperation.Capture, FormOperation.Tokenize, isSubmitting = false, heldFor = null),
         )
     }
 
@@ -105,27 +102,27 @@ class SimpleCaptureKeyTest {
     fun `an open retry keeps the screen off every other operation that moves money`() {
         // The retry is of one payment. Declared by a different operation it would not reach that payment's
         // key, and the payment could then be charged again under a fresh one.
-        val idle = PayInSubmissionState.Idle
+        val isSubmitting = false
 
         assertEquals(
             FormOperation.Capture,
-            operationAfter(FormOperation.Capture, FormOperation.Authorize, idle, FormOperation.Capture),
+            operationAfter(FormOperation.Capture, FormOperation.Authorize, isSubmitting, FormOperation.Capture),
         )
         assertEquals(
             FormOperation.Tokenize,
-            operationAfter(FormOperation.Tokenize, FormOperation.Authorize, idle, FormOperation.Capture),
+            operationAfter(FormOperation.Tokenize, FormOperation.Authorize, isSubmitting, FormOperation.Capture),
         )
         assertEquals(
             FormOperation.Tokenize,
-            operationAfter(FormOperation.Capture, FormOperation.Tokenize, idle, FormOperation.Capture),
+            operationAfter(FormOperation.Capture, FormOperation.Tokenize, isSubmitting, FormOperation.Capture),
         )
         assertEquals(
             FormOperation.Capture,
-            operationAfter(FormOperation.Tokenize, FormOperation.Capture, idle, FormOperation.Capture),
+            operationAfter(FormOperation.Tokenize, FormOperation.Capture, isSubmitting, FormOperation.Capture),
         )
         assertEquals(
             FormOperation.Authorize,
-            operationAfter(FormOperation.Capture, FormOperation.Authorize, idle, heldFor = null),
+            operationAfter(FormOperation.Capture, FormOperation.Authorize, isSubmitting, heldFor = null),
         )
     }
 
@@ -155,9 +152,58 @@ class SimpleCaptureKeyTest {
     @Test
     fun `the amount is locked while a retry is open or a submission is in flight`() {
         // An open retry is one payment. Retrying it with a different amount would describe another payment.
-        assertFalse(betweenPayments(PayInSubmissionState.Idle, retryOpen = true))
-        assertFalse(betweenPayments(PayInSubmissionState.Submitting, retryOpen = false))
-        assertTrue(betweenPayments(PayInSubmissionState.Idle, retryOpen = false))
+        assertFalse(betweenPayments(isSubmitting = false, retryOpen = true))
+        assertFalse(betweenPayments(isSubmitting = true, retryOpen = false))
+        assertTrue(betweenPayments(isSubmitting = false, retryOpen = false))
+    }
+
+    @Test
+    fun `an open retry offers only the held attempt's method, and settling it offers every method again`() {
+        // A payer switching method under a held key would see a total the retry does not carry.
+        val form = PayInFormConfiguration()
+        val bank = PayInMethodType.BankAccount
+
+        val held = methodsWhileHeld(form, FormOperation.Capture, heldFor = FormOperation.Capture, method = bank)
+        val settled = methodsWhileHeld(form, FormOperation.Capture, heldFor = null, method = bank)
+
+        assertEquals(listOf(bank), held.methodsOffered)
+        assertEquals(bank, held.startingMethod)
+        assertEquals(form, settled)
+    }
+
+    @Test
+    fun `a save while a payment's retry is open keeps every method`() {
+        // A save moves no money and sends no retry, so the held payment's method does not bind it.
+        val form = PayInFormConfiguration()
+
+        val save =
+            methodsWhileHeld(form, FormOperation.Tokenize, heldFor = FormOperation.Capture, PayInMethodType.BankAccount)
+
+        assertEquals(form, save)
+    }
+
+    @Test
+    fun `the held payment keeps the method it was sent with after a save picks another`() {
+        // Capture by card is unsettled, the payer saves a bank account, then returns to Capture.
+        val card = PayInMethodType.Card
+        val bank = PayInMethodType.BankAccount
+        val held = heldMethodAfter(null, heldFor = FormOperation.Capture, sent = card)
+        val afterSave = heldMethodAfter(held, heldFor = FormOperation.Capture, sent = bank)
+
+        assertEquals(card, afterSave)
+        assertEquals(card, methodFor(FormOperation.Capture, FormOperation.Capture, afterSave, onScreen = bank))
+        assertEquals(bank, methodFor(FormOperation.Tokenize, FormOperation.Capture, afterSave, onScreen = bank))
+    }
+
+    @Test
+    fun `settling the retry lets go of the held method`() {
+        val card = PayInMethodType.Card
+
+        assertNull(heldMethodAfter(card, heldFor = null, sent = card))
+        assertEquals(
+            PayInMethodType.BankAccount,
+            methodFor(FormOperation.Capture, heldFor = null, heldMethod = null, onScreen = PayInMethodType.BankAccount),
+        )
     }
 
     @Test

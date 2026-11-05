@@ -4,15 +4,15 @@ import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInResult
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 
 /**
  * What a submission ended as, in this app's own words.
  *
- * The form calls back with the SDK's own state; this is what the screens are handed instead, so a view model
- * holds nothing it would have to update when the SDK's state type changes.
+ * The form calls back with the SDK's own outcome types; this is what the screens are handed instead, so a
+ * view model holds nothing it would have to update when the SDK's types change.
  */
 sealed class PayInOutcome {
     /** The service accepted it. */
@@ -23,8 +23,8 @@ sealed class PayInOutcome {
     /**
      * It did not go through.
      *
-     * [diagnostic] is the failure's own classification and carries nothing from the wire, so it is the part
-     * safe to record. [error] is displayable and is what a screen shows.
+     * [diagnostic] is the failure's own classification and code and carries nothing from the wire, so it is the
+     * part safe to record. [error] picks the message a screen shows.
      *
      * @property isOutcomeUnknown whether the service may have applied the request without the answer arriving.
      * @property isRetryRefused whether the service refused a repeat of an earlier attempt that may still be running.
@@ -43,8 +43,7 @@ sealed class PayInOutcome {
     ) : PayInOutcome()
 }
 
-internal fun PayInSubmissionState.Succeeded.toOutcome(): PayInOutcome.Approved =
-    PayInOutcome.Approved(toPaymentResult())
+internal fun PayInFormSuccess.toOutcome(): PayInOutcome.Approved = PayInOutcome.Approved(toPaymentResult())
 
 /**
  * The same two shapes for a call that returns rather than publishing to the form's state.
@@ -57,9 +56,10 @@ internal fun Result<PayInResult>.toOutcome(): PayInOutcome =
     fold(
         onSuccess = { PayInOutcome.Approved(it.toPaymentResult()) },
         onFailure = { failure ->
+            val error = failure.toPaymentError()
             PayInOutcome.Refused(
-                error = failure.toPaymentError(),
-                diagnostic = failure.toString(),
+                error = error,
+                diagnostic = diagnosticOf(failure, error),
                 keepsItsPaymentReference = failure.keepsThePaymentOpen(),
                 isOutcomeUnknown = failure is PayInException.Unsettled,
                 isRetryRefused = (failure as? PayabliException)?.type == PayabliErrorType.RETRY_REFUSED,
@@ -67,13 +67,24 @@ internal fun Result<PayInResult>.toOutcome(): PayInOutcome =
         },
     )
 
-internal fun PayInSubmissionState.Failed.toOutcome(): PayInOutcome.Refused =
-    PayInOutcome.Refused(
-        error = toPaymentError(),
-        diagnostic = cause.toString(),
-        keepsItsPaymentReference = cause.keepsThePaymentOpen(),
-        isOutcomeUnknown = cause is PayInException.Unsettled,
-    )
+internal fun PayabliException.toOutcome(): PayInOutcome.Refused =
+    toPaymentError().let { error ->
+        PayInOutcome.Refused(
+            error = error,
+            diagnostic = diagnosticOf(this, error),
+            keepsItsPaymentReference = keepsThePaymentOpen(),
+            isOutcomeUnknown = this is PayInException.Unsettled,
+        )
+    }
+
+/**
+ * The line a failure records: its own classification and the catalog code, so every failure's code reaches the
+ * log whether or not its `toString` names one.
+ */
+private fun diagnosticOf(
+    failure: Throwable,
+    error: PaymentError,
+): String = "$failure\ncode=${error.code}"
 
 /** Whether the payment this failure belongs to is still the one to retry. */
 private fun Throwable.keepsThePaymentOpen(): Boolean =

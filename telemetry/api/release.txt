@@ -1,0 +1,11 @@
+// Signature format: 4.0
+package com.payabli.sdk.telemetry {
+
+  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class TelemetryModule implements com.payabli.sdk.core.telemetry.TelemetryBootstrap {
+    ctor public TelemetryModule();
+    method public void start(com.payabli.sdk.core.PayabliSession session, com.payabli.sdk.core.HostBindings? host);
+    method public void stop();
+  }
+
+}
+

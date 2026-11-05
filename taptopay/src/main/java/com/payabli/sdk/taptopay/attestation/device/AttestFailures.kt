@@ -12,29 +12,35 @@ internal object AttestFailures : DeviceFailureMapper {
     override fun map(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ): Throwable? =
-        EntryPointFailures.map(resultCode, reason)
+        EntryPointFailures.map(resultCode, reason, httpStatus)
             ?: when (resultCode) {
                 HTTP_BAD_REQUEST ->
                     when {
-                        reason in VERDICT_REFUSED -> DeviceServiceException.IntegrityRefused(resultCode, reason)
+                        reason in VERDICT_REFUSED ->
+                            DeviceServiceException.IntegrityRefused(
+                                resultCode,
+                                reason,
+                                httpStatus,
+                            )
                         reason == CHALLENGE_SPENT || reason.startsWith(DECODE_FAILED_PREFIX) ->
-                            DeviceServiceException.VerificationUnavailable(resultCode, reason)
+                            DeviceServiceException.VerificationUnavailable(resultCode, reason, httpStatus)
                         else -> null
                     }
 
                 HTTP_FORBIDDEN ->
                     when (reason) {
-                        IDENTITY_UNKNOWN -> DeviceServiceException.IntegrityRefused(resultCode, reason)
-                        NOT_RECOGNIZED -> DeviceServiceException.AppNotAccepted(resultCode, reason)
-                        NOT_AUTHORIZED -> DeviceServiceException.AppNotRegistered(resultCode, reason)
-                        NOT_USABLE -> DeviceServiceException.RegistrationGone(resultCode, reason)
+                        IDENTITY_UNKNOWN -> DeviceServiceException.IntegrityRefused(resultCode, reason, httpStatus)
+                        NOT_RECOGNIZED -> DeviceServiceException.AppNotAccepted(resultCode, reason, httpStatus)
+                        NOT_AUTHORIZED -> DeviceServiceException.AppNotRegistered(resultCode, reason, httpStatus)
+                        NOT_USABLE -> DeviceServiceException.RegistrationGone(resultCode, reason, httpStatus)
                         else -> null
                     }
 
                 HTTP_NOT_FOUND ->
                     when (reason) {
-                        DEVICE_NOT_FOUND -> DeviceServiceException.RegistrationGone(resultCode, reason)
+                        DEVICE_NOT_FOUND -> DeviceServiceException.RegistrationGone(resultCode, reason, httpStatus)
                         else -> null
                     }
 

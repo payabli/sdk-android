@@ -20,36 +20,52 @@ internal class DeviceActivationFailures(
     override fun map(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ): Throwable =
         when {
             resultCode == HttpURLConnection.HTTP_BAD_REQUEST ->
                 when {
-                    reason == INVALID_CODE -> DeviceActivationException.CodeIncorrect(resultCode, reason)
-                    reason == CODE_EXPIRED -> DeviceActivationException.CodeExpired(resultCode, reason)
-                    reason == TOO_MANY_ATTEMPTS -> DeviceActivationException.AttemptsExhausted(resultCode, reason)
-                    reason == NO_CHALLENGE -> DeviceActivationException.CodeNotIssued(resultCode, reason)
-                    reason == STORED_CODE_INVALID -> DeviceActivationException.CodeUnreadable(resultCode, reason)
+                    reason == INVALID_CODE -> DeviceActivationException.CodeIncorrect(resultCode, reason, httpStatus)
+                    reason == CODE_EXPIRED -> DeviceActivationException.CodeExpired(resultCode, reason, httpStatus)
+                    reason == TOO_MANY_ATTEMPTS ->
+                        DeviceActivationException.AttemptsExhausted(
+                            resultCode,
+                            reason,
+                            httpStatus,
+                        )
+                    reason == NO_CHALLENGE -> DeviceActivationException.CodeNotIssued(resultCode, reason, httpStatus)
+                    reason == STORED_CODE_INVALID ->
+                        DeviceActivationException.CodeUnreadable(
+                            resultCode,
+                            reason,
+                            httpStatus,
+                        )
                     reason.startsWith(ASSERTION_FAILED_PREFIX) ->
-                        DeviceActivationException.AssertionRejected(resultCode, reason)
-                    reason in MALFORMED_REQUEST -> DeviceActivationException.RequestRejected(resultCode, reason)
-                    else -> unclassified(resultCode, reason)
+                        DeviceActivationException.AssertionRejected(resultCode, reason, httpStatus)
+                    reason in MALFORMED_REQUEST ->
+                        DeviceActivationException.RequestRejected(
+                            resultCode,
+                            reason,
+                            httpStatus,
+                        )
+                    else -> unclassified(resultCode, reason, httpStatus)
                 }
 
             resultCode == HttpURLConnection.HTTP_UNAUTHORIZED && reason == ATTESTATION_REVOKED ->
-                DeviceActivationException.AttestationRevoked(resultCode, reason)
+                DeviceActivationException.AttestationRevoked(resultCode, reason, httpStatus)
             resultCode == HttpURLConnection.HTTP_NOT_FOUND && reason == DEVICE_NOT_FOUND ->
-                DeviceActivationException.DeviceUnknown(resultCode, reason)
+                DeviceActivationException.DeviceUnknown(resultCode, reason, httpStatus)
             resultCode == HttpURLConnection.HTTP_CONFLICT && reason == CREDENTIAL_MISMATCH ->
-                DeviceActivationException.CredentialMismatch(resultCode, reason)
+                DeviceActivationException.CredentialMismatch(resultCode, reason, httpStatus)
             resultCode == HttpURLConnection.HTTP_FORBIDDEN && reason == NOT_PENDING ->
-                DeviceActivationException.DeviceNotPending(resultCode, reason)
+                DeviceActivationException.DeviceNotPending(resultCode, reason, httpStatus)
 
             // The literal is EntryPointFailures', so this route and the four that use that mapper cannot
             // drift onto two spellings of one comparison.
             resultCode == HttpURLConnection.HTTP_FORBIDDEN && reason == EntryPointFailures.ENTRY_POINT_UNUSABLE ->
-                DeviceActivationException.EntryPointUnusable(resultCode, reason)
+                DeviceActivationException.EntryPointUnusable(resultCode, reason, httpStatus)
 
-            else -> unclassified(resultCode, reason)
+            else -> unclassified(resultCode, reason, httpStatus)
         }
 
     /**
@@ -61,12 +77,13 @@ internal class DeviceActivationFailures(
     private fun unclassified(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ): DeviceActivationException {
         logger.warn(
             LogField.safe("event", "activation_reason_unmapped"),
             LogField.safe("errorCode", resultCode?.toString() ?: "none"),
         ) { "the device service refused the activation with an unrecognized reason" }
-        return DeviceActivationException.Unclassified(resultCode, reason)
+        return DeviceActivationException.Unclassified(resultCode, reason, httpStatus)
     }
 
     private companion object {

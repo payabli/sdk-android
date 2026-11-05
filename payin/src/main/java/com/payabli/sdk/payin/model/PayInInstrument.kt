@@ -59,22 +59,73 @@ public enum class PayInStoredMethodType(
 }
 
 /**
- * A card, as the payer entered it.
- *
- * [cardNumber] and [securityCode] are [SensitiveDigits] rather than strings, so the SDK holds no copy it
- * cannot erase. **This type does not own them**: a caller that built them closes them, and the usual shape is
- * a `use` block around the call that sends them.
- *
- * [expiry] is an [ExpiryValue] rather than text, so `MM/YY` is produced in one place and a caller cannot
- * supply something that parses two ways.
+ * A card, as the payer entered it. The card number and security code are copied into buffers that can't be read
+ * back; each call sends from its own copy and overwrites that copy. The expiry is checked when the card is sent,
+ * not when it is built.
  */
-public class PayInCardData(
-    public val cardNumber: SensitiveDigits,
-    public val expiry: ExpiryValue,
-    public val securityCode: SensitiveDigits,
+public class PayInCardData private constructor(
+    cardNumber: SensitiveDigits,
+    public val expiryMonth: Int,
+    public val expiryYear: Int,
+    securityCode: SensitiveDigits,
     public val holderName: String,
     public val postalCode: String,
 ) {
+    /**
+     * The card the payer entered.
+     *
+     * @param cardNumber the card number, copied and not kept as a `String`.
+     * @param expiryMonth the month the card expires, 1 to 12.
+     * @param expiryYear the year the card expires, in four digits.
+     * @param securityCode the security code, copied and not kept as a `String`.
+     * @param holderName the cardholder's name.
+     * @param postalCode the billing postal code.
+     */
+    public constructor(
+        cardNumber: String,
+        expiryMonth: Int,
+        expiryYear: Int,
+        securityCode: String,
+        holderName: String,
+        postalCode: String,
+    ) : this(
+        SensitiveDigits.ofString(cardNumber),
+        expiryMonth,
+        expiryYear,
+        SensitiveDigits.ofString(securityCode),
+        holderName,
+        postalCode,
+    )
+
+    @get:JvmSynthetic
+    internal val cardNumberDigits: SensitiveDigits = cardNumber
+
+    @get:JvmSynthetic
+    internal val securityCodeDigits: SensitiveDigits = securityCode
+
+    /**
+     * The same card over copies of its buffers, for one call to send from and close.
+     *
+     * @return the copy, which closing leaves this card intact.
+     */
+    @JvmSynthetic
+    internal fun copyForCall(): PayInCardData =
+        PayInCardData(
+            cardNumberDigits.copy(),
+            expiryMonth,
+            expiryYear,
+            securityCodeDigits.copy(),
+            holderName,
+            postalCode,
+        )
+
+    /** Overwrites both buffers. */
+    @JvmSynthetic
+    internal fun closeDigits() {
+        cardNumberDigits.close()
+        securityCodeDigits.close()
+    }
+
     /**
      * No field of a card belongs in a message, the expiry included.
      *
@@ -84,20 +135,73 @@ public class PayInCardData(
 }
 
 /**
- * A bank account, as the payer entered it.
- *
- * [accountNumber] is a [SensitiveDigits] and [routingNumber] is not: a routing number identifies a bank and
- * is published, so buffering it would suggest a secrecy it does not have.
+ * A bank account, as the payer entered it. The account number is buffered as [PayInCardData]'s card number is;
+ * the routing number identifies a bank, isn't secret, and is held as a `String`.
  */
-public class PayInBankAccountData(
-    public val accountNumber: SensitiveDigits,
+public class PayInBankAccountData private constructor(
+    accountNumber: SensitiveDigits,
     public val routingNumber: String,
     public val accountType: PayInAccountType,
     public val holderName: String,
-    public val holderType: PayInAccountHolderType? = null,
-    public val secCode: PayInSecCode? = null,
-    public val deviceId: String? = null,
+    public val holderType: PayInAccountHolderType?,
+    public val secCode: PayInSecCode?,
+    public val deviceId: String?,
 ) {
+    /**
+     * The bank account the payer entered.
+     *
+     * @param accountNumber the account number, copied and not kept as a `String`.
+     * @param routingNumber the bank's routing number.
+     * @param accountType checking or savings.
+     * @param holderName the account holder's name.
+     * @param holderType personal or business, or null to leave it to the paypoint.
+     * @param secCode the authorization the payer gave, or null for the default.
+     * @param deviceId the device the payer used, or null.
+     */
+    public constructor(
+        accountNumber: String,
+        routingNumber: String,
+        accountType: PayInAccountType,
+        holderName: String,
+        holderType: PayInAccountHolderType? = null,
+        secCode: PayInSecCode? = null,
+        deviceId: String? = null,
+    ) : this(
+        SensitiveDigits.ofString(accountNumber),
+        routingNumber,
+        accountType,
+        holderName,
+        holderType,
+        secCode,
+        deviceId,
+    )
+
+    @get:JvmSynthetic
+    internal val accountNumberDigits: SensitiveDigits = accountNumber
+
+    /**
+     * The same account over a copy of its buffer, for one call to send from and close.
+     *
+     * @return the copy, which closing leaves this account intact.
+     */
+    @JvmSynthetic
+    internal fun copyForCall(): PayInBankAccountData =
+        PayInBankAccountData(
+            accountNumberDigits.copy(),
+            routingNumber,
+            accountType,
+            holderName,
+            holderType,
+            secCode,
+            deviceId,
+        )
+
+    /** Overwrites the buffer. */
+    @JvmSynthetic
+    internal fun closeDigits() {
+        accountNumberDigits.close()
+    }
+
     override fun toString(): String = "PayInBankAccountData(accountType=$accountType)"
 }
 
@@ -117,6 +221,27 @@ public sealed class PayInInstrument {
     public class BankAccount(
         public val data: PayInBankAccountData,
     ) : PayInInstrument()
+
+    /**
+     * The same instrument over copies of its buffers, for one call to send from and close.
+     *
+     * @return the copy, which closing leaves this instrument intact.
+     */
+    @JvmSynthetic
+    internal fun copyForCall(): PayInInstrument =
+        when (this) {
+            is Card -> Card(data.copyForCall())
+            is BankAccount -> BankAccount(data.copyForCall())
+        }
+
+    /** Overwrites every buffer this instrument holds. */
+    @JvmSynthetic
+    internal fun closeDigits() {
+        when (this) {
+            is Card -> data.closeDigits()
+            is BankAccount -> data.closeDigits()
+        }
+    }
 
     /** What this instrument is charged as once it is stored. */
     internal val storedMethodType: PayInStoredMethodType
@@ -162,6 +287,30 @@ public sealed class PayInPaymentMethod {
 
     /** Cash, which carries no instrument at all. */
     public object Cash : PayInPaymentMethod()
+
+    /**
+     * The same method over copies of any buffers it holds, for one call to send from and close. A method that
+     * holds none is returned as it is.
+     *
+     * @return the copy, which closing leaves this method intact.
+     */
+    @JvmSynthetic
+    internal fun copyForCall(): PayInPaymentMethod =
+        when (this) {
+            is Card -> Card(data.copyForCall())
+            is BankAccount -> BankAccount(data.copyForCall())
+            else -> this
+        }
+
+    /** Overwrites every buffer this method holds; a method holding none is left alone. */
+    @JvmSynthetic
+    internal fun closeDigits() {
+        when (this) {
+            is Card -> data.closeDigits()
+            is BankAccount -> data.closeDigits()
+            else -> Unit
+        }
+    }
 
     /**
      * True if this method can be authorized as well as captured; false otherwise.

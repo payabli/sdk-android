@@ -41,30 +41,19 @@ public object PayInSummaryRows {
     ): String = labels.totalOrNull() ?: context.getString(R.string.payabli_payin_summary_total)
 
     /**
-     * The figure on [field]'s row. Amount is the total less the service fee and the surcharge, read only beside
-     * a fee or a surcharge, whatever [PayInFormConfiguration.showsBaseAmount] is set to.
+     * The figure on [field]'s row: the service fee or the surcharge as supplied. Every other field, Amount included, has none.
      *
      * @param field the row's field.
-     * @param details what is being charged, or null.
+     * @param paymentDetails what is being charged, or null.
      * @return the figure on [field]'s row, or null when the row is not drawn.
      */
     public fun rowAmount(
         field: PayInField,
-        details: PayInPaymentDetails?,
+        paymentDetails: PayInPaymentDetails?,
     ): BigDecimal? {
-        if (details == null || details.amountRefusal() != null) return null
-        val fee = details.shownAmount(PayInField.ServiceFee)
-        val surcharge = details.shownAmount(PayInField.SurchargeFee)
+        if (paymentDetails == null || paymentDetails.amountRefusal() != null) return null
         return when (field) {
-            PayInField.Amount ->
-                details
-                    .shownAmount(PayInField.Amount)
-                    ?.takeIf { fee != null || surcharge != null }
-                    ?.subtract(fee ?: BigDecimal.ZERO)
-                    ?.subtract(surcharge ?: BigDecimal.ZERO)
-                    ?.takeIf { it.signum() != 0 }
-            PayInField.ServiceFee -> fee
-            PayInField.SurchargeFee -> surcharge
+            PayInField.ServiceFee, PayInField.SurchargeFee -> paymentDetails.shownAmount(field)
             else -> null
         }
     }
@@ -72,12 +61,12 @@ public object PayInSummaryRows {
     /**
      * The figure on the Total row: the total amount, which holds any surcharge sent and is what is charged.
      *
-     * @param details what is being charged, or null.
+     * @param paymentDetails what is being charged, or null.
      * @return the figure on the Total row, or null when the row is not drawn.
      */
-    public fun totalRowAmount(details: PayInPaymentDetails?): BigDecimal? {
-        if (details == null || details.amountRefusal() != null) return null
-        return details.shownAmount(PayInField.Amount)
+    public fun totalRowAmount(paymentDetails: PayInPaymentDetails?): BigDecimal? {
+        if (paymentDetails == null || paymentDetails.amountRefusal() != null) return null
+        return paymentDetails.shownAmount(PayInField.Amount)
     }
 
     /**

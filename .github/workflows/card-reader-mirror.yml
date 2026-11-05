@@ -40,6 +40,11 @@ on:
 permissions:
   contents: read
 
+# `bash` turns on pipefail, so a failure left of a `|` fails the step.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   # One mirror run at a time, and never cancelled: the coordinates are write-once, so a run
   # interrupted mid-upload leaves a partial set that the next run has to complete rather than

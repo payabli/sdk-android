@@ -17,25 +17,21 @@ internal class DrawnSection(
 )
 
 /**
- * [sections] with every displayed amount other than zero placed in one summary; the Amount row
- * needs [showsBaseAmount]. A host's summary section decides where the figures go and what it
- * is called, never which figures appear; with no figure to show, none is drawn.
+ * [sections] with every displayed amount other than zero placed in one summary. A host's summary
+ * section decides where the figures go and what it is called, never which figures appear; with no
+ * figure to show, none is drawn.
  *
  * @param sections the form's sections.
  * @param amounts what is being charged, or null for none.
- * @param showsBaseAmount whether the Amount row is drawn.
  * @return the sections as drawn, the figures placed in one summary.
  */
 internal fun placeAmounts(
     sections: List<PayInFormSection>,
     amounts: PayInPaymentDetails?,
-    showsBaseAmount: Boolean = true,
 ): List<DrawnSection> {
     val inputs = sections.filter { it.style == PayInSectionStyle.Inputs }.map(::DrawnSection)
     val figures =
-        AMOUNT_FIELDS
-            .filter { showsBaseAmount || it != PayInField.Amount }
-            .associateWith { PayInSummaryRows.rowAmount(it, amounts) }
+        AMOUNT_FIELDS.associateWith { PayInSummaryRows.rowAmount(it, amounts) }
     val total = PayInSummaryRows.totalRowAmount(amounts)
     if (total == null && figures.values.all { it == null }) return inputs
 

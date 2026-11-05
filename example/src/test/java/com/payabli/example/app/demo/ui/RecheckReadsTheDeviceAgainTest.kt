@@ -50,6 +50,7 @@ class RecheckReadsTheDeviceAgainTest {
             tokenServer = target,
             tokenClient = TokenServerClient(target),
             readDeviceFacts = read,
+            readDeviceId = { Result.success(null) },
             demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
             simpleCapture = SimpleCaptureSetting(),
             formSetup = PayInForms.storePaymentMethod(),

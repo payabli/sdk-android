@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.payabli.sdk.payin.PayabliPayIn
-import com.payabli.sdk.payin.payment.PayInSubmissionState
+import kotlinx.coroutines.CoroutineScope
 
 /**
  * A screen's grip on the pay-in it submits through.
@@ -21,12 +21,18 @@ interface PayInFlowHandle {
     /**
      * Whether it is holding anything: a submission in flight, or an outcome nobody has taken yet.
      *
-     * Both payment screens read it around a token recheck, which builds a session and replaces the one they
-     * hold. Replaced while it holds a request, the request still reaches the service and can move money;
-     * replaced while it holds a terminal state the form has not consumed, the outcome reaches neither
-     * callback. Either way the form observes a new idle one and the screen offers Submit again.
+     * A token recheck replaces the session behind the flow, and an outcome standing undelivered reaches
+     * neither callback once replaced; the flight is the SDK's flag, the outcome half this app's own.
      */
     val isBusy: Boolean
+
+    /**
+     * Marks the outcome delivered, closing the window [isBusy] keeps a recheck out of.
+     *
+     * [PaymentFormHost] calls it from where the form hands this app the outcome, which is the only place
+     * one stands: a direct call's outcome returns to its caller instead.
+     */
+    fun outcomeTaken()
 
     /**
      * What [PaymentFormHost] draws, or null for a handle that is not backed by the SDK.
@@ -41,8 +47,9 @@ interface PayInFlowHandle {
     fun isSubmitting(): Boolean
 
     /**
-     * Reverses [transId] under the key the SDK holds for it, so a repeated reversal is recognised. Not in
-     * [isSubmitting] or [isBusy]: the SDK publishes a void to no state, so a screen tracks its own flag.
+     * Reverses [transId] under the key the SDK holds for it, so a repeated reversal is recognised. In
+     * [isSubmitting] and [isBusy] while it runs, with the outcome on the return value as a direct
+     * call's is, so it opens no window for [outcomeTaken] to close.
      */
     suspend fun voidTransaction(transId: String): PayInOutcome
 
@@ -55,21 +62,31 @@ interface PayInFlowHandle {
     suspend fun readTransaction(transId: String): PayInReadOutcome
 }
 
-/** The one a session produces, which is every handle outside a test. */
+/**
+ * The one a session produces, which is every handle outside a test.
+ *
+ * [scope] is the caller's, and the outcome window's watcher runs on it, beside the submissions.
+ */
 internal class SdkPayInFlowHandle(
     private val payIn: PayabliPayIn,
+    scope: CoroutineScope,
 ) : PayInFlowHandle {
-    override val isBusy: Boolean get() = payIn.state.value != PayInSubmissionState.Idle
+    private val outcomes = PayInOutcomeLatch(payIn.isSubmitting, scope)
+
+    override val isBusy: Boolean get() = payIn.isSubmitting.value || outcomes.holds
+
+    override fun outcomeTaken() = outcomes.taken()
 
     override val formTarget: PayabliPayIn get() = payIn
 
     @Composable
     override fun isSubmitting(): Boolean {
-        val submission by payIn.state.collectAsState()
-        return submission is PayInSubmissionState.Submitting
+        val submitting by payIn.isSubmitting.collectAsState()
+        return submitting
     }
 
-    override suspend fun voidTransaction(transId: String): PayInOutcome = payIn.voidTransaction(transId).toOutcome()
+    override suspend fun voidTransaction(transId: String): PayInOutcome =
+        outcomes.withoutLatching { payIn.voidTransaction(transId).toOutcome() }
 
     override suspend fun readTransaction(transId: String): PayInReadOutcome =
         payIn.readTransaction(transId).toReadOutcome()

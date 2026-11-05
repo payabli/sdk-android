@@ -10,7 +10,6 @@ import com.payabli.sdk.payin.model.PayInAccountType
 import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInPaymentDetails
-import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.serialization.KSerializer
 import java.math.BigDecimal
@@ -116,9 +115,10 @@ internal fun testCard(
     expiry: ExpiryValue = TEST_EXPIRY,
 ): PayInCardData =
     PayInCardData(
-        cardNumber = SensitiveDigits.ofString(pan),
-        expiry = expiry,
-        securityCode = SensitiveDigits.ofString(securityCode),
+        cardNumber = pan,
+        expiryMonth = expiry.month,
+        expiryYear = expiry.year,
+        securityCode = securityCode,
         holderName = holderName,
         postalCode = postalCode,
     )
@@ -130,7 +130,7 @@ internal fun testAccount(
     accountType: PayInAccountType = PayInAccountType.Checking,
 ): PayInBankAccountData =
     PayInBankAccountData(
-        accountNumber = SensitiveDigits.ofString(account),
+        accountNumber = account,
         routingNumber = routing,
         accountType = accountType,
         holderName = holderName,

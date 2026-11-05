@@ -91,6 +91,16 @@ CI = WORKFLOW_DIR / "ci.yml"
 # while the record goes unchecked.
 PUBLIC_SURFACE = WORKFLOW_DIR / "public-surface.yml"
 
+# The rule that main takes pull requests from release, hotfix and Dependabot branches only. Each mutation
+# below is a pull request into main that the job lets through, or one it refuses that it should not.
+SOURCE_BRANCH = WORKFLOW_DIR / "source-branch.yml"
+
+# The nightly's Slack post, on `workflow_run` from main's copy, which is what owns the liveness alarm.
+NIGHTLY_REPORT = WORKFLOW_DIR / "nightly-report.yml"
+
+# The analysis, on `workflow_run` from main's copy, holding SONAR_TOKEN.
+SONAR = WORKFLOW_DIR / "sonar.yml"
+
 # The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
 # no longer matches the file reports itself invalid rather than caught, and two copies drift apart silently.
 WALKTHROUGH_COMMAND = (
@@ -102,24 +112,10 @@ WALKTHROUGH_COMMAND = (
 INSTRUMENTED_MODULES_LINE = "          INSTRUMENTED_MODULES: core,payin"
 # Spans of release.yml for the rows that remove or reorder whole steps. Written out rather than built
 # from the file, so W15 can read each one and report it the moment the workflow moves under it.
-RELEASE_BUILD_VERSION_CHECK = (
-    "      # The build's Gradle carries no override, so the committed property is what it publishes.\n"
-    '      - name: Check the commit carries the version the check read\n'
-    '        env:\n'
-    '          CHECKED: ${{ needs.check.outputs.version }}\n'
-    '        run: |\n'
-    '          # Empty rather than a failed grep when the line is missing, so the refusal below says why.\n'
-    "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n"
-    '          if [ "$CHECKED" != "$version" ]; then\n'
-    '            echo "::error::payabli.version is \'$version\' here, and the check read \'$CHECKED\'."\n'
-    '            exit 1\n'
-    '          fi\n'
-    '\n'
-)
 RELEASE_KEEP_TREE = (
     '      # Kept for as long as GitHub allows. A rebuild produces different bytes, so this tree is the only\n'
     '      # one a half-finished upload can be completed from, by re-running the failed job.\n'
-    '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n'
+    '      - uses: actions/upload-artifact@PIN\n'
     '        with:\n'
     '          name: staging-repo\n'
     '          path: build/staging-repo\n'
@@ -145,11 +141,49 @@ RELEASE_SUBJECT_THEN_TAG = (
     '            exit 1\n'
     '          fi\n'
     '\n'
-    '      # For the uploader, and the tags the step below reads.\n'
-    '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n'
+    '      # For the uploader, and the tags and main the steps below read. Named by SHA: a branch ref makes the\n'
+    '      # checkout pin origin/main back to the dispatch-time commit when main has moved since, and the checks\n'
+    '      # below need main as it is now.\n'
+    '      - uses: actions/checkout@PIN\n'
     '        with:\n'
+    '          ref: ${{ github.sha }}\n'
     '          fetch-depth: 0\n'
     '          persist-credentials: false\n'
+    '\n'
+    '      # Again here, where the tag is created: a release cut while this one waited for approval may have\n'
+    '      # tagged a newer version since the check ran.\n'
+    '      - name: Check the version is not below the newest release\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '        run: |\n'
+    "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+    '          newest=$(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p" | sort -V | tail -n 1)\n'
+    '          if [ -n "$newest" ] && [ "$(printf \'%s\\n%s\\n\' "$newest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then\n'
+    '            echo "::error::the newest release is $newest, and $VERSION is lower."\n'
+    '            exit 1\n'
+    '          fi\n'
+    '\n'
+    '      # Again here, with refs fetched after the approval: an earlier release that was cut while this one\n'
+    '      # waited is not in main yet, and this commit does not hold it.\n'
+    '      - name: Check again that every earlier release is in main and in the commit\n'
+    '        env:\n'
+    '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '        run: |\n'
+    "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+    '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+    '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+    '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+    '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+    '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+    '                exit 1\n'
+    '              fi\n'
+    '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+    '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+    '                exit 1\n'
+    '              fi\n'
+    '            fi\n'
+    '          done\n'
     '\n'
     '      # A tag already on this commit is a resumed release and is not pushed twice. One on another commit is\n'
     '      # a number already spent.\n'
@@ -179,18 +213,59 @@ RELEASE_SUBJECT_THEN_TAG = (
     '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
     '            git config user.name "github-actions[bot]"\n'
     '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
-    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            # The SDK, the version and the run that made it. No person: the repository is public and a tag is\n'
+    '            # permanent, and the run records who dispatched and who approved.\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION" \\\n'
+    '              -m "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$COMMIT"\n'
     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
     '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
     '          fi\n'
     '\n'
 )
 RELEASE_TAG_THEN_SUBJECT = (
-    '      # For the uploader, and the tags the step below reads.\n'
-    '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n'
+    '      # For the uploader, and the tags and main the steps below read. Named by SHA: a branch ref makes the\n'
+    '      # checkout pin origin/main back to the dispatch-time commit when main has moved since, and the checks\n'
+    '      # below need main as it is now.\n'
+    '      - uses: actions/checkout@PIN\n'
     '        with:\n'
+    '          ref: ${{ github.sha }}\n'
     '          fetch-depth: 0\n'
     '          persist-credentials: false\n'
+    '\n'
+    '      # Again here, where the tag is created: a release cut while this one waited for approval may have\n'
+    '      # tagged a newer version since the check ran.\n'
+    '      - name: Check the version is not below the newest release\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '        run: |\n'
+    "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+    '          newest=$(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p" | sort -V | tail -n 1)\n'
+    '          if [ -n "$newest" ] && [ "$(printf \'%s\\n%s\\n\' "$newest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then\n'
+    '            echo "::error::the newest release is $newest, and $VERSION is lower."\n'
+    '            exit 1\n'
+    '          fi\n'
+    '\n'
+    '      # Again here, with refs fetched after the approval: an earlier release that was cut while this one\n'
+    '      # waited is not in main yet, and this commit does not hold it.\n'
+    '      - name: Check again that every earlier release is in main and in the commit\n'
+    '        env:\n'
+    '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '        run: |\n'
+    "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+    '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+    '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+    '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+    '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+    '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+    '                exit 1\n'
+    '              fi\n'
+    '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+    '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+    '                exit 1\n'
+    '              fi\n'
+    '            fi\n'
+    '          done\n'
     '\n'
     '      # A tag already on this commit is a resumed release and is not pushed twice. One on another commit is\n'
     '      # a number already spent.\n'
@@ -220,7 +295,10 @@ RELEASE_TAG_THEN_SUBJECT = (
     '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
     '            git config user.name "github-actions[bot]"\n'
     '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
-    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            # The SDK, the version and the run that made it. No person: the repository is public and a tag is\n'
+    '            # permanent, and the run records who dispatched and who approved.\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION" \\\n'
+    '              -m "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$COMMIT"\n'
     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
     '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
     '          fi\n'
@@ -272,18 +350,21 @@ RELEASE_TAG_THEN_UPLOAD = (
     '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
     '            git config user.name "github-actions[bot]"\n'
     '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
-    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            # The SDK, the version and the run that made it. No person: the repository is public and a tag is\n'
+    '            # permanent, and the run records who dispatched and who approved.\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION" \\\n'
+    '              -m "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$COMMIT"\n'
     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
     '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
     '          fi\n'
     '\n'
-    '      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n'
+    '      - uses: actions/download-artifact@PIN\n'
     '        with:\n'
     '          name: staging-repo\n'
     '          path: build/staging-repo\n'
     '\n'
     '      - name: Authenticate to AWS\n'
-    '        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0\n'
+    '        uses: aws-actions/configure-aws-credentials@PIN\n'
     '        with:\n'
     '          role-to-assume: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}\n'
     '          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}\n'
@@ -305,13 +386,13 @@ RELEASE_TAG_THEN_UPLOAD = (
     '\n'
 )
 RELEASE_UPLOAD_THEN_TAG = (
-    '      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n'
+    '      - uses: actions/download-artifact@PIN\n'
     '        with:\n'
     '          name: staging-repo\n'
     '          path: build/staging-repo\n'
     '\n'
     '      - name: Authenticate to AWS\n'
-    '        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0\n'
+    '        uses: aws-actions/configure-aws-credentials@PIN\n'
     '        with:\n'
     '          role-to-assume: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}\n'
     '          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}\n'
@@ -359,7 +440,10 @@ RELEASE_UPLOAD_THEN_TAG = (
     '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
     '            git config user.name "github-actions[bot]"\n'
     '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
-    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            # The SDK, the version and the run that made it. No person: the repository is public and a tag is\n'
+    '            # permanent, and the run records who dispatched and who approved.\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION" \\\n'
+    '              -m "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$COMMIT"\n'
     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
     '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
     '          fi\n'
@@ -454,6 +538,9 @@ SOURCE = {
     PUBLISHER: SDK / ".github/scripts/publish_staging.py",
     CI: SDK / ".github/workflows/ci.yml",
     PUBLIC_SURFACE: SDK / ".github/workflows/public-surface.yml",
+    SOURCE_BRANCH: SDK / ".github/workflows/source-branch.yml",
+    NIGHTLY_REPORT: SDK / ".github/workflows/nightly-report.yml",
+    SONAR: SDK / ".github/workflows/sonar.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -465,19 +552,19 @@ MUTATIONS = [
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
 
     ("QA snapshot builds a ref other than the commit the check passed", QA, "workflows",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: main\n"),
 
     ("QA snapshot tests the branch's head rather than the commit the check passed", QA, "workflows",
-     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"),
 
     ("CI calls the publisher again, so a merge to main publishes", CI, "workflows",
-     "  sonar:\n    name: SonarCloud\n",
-     "  qa-snapshot:\n    uses: ./.github/workflows/qa-snapshot.yml\n\n  sonar:\n    name: SonarCloud\n"),
+     "  card-present:\n    name: Build & Test (card-present)\n",
+     "  qa-snapshot:\n    uses: ./.github/workflows/qa-snapshot.yml\n\n  card-present:\n    name: Build & Test (card-present)\n"),
 
     ("CI grants the publishing token at the workflow level, so every job inherits it", CI, "workflows",
      "permissions:\n  contents: read\n", "permissions:\n  contents: read\n  id-token: write\n"),
@@ -570,56 +657,56 @@ MUTATIONS = [
     # named and the rest of its lines where a reader sees them.
     ("The pull-request gate drops its step, so the committed signature goes unchecked",
      PUBLIC_SURFACE, "workflows",
-     "      - name: Public surface\n        run: |\n          rm core/api/release.txt\n"
-     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n",
+     "      - name: Public surface\n        run: |\n          rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n",
      ""),
 
     ("The pull-request gate regenerates the signature without deleting it, so a skipped generation"
-     " passes", PUBLIC_SURFACE, "workflows", "          rm core/api/release.txt\n", ""),
+     " passes", PUBLIC_SURFACE, "workflows", "          rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n", ""),
 
     ("The pull-request gate drops the tracked-path guard, so a signature nothing commits reads as"
      " clean", PUBLIC_SURFACE, "workflows",
-     "          git ls-files --error-unmatch core/api/release.txt\n", ""),
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n", ""),
 
     ("The pull-request gate drops the diff, so the regenerated signature is never compared",
-     PUBLIC_SURFACE, "workflows", "          git diff --exit-code -- core/api/release.txt\n", ""),
+     PUBLIC_SURFACE, "workflows", "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n", ""),
 
     # Every command word survives in an echo, so a flattened read of the step passes while the shell
     # runs no command of the gate at all.
     ("The pull-request gate echoes its commands, so every word is present and nothing runs",
      PUBLIC_SURFACE, "workflows",
-     "          rm core/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n",
-     "          echo rm core/api/release.txt\n"
-     "          echo ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          echo git ls-files --error-unmatch core/api/release.txt\n"
-     "          echo git diff --exit-code -- core/api/release.txt\n"),
+     "          rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n",
+     "          echo rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          echo ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          echo git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          echo git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"),
 
     # Every command runs, each intact, but the diff is first: it compares the checkout's committed
     # record against itself, and the regeneration's drift lands after nothing compares it again.
     ("The pull-request gate diffs the record before regenerating it, so the comparison reads the"
      " checkout", PUBLIC_SURFACE, "workflows",
-     "          rm core/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n",
-     "          git diff --exit-code -- core/api/release.txt\n"
-     "          rm core/api/release.txt\n"
-     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"),
+     "          rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n",
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          rm core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n"),
 
-    # A release names a commit that passed CI on main, so a gate inside CI is one a release depends
+    # A release names a commit that passed CI on its release branch, so a gate inside CI is one a release depends
     # on through CI: this puts it back, rebuilding the coupling the separate workflow removed.
     ("CI carries the gate again, so a release depends on it through CI", CI, "workflows",
      "      # The public-surface gate runs in its own workflow, on the pull request: a release names a\n"
-     "      # commit that passed this workflow on main, so a gate inside it is one a release depends on\n"
-     "      # through CI.\n\n"
+     "      # commit that passed this workflow on its release branch, so a gate inside it is one a release\n"
+     "      # depends on through CI.\n\n"
      "      - name: Unit tests\n",
      "      # The public-surface gate runs in its own workflow, on the pull request: a release names a\n"
-     "      # commit that passed this workflow on main, so a gate inside it is one a release depends on\n"
-     "      # through CI.\n\n"
+     "      # commit that passed this workflow on its release branch, so a gate inside it is one a release\n"
+     "      # depends on through CI.\n\n"
      "      - name: Public surface\n"
      "        run: |\n"
      "          rm core/api/release.txt\n"
@@ -632,11 +719,14 @@ MUTATIONS = [
     # green build is all it sees.
     ("The release drops its gate, so a corrupted record publishes", RELEASE, "workflows",
      "      - name: Public surface\n"
+     "        env:\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
      "        run: |\n"
-     "          rm core/api/release.txt\n"
-     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n\n"
+     "          rm core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :taptopay:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n\n"
      "      - name: Publish to the staging directory\n",
      "      - name: Publish to the staging directory\n"),
 
@@ -644,11 +734,14 @@ MUTATIONS = [
     # tree: a red gate cancels the upload of a tree the run already built.
     ("The release checks the record after publishing it", RELEASE, "workflows",
      "      - name: Public surface\n"
+     "        env:\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
      "        run: |\n"
-     "          rm core/api/release.txt\n"
-     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n\n"
+     "          rm core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :taptopay:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n\n"
      "      - name: Publish to the staging directory\n"
      "        env:\n"
      "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
@@ -660,20 +753,51 @@ MUTATIONS = [
      "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
      "        run: ./gradlew publish\n\n"
      "      - name: Public surface\n"
+     "        env:\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
      "        run: |\n"
-     "          rm core/api/release.txt\n"
-     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
-     "          git ls-files --error-unmatch core/api/release.txt\n"
-     "          git diff --exit-code -- core/api/release.txt\n"),
+     "          rm core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease :payin:metalavaGenerateSignatureRelease :taptopay:metalavaGenerateSignatureRelease :telemetry:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"),
+
+    ("The pull-request gate leaves :payin's record out, so its public members change unchecked", PUBLIC_SURFACE, "workflows",
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt telemetry/api/release.txt\n",
+     "          git diff --exit-code -- core/api/release.txt telemetry/api/release.txt\n"),
+
+    # :taptopay resolves the card reader from a credentialed repository, so a gate step without the pair
+    # fails on a clean runner and the release stops before it publishes.
+    ("The release gate loses the card reader credential, so :taptopay cannot resolve", RELEASE, "workflows",
+     "      - name: Public surface\n"
+     "        env:\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n",
+     "      - name: Public surface\n"),
+
+    ("The release leaves :payin out of the records it checks", RELEASE, "workflows",
+     "          git diff --exit-code -- core/api/release.txt payin/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n",
+     "          git diff --exit-code -- core/api/release.txt taptopay/api/release.txt telemetry/api/release.txt\n"),
+
+    ("The pull-request gate stops checking :taptopay", PUBLIC_SURFACE, "workflows",
+     "          rm taptopay/api/release.txt\n", ""),
 
     ("A QA snapshot runs the suites under a shell without -e", QA, "workflows",
      "      - name: Unit tests\n        env:\n", "      - name: Unit tests\n        shell: bash {0}\n        env:\n"),
 
-    ("CI cancels a run on main, and with it a publish part way through its upload", CI, "workflows",
-     "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}", "  cancel-in-progress: true"),
+    ("CI groups push runs by branch, so a waiting push run is replaced by the next", CI, "workflows",
+     "  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}\n",
+     "  group: ci-${{ github.ref }}\n"),
 
-    ("CI cancels a run on main through an expression that is not the word true", CI, "workflows",
-     "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}",
+    ("CI groups push runs by commit, so one commit pushed to two branches shares a group", CI, "workflows",
+     "  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}\n",
+     "  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}\n"),
+
+    ("CI cancels a run on a push, the run a release names", CI, "workflows",
+     "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}", "  cancel-in-progress: true"),
+
+    ("CI cancels a run on a push through an expression that is not the word true", CI, "workflows",
+     "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
      "  cancel-in-progress: ${{ github.ref == github.ref }}"),
 
     ("QA snapshot names the uploader in an echo, so its flags are read instead", QA, "workflows",
@@ -721,13 +845,13 @@ MUTATIONS = [
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  pull_request:\n"),
 
     ("QA snapshot builds another repository", QA, "workflows",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n          repository: other/repo\n"),
 
     ("QA snapshot runs an action on a moving tag", QA, "workflows",
-     "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8", "actions/download-artifact@v8"),
+     "actions/download-artifact@PIN", "actions/download-artifact@v8"),
 
     ("A ci.yml job is granted the publishing token", CI, "workflows",
      "  build:\n    name: Build & Test\n    runs-on: ubuntu-latest\n",
@@ -1224,17 +1348,61 @@ MUTATIONS = [
      LIVE_SANDBOX, "workflows",
      "on:\n  workflow_dispatch:", "on:\n  pull_request_target:\n  workflow_dispatch:"),
 
+    # The scanner's configuration is main's. Each of these hands a branch the file that can run a binary
+    # beside SONAR_TOKEN again.
+    # The artifacts come from the pull request's own CI. Each of these lets one reach `.git` or the configuration.
+    ("Sonar reads main's configuration after an artifact has arrived", SONAR, "workflows",
+     '      # The scanner\'s configuration is main\'s, never the analysed revision\'s: a branch could set a property that\n      # runs a binary of its own beside SONAR_TOKEN. `github.sha` is the main commit this workflow was read from,\n      # read before any artifact arrives and with replace refs off. The scanner also loads each module\'s copy.\n      - name: Take the configuration from main\n        env:\n          MAIN_SHA: ${{ github.sha }}\n        run: |\n          git --no-replace-objects show "$MAIN_SHA:sonar-project.properties" > "$RUNNER_TEMP/sonar-project.properties"\n          find . -name sonar-project.properties -not -path \'*/.git/*\' -delete\n\n      # The pull request\'s own CI built these, so they unpack outside the workspace, where nothing in them can\n      # reach `.git` or a configuration file, and only module reports and classes are copied in.\n      - name: Download the reports\n        uses: actions/download-artifact@PIN\n        with:\n          name: reports\n          path: ${{ runner.temp }}/artifacts\n          run-id: ${{ github.event.workflow_run.id }}\n          github-token: ${{ secrets.GITHUB_TOKEN }}\n\n',
+     '      # The pull request\'s own CI built these, so they unpack outside the workspace, where nothing in them can\n      # reach `.git` or a configuration file, and only module reports and classes are copied in.\n      - name: Download the reports\n        uses: actions/download-artifact@PIN\n        with:\n          name: reports\n          path: ${{ runner.temp }}/artifacts\n          run-id: ${{ github.event.workflow_run.id }}\n          github-token: ${{ secrets.GITHUB_TOKEN }}\n\n      # The scanner\'s configuration is main\'s, never the analysed revision\'s: a branch could set a property that\n      # runs a binary of its own beside SONAR_TOKEN. `github.sha` is the main commit this workflow was read from,\n      # read before any artifact arrives and with replace refs off. The scanner also loads each module\'s copy.\n      - name: Take the configuration from main\n        env:\n          MAIN_SHA: ${{ github.sha }}\n        run: |\n          git --no-replace-objects show "$MAIN_SHA:sonar-project.properties" > "$RUNNER_TEMP/sonar-project.properties"\n          find . -name sonar-project.properties -not -path \'*/.git/*\' -delete\n\n'),
+
+    ("Sonar unpacks the reports into the workspace again", SONAR, "workflows",
+     "          name: reports\n          path: ${{ runner.temp }}/artifacts\n",
+     "          name: reports\n"),
+
+    ("Sonar honours replace refs when it reads main's configuration", SONAR, "workflows",
+     "git --no-replace-objects show", "git show"),
+
+    ("Sonar takes in an artifact's symbolic links", SONAR, "workflows",
+     '          if [ -n "$(find "$STAGED" -type l -print -quit)" ]; then\n'
+     '            echo "::error::an artifact carries a symbolic link"\n'
+     '            exit 1\n'
+     '          fi\n', ""),
+
+    ("Sonar copies through a symbolic link the checkout carries", SONAR, "workflows",
+     '          if [ -n "$(find "$GITHUB_WORKSPACE" -path "$GITHUB_WORKSPACE/.git" -prune -o -type l -print -quit)" ]; then\n'
+     '            echo "::error::the checkout carries a symbolic link"\n'
+     '            exit 1\n'
+     '          fi\n', ""),
+
+    ("Sonar copies in any path an artifact carries", SONAR, "workflows",
+     "^[A-Za-z0-9_-]+/build/(reports|intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes)/ ]]",
+     ". ]]"),
+
+    ("Sonar reads the analysed revision's configuration, not main's", SONAR, "workflows",
+     "          MAIN_SHA: ${{ github.sha }}\n",
+     "          MAIN_SHA: ${{ github.event.workflow_run.head_sha }}\n"),
+
+    ("Sonar leaves the branch's module configuration files in place", SONAR, "workflows",
+     "          find . -name sonar-project.properties -not -path '*/.git/*' -delete\n", ""),
+
+    ("Sonar stops pointing the scanner at main's configuration", SONAR, "workflows",
+     '          trusted="$trusted -Dproject.settings=$RUNNER_TEMP/sonar-project.properties"\n', ""),
+
+    ("Sonar writes main's configuration into the workspace, where the branch's checkout lives", SONAR, "workflows",
+     'git --no-replace-objects show "$MAIN_SHA:sonar-project.properties" > "$RUNNER_TEMP/sonar-project.properties"',
+     'git --no-replace-objects show "$MAIN_SHA:sonar-project.properties" > "./main-sonar-project.properties"'),
+
     ("The emulator step is handed the client secret again", LIVE_FLOWS, "workflows",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787\n"
-     "          PAYABLI_LIVETEST_CLIENT_SECRET: ${{ secrets.client-secret }}"),
+     "          PAYABLI_LIVETEST_CLIENT_SECRET: ${{ secrets[format('PAYABLI_CLIENT_SECRET_{0}', inputs.secrets-suffix)] }}"),
 
     # Only the other half of the credential. Worth its own row because a check written for the secret alone
     # passes this, which is what the review found.
     ("The emulator step is handed the client id, and only that", LIVE_FLOWS, "workflows",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787\n"
-     "          PAYABLI_LIVETEST_CLIENT_ID: ${{ secrets.client-id }}"),
+     "          PAYABLI_LIVETEST_CLIENT_ID: ${{ secrets[format('PAYABLI_CLIENT_ID_{0}', inputs.secrets-suffix)] }}"),
 
     ("The token host is dropped, so the tests fall back to the compiled-in address", LIVE_FLOWS, "workflows",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
@@ -1420,9 +1588,9 @@ MUTATIONS = [
      "github.event_name == 'schedule' && github.ref_name",
      "github.event_name == 'schedule' || github.ref_name"),
 
-    ("Any default-branch run owns the nightly alarm, not only a scheduled one", NIGHTLY, "workflows",
-     "github.event_name == 'schedule' && github.ref_name",
-     "github.event_name == 'schedule' || github.ref_name"),
+    ("Any default-branch run owns the nightly alarm, not only a scheduled one", NIGHTLY_REPORT, "workflows",
+     "== 'schedule'\n              && github.event.workflow_run.head_branch",
+     "== 'schedule'\n              || github.event.workflow_run.head_branch"),
 
     # The operator carries the whole meaning, and inverting it reads as a typo rather than as a change of
     # policy: every run that is not the scheduled one would then own the alarm.
@@ -1430,9 +1598,15 @@ MUTATIONS = [
      "github.event_name == 'schedule' && github.ref_name ==",
      "github.event_name != 'schedule' && github.ref_name !="),
 
-    ("The nightly alarm is owned by every run except the scheduled one", NIGHTLY, "workflows",
-     "github.event_name == 'schedule' && github.ref_name ==",
-     "github.event_name != 'schedule' && github.ref_name !="),
+    ("The nightly alarm is owned by every run except the scheduled one", NIGHTLY_REPORT, "workflows",
+     "github.event.workflow_run.event == 'schedule'\n              && github.event.workflow_run.head_branch ==",
+     "github.event.workflow_run.event != 'schedule'\n              && github.event.workflow_run.head_branch !="),
+
+    ("The nightly report reads the reporting run's own identity, not the nightly's", NIGHTLY_REPORT, "workflows",
+     "          NIGHTLY_RUN_ID: ${{ github.event.workflow_run.id }}\n", ""),
+
+    ("The nightly report posts without its environment, so the token is a repository secret again", NIGHTLY_REPORT, "workflows",
+     "    environment: ci-protected\n", ""),
 
     ("A green dispatch resets the live alarm, masking a schedule that has stopped", LIVE_POSTER, "live",
      "    if not red and not owns_liveness_switch():", "    if False:"),
@@ -1478,8 +1652,8 @@ MUTATIONS = [
     # The mirror's permission split. The token is what turns repository-controlled code into an identity
     # that can write the origin, and every one of these hands it to a run that publishes nothing.
     ("The mirror grants the OIDC token at the top, so both jobs inherit it", MIRROR, "workflows",
-     "permissions:\n  contents: read\n\nconcurrency:",
-     "permissions:\n  contents: read\n  id-token: write\n\nconcurrency:"),
+     "permissions:\n  contents: read\n\n# `bash` turns on pipefail, so a failure left of a `|` fails the step.\ndefaults:",
+     "permissions:\n  contents: read\n  id-token: write\n\n# `bash` turns on pipefail, so a failure left of a `|` fails the step.\ndefaults:"),
 
     ("The fetch job is granted the token it has no use for", MIRROR, "workflows",
      "      id-token: none", "      id-token: write"),
@@ -1568,8 +1742,8 @@ MUTATIONS = [
      "        env:\n          READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}"),
 
     ("The emulator action is handed a secret through its inputs", NIGHTLY, "workflows",
-     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n',
-     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n          repository-password: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@PIN\n        with:\n',
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@PIN\n        with:\n          repository-password: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
 
     # Job level, which every step inherits while none of them names it.
     ("The emulator job inherits a secret from its own env", NIGHTLY, "workflows",
@@ -1619,13 +1793,11 @@ MUTATIONS = [
 
     # A job holding a secret, even on one step, lets every earlier action write what that step reads.
     ("An action in the nightly card-present job is left on a moving tag", NIGHTLY, "workflows",
-     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n\n"
-     "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6",
-     "      - uses: actions/checkout@v7\n\n"
-     "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6"),
+     "      # step leaves behind.\n      - uses: actions/checkout@PIN\n",
+     "      # step leaves behind.\n      - uses: actions/checkout@v7\n"),
 
     ("An action in the ci.yml card-present job is left on a moving tag", CI, "workflows",
-     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@PIN',
      '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@v7'),
 
     # W13. A results directory left out of the archive reaches `verdict` as a suite that wrote nothing.
@@ -1698,20 +1870,20 @@ MUTATIONS = [
      "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          declare version=0.0.1\n          release="),
 
     ('Release overrides the CI count it read with command export', RELEASE, "workflows",
-     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
-     '          command export passed=1\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch',
+     '          command export passed=1\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
 
     ("Release skips the check job's CI gate with a step condition", RELEASE, "workflows",
-     '      - name: Check CI passed on main for this commit\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n',
-     '      - name: Check CI passed on main for this commit\n        if: false\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n'),
+     '      - name: Check CI passed on the branch for this commit\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n',
+     '      - name: Check CI passed on the branch for this commit\n        if: false\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n'),
 
-    ('Release lets the on-main guard fail without failing the job', RELEASE, "workflows",
-     '      - name: Check the commit is on main\n',
-     '      - name: Check the commit is on main\n        continue-on-error: true\n'),
+    ('Release lets the on-branch guard fail without failing the job', RELEASE, "workflows",
+     '      - name: Check the commit is on its release or hotfix branch\n',
+     '      - name: Check the commit is on its release or hotfix branch\n        continue-on-error: true\n'),
 
     ("Release runs the check's CI gate under another shell", RELEASE, "workflows",
-     "      - name: Check CI passed on main for this commit\n        env:\n",
-     "      - name: Check CI passed on main for this commit\n        shell: sh {0}\n        env:\n"),
+     "      - name: Check CI passed on the branch for this commit\n        env:\n",
+     "      - name: Check CI passed on the branch for this commit\n        shell: sh {0}\n        env:\n"),
 
     ("Release runs the release job's steps under sh, without pipefail", RELEASE, "workflows",
      "    needs: [check, test, build]\n", "    needs: [check, test, build]\n    defaults:\n      run:\n        shell: sh\n"),
@@ -1727,8 +1899,8 @@ MUTATIONS = [
      '    permissions:\n      contents: write\n      # To read the CI runs for this commit.\n      actions: read\n    outputs:'),
 
     ("Release rewrites a later step's environment through GITHUB_ENV", RELEASE, "workflows",
-     '          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then\n',
-     '          echo "SHA=$GITHUB_SHA" >> "$GITHUB_ENV"\n          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then\n'),
+     '          if [ -z "$branch" ]; then\n',
+     '          echo "SHA=$GITHUB_SHA" >> "$GITHUB_ENV"\n          if [ -z "$branch" ]; then\n'),
 
     ("Release hands every secret to the whole build job through a job-level env", RELEASE, "workflows",
      "    name: Build the release\n    needs: [check]\n",
@@ -1763,16 +1935,12 @@ MUTATIONS = [
      'if [ -n "$tagged" ]; then'),
 
     ('Release takes a CI run from any branch, the branch filter echoed beside the query', RELEASE, "workflows",
-     '--event push \\\n            --branch main --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
-     '--event push \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          echo \'--branch main\'\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+     '--event push \\\n            --branch "$BRANCH" --limit 1 --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch',
+     '--event push \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          echo \'--branch "$BRANCH"\'\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
 
     ('Release hard-codes the version it tags, the property name echoed beside it', RELEASE, "workflows",
      "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
      '          echo payabli.version=; version=0.0.1\n          release='),
-
-    ("Release builds against a hard-coded version, the property name echoed beside it", RELEASE, "workflows",
-     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          if [ \"$CHECKED\"",
-     "          echo payabli.version=; version=0.0.1\n          if [ \"$CHECKED\""),
 
     ("Release fetches GitHub's host keys without a token", RELEASE, "workflows",
      '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          tagged=',
@@ -1787,7 +1955,7 @@ MUTATIONS = [
      '            echo "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts"\n            git push'),
 
     ('Release echoes the CI guard instead of running it', RELEASE, "workflows",
-     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch once CI on main has passed."\n            exit 1\n          fi\n',
+     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch once CI on $BRANCH has passed."\n            exit 1\n          fi\n',
      "          echo 'if [ $passed -lt 1 ] ; then exit 1 ; fi'\n"),
 
     ("Release publishes main's head as the approved commit", RELEASE, "workflows",
@@ -1798,20 +1966,17 @@ MUTATIONS = [
      '      version: ${{ steps.version.outputs.version }}\n      commit:',
      '      version: 0.0.1\n      commit:'),
 
-    ("Release keeps the build's version guard but drops its exit", RELEASE, "workflows",
-     "and the check read '$CHECKED'.\"\n            exit 1\n", "and the check read '$CHECKED'.\"\n"),
-
     ('Release lets a commit with no successful CI through the check', RELEASE, "workflows",
-     '[ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
-     '[ "$passed" -lt 0 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+     '[ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch',
+     '[ "$passed" -lt 0 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
 
     ('Release refuses a full SHA and accepts anything else', RELEASE, "workflows",
      'if [[ ! "$COMMIT" =~',
      'if [[ "$COMMIT" =~'),
 
-    ('Release refuses a commit on main and accepts one off it', RELEASE, "workflows",
-     '!= "$COMMIT" ]; then\n            echo "::error::$COMMIT is not on main.',
-     '= "$COMMIT" ]; then\n            echo "::error::$COMMIT is not on main.'),
+    ('Release refuses a commit on its branch and accepts one off it', RELEASE, "workflows",
+     '[ "$(git merge-base "$COMMIT" "$tip")" = "$COMMIT" ]; then',
+     '[ "$(git merge-base "$COMMIT" "$tip")" != "$COMMIT" ]; then'),
 
     ('Release refuses a release version and accepts a candidate', RELEASE, "workflows",
      'if [[ ! "$version" =~ $release ]]',
@@ -1820,9 +1985,6 @@ MUTATIONS = [
     ('Release reads any version as a release version', RELEASE, "workflows",
      'release=\'^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$\'\n          if [[ ! "$version"',
      'release=\'^.*$\'\n          if [[ ! "$version"'),
-
-    ("Release builds when the commit and the check disagree on the version", RELEASE, "workflows",
-     'if [ "$CHECKED" != "$version" ]; then', 'if [ "$CHECKED" = "$version" ] && false; then'),
 
     ("Release builds before the commit is checked", RELEASE, "workflows",
      "    name: Build the release\n    needs: [check]\n", "    name: Build the release\n"),
@@ -1857,13 +2019,13 @@ MUTATIONS = [
      '      - name: Check the commit is named in full\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
      '      - name: Check the commit is named in full\n        env:\n          COMMIT: ${{ github.sha }}\n'),
 
-    ("Release checks main's head is on main rather than the named commit", RELEASE, "workflows",
-     '      - name: Check the commit is on main\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
-     '      - name: Check the commit is on main\n        env:\n          COMMIT: ${{ github.sha }}\n'),
+    ("Release checks main's head is on the branch rather than the named commit", RELEASE, "workflows",
+     '        id: branch\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
+     '        id: branch\n        env:\n          COMMIT: ${{ github.sha }}\n'),
 
     ("Release takes main's head when no commit is named", RELEASE, "workflows",
-     '        description: "Full 40-character SHA of the commit on main to release"\n        required: true\n',
-     '        description: "Full 40-character SHA of the commit on main to release"\n        required: false\n'),
+     '        description: "Full 40-character SHA of the commit to release, on release/<version> or hotfix/<version>"\n        required: true\n',
+     '        description: "Full 40-character SHA of the commit to release, on release/<version> or hotfix/<version>"\n        required: false\n'),
 
     ("Release can be dispatched with no notes", RELEASE, "workflows",
      '        description: "Release notes (markdown), published as the release body"\n        required: true\n',
@@ -1888,8 +2050,8 @@ MUTATIONS = [
      '^[0-9a-f]{40}$',
      '^[0-9a-f]+$'),
 
-    ('Release tags a commit that is not on main', RELEASE, "workflows",
-     'git merge-base "$COMMIT" origin/main',
+    ('Release tags a commit that is not on its branch', RELEASE, "workflows",
+     'git merge-base "$COMMIT" "$tip"',
      'git merge-base "$COMMIT" HEAD'),
 
     ("Release checks CI for main's head rather than the named commit", RELEASE, "workflows",
@@ -1901,24 +2063,34 @@ MUTATIONS = [
      '          fetch-depth: 0\n'),
 
     ("Release tags main's head rather than the approved commit", RELEASE, "workflows",
-     'dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"',
-     'dispatched by $GITHUB_TRIGGERING_ACTOR" "$GITHUB_SHA"'),
+     'actions/runs/$GITHUB_RUN_ID" "$COMMIT"',
+     'actions/runs/$GITHUB_RUN_ID" "$GITHUB_SHA"'),
+
+    ("Release writes the dispatcher's handle into the permanent tag", RELEASE, "workflows",
+     '-m "Payabli Android SDK $VERSION" \\\n', '-m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" \\\n'),
+
+    ("Release's tag no longer links the run that made it", RELEASE, "workflows",
+     '-m "Released by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"', '-m "Released"'),
 
     ('Release starts on a tag push, so a person creates the release', RELEASE, "workflows",
      'on:\n  workflow_dispatch:\n',
      "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
 
     ('Release tags a commit whatever CI said about it', RELEASE, "workflows",
-     '--jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
-     '--jq \'length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+     '--jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch',
+     '--jq \'length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
 
     ('Release tags a commit whose CI ran on any branch', RELEASE, "workflows",
-     ' \\\n            --branch main --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
-     ' \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+     ' \\\n            --branch "$BRANCH" --limit 1 --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch',
+     ' \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::the latest CI run on $BRANCH for $SHA did not pass. Dispatch'),
 
     ('Release tags from any branch', RELEASE, "workflows",
-     "    if: github.ref == 'refs/heads/main'\n",
-     ''),
+     'if [ "$GITHUB_REF" != "refs/heads/main" ]; then',
+     'if [ "$GITHUB_REF" = "" ]; then'),
+
+    ('Release skips a dispatch off main in silence instead of failing it', RELEASE, "workflows",
+     "    name: Check the commit can be released\n",
+     "    name: Check the commit can be released\n    if: github.ref == 'refs/heads/main'\n"),
 
     ("Release builds only on a tag ref, which a dispatch from main never is", RELEASE, "workflows",
      "    name: Build the release\n    needs: [check]\n",
@@ -1933,8 +2105,24 @@ MUTATIONS = [
      '-o StrictHostKeyChecking=no'),
 
     ('Release pushes over a version already tagged on another commit', RELEASE, "workflows",
-     '[ "$tagged" != "$COMMIT" ]',
-     '[ "$tagged" = "$COMMIT" ]'),
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n',
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" = "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n'),
 
     # The release is one run. A dispatch from inside it is a second run nobody approved.
     ("Release starts another run", RELEASE, "workflows",
@@ -1946,9 +2134,6 @@ MUTATIONS = [
     ("Release tags and uploads through a failed check, a red suite or a failed build", RELEASE, "workflows",
      "    needs: [check, test, build]\n", "    needs: [check, test, build]\n    if: always()\n"),
 
-    ("Release builds without checking the commit carries the version the check read", RELEASE, "workflows",
-     RELEASE_BUILD_VERSION_CHECK, ""),
-
     ('Release publishes a version other than the committed one', RELEASE, "workflows",
      '        run: ./gradlew publish\n',
      '        run: ./gradlew publish -Ppayabli.version=0.1.0\n'),
@@ -1958,16 +2143,20 @@ MUTATIONS = [
      ''),
 
     ("Release builds in the release environment too, beside Gradle", RELEASE, "workflows",
-     "    name: Build the release\n    needs: [check]\n",
-     "    name: Build the release\n    needs: [check]\n    environment: release\n"),
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n"
+     "    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n"
+     "    # dispatch from any other branch is refused at the environment.\n"
+     "    environment: ci-protected\n",
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n"
+     "    environment: release\n"),
 
     ('Release grants the publishing token to every job', RELEASE, "workflows",
      'permissions:\n  contents: read\n\n#',
      'permissions:\n  contents: read\n  id-token: write\n\n#'),
 
     ("Release runs Gradle beside the deploy key and the publishing token", RELEASE, "workflows",
-     "      # For the uploader, and the tags the step below reads.\n",
-     "      - run: ./gradlew help\n      # For the uploader, and the tags the step below reads.\n"),
+     "      # For the uploader, and the tags and main the steps below read. Named by SHA: a branch ref makes the\n",
+     "      - run: ./gradlew help\n      # For the uploader, and the tags and main the steps below read. Named by SHA: a branch ref makes the\n"),
 
     ("Release hands the upload step a secret", RELEASE, "workflows",
      "          VERSION: ${{ needs.check.outputs.version }}\n          ROLE_ARN",
@@ -1993,7 +2182,7 @@ MUTATIONS = [
      '      group: maven-release\n      cancel-in-progress: true\n'),
 
     ('Release runs an action on a moving tag', RELEASE, "workflows",
-     'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8',
+     'actions/download-artifact@PIN',
      'actions/download-artifact@v8'),
 
     ("Release attaches the staging tree to the GitHub Release", RELEASE, "workflows",
@@ -2015,14 +2204,14 @@ MUTATIONS = [
      "          ref: ${{ needs.check.outputs.commit }}\n          fetch-depth: 0\n          persist-credentials: false\n"),
 
     ("Release builds main's head rather than the commit the check passed", RELEASE, "workflows",
-     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"),
 
     ("Release tests main's head rather than the commit the check passed", RELEASE, "workflows",
-     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    # The Maven credential is an environment secret, released only to a run on main, release/* or hotfix/*. A\n    # dispatch from any other branch is refused at the environment.\n    environment: ci-protected\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@PIN\n"),
 
     ("Release tests before the commit is checked", RELEASE, "workflows",
      "    name: Test the release\n    needs: [check]\n", "    name: Test the release\n"),
@@ -2032,9 +2221,9 @@ MUTATIONS = [
      RELEASE_KEEP_TREE, ""),
 
     ("Release uploads a tree other than the one the build kept", RELEASE, "workflows",
-     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n"
+     "      - uses: actions/download-artifact@PIN\n        with:\n"
      "          name: staging-repo\n",
-     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n"
+     "      - uses: actions/download-artifact@PIN\n        with:\n"
      "          name: staging-repo-rebuilt\n"),
 
     # Three reorderings, each of which leaves every step intact and correct. The subject check after the
@@ -2051,11 +2240,45 @@ MUTATIONS = [
 
 
     # What the tag guard compares. Each keeps every word of the guard and refuses nothing.
-    ("Release compares the named commit with itself rather than with the tag", RELEASE, "workflows",
-     'tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")', "tagged=$COMMIT"),
+    ('Release compares the named commit with itself rather than with the tag', RELEASE, "workflows",
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n',
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$COMMIT\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n'),
 
-    ("Release looks the tag up under another name, so a resume pushes it again", RELEASE, "workflows",
-     'git tag --list "$VERSION"', 'git tag --list "v$VERSION"'),
+    ('Release looks the tag up under another name, so a resume pushes it again', RELEASE, "workflows",
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n',
+     '          GH_TOKEN: ${{ github.token }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "v$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n'),
 
     # Any other depth fetches no tags, so the lookup finds none and a spent number is a refused push.
     ("Release checks out without the tags", RELEASE, "workflows",
@@ -2148,9 +2371,9 @@ MUTATIONS = [
 
     ("QA publish leaves the checkout's credential beside the token", QA, "workflows",
      "      # For the uploader alone: this workflow's own commit, not the one being published.\n"
-     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n        with:\n          persist-credentials: false\n",
+     "      - uses: actions/checkout@PIN\n        with:\n          persist-credentials: false\n",
      "      # For the uploader alone: this workflow's own commit, not the one being published.\n"
-     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "      - uses: actions/checkout@PIN\n"),
 
     ("QA upload is handed a literal version rather than the check's stamp", QA, "workflows",
      "          VERSION: ${{ needs.check.outputs.version }}\n          ROLE_ARN",
@@ -2186,8 +2409,552 @@ MUTATIONS = [
      "      version: ${{ steps.name.outputs.version }}\n", "      version: 0.0.2-QA.20260101000000\n"),
 
     ("QA publish uploads a tree other than the one the build kept", QA, "workflows",
-     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n          name: staging-repo\n",
-     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n          name: staging-repo-rebuilt\n"),
+     "      - uses: actions/download-artifact@PIN\n        with:\n          name: staging-repo\n",
+     "      - uses: actions/download-artifact@PIN\n        with:\n          name: staging-repo-rebuilt\n"),
+
+    # Release and hotfix branches. CI and the gate run there, and a release is cut from a commit on its own
+    # version's branch, with every earlier release already in main. Each mutation below releases a commit
+    # nobody tested there, under a number it was not worked as, or ahead of a release main never received.
+    ("CI stops running on pushes to hotfix branches", CI, "workflows",
+     "  push:\n    branches: [main, 'release/**', 'hotfix/**']\n",
+     "  push:\n    branches: [main, 'release/**']\n"),
+
+    ("CI stops running on pull requests into release branches", CI, "workflows",
+     "  pull_request:\n    branches: [main, 'release/**', 'hotfix/**']\n",
+     "  pull_request:\n    branches: [main, 'hotfix/**']\n"),
+
+    ("The gate stops running on pull requests into release branches", PUBLIC_SURFACE, "workflows",
+     "    branches: [main, 'release/**', 'hotfix/**']\n", "    branches: [main]\n"),
+
+    ("Release no longer accepts a commit on its hotfix branch", RELEASE, "workflows",
+     'for candidate in "release/$VERSION" "hotfix/$VERSION"; do',
+     'for candidate in "release/$VERSION"; do'),
+
+    ("Release accepts a commit on one fixed release branch, whatever version it declares", RELEASE, "workflows",
+     'for candidate in "release/$VERSION" "hotfix/$VERSION"; do',
+     'for candidate in "release/0.2.0" "hotfix/$VERSION"; do'),
+
+    ("Release checks CI on main rather than on the branch the commit is on", RELEASE, "workflows",
+     "          BRANCH: ${{ steps.branch.outputs.branch }}\n", "          BRANCH: main\n"),
+
+    ("Release counts a tag that is not a release as the newest release", RELEASE, "workflows",
+     "          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest=$(git for-each-ref --format='%(refname:strip=2)' refs/tags | sed -nE \"/$release/p\" | sort -V",
+     "          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest=$(git for-each-ref --format='%(refname:strip=2)' refs/tags | sort -V"),
+
+    ("Release refuses a version above the newest release and accepts one below it", RELEASE, "workflows",
+     "          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest=$(git for-each-ref --format='%(refname:strip=2)' refs/tags | sed -nE \"/$release/p\" | sort -V | tail -n 1)\n"
+     "          if [ -n \"$newest\" ] && [ \"$(printf '%s\\n%s\\n' \"$newest\" \"$VERSION\" | sort -V | tail -n 1)\" != \"$VERSION\" ]; then",
+     "          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest=$(git for-each-ref --format='%(refname:strip=2)' refs/tags | sed -nE \"/$release/p\" | sort -V | tail -n 1)\n"
+     "          if [ -n \"$newest\" ] && [ \"$(printf '%s\\n%s\\n' \"$newest\" \"$VERSION\" | sort -V | tail -n 1)\" = \"$VERSION\" ]; then"),
+
+    ("Release tags without refusing a version below the newest release again", RELEASE, "workflows",
+     "          VERSION: ${{ needs.check.outputs.version }}\n        run: |\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest=",
+     "          VERSION: ${{ needs.check.outputs.version }}\n        run: |\n"
+     "          exit 0\n"
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     "          newest="),
+
+    ("Release checks the newest release again against the run's own version", RELEASE, "workflows",
+     "      - name: Check the version is not below the newest release\n        env:\n"
+     "          VERSION: ${{ needs.check.outputs.version }}\n",
+     "      - name: Check the version is not below the newest release\n        env:\n"
+     "          VERSION: 9.9.9\n"),
+
+    ('Release refuses an earlier release that is in main and accepts one that is not', RELEASE, "workflows",
+     '      - name: Check every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n',
+     '      - name: Check every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" = "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n'),
+
+    ('Release requires a later release in main as well as an earlier one', RELEASE, "workflows",
+     '      - name: Check every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n',
+     '      - name: Check every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | tail -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n'),
+
+    ('Release cuts a commit that lacks an earlier release main already holds', RELEASE, "workflows",
+     '      - name: Check every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n',
+     '      - name: Check every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" = "$COMMIT" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n'),
+
+    ('Release tags while an earlier release cut during the approval is not in main', RELEASE, "workflows",
+     '      - name: Check again that every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+     '          VERSION: ${{ needs.check.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n',
+     '      - name: Check again that every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+     '          VERSION: ${{ needs.check.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" = "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n'),
+
+    ('Release tags a commit that lacks an earlier release cut during the approval', RELEASE, "workflows",
+     '      - name: Check again that every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+     '          VERSION: ${{ needs.check.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n',
+     '      - name: Check again that every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+     '          VERSION: ${{ needs.check.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" = "$COMMIT" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n'),
+
+    ("Release checks the earlier releases again against main's head rather than the approved commit", RELEASE, "workflows",
+     '      - name: Check again that every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+     '          VERSION: ${{ needs.check.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n',
+     '      - name: Check again that every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ github.sha }}\n'
+     '          VERSION: ${{ needs.check.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n'),
+
+    ('Release skips the second merge-back check', RELEASE, "workflows",
+     '      - name: Check again that every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+     '          VERSION: ${{ needs.check.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n',
+     '      - name: Check again that every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+     '          VERSION: ${{ needs.check.outputs.version }}\n'
+     '        run: |\n'
+     '          exit 0\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n'),
+
+    ("Release reads main through a short name a tag can shadow", RELEASE, "workflows",
+     '      - name: Check every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" refs/remotes/origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n',
+     '      - name: Check every earlier release is in main and in the commit\n'
+     '        env:\n'
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     "          release='^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n"
+     '          for tag in $(git for-each-ref --format=\'%(refname:strip=2)\' refs/tags | sed -nE "/$release/p"); do\n'
+     '            tagged=$(git rev-parse "refs/tags/$tag^{commit}")\n'
+     '            if [ "$tag" != "$VERSION" ] && [ "$(printf \'%s\\n%s\\n\' "$tag" "$VERSION" | sort -V | head -n 1)" = "$tag" ]; then\n'
+     '              if [ "$(git merge-base "$tagged" origin/main)" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in main: its release or hotfix branch has not merged back with a merge commit."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '              if [ "$(git merge-base "$tagged" "$COMMIT")" != "$tagged" ]; then\n'
+     '                echo "::error::release $tag is not in $COMMIT: merge main into the branch and pass CI there before cutting $VERSION."\n'
+     '                exit 1\n'
+     '              fi\n'
+     '            fi\n'
+     '          done\n'),
+
+    ("Release checks out main by branch, which pins origin/main to the dispatch-time commit", RELEASE, "workflows",
+     "          ref: ${{ github.sha }}\n          fetch-depth: 0\n          persist-credentials: false\n",
+     "          fetch-depth: 0\n          persist-credentials: false\n"),
+
+    ("Release's second merge-back check drifts from the first", RELEASE, "workflows",
+     "          COMMIT: ${{ needs.check.outputs.commit }}\n          VERSION: ${{ needs.check.outputs.version }}\n"
+     "        run: |\n          release=",
+     "          COMMIT: ${{ needs.check.outputs.commit }}\n          VERSION: ${{ needs.check.outputs.version }}\n"
+     "        run: |\n          # drifted\n          release="),
+
+    ("Release's second newest-release check drifts from the first", RELEASE, "workflows",
+     "        env:\n          VERSION: ${{ needs.check.outputs.version }}\n        run: |\n          release=",
+     "        env:\n          VERSION: ${{ needs.check.outputs.version }}\n        run: |\n          # drifted\n          release="),
+
+    ("Release passes a commit on any earlier green run, though its latest run on the branch failed", RELEASE, "workflows",
+     '--branch "$BRANCH" --limit 1 --json conclusion',
+     '--branch "$BRANCH" --json conclusion'),
+
+    ("Release's check lets a spent version through to the approval", RELEASE, "workflows",
+     "          COMMIT: ${{ inputs.commit }}\n          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n          tagged=\n",
+     "          COMMIT: ${{ inputs.commit }}\n          VERSION: ${{ steps.version.outputs.version }}\n        run: |\n          exit 0\n          tagged=\n"),
+
+    ("Release's check lets a version tagged on another commit through", RELEASE, "workflows",
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n',
+     '          COMMIT: ${{ inputs.commit }}\n'
+     '          VERSION: ${{ steps.version.outputs.version }}\n'
+     '        run: |\n'
+     '          tagged=\n'
+     '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+     '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+     '          fi\n'
+     '          if [ -n "$tagged" ] && [ "$tagged" = "$COMMIT" ]; then\n'
+     '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+     '            exit 1\n'),
+
+    ("Release's build reads the version again, a check that cannot fail", RELEASE, "workflows",
+     "      - name: Public surface\n",
+     "      - name: Read the version again\n        run: sed -n 's/^payabli.version=//p' gradle.properties\n\n      - name: Public surface\n"),
+
+    ("The qa live run reads the sandbox credentials", LIVE_QA, "workflows",
+     "      secrets-suffix: QA\n", "      secrets-suffix: SBX\n"),
+
+    ("The sandbox live caller passes a repository secret again", LIVE_SANDBOX, "workflows",
+     "      secrets-suffix: SBX\n", "      secrets-suffix: SBX\n    secrets:\n      client-secret: ${{ secrets.PAYABLI_CLIENT_SECRET_SBX }}\n"),
+
+    ("The live flows read their credentials without the environment", LIVE_FLOWS, "workflows",
+     "    # The client credentials are environment secrets, released only to a run on main, release/* or hotfix/*.\n    environment: ci-protected\n", ""),
+
+    ("The analysis lets the branch's properties choose the server", SONAR, "workflows",
+     '          trusted="-Dsonar.host.url=https://sonarcloud.io"\n', '          trusted=""\n'),
+
+    ("The analysis builds the tree it reads", SONAR, "workflows",
+     "      - name: Check the instrumented coverage arrived\n",
+     "      - name: Build\n        run: ./gradlew assembleDebug\n\n      - name: Check the instrumented coverage arrived\n"),
+
+    ("The analysis checks out main rather than the revision CI tested", SONAR, "workflows",
+     "          ref: ${{ github.event.workflow_run.head_sha }}\n          fetch-depth: 0\n          persist-credentials: false\n",
+     "          fetch-depth: 0\n          persist-credentials: false\n"),
+
+    ("The analysis scans a revision that is no longer the newest", SONAR, "workflows",
+     "        if: steps.newest.outputs.newest == 'true'\n        uses: SonarSource",
+     "        uses: SonarSource"),
+
+    ("CI runs the analysis itself again, with the token", CI, "workflows",
+     "  card-present:\n    name: Build & Test (card-present)\n",
+     "  sonar:\n    runs-on: ubuntu-latest\n    env:\n      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}\n    steps:\n      - run: ./gradlew sonar\n\n  card-present:\n    name: Build & Test (card-present)\n"),
+
+    ("The harness checks out on a moving tag", SCRIPTS, "workflows",
+     "      - uses: actions/checkout@PIN\n\n      # The workflow checks parse YAML",
+     "      - uses: actions/checkout@v7\n\n      # The workflow checks parse YAML"),
+
+    ("A Dependabot pull request is analysed when a maintainer pushes to it, and its card-present reports are missing",
+     SONAR, "workflows",
+     '            if [ "$author" = "dependabot[bot]" ]; then\n',
+     '            if false; then\n'),
+
+    ("The analysis takes the pull request's author from the wrong field", SONAR, "workflows",
+     "--jq '\"\\(.head.sha) \\(.user.login)\"'",
+     "--jq '\"\\(.head.sha) \\(.head.user.login)\"'"),
+
+    ("The build job tests the merge commit again, so Sonar reads other source than it built", CI,
+     "workflows",
+     "fetch-depth: 0\n          # A pull request builds its head, not GitHub's merge commit: Sonar is handed only the head, and the\n          # classes and coverage it reads have to come from the tree it analyses.\n          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n",
+     "fetch-depth: 0\n"),
+
+    ("The instrumented job tests the merge commit again", CI, "workflows",
+     "      EMULATOR_ARCH: x86_64\n    steps:\n      - uses: actions/checkout@PIN\n        with:\n          fetch-depth: 0\n          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n",
+     "      EMULATOR_ARCH: x86_64\n    steps:\n      - uses: actions/checkout@PIN\n        with:\n          fetch-depth: 0\n"),
+
+    ("The card-present job tests the merge commit again", CI, "workflows",
+     "PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@PIN\n        with:\n          fetch-depth: 0\n          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n",
+     "PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@PIN\n        with:\n          fetch-depth: 0\n"),
+
+    ("Sabotage shards are numbered by hand, so a shard listed twice leaves another's rows untested", SCRIPTS,
+     "workflows",
+     "--shard ${{ strategy.job-index }}/${{ strategy.job-total }}",
+     "--shard ${{ matrix.shard }}/6"),
+
+    ("The sabotage jobs drop their shard, so each runs every row", SCRIPTS, "workflows",
+     " --shard ${{ strategy.job-index }}/${{ strategy.job-total }}\n", "\n"),
+
+    ("The source-branch workflow drops its declared shell", SOURCE_BRANCH, "workflows",
+     "defaults:\n  run:\n    shell: bash\n", ""),
+
+    ("The nightly report drops its workflow-wide token, so it inherits the repository default", NIGHTLY_REPORT, "workflows",
+     "permissions: {}\n", ""),
+
+    ("Release lets the merge-back guard fail without failing the job", RELEASE, "workflows",
+     "      - name: Check every earlier release is in main and in the commit\n",
+     "      - name: Check every earlier release is in main and in the commit\n        continue-on-error: true\n"),
+
+    ("Release checks the earlier releases against main's head rather than the named commit", RELEASE, "workflows",
+     "      - name: Check every earlier release is in main and in the commit\n        env:\n"
+     "          COMMIT: ${{ inputs.commit }}\n",
+     "      - name: Check every earlier release is in main and in the commit\n        env:\n"
+     "          COMMIT: ${{ github.sha }}\n"),
+
+    # The source branch. A ruleset cannot name it, so this job is the whole rule.
+    ("Source branch refuses a hotfix branch", SOURCE_BRANCH, "workflows",
+     "            release/?*|hotfix/?*|dependabot/?*|ci/?*) ;;\n", "            release/?*|dependabot/?*|ci/?*) ;;\n"),
+
+    ("Source branch refuses a Dependabot branch", SOURCE_BRANCH, "workflows",
+     "            release/?*|hotfix/?*|dependabot/?*|ci/?*) ;;\n", "            release/?*|hotfix/?*|ci/?*) ;;\n"),
+
+    ("Source branch refuses a ci branch", SOURCE_BRANCH, "workflows",
+     "            release/?*|hotfix/?*|dependabot/?*|ci/?*) ;;\n", "            release/?*|hotfix/?*|dependabot/?*) ;;\n"),
+
+    ("Source branch accepts any branch with a slash in it", SOURCE_BRANCH, "workflows",
+     "            release/?*|hotfix/?*|dependabot/?*|ci/?*) ;;\n", "            */?*) ;;\n"),
+
+    ("Source branch reports the rule and passes anyway", SOURCE_BRANCH, "workflows",
+     "'$HEAD_REF'.\"\n              exit 1\n", "'$HEAD_REF'.\"\n              exit 0\n"),
+
+    ("Source branch parses the branch name as shell", SOURCE_BRANCH, "workflows",
+     '          case "$HEAD_REF" in\n', '          case "${{ github.head_ref }}" in\n'),
+
+    ("Source branch misses a pull request retargeted to main", SOURCE_BRANCH, "workflows",
+     "    types: [opened, synchronize, reopened, edited]\n", "    types: [opened, synchronize, reopened]\n"),
+
+    ("Source branch is handed a token", SOURCE_BRANCH, "workflows",
+     "permissions: {}\n", "permissions:\n  contents: read\n"),
+
+    ("Source branch runs the pull request's own copy of itself", SOURCE_BRANCH, "workflows",
+     "on:\n  pull_request_target:\n", "on:\n  pull_request:\n"),
+
+    ("Source branch takes a fork's branch by its name", SOURCE_BRANCH, "workflows",
+     '          if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then\n',
+     '          if [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ] && [ -z "$HEAD_REPO" ]; then\n'),
+
+    ("Release takes a branch whose name only starts with the version's for that branch", RELEASE, "workflows",
+     "'$1 == ref { print $2 }'", "'index($1, ref) == 1 { print $2 }'"),
+
+    ("The harness stops running when the source-branch rule changes", SCRIPTS, "workflows",
+     "      - '.github/workflows/source-branch.yml'\n      # The harness reads the live workflows",
+     "      # The harness reads the live workflows"),
 ]
 
 
@@ -2238,7 +3005,47 @@ def run_verify(half: str) -> tuple[int, int, str]:
     return int(match.group(1)), int(match.group(2)), proc.stdout
 
 
+# A row names a pinned action as `owner/action@PIN`, and the pin is read from the file the row targets. Quoting
+# the SHA would leave every anchor matching nothing after a Dependabot bump. A pin that resolves to nothing leaves
+# the token in place, so the anchor misses and the row reports itself invalid.
+PIN_TOKEN = re.compile(r"([\w./-]+)@PIN")
+
+
+def with_pins(text: str, source: str) -> str:
+    def pin(match: re.Match) -> str:
+        found = set(re.findall(rf"{re.escape(match.group(1))}@([0-9a-f]{{40}} # v[0-9.]+)", source))
+        return f"{match.group(1)}@{found.pop()}" if len(found) == 1 else match.group(0)
+
+    return PIN_TOKEN.sub(pin, text)
+
+
+def shard(rows: list, spec: str) -> list | None:
+    """The rows this run takes under `--shard INDEX/TOTAL`, or None when the spec is malformed.
+
+    Row k goes to shard k % TOTAL, so shards 0 to TOTAL-1 together take every row exactly once.
+
+    @param rows every mutation
+    @param spec INDEX/TOTAL, zero-based, as `strategy.job-index` and `strategy.job-total` give it
+    @return the rows for that shard, or None
+    """
+    match = re.fullmatch(r"(\d+)/(\d+)", spec)
+    if not match:
+        return None
+    index, total = int(match.group(1)), int(match.group(2))
+    if index >= total:
+        return None
+    return [row for k, row in enumerate(rows) if k % total == index]
+
+
 def main() -> int:
+    # A malformed spec runs nothing, which would pass with no row tested, so it is refused.
+    spec = sys.argv[2] if len(sys.argv) == 3 and sys.argv[1] == "--shard" else "0/1" if len(sys.argv) == 1 else ""
+    selected = shard(MUTATIONS, spec)
+    if not selected:
+        print(f"usage: sabotage.py [--shard INDEX/TOTAL], INDEX below TOTAL; got {sys.argv[1:]}")
+        return 2
+    print(f"Shard {spec}: {len(selected)} of {len(MUTATIONS)} rows")
+
     # The file in the working tree is the pristine copy: it is read for every anchor and is what each
     # mutated copy is restored from, and it is never written. Proving a fix red before it is green is a
     # separate exercise and belongs to verify.py, which takes NIGHTLY_COLLECTOR and NIGHTLY_POSTER for
@@ -2256,8 +3063,9 @@ def main() -> int:
             return 1
 
     rows, invalid = [], []
-    for description, path, half, anchor, replacement in MUTATIONS:
+    for description, path, half, anchor, replacement in selected:
         source = pristine[path].read_text()
+        anchor, replacement = with_pins(anchor, source), with_pins(replacement, source)
         occurrences = source.count(anchor)
         if occurrences != 1:
             invalid.append((description, f"anchor matched {occurrences} times, expected exactly 1"))

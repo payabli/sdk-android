@@ -73,10 +73,7 @@ class PayInSummaryRowsInstrumentedTest {
             ),
         )
 
-        rule
-            .onNode(
-                hasText(string(R.string.payabli_payin_field_amount)) and hasText(figure("11.93", "USD")),
-            ).assertExists()
+        rule.onNodeWithText(string(R.string.payabli_payin_field_amount)).assertDoesNotExist()
         rule
             .onNode(
                 hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.34", "USD")),
@@ -100,15 +97,23 @@ class PayInSummaryRowsInstrumentedTest {
     }
 
     @Test
-    fun aFormThatHidesTheBaseAmountStillShowsTheTotal() {
-        show(
-            PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("0.10"), currency = "USD"),
-            configuration.copy(showsBaseAmount = false),
-        )
+    fun noAmountRowIsDrawnBesideAServiceFee() {
+        show(PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("0.10"), currency = "USD"))
 
         rule
             .onNode(
                 hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.34", "USD")),
+            ).assertExists()
+        rule.onNodeWithText(string(R.string.payabli_payin_field_amount)).assertDoesNotExist()
+    }
+
+    @Test
+    fun noAmountRowIsDrawnBesideASurcharge() {
+        show(PayInPaymentDetails(BigDecimal("10.30"), surchargeFee = BigDecimal("0.30"), currency = "USD"))
+
+        rule
+            .onNode(
+                hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("10.30", "USD")),
             ).assertExists()
         rule.onNodeWithText(string(R.string.payabli_payin_field_amount)).assertDoesNotExist()
     }
@@ -125,7 +130,7 @@ class PayInSummaryRowsInstrumentedTest {
 
     @Test
     fun aLongLabelLeavesAGapBeforeTheFigure() {
-        val label = "An amount label long enough to take every bit of the row it is given"
+        val label = "A service fee label long enough to take every bit of the row it is given"
         val draft = PayInFormDraft()
         rule.setContent {
             MaterialTheme {
@@ -136,7 +141,7 @@ class PayInSummaryRowsInstrumentedTest {
                     configuration = configuration,
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
-                    labels = PayInFormLabels(fieldLabels = mapOf(PayInField.Amount to label)),
+                    labels = PayInFormLabels(fieldLabels = mapOf(PayInField.ServiceFee to label)),
                     amounts =
                         PayInPaymentDetails(
                             BigDecimal("12.34"),
@@ -148,7 +153,7 @@ class PayInSummaryRowsInstrumentedTest {
         }
 
         val labelEnd = rule.onNodeWithText(label, useUnmergedTree = true).getBoundsInRoot().right
-        val figureStart = rule.onNodeWithText(figure("12.24", "USD"), useUnmergedTree = true).getBoundsInRoot().left
+        val figureStart = rule.onNodeWithText(figure("0.10", "USD"), useUnmergedTree = true).getBoundsInRoot().left
         assertTrue("the label runs to $labelEnd and the figure starts at $figureStart", figureStart - labelEnd >= 12.dp)
     }
 

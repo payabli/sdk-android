@@ -1,6 +1,8 @@
 package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
@@ -11,6 +13,7 @@ import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.time.Duration.Companion.seconds
@@ -54,7 +57,6 @@ class TokenStorageClientTest {
             assertEquals("tok-77", result.storedMethodId)
             assertEquals("65960bf4-46ea-42dd-ac89-250b181b3584-225810", result.methodReferenceId)
             assertEquals(88L, result.customerId)
-            assertEquals(1, result.resultCode)
             assertEquals(PayInStoredMethodType.Card, result.method)
         }
 
@@ -136,8 +138,12 @@ class TokenStorageClientTest {
                 }.exceptionOrNull()
 
             assertTrue(failure is PayInException.Refused)
-            assertEquals("2", (failure as PayInException.Refused).failure.code)
-            assertEquals("Card not supported", failure.failure.reason)
+            assertEquals("Card not supported", (failure as PayInException.Refused).failure.reason)
+            // The route answers one result code for every refusal, which names no condition.
+            assertNull(failure.failure.code)
+            val root: PayabliException = failure
+            assertNull(root.rawCode)
+            assertEquals(200, root.httpStatus)
         }
 
     @Test
@@ -224,6 +230,64 @@ class TokenStorageClientTest {
         }
 
     @Test
+    fun `an answer that will not decode reports its status and no code`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering("<html>bad gateway</html>", statusCode = 202)
+
+            val failure =
+                runCatching {
+                    TokenStorageClient(transport, RecordingSdkLogger())
+                        .storeMethod("e", PayInInstrument.Card(testCard()))
+                }.exceptionOrNull() as? PayabliException
+
+            assertTrue("$failure", failure is PayInException.Undecodable)
+            assertEquals(202, failure?.httpStatus)
+            assertNull(failure?.rawCode)
+        }
+
+    @Test
+    fun `a payer blocked by fraud control is a decline carrying the 400 and its code`() =
+        runTest(timeout = timeout) {
+            val transport =
+                FakePayInTransport.answering(
+                    """{"isSuccess":false,"responseText":"Blocked","responseCode":9005}""",
+                    statusCode = 400,
+                )
+
+            val failure =
+                runCatching {
+                    TokenStorageClient(transport, RecordingSdkLogger())
+                        .storeMethod("e", PayInInstrument.Card(testCard()))
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is PayInException.Refused)
+            failure as PayabliException
+            assertEquals(PayabliErrorType.PAYMENT_DECLINED, failure.type)
+            assertEquals(400, failure.httpStatus)
+            assertEquals("9005", failure.rawCode)
+        }
+
+    @Test
+    fun `any other refusal in the older envelope stays a validation error carrying its responseCode`() =
+        runTest(timeout = timeout) {
+            val transport =
+                FakePayInTransport.answering(
+                    """{"isSuccess":false,"responseText":"Invalid","responseCode":1002}""",
+                    statusCode = 400,
+                )
+
+            val failure =
+                runCatching {
+                    TokenStorageClient(transport, RecordingSdkLogger())
+                        .storeMethod("e", PayInInstrument.Card(testCard()))
+                }.exceptionOrNull() as? PayabliException
+
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, failure?.type)
+            assertEquals(400, failure?.httpStatus)
+            assertEquals("1002", failure?.rawCode)
+        }
+
+    @Test
     fun `a transport failure keeps its own classification`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering("""{"title":"Server error"}""", statusCode = 500)
@@ -299,5 +363,46 @@ class TokenStorageClientTest {
             listOf(TEST_PAN, TEST_SECURITY_CODE, "Integration Test").forEach { value ->
                 assertFalse(value, written.contains(value))
             }
+        }
+
+    @Test
+    fun `a 400 from the store keeps the route's text in the validation error's detail`() =
+        runTest(timeout = timeout) {
+            // The store route refuses a request with no field map, so its text is the only explanation a
+            // developer gets.
+            val transport =
+                FakePayInTransport.answering(
+                    """{"isSuccess":false,"responseText":"Customer and vendor can't both be sent"}""",
+                    statusCode = 400,
+                )
+
+            val failure =
+                runCatching {
+                    TokenStorageClient(transport, RecordingSdkLogger())
+                        .storeMethod("e", PayInInstrument.Card(testCard()))
+                }.exceptionOrNull()
+
+            val validation = failure as PayabliValidationException
+            assertEquals(400, validation.httpStatus)
+            assertEquals("Customer and vendor can't both be sent", validation.detail)
+            assertEquals(PayabliValidationException.DEFAULT_REASON, validation.reason)
+        }
+
+    @Test
+    fun `a 400 that already carries a detail keeps it`() =
+        runTest(timeout = timeout) {
+            val transport =
+                FakePayInTransport.answering(
+                    """{"title":"Bad request","detail":"the problem's own detail","responseText":"other"}""",
+                    statusCode = 400,
+                )
+
+            val failure =
+                runCatching {
+                    TokenStorageClient(transport, RecordingSdkLogger())
+                        .storeMethod("e", PayInInstrument.Card(testCard()))
+                }.exceptionOrNull()
+
+            assertEquals("the problem's own detail", (failure as PayabliValidationException).detail)
         }
 }

@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Contactless
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.GppGood
@@ -52,6 +53,7 @@ object DemoIcons {
     val Void: ImageVector get() = Icons.Filled.Undo
     val ReadBack: ImageVector get() = Icons.Filled.Search
     val More: ImageVector get() = Icons.Filled.MoreVert
+    val Copy: ImageVector get() = Icons.Filled.ContentCopy
 
     // Status.
     // Steps. Pass and Fail are reused at either end, keeping the readiness card's vocabulary.

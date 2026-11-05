@@ -126,9 +126,11 @@ public class PayInValidationOptions(
  *   settings already run. `false` does not turn that check off.
  * @property forceCustomerCreation applies only when the payer cannot be matched to an existing customer: `true`
  *   creates a new customer record, a new one on each such payment.
- * @property attempt whether this is a new payment or a retry of the payment [paymentReference] names.
+ * @property attempt whether this is a new payment or a retry of the payment [paymentReference] names. A retry
+ *   must set [paymentReference].
  * @property paymentReference the caller's own name for this payment, never sent. A retry naming it resends
- *   the key held for it; when unset, the SDK mints one and returns it with an unknown outcome. Blank is refused.
+ *   the key held for it. When unset on a new payment, the SDK mints one and returns it with an unknown outcome;
+ *   unset on a retry, or blank, is refused before sending.
  */
 public class PayInTransactionOptions(
     public val paymentDetails: PayInPaymentDetails,

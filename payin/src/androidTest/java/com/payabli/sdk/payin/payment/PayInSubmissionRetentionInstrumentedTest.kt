@@ -102,7 +102,7 @@ class PayInSubmissionRetentionInstrumentedTest {
             var after: FlowHost? = null
             scenario.onActivity { activity -> after = hostFor(activity) }
             assertSame("the host was rebuilt, so the submission it was running is gone", before, after)
-            assertEquals(PayInSubmissionState.Submitting, after?.payments?.state?.value)
+            assertEquals(PayInSubmissionState.Submitting, after?.payments?.submissionState?.value)
 
             transport.release()
             val terminal = awaitTerminal(requireNotNull(after))
@@ -128,7 +128,7 @@ class PayInSubmissionRetentionInstrumentedTest {
             scenario.moveToState(Lifecycle.State.CREATED)
             scenario.moveToState(Lifecycle.State.RESUMED)
 
-            assertEquals(PayInSubmissionState.Submitting, host?.payments?.state?.value)
+            assertEquals(PayInSubmissionState.Submitting, host?.payments?.submissionState?.value)
             assertEquals("a second submission was started on the way back", 1, transport.sent.size)
 
             transport.release()
@@ -140,7 +140,10 @@ class PayInSubmissionRetentionInstrumentedTest {
     private fun hostFor(owner: ViewModelStoreOwner): FlowHost = ViewModelProvider(owner, factory)[FlowHost::class.java]
 
     private fun watch(host: FlowHost) {
-        watcher = CoroutineScope(Dispatchers.Unconfined).launch { host.payments.state.collect { published += it } }
+        watcher =
+            CoroutineScope(Dispatchers.Unconfined).launch {
+                host.payments.submissionState.collect { published += it }
+            }
     }
 
     /** Waits until a request is at the transport, so nothing below has to guess when that happened. */
@@ -149,7 +152,7 @@ class PayInSubmissionRetentionInstrumentedTest {
     private fun awaitTerminal(host: FlowHost): PayInSubmissionState =
         runBlocking {
             withTimeout(TIMEOUT_MILLIS) {
-                host.payments.state.first {
+                host.payments.submissionState.first {
                     it is PayInSubmissionState.Succeeded || it is PayInSubmissionState.Failed
                 }
             }

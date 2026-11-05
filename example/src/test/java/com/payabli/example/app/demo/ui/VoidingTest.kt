@@ -92,7 +92,6 @@ class VoidingTest {
             model.voidLastTransaction()
             val after = model.uiState.value
             assertTrue(after.resultText, after.resultText.contains("The earlier reversal may still be running"))
-            assertFalse(after.resultText, after.resultText.contains("Check this transaction's status"))
             assertEquals("101-abc", after.readableTransactionId)
 
             model.readLastTransaction()

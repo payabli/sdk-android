@@ -104,6 +104,36 @@ class TTPTransactionClientTest {
         }
 
     @Test
+    fun `a fraud block on the opening is the payment being refused, whatever the status`() =
+        runTest(timeout = timeout) {
+            listOf("E9005", "E9051").forEach { code ->
+                listOf(400, 401, 403).forEach { status ->
+                    val (_, client) = client(answer("""{"code":"$code","reason":"Blocked"}""", status))
+
+                    val failure = runCatching { client.open() }.exceptionOrNull() as? TTPTransactionException.Refused
+
+                    assertEquals("$code $status", code, failure?.code)
+                    assertEquals("$code $status", status, failure?.httpStatus)
+                }
+            }
+        }
+
+    @Test
+    fun `the opening declares a 401 fraud block as its caller's refusal, and no other 401`() =
+        runTest(timeout = timeout) {
+            val (transport, client) = client(answer(approved("""{"paymentTransId":"101-abc"}""")))
+            client.open()
+            val isCallerRefusal = transport.requests.single().isCallerRefusal
+
+            listOf("E9005", "E9051").forEach { code ->
+                assertTrue(code, isCallerRefusal(answer("""{"code":"$code"}""", 401)))
+                assertFalse("$code on 400", isCallerRefusal(answer("""{"code":"$code"}""", 400)))
+            }
+            assertFalse("a 401 with no body is the credential's", isCallerRefusal(answer("", 401)))
+            assertFalse("another code", isCallerRefusal(answer("""{"code":"E9001"}""", 401)))
+        }
+
+    @Test
     fun `an opening the service neither approved nor declined is the service's problem`() =
         runTest(timeout = timeout) {
             val (_, client) = client(answer("""{"code":"E7018","reason":"Device not found"}"""))
@@ -358,6 +388,32 @@ class TTPTransactionClientTest {
             assertEquals("a switch nobody flipped is not worth three attempts", 1, closeTransport.requests.size)
         }
 
+    @Test
+    fun `a paypoint that cannot take card-present payments carries the 404 and the body's code`() =
+        runTest(timeout = timeout) {
+            val (_, coded) = client(answer("""{"code":"E0404","reason":"not enabled"}""", 404))
+            val (_, bare) = client(answer("", 404))
+
+            val withCode = runCatching { coded.open() }.exceptionOrNull() as TTPTransactionException.NotEnabled
+            val withoutCode = runCatching { bare.open() }.exceptionOrNull() as TTPTransactionException.NotEnabled
+
+            assertEquals(404, withCode.httpStatus)
+            assertEquals("E0404", withCode.code)
+            assertEquals(404, withoutCode.httpStatus)
+            assertNull(withoutCode.code)
+        }
+
+    @Test
+    fun `a paypoint that cannot take card-present payments keeps its code beside a field that will not decode`() =
+        runTest(timeout = timeout) {
+            val (_, coded) = client(answer("""{"code":"E0404","title":{}}""", 404))
+
+            val failure = runCatching { coded.open() }.exceptionOrNull() as TTPTransactionException.NotEnabled
+
+            assertEquals(404, failure.httpStatus)
+            assertEquals("E0404", failure.code)
+        }
+
     // The seam between the reader and the close
 
     @Test
@@ -437,5 +493,124 @@ class TTPTransactionClientTest {
                 }
                 assertNull("a log record must not carry a cause that can print a body", record.throwable)
             }
+        }
+
+    // A refused customer
+
+    /** The customer field that sets each identifier key the service lists, by the key lowercased. */
+    private val fieldForKey =
+        listOf(
+            "customernumber" to "customerNumber",
+            "firstname" to "firstName",
+            "lastname" to "lastName",
+            "company" to "company",
+            "phone" to "billingPhone",
+            "email" to "billingEmail",
+            "city" to "billingCity",
+            "state" to "billingState",
+            "zip" to "billingZip",
+            "country" to "billingCountry",
+            "shippingcity" to "shippingCity",
+            "shippingstate" to "shippingState",
+            "shippingzip" to "shippingZip",
+            "shippingcountry" to "shippingCountry",
+        )
+
+    /**
+     * The opening's refusal when the customer is refused with [message].
+     *
+     * @param message the text the refusal carries for the customer.
+     * @return what opening a transaction throws.
+     */
+    private suspend fun refusedCustomer(message: String): Throwable? {
+        val (_, client) = client(answer(fieldRefusal(message), 400))
+        return runCatching { client.open() }.exceptionOrNull()
+    }
+
+    @Test
+    fun `every key a refused customer lists arrives as the customer field that sets it, in any casing`() =
+        runTest(timeout = timeout) {
+            fieldForKey.forEach { (key, field) ->
+                listOf(key, key.uppercase(), key.replaceFirstChar(Char::uppercase)).forEach { casing ->
+                    val failure = refusedCustomer("Missing customer identifiers: $casing")
+
+                    assertEquals("$casing: $failure", listOf(field), (failure as? CustomerDataRefusal)?.requiredFields)
+                }
+            }
+        }
+
+    @Test
+    fun `a refused customer's fields arrive in the order the service lists them`() =
+        runTest(timeout = timeout) {
+            val failure = refusedCustomer("Missing customer identifiers: CustomerNumber,Email,ShippingZip")
+
+            assertEquals(
+                listOf("customerNumber", "billingEmail", "shippingZip"),
+                (failure as? CustomerDataRefusal)?.requiredFields,
+            )
+        }
+
+    @Test
+    fun `a key no customer field sets passes through as the paypoint names it`() =
+        runTest(timeout = timeout) {
+            val failure = refusedCustomer("Missing customer identifiers: Email,LoyaltyId")
+
+            assertEquals(listOf("billingEmail", "LoyaltyId"), (failure as? CustomerDataRefusal)?.requiredFields)
+        }
+
+    @Test
+    fun `a refused customer keeps the classification and text of the validation error it is`() =
+        runTest(timeout = timeout) {
+            val failure = refusedCustomer("Customer data is required")
+
+            assertEquals("$failure", emptyList<String>(), (failure as? CustomerDataRefusal)?.requiredFields)
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, (failure as PayabliException).type)
+            assertEquals("Customer data is required", failure.detail)
+        }
+
+    // The answer each failure was read from
+
+    @Test
+    fun `a declined opening carries the status and code it was answered with`() =
+        runTest(timeout = timeout) {
+            val (_, client) = client(answer(declined(code = "D05"), 201))
+
+            val failure = runCatching { client.open() }.exceptionOrNull() as? TTPTransactionException
+
+            assertEquals(201, failure?.httpStatus)
+            assertEquals("D05", failure?.code)
+        }
+
+    @Test
+    fun `an opening that cannot be read carries its status`() =
+        runTest(timeout = timeout) {
+            val (_, client) = client(answer("""{"code":"A01"}""", 201))
+
+            val failure = runCatching { client.open() }.exceptionOrNull()
+
+            assertTrue("$failure", failure is TTPTransactionException.Undecodable)
+            assertEquals(201, (failure as TTPTransactionException).httpStatus)
+        }
+
+    @Test
+    fun `a refused key reports the 409 it was answered with and no code`() =
+        runTest(timeout = timeout) {
+            val (_, client) = client(answer("Duplicated idempotencyKey", 409))
+
+            val failure = runCatching { client.open() }.exceptionOrNull() as? PayabliException
+
+            assertTrue("$failure", failure is ChargeKeyRefusal)
+            assertEquals(409, failure?.httpStatus)
+            assertNull(failure?.rawCode)
+        }
+
+    @Test
+    fun `a refused customer reports the status and code of the validation error it is`() =
+        runTest(timeout = timeout) {
+            val failure = refusedCustomer("Missing customer identifiers: Email") as? PayabliException
+
+            assertTrue("$failure", failure is CustomerDataRefusal)
+            assertEquals(400, failure?.httpStatus)
+            assertEquals("E7020", failure?.rawCode)
         }
 }

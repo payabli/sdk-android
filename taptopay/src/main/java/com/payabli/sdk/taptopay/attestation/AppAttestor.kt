@@ -1,7 +1,5 @@
 package com.payabli.sdk.taptopay.attestation
 
-import androidx.annotation.RestrictTo
-
 /**
  * Produces an attestation token over a server-issued challenge.
  *
@@ -16,8 +14,7 @@ import androidx.annotation.RestrictTo
  *
  * An implementation is safe to share and safe to call concurrently.
  */
-@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public interface AppAttestor {
+internal interface AppAttestor {
     /**
      * Attests over [challenge], returning the platform's opaque token.
      *

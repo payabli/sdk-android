@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.payin.client.TEST_ACCOUNT
+import com.payabli.sdk.payin.client.TEST_EXPIRY
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.form.PayInField
@@ -35,11 +36,11 @@ class PayInFormInstrumentTest {
             PayInFormInstrument.usePaymentMethod(cardForm()) { method ->
                 retained = (method as PayInPaymentMethod.Card).data
                 // Readable inside the block, which is the whole window they exist for.
-                assertEquals(TEST_PAN.length, retained?.cardNumber?.length)
+                assertEquals(TEST_PAN.length, retained?.cardNumberDigits?.length)
             }
 
-            assertWiped("card number", retained?.cardNumber)
-            assertWiped("security code", retained?.securityCode)
+            assertWiped("card number", retained?.cardNumberDigits)
+            assertWiped("security code", retained?.securityCodeDigits)
         }
 
     @Test
@@ -56,8 +57,8 @@ class PayInFormInstrumentTest {
                 }.exceptionOrNull()
 
             assertTrue("the block's failure was swallowed", raised is IllegalStateException)
-            assertWiped("card number", retained?.cardNumber)
-            assertWiped("security code", retained?.securityCode)
+            assertWiped("card number", retained?.cardNumberDigits)
+            assertWiped("security code", retained?.securityCodeDigits)
         }
 
     @Test
@@ -67,23 +68,24 @@ class PayInFormInstrumentTest {
 
             PayInFormInstrument.useInstrument(bankForm()) { instrument ->
                 retained = (instrument as PayInInstrument.BankAccount).data
-                assertEquals(TEST_ACCOUNT.length, retained?.accountNumber?.length)
+                assertEquals(TEST_ACCOUNT.length, retained?.accountNumberDigits?.length)
             }
 
-            assertWiped("account number", retained?.accountNumber)
+            assertWiped("account number", retained?.accountNumberDigits)
         }
 
     // --- what the values map to ---
 
     @Test
-    fun `a card carries what the payer typed, and the expiry as a value rather than text`() =
+    fun `a card carries what the payer typed, and the expiry as a month and a four-digit year`() =
         runTest(timeout = timeout) {
             PayInFormInstrument.usePaymentMethod(cardForm()) { method ->
                 val card = (method as PayInPaymentMethod.Card).data
                 assertEquals("Integration Test", card.holderName)
                 assertEquals("22039", card.postalCode)
-                assertEquals(12, card.expiry.month)
-                assertEquals(TEST_SECURITY_CODE.length, card.securityCode.length)
+                assertEquals(12, card.expiryMonth)
+                assertEquals(TEST_EXPIRY.year, card.expiryYear)
+                assertEquals(TEST_SECURITY_CODE.length, card.securityCodeDigits.length)
             }
         }
 

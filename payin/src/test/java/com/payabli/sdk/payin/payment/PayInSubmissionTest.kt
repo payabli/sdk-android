@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
@@ -44,6 +45,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.KSerializer
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -52,6 +54,7 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import java.math.BigDecimal
 import java.util.concurrent.TimeUnit
@@ -66,6 +69,10 @@ import kotlin.time.Duration.Companion.seconds
  */
 class PayInSubmissionTest {
     private val timeout = 5.seconds
+
+    @Before
+    @After
+    fun forgetHeld() = PayInKeyStore.forgetHeld()
 
     private val approved = APPROVED_TRANSACTION
     private val stored = STORED_METHOD
@@ -438,14 +445,14 @@ class PayInSubmissionTest {
         runTest(timeout = timeout) {
             val transport = HandOffTransport(handsOff = true)
             val submission = submissionOver(transport)
-            val reachingTheTotal =
+            val negativeSurcharge =
                 PayabliPayInOperation.Capture(
                     PayInTransactionOptions(
-                        paymentDetails = PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.50")),
+                        paymentDetails = PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("-0.50")),
                     ),
                 )
 
-            val refused = requireNotNull(submission.submit(TEST_ENTRY_POINT, reachingTheTotal, cardForm()))
+            val refused = requireNotNull(submission.submit(TEST_ENTRY_POINT, negativeSurcharge, cardForm()))
 
             assertTrue("${failed(refused).cause}", failed(refused).cause is PayInException.InvalidInput)
             assertFalse(submission.sent(refused))
@@ -651,13 +658,26 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
+    /** A key one holder kept is handed to the next, because every holder in the process reads the same keys. */
+    @Test
+    fun `a key held by one holder is resent by another for the same entry point`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+            submissionOver(transport).captureAuthorized(TEST_ENTRY_POINT, request)
+
+            submissionOver(transport).captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+        }
+
     /** Past the cap a minted key is not kept, so reporting one would name a retry that mints instead. */
     @Test
     fun `a minted key there was no room to keep is not resent`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.failingWith(dropped())
             val submission = submissionOver(transport)
-            repeat(PayInSubmission.HELD_KEYS_MAX) {
+            repeat(PayInKeyStore.HELD_KEYS_MAX) {
                 submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
             }
             val pastTheCap = PayInAuthorizedRequest("101-past-the-cap", testDetails())
@@ -666,7 +686,7 @@ class PayInSubmissionTest {
             submission.captureAuthorized(TEST_ENTRY_POINT, pastTheCap)
 
             assertEquals(
-                "$MINTED_KEY-${PayInSubmission.HELD_KEYS_MAX + 2}",
+                "$MINTED_KEY-${PayInKeyStore.HELD_KEYS_MAX + 2}",
                 transport.request?.headers?.get("idempotencyKey"),
             )
         }
@@ -678,12 +698,56 @@ class PayInSubmissionTest {
             val logger = RecordingSdkLogger()
             val submission = submissionOver(FakePayInTransport.failingWith(dropped()), logger)
 
-            repeat(PayInSubmission.HELD_KEYS_MAX + 3) {
+            repeat(PayInKeyStore.HELD_KEYS_MAX + 3) {
                 submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
             }
 
             assertEquals(
                 "the holder said it was full more than once",
+                1,
+                logger.records.count {
+                    it.level == LogLevel.WARN && it.message.contains("too many are unresolved")
+                },
+            )
+        }
+
+    /** Each entry point is full on its own, so each says so once. */
+    @Test
+    fun `each full entry point reports being full once`() =
+        runTest(timeout = timeout) {
+            val logger = RecordingSdkLogger()
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()), logger)
+
+            listOf(TEST_ENTRY_POINT, OTHER_ENTRY_POINT).forEach { entryPoint ->
+                repeat(PayInKeyStore.HELD_KEYS_MAX + 2) {
+                    submission.captureAuthorized(entryPoint, PayInAuthorizedRequest("101-$it", testDetails()))
+                }
+            }
+
+            assertEquals(
+                "a full entry point did not say so exactly once",
+                2,
+                logger.records.count {
+                    it.level == LogLevel.WARN && it.message.contains("too many are unresolved")
+                },
+            )
+        }
+
+    /** Another entry point finding room does not make a full one say so again. */
+    @Test
+    fun `a key held at another entry point does not repeat a full entry point's report`() =
+        runTest(timeout = timeout) {
+            val logger = RecordingSdkLogger()
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()), logger)
+            repeat(PayInKeyStore.HELD_KEYS_MAX + 1) {
+                submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
+            }
+
+            submission.captureAuthorized(OTHER_ENTRY_POINT, PayInAuthorizedRequest("101-other", testDetails()))
+            submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-still-full", testDetails()))
+
+            assertEquals(
+                "the full entry point said so again",
                 1,
                 logger.records.count {
                     it.level == LogLevel.WARN && it.message.contains("too many are unresolved")
@@ -770,6 +834,33 @@ class PayInSubmissionTest {
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-2", sentKey(transport))
+        }
+
+    @Test
+    fun `a fraud block on the held key's repeat settles the payment, at 400 and at 401`() =
+        runTest(timeout = timeout) {
+            listOf("E9005", "E9051").forEach { code ->
+                listOf(400, 401).forEach { status ->
+                    val transport =
+                        ScriptedPayInTransport(
+                            listOf(
+                                ScriptedPayInTransport.failingWith(dropped()),
+                                ScriptedPayInTransport.answering(status, """{"code":"$code","reason":"Blocked"}"""),
+                            ),
+                        )
+                    // The authenticated transport takes the hand-off back on every 401, the declared ones too.
+                    val submission = submissionOver(LowersTheMarkOn401(transport))
+                    val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+                    submission.captureAuthorized(TEST_ENTRY_POINT, request)
+                    val held = sentKey(transport)
+                    submission.captureAuthorized(TEST_ENTRY_POINT, request)
+                    assertEquals("$code $status: the repeat carries the held key", held, sentKey(transport))
+                    submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+                    assertNotEquals("$code $status: the next capture is a new attempt", held, sentKey(transport))
+                }
+            }
         }
 
     /** Two form submissions of equal value are two payments, so nothing is held across them. */
@@ -863,6 +954,7 @@ class PayInSubmissionTest {
                 "conflict" to duplicate(),
             )) {
                 minted.set(0)
+                PayInKeyStore.forgetHeld()
                 val unknown = ScriptedPayInTransport.failingWith(dropped())
                 val transport = ScriptedPayInTransport(listOf(unknown, unknown, answer, unknown))
                 val submission = submissionOver(transport)
@@ -882,6 +974,7 @@ class PayInSubmissionTest {
         runTest(timeout = timeout) {
             for (authorizes in listOf(false, true)) {
                 minted.set(0)
+                PayInKeyStore.forgetHeld()
                 val unknown = ScriptedPayInTransport.failingWith(dropped())
                 val transport = ScriptedPayInTransport(listOf(unknown, duplicate(), unknown))
                 val submission = submissionOver(transport)
@@ -937,7 +1030,7 @@ class PayInSubmissionTest {
             submission.capture(TEST_ENTRY_POINT, cardRequest("order-1", attempt = PayabliAttempt.Retry))
 
             assertEquals(
-                "$MINTED_KEY-${PayInSubmission.HELD_KEYS_MAX + 1}",
+                "$MINTED_KEY-${PayInKeyStore.HELD_KEYS_MAX + 1}",
                 transport.request?.headers?.get("idempotencyKey"),
             )
         }
@@ -954,7 +1047,7 @@ class PayInSubmissionTest {
             submission.capture(TEST_ENTRY_POINT, cardRequest("order-1", attempt = PayabliAttempt.Retry))
 
             assertEquals(
-                "$MINTED_KEY-${PayInSubmission.HELD_KEYS_MAX + 2}",
+                "$MINTED_KEY-${PayInKeyStore.HELD_KEYS_MAX + 2}",
                 transport.request?.headers?.get("idempotencyKey"),
             )
         }
@@ -1085,8 +1178,58 @@ class PayInSubmissionTest {
                 val cause = failed(requireNotNull(outcome)).cause
                 assertTrue("$cause", cause is PayInException.InvalidInput)
                 assertEquals(PayInSubmission.FIELD_PAYMENT_REFERENCE, (cause as PayInException.InvalidInput).field)
+                assertEquals("The paymentReference cannot be blank.", cause.reason)
             }
             assertNull("a request was sent for a blank reference", transport.request)
+        }
+
+    /** A retry must say which payment it repeats: minting one for it would send the retry as a new payment. */
+    @Test
+    fun `a direct retry naming no reference is refused before anything is sent`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val capture = submission.capture(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
+            val authorize = submission.authorize(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
+
+            for (outcome in listOf(capture, authorize)) {
+                val cause = failed(requireNotNull(outcome)).cause
+                assertTrue("$cause", cause is PayInException.InvalidInput)
+                assertEquals(PayInSubmission.FIELD_PAYMENT_REFERENCE, (cause as PayInException.InvalidInput).field)
+                assertEquals("A retry must name the paymentReference of the payment it repeats.", cause.reason)
+            }
+            assertNull("a request was sent for a retry naming no reference", transport.request)
+        }
+
+    /** The drawn form submits the options it was configured with, so the same retry is refused there too. */
+    @Test
+    fun `a form retry naming no reference is refused before anything is sent`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val outcome = submission.submit(TEST_ENTRY_POINT, captureOf(attempt = PayabliAttempt.Retry), cardForm())
+
+            val cause = failed(requireNotNull(outcome)).cause
+            assertTrue("$cause", cause is PayInException.InvalidInput)
+            assertEquals(PayInSubmission.FIELD_PAYMENT_REFERENCE, (cause as PayInException.InvalidInput).field)
+            assertEquals("A retry must name the paymentReference of the payment it repeats.", cause.reason)
+            assertNull("a request was sent for a retry naming no reference", transport.request)
+        }
+
+    /** A refused retry minted nothing, so the next payment is sent under the first key minted. */
+    @Test
+    fun `a retry naming no reference mints no key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest(attempt = PayabliAttempt.Retry))
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
+
+            assertEquals(1, transport.count)
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
         }
 
     /** A new payment naming an open one would leave the open one unprotected, so it is refused and sends nothing. */
@@ -1203,6 +1346,8 @@ class PayInSubmissionTest {
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertEquals(PayabliErrorType.RETRY_REFUSED, cause.type)
             assertEquals("order-1", (cause as PayInException.Unsettled).paymentReference)
+            assertEquals(409, cause.httpStatus)
+            assertNull(cause.rawCode)
         }
 
     /** A refused retry does not keep the key past the window, so a later retry is a new payment. */
@@ -1255,6 +1400,7 @@ class PayInSubmissionTest {
                 )
             for ((field, first, retry) in cases) {
                 minted.set(0)
+                PayInKeyStore.forgetHeld()
                 val transport = FakePayInTransport.failingWith(dropped())
                 val submission = submissionOver(transport)
                 submission.capture(TEST_ENTRY_POINT, first.asNewPayment())
@@ -1311,6 +1457,7 @@ class PayInSubmissionTest {
                 )
             for ((field, retry) in cases) {
                 minted.set(0)
+                PayInKeyStore.forgetHeld()
                 val transport = FakePayInTransport.failingWith(dropped())
                 val submission = submissionOver(transport)
                 submission.capture(TEST_ENTRY_POINT, described().asNewPayment())
@@ -1421,7 +1568,10 @@ class PayInSubmissionTest {
 
             submission.submit(TEST_ENTRY_POINT, captureOf("order-1", PayabliAttempt.Retry), cardForm())
 
-            assertEquals(PayabliErrorType.CONFLICT, failed(submission.state.value).cause.type)
+            val cause = failed(submission.state.value).cause
+            assertEquals(PayabliErrorType.CONFLICT, cause.type)
+            assertEquals(409, cause.httpStatus)
+            assertNull(cause.rawCode)
         }
 
     /** The single flight is still shared, so a void cannot slip past a submission the form started. */
@@ -1563,6 +1713,7 @@ class PayInSubmissionTest {
                     moneyIn = MoneyInClient(transport, logger),
                     storage = TokenStorageClient(transport, logger),
                     dispatcher = StandardTestDispatcher(testScheduler),
+                    environment = PayabliEnvironment.SANDBOX,
                     newIdempotencyKey = { MINTED_KEY },
                     elapsedRealtimeNanos = clock::get,
                     logger = logger,
@@ -1682,6 +1833,50 @@ class PayInSubmissionTest {
             assertTrue("the cause lost the type that raised it: $carried", carried.contains("NoClassDefFoundError"))
         }
 
+    // --- what an unknown outcome says, on each route that can leave one ---
+
+    @Test
+    fun `a capture whose outcome is unknown names the transaction`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()))
+
+            val state = submission.capture(TEST_ENTRY_POINT, cardRequest())
+
+            assertEquals(UNKNOWN_OUTCOME_REASON, unsettled(state).reason)
+        }
+
+    @Test
+    fun `an authorization whose outcome is unknown names the transaction`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()))
+
+            val state = submission.authorize(TEST_ENTRY_POINT, cardRequest())
+
+            assertEquals(UNKNOWN_OUTCOME_REASON, unsettled(state).reason)
+        }
+
+    @Test
+    fun `a capture of an authorization whose outcome is unknown names the transaction`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()))
+
+            val state = submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-abc", testDetails()))
+
+            assertEquals(UNKNOWN_OUTCOME_REASON, unsettled(state).reason)
+        }
+
+    @Test
+    fun `a void whose outcome is unknown names the transaction, not a payment`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()))
+
+            val reason = unsettled(submission.void(TEST_ENTRY_POINT, "101-abc")).reason
+
+            assertEquals(UNKNOWN_OUTCOME_REASON, reason)
+            assertFalse(reason, reason.contains("payment", ignoreCase = true))
+            assertFalse(reason, reason.contains("taken", ignoreCase = true))
+        }
+
     // --- cancellation ---
 
     @Test
@@ -1720,6 +1915,20 @@ class PayInSubmissionTest {
             val cause = failed(submission.state.value).cause
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertEquals("101-abc", (cause as PayInException.Unsettled).paymentTransId)
+        }
+
+    @Test
+    fun `a 5xx that leaves the outcome open reports its status and code through the base type`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(SERVICE_ERROR_NAMING_TRANSACTION, statusCode = 503)
+            val submission = submissionOver(transport)
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            val cause: PayabliException = failed(submission.state.value).cause
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(503, cause.httpStatus)
+            assertEquals("E0001", cause.rawCode)
         }
 
     @Test
@@ -1822,7 +2031,7 @@ class PayInSubmissionTest {
             submission.submit(TEST_ENTRY_POINT, PayabliPayInOperation.StoreMethod(), cardForm())
             assertNull(transport.request?.headers?.get("idempotencyKey"))
             submission.reset()
-            submission.submit(TEST_ENTRY_POINT, captureOf(attempt = PayabliAttempt.Retry), cardForm())
+            submission.submit(TEST_ENTRY_POINT, captureOf("order-1", PayabliAttempt.Retry), cardForm())
 
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
         }
@@ -1835,9 +2044,9 @@ class PayInSubmissionTest {
             val transport = FakePayInTransport.answering(declined)
             val submission = submissionOver(transport)
 
-            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+            submission.submit(TEST_ENTRY_POINT, captureOf("order-1"), cardForm())
             submission.reset()
-            submission.submit(TEST_ENTRY_POINT, captureOf(attempt = PayabliAttempt.Retry), cardForm())
+            submission.submit(TEST_ENTRY_POINT, captureOf("order-1", PayabliAttempt.Retry), cardForm())
 
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
         }
@@ -2072,6 +2281,7 @@ class PayInSubmissionTest {
             moneyIn = MoneyInClient(transport, logger),
             storage = TokenStorageClient(transport, logger),
             dispatcher = StandardTestDispatcher(testScheduler),
+            environment = PayabliEnvironment.SANDBOX,
             // Counted, so a test can tell one minted key from the next without matching a UUID.
             newIdempotencyKey = { "$MINTED_KEY-${minted.incrementAndGet()}" },
             // Advanced by a test that needs a held key to age; still otherwise, so nothing expires by surprise.
@@ -2151,6 +2361,21 @@ class PayInSubmissionTest {
         ): PayabliV2Envelope<T> = throw UnsupportedOperationException("the PayIn clients decode their own envelopes")
     }
 
+    /** Takes the hand-off back on a 401, as the authenticated transport does, around [base]. */
+    private class LowersTheMarkOn401(
+        private val base: PayabliTransport,
+    ) : PayabliTransport {
+        override suspend fun execute(request: PayabliRequest): PayabliResponse =
+            base.execute(request).also {
+                if (it.statusCode == 401) currentCoroutineContext()[PayabliSendMark]?.lower()
+            }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("the PayIn clients decode their own envelopes")
+    }
+
     /**
      * While [refuses], hands the request over, is answered 401, takes the hand-off back as the authenticated
      * transport does, and waits in the refresh to be cancelled. Otherwise hands it over and drops the answer.
@@ -2223,7 +2448,7 @@ class PayInSubmissionTest {
 
     /** Holds as many keys as there is room for, one per authorization, each under a minted key. */
     private suspend fun fillTheHolder(submission: PayInSubmission) =
-        repeat(PayInSubmission.HELD_KEYS_MAX) {
+        repeat(PayInKeyStore.HELD_KEYS_MAX) {
             submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
         }
 
@@ -2252,6 +2477,12 @@ class PayInSubmissionTest {
         return state as PayInSubmissionState.Failed
     }
 
+    private fun unsettled(state: PayInSubmissionState?): PayInException.Unsettled {
+        val cause = failed(requireNotNull(state)).cause
+        assertTrue("expected an unknown outcome, and the cause is $cause", cause is PayInException.Unsettled)
+        return cause as PayInException.Unsettled
+    }
+
     private fun succeededPayment(submission: PayInSubmission): PayInSubmissionState.Succeeded.Payment {
         val state = submission.state.value
         assertTrue("expected a payment, and the state is $state", state is PayInSubmissionState.Succeeded.Payment)
@@ -2260,5 +2491,10 @@ class PayInSubmissionTest {
 
     private companion object {
         const val MINTED_KEY = "minted"
+        const val OTHER_ENTRY_POINT = "another-merchant-entry"
+
+        /** The sentence itself, so a change to the SDK's constant fails these tests. */
+        const val UNKNOWN_OUTCOME_REASON =
+            "The transaction's status is unknown. Read the transaction back to see its status."
     }
 }

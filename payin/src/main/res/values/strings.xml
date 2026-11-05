@@ -104,4 +104,16 @@
     <string name="payabli_payin_reveal">Show %1$s</string>
     <string name="payabli_payin_hide">Hide %1$s</string>
 
+    <!-- The form's message when a payment or an authorization fails, one per kind of failure. -->
+    <string name="payabli_payin_failure_payment_declined">The payment was declined. Try another payment method.</string>
+    <string name="payabli_payin_failure_payment_retry_later">The payment couldn\'t be completed. Please try again.</string>
+    <string name="payabli_payin_failure_payment_outcome_unknown">This payment may have gone through. Check before paying again.</string>
+    <string name="payabli_payin_failure_payment_other">The payment couldn\'t be completed.</string>
+
+    <!-- The form's message when saving a payment method fails. -->
+    <string name="payabli_payin_failure_save_declined">This payment method couldn\'t be saved. Try another one.</string>
+    <string name="payabli_payin_failure_save_retry_later">The payment method couldn\'t be saved. Please try again.</string>
+    <string name="payabli_payin_failure_save_outcome_unknown">We couldn\'t confirm the payment method was saved.</string>
+    <string name="payabli_payin_failure_save_other">The payment method couldn\'t be saved.</string>
+
 </resources>

@@ -35,7 +35,9 @@ import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import com.payabli.example.app.demo.terminal.chargeStepFailure
 import com.payabli.example.app.demo.terminal.chipSpecFor
+import com.payabli.example.app.demo.terminal.label
 import com.payabli.example.app.demo.terminal.sessionFailureReason
+import com.payabli.example.app.demo.terminal.shownDetail
 import com.payabli.example.app.demo.ui.components.BorderedButton
 import com.payabli.example.app.demo.ui.components.ContextLine
 import com.payabli.example.app.demo.ui.components.DemoIcons
@@ -75,6 +77,7 @@ fun TapToPayScreen(
             working = state.workingAction,
             activated = state.activated,
             charged = state.charged,
+            setupAskedAgain = state.setupAskedAgain,
             readerDenied =
                 state.failureReason == TerminalFailureReason.DeviceIneligible &&
                     state.readiness != Readiness.NotAvailable,
@@ -107,7 +110,11 @@ fun TapToPayScreen(
 
         StepRow(index = 2, step = steps[1]) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-                FailureReason(steps[1], sessionFailureReason(state.session, state.failureReason))
+                FailureReason(
+                    steps[1],
+                    state.activationFailure.takeIf { state.setupAskedAgain }
+                        ?: sessionFailureReason(state.session, state.failureReason, state.deviceFailure),
+                )
                 ProminentButton(
                     text = "Set up the terminal",
                     icon = DemoIcons.TapToPay,
@@ -140,7 +147,13 @@ fun TapToPayScreen(
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
                 FailureReason(
                     steps[3],
-                    chargeStepFailure(state.chargeFailure, state.session, state.failureReason, state.deviceFailure),
+                    chargeStepFailure(
+                        state.chargeFailure,
+                        state.session,
+                        state.failureReason,
+                        state.deviceFailure,
+                        state.chargeWarns,
+                    ),
                 )
                 PaymentBlock(state, actions.onAmountChange, actions.onCharge)
             }
@@ -269,7 +282,7 @@ private fun ActivityBlock(
             Caption("No activity yet")
         } else {
             state.events.entries.forEach { event ->
-                EventRow(label = event.code.wireName, detail = event.detail)
+                EventRow(label = event.label, detail = event.shownDetail)
             }
         }
     }

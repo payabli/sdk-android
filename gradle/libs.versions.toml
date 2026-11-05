@@ -37,7 +37,6 @@ androidxLifecycle = "2.9.4"
 fiservTtp = "1.1.4.1"
 ktlintGradle = "14.2.0"
 cyclonedx = "3.3.0"
-sonarqube = "7.3.1.8318"
 # Newest releases of these three all require a kotlin-stdlib newer than AGP's built-in Kotlin
 # (2.2.10), and a 2.2 compiler cannot read 2.3 metadata. See reference/tooling.md.
 annotation = "1.10.0"
@@ -50,6 +49,7 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+androidx-activity = { group = "androidx.activity", name = "activity", version.ref = "activityCompose" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "androidxNavigation" }
 # Carries `viewModelScope`. The `-ktx` artifact at this version is an empty stub: its classes.jar holds one
@@ -86,5 +86,4 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 android-library = { id = "com.android.library", version.ref = "agp" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }
 metalava = { id = "me.tylerbwong.gradle.metalava", version.ref = "metalavaGradle" }
-sonarqube = { id = "org.sonarqube", version.ref = "sonarqube" }
 

@@ -12,7 +12,7 @@ import com.payabli.sdk.payin.model.SensitiveDigits
  * Every check here mirrors one the API makes, so none of them refuses a value that would otherwise have been
  * accepted.
  */
-public object PayInFieldRules {
+internal object PayInFieldRules {
     /** Digits only, no separators. Callers strip formatting before asking. */
     private val DIGITS = Regex("^[0-9]*$")
 

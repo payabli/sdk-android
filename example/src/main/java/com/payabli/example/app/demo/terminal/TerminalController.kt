@@ -29,20 +29,11 @@ interface TerminalController {
     val failureReason: StateFlow<TerminalFailureReason?>
 
     /**
-     * Why this device cannot take contactless payments, as the error that was thrown said it, or
+     * Why this device cannot take contactless payments, in this app's line for the error's type, or
      * null while none has been. Four error codes land the ineligible reason and a line fixed to
-     * the reason cannot say which, so the thrown error's message is the line beside it.
+     * the reason cannot say which.
      */
     val deviceFailure: StateFlow<String?>
-
-    /**
-     * The reason as the SDK holds it now, read rather than collected.
-     *
-     * [failureReason] is republished by a collector, which has not necessarily run by the time a call
-     * that failed returns. A caller wording the outcome of that call needs the reason the SDK already
-     * has.
-     */
-    fun currentFailureReason(): TerminalFailureReason?
 
     /** Attest, fetch configuration, prepare the reader. */
     suspend fun initialize(): Result<Unit>

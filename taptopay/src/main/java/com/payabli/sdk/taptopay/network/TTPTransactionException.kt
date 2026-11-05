@@ -1,21 +1,12 @@
 package com.payabli.sdk.taptopay.network
 
 import com.payabli.sdk.taptopay.attestation.device.RedactedCause
+import java.net.HttpURLConnection.HTTP_NOT_FOUND
 
 /**
- * A refusal from one of the two MoneyIn routes a card-present charge uses.
- *
- * **These routes answer in the v2 envelope, where the code's first letter is the outcome.** An `A` is an
- * approval, a `D` is the payment being refused, and anything else is the service reporting a problem with
- * the request or with itself. The HTTP status agrees with that most of the time and not always, which is
- * why the envelope is read rather than the status.
- *
- * Module-local, because each subtype is what this SDK does about an answer. Each cause has its own `PayabliErrorType`,
- * which is the classification a host reads. A genuine transport failure arrives as `PayabliException` from
- * `PayabliHttpErrors`, so which type is raised here says which layer failed.
- *
- * [reason] is text this SDK did not author, so treat it as able to carry back anything the request
- * contained: displayable, and **never loggable**. That is how `PayabliException` treats the same field.
+ * A refusal from a MoneyIn route a card-present charge uses, read from the v2 envelope's code, not the HTTP status:
+ * `A` approves, `D` declines, anything else is a request or service problem. [reason] is the service's text: never
+ * shown and never logged, because it can carry back what the request contained.
  */
 internal sealed class TTPTransactionException(
     message: String,
@@ -23,6 +14,7 @@ internal sealed class TTPTransactionException(
     val code: String?,
     val reason: String?,
     cause: Throwable? = null,
+    val httpStatus: Int? = null,
 ) : Exception(message, cause) {
     /** Never [reason]: it is service text that can echo what was sent. */
     override fun toString(): String = "${javaClass.simpleName}(code=$code)"
@@ -35,24 +27,28 @@ internal sealed class TTPTransactionException(
      * opposite of every other failure on these routes: an account change, and no number of retries reaches
      * it.
      */
-    class NotEnabled :
-        TTPTransactionException(
+    class NotEnabled(
+        code: String?,
+    ) : TTPTransactionException(
             "the paypoint is not enabled for card-present payments",
-            code = null,
+            code = code,
             reason = null,
+            httpStatus = HTTP_NOT_FOUND,
         )
 
     /** The payment was refused. A `D` code. */
     class Refused(
         code: String,
         reason: String?,
-    ) : TTPTransactionException("the payment was refused", code, reason)
+        httpStatus: Int?,
+    ) : TTPTransactionException("the payment was refused", code, reason, httpStatus = httpStatus)
 
     /** The service did not approve and did not decline, so the problem is the request or the service. */
     class ServiceRejected(
         code: String,
         reason: String?,
-    ) : TTPTransactionException("the service did not approve the transaction", code, reason)
+        httpStatus: Int?,
+    ) : TTPTransactionException("the service did not approve the transaction", code, reason, httpStatus = httpStatus)
 
     /**
      * The processor refused the card.
@@ -78,6 +74,7 @@ internal sealed class TTPTransactionException(
     /** An approval carrying none of the fields it is an approval for. */
     class Undecodable(
         cause: Throwable? = null,
+        httpStatus: Int? = null,
     ) : TTPTransactionException(
             "the transaction response could not be read",
             code = null,
@@ -89,5 +86,6 @@ internal sealed class TTPTransactionException(
             // message buys nothing while a cause underneath it carries the body, because a crash reporter
             // renders the whole chain and the host's reporter is outside anything this SDK scrubs.
             cause = cause?.let { RedactedCause(it) },
+            httpStatus = httpStatus,
         )
 }

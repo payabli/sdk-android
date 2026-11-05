@@ -22,7 +22,6 @@ import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
-import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.serialization.KSerializer
@@ -181,6 +180,7 @@ internal class ScriptedPayInTransport(
  */
 internal class GatedPayInTransport(
     private val response: PayabliResponse,
+    private val failure: Throwable? = null,
 ) : PayabliTransport {
     private val released = CompletableDeferred<Unit>()
 
@@ -195,6 +195,7 @@ internal class GatedPayInTransport(
         sent += request
         arrived.complete(Unit)
         released.await()
+        failure?.let { throw it }
         return response
     }
 
@@ -215,6 +216,10 @@ internal class GatedPayInTransport(
             GatedPayInTransport(
                 PayabliResponse(statusCode, emptyMap(), body.toByteArray(Charsets.UTF_8)),
             )
+
+        /** Holds the request past the hand-off, then throws [failure] once released. */
+        fun failingWith(failure: Throwable): GatedPayInTransport =
+            GatedPayInTransport(PayabliResponse(200, emptyMap(), ByteArray(0)), failure)
     }
 }
 
@@ -261,9 +266,10 @@ internal fun cardStoreRequest(cardData: PayInCardData = testCardData()): PayInSt
 /** The same card [cardForm] describes, in the public type a host builds. */
 internal fun testCardData(): PayInCardData =
     PayInCardData(
-        cardNumber = SensitiveDigits.ofString(TEST_PAN),
-        expiry = TEST_EXPIRY,
-        securityCode = SensitiveDigits.ofString(TEST_SECURITY_CODE),
+        cardNumber = TEST_PAN,
+        expiryMonth = TEST_EXPIRY.month,
+        expiryYear = TEST_EXPIRY.year,
+        securityCode = TEST_SECURITY_CODE,
         holderName = "Integration Test",
         postalCode = "22039",
     )

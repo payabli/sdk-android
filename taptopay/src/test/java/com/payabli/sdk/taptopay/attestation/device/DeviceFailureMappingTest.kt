@@ -7,6 +7,8 @@ import com.payabli.sdk.core.model.PayabliRateLimitException
 import com.payabli.sdk.core.model.PayabliServerException
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.taptopay.attestation.AttestationToken
+import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
+import com.payabli.sdk.taptopay.enrollment.DeviceActivationFailures
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -21,7 +23,7 @@ private val TEST_TIMEOUT = 5.seconds
 
 private const val ENTRY = "a-test-entrypoint"
 
-/** Server text that echoes what was sent, which is why `reason` is displayable and never loggable. */
+/** Server text that echoes what was sent, which is why `reason` is neither shown nor logged. */
 private const val ECHOING_REASON = "Invalid activation code."
 
 /** Placeholders: these tests are about what comes back, so nothing here reaches an assertion on the request. */
@@ -155,7 +157,7 @@ class DeviceFailureMappingTest {
 
             val failure =
                 runCatching {
-                    DeviceServiceClient(transport, logger).challenge(ENTRY) { _, reason ->
+                    DeviceServiceClient(transport, logger).challenge(ENTRY) { _, reason, _ ->
                         if (reason == ECHOING_REASON) wrongCode else null
                     }
                 }.exceptionOrNull()
@@ -172,7 +174,7 @@ class DeviceFailureMappingTest {
                 runCatching {
                     // A mapper that cares about one case says nothing about the rest, and null must not read
                     // as "this was fine": a decline the mapper ignores is still a decline.
-                    DeviceServiceClient(transport, logger).challenge(ENTRY) { _, _ -> null }
+                    DeviceServiceClient(transport, logger).challenge(ENTRY) { _, _, _ -> null }
                 }.exceptionOrNull()
 
             assertTrue(failure is DeviceServiceException.NotAttested)
@@ -260,6 +262,7 @@ class DeviceFailureMappingTest {
             // filing that as a refusal would lose the cause.
             assertTrue(failure is DeviceServiceException.Undecodable)
             assertNull((failure as DeviceServiceException).resultCode)
+            assertEquals(200, failure.httpStatus)
         }
 
     @Test
@@ -281,6 +284,55 @@ class DeviceFailureMappingTest {
         }
 
     @Test
+    fun `every refusal the device service answers carries the response's status`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val cases =
+                listOf(
+                    challengeAgainst(declineEnvelope(400, "refused"), statusCode = 400) to 400,
+                    challengeAgainst(declineEnvelope(404, "refused"), statusCode = 404) to 404,
+                    challengeAgainst(declineEnvelope(418, "refused"), statusCode = 418) to 418,
+                    challengeAgainst(declineEnvelope(400, "refused")) to 200,
+                    challengeAgainst(
+                        """{"title":"One or more validation errors occurred."}""",
+                        statusCode = 400,
+                    ) to 400,
+                    challengeAgainst(
+                        declineEnvelope(403, EntryPointFailures.ENTRY_POINT_UNUSABLE),
+                        statusCode = 403,
+                        failureMapper = EntryPointFailures,
+                    ) to 403,
+                )
+
+            for ((failure, status) in cases) {
+                assertEquals("$failure", status, (failure as? DeviceServiceException)?.httpStatus)
+            }
+        }
+
+    @Test
+    fun `an activation refusal carries the response's status`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeDeviceTransport.answering(declineEnvelope(400, "Invalid activation code."), 400)
+
+            val failure =
+                runCatching {
+                    DeviceServiceClient(transport, logger)
+                        .activate(ENTRY, "d", "123456", probeAssertion(), failureMapper = DeviceActivationFailures())
+                }.exceptionOrNull()
+
+            assertTrue("$failure", failure is DeviceActivationException.CodeIncorrect)
+            assertEquals(400, (failure as? DeviceActivationException)?.httpStatus)
+        }
+
+    @Test
+    fun `a challenge that is not base64 is undecodable at the status it arrived with`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val failure = challengeAgainst(successEnvelope("""{"challengeId":"c","challenge":"not%%base64"}"""))
+
+            assertTrue(failure is DeviceServiceException.Undecodable)
+            assertEquals(200, (failure as DeviceServiceException).httpStatus)
+        }
+
+    @Test
     fun `a decline is logged with its code and never with the server's words`() =
         runTest(timeout = TEST_TIMEOUT) {
             challengeAgainst(declineEnvelope(400, ECHOING_REASON))
@@ -288,7 +340,7 @@ class DeviceFailureMappingTest {
             val record = logger.records.single()
             assertEquals(LogLevel.WARN, record.level)
             assertEquals(listOf("event", "route", "errorCode"), record.fieldNames)
-            // The reason can quote what was sent, so it is displayable and never loggable. `statusCode` is
+            // The reason can quote what was sent, so it is neither shown nor logged. `statusCode` is
             // absent from this record because the status was 200, and printing it beside a failure would
             // read as a contradiction.
             assertFalse(record.message.contains(ECHOING_REASON))

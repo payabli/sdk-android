@@ -55,7 +55,10 @@ class ChargeKeyStoreInstrumentedTest {
     @Test
     fun aReservationSurvivesAFreshStoreInstance() =
         runTest(timeout = TEST_TIMEOUT) {
-            assertFalse(storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry).reused)
+            val first = storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
+            assertFalse(first.reused)
+            // The send ends first: a retry is not handed a key still being sent.
+            storeOver("minted-1").supersede(ENTRY, PayabliEnvironment.SANDBOX, first.key)
 
             val second = storeOver("minted-2").reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.Retry)
 

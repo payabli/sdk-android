@@ -89,13 +89,32 @@ class TerminalStateTest {
         assertTrue(buffer.isEmpty)
     }
 
-    // --- wire names ---
+    // --- event names ---
 
     @Test
-    fun `event codes render as camelCase wire names`() {
-        assertEquals("attestationStarted", TerminalEventCode.AttestationStarted.wireName)
-        assertEquals("nfcFailed", TerminalEventCode.NfcFailed.wireName)
-        assertEquals("devicePendingActivation", TerminalEventCode.DevicePendingActivation.wireName)
+    fun `an event that is not a failed step shows its camelCase name and its detail`() {
+        val event = TerminalEvent(TerminalEventCode.NfcFailed, "reason=cardRemovedTooSoon")
+
+        assertEquals("nfcFailed", event.label)
+        assertEquals("reason=cardRemovedTooSoon", event.shownDetail)
+        assertEquals("attestationStarted", TerminalEvent(TerminalEventCode.AttestationStarted).label)
+        assertEquals("devicePendingActivation", TerminalEvent(TerminalEventCode.DevicePendingActivation).label)
+    }
+
+    @Test
+    fun `a failed step names the step in this app's words, then its code, on one line`() {
+        val lines =
+            listOf(
+                TerminalEventCode.SetupFailed,
+                TerminalEventCode.ActivationFailed,
+                TerminalEventCode.UpdateFailed,
+            ).map { TerminalEvent(it, "code=3024") }
+
+        assertEquals(
+            listOf("setup failed · code=3024", "activation failed · code=3024", "charge failed · code=3024"),
+            lines.map { it.label },
+        )
+        assertTrue(lines.all { it.shownDetail.isEmpty() })
     }
 
     // --- outcome wording ---
@@ -103,21 +122,6 @@ class TerminalStateTest {
     @Test
     fun `a success without detail still names the action`() {
         assertEquals("✓ Set up the terminal succeeded", TerminalActionOutcome.success(TerminalAction.Initialize))
-    }
-
-    @Test
-    fun `a refused reader carries the error's message, naming neither step nor reader`() {
-        // The step list leaves setup done and fails the payment step, so a line naming the step
-        // contradicts the list beside it, and the list is the one that is right. The error's
-        // message says what was refused without naming either.
-        val line =
-            TerminalActionOutcome.failure(
-                TerminalAction.Initialize,
-                IllegalStateException("the reader refused this device"),
-                readerDenied = true,
-            )
-
-        assertEquals("✗ the reader refused this device", line)
     }
 
     @Test
@@ -129,11 +133,10 @@ class TerminalStateTest {
     }
 
     @Test
-    fun `a failure carries the error's own message`() {
+    fun `a failure carries the error's own message and names no step`() {
         assertEquals(
-            "✗ Charge failed: Enter an amount greater than zero",
+            "✗ Enter an amount greater than zero",
             TerminalActionOutcome.failure(
-                TerminalAction.Charge,
                 IllegalArgumentException("Enter an amount greater than zero"),
             ),
         )
@@ -142,9 +145,8 @@ class TerminalStateTest {
     @Test
     fun `a terminal failure shows its screen line, not its message`() {
         assertEquals(
-            "✗ Charge failed: The card was declined. (3020)",
+            "✗ The card was declined. (3020)",
             TerminalActionOutcome.failure(
-                TerminalAction.Charge,
                 TerminalFailure("The card was declined. (3020)", RuntimeException("CARD_DECLINED")),
             ),
         )
@@ -153,8 +155,10 @@ class TerminalStateTest {
     @Test
     fun `a failure with no message falls back to the exception type`() {
         assertEquals(
-            "✗ Activate device failed: IllegalStateException",
-            TerminalActionOutcome.failure(TerminalAction.Activate, IllegalStateException()),
+            "✗ IllegalStateException",
+            TerminalActionOutcome.failure(
+                IllegalStateException(),
+            ),
         )
     }
 
@@ -183,19 +187,18 @@ class TerminalStateTest {
     }
 
     @Test
-    fun `an ineligible device shows the message of the error that was thrown`() {
+    fun `an ineligible device shows the line for the error that was thrown`() {
         // Four error codes land the ineligible reason and a line fixed to the reason cannot say
-        // which, so the thrown error's message is the line: it is the code's own text.
-        val refused =
-            "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID."
-        val osTooOld = "This device's operating system version cannot take contactless payments."
+        // which, so the line chosen for the error's type is shown.
+        val refused = "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID."
+        val osTooOld = "This phone's Android version is too old for Tap to Pay."
 
         assertEquals(
             refused,
             sessionFailureReason(
                 TerminalSessionState.Error,
                 TerminalFailureReason.DeviceIneligible,
-                deviceMessage = refused,
+                deviceLine = refused,
             ),
         )
         assertEquals(
@@ -203,7 +206,7 @@ class TerminalStateTest {
             sessionFailureReason(
                 TerminalSessionState.Error,
                 TerminalFailureReason.DeviceIneligible,
-                deviceMessage = osTooOld,
+                deviceLine = osTooOld,
             ),
         )
     }
@@ -225,17 +228,33 @@ class TerminalStateTest {
     @Test
     fun `the ineligible landing outranks an earlier charge's outcome`() {
         // A charge failure an earlier attempt left is not the current failure: the ineligible
-        // landing is, so its message is the charge step's line.
-        val refused =
-            "This device is not set up for Tap to Pay with this app. Contact Payabli support with the device ID."
+        // landing is, so its line is the charge step's.
+        val refused = "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID."
 
         assertEquals(
             refused,
             chargeStepFailure(
-                "✗ Charge failed: The card was declined. (3020)",
+                "✗ The card was declined. (3020)",
                 TerminalSessionState.Error,
                 TerminalFailureReason.DeviceIneligible,
-                deviceMessage = refused,
+                deviceLine = refused,
+            ),
+        )
+    }
+
+    @Test
+    fun `a charge that may have taken money keeps its warning beside the ineligible landing's line`() {
+        val refused = "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID."
+        val warning = "This payment may have gone through. Check before charging again."
+
+        assertEquals(
+            "$warning\n$refused",
+            chargeStepFailure(
+                warning,
+                TerminalSessionState.Error,
+                TerminalFailureReason.DeviceIneligible,
+                deviceLine = refused,
+                chargeWarns = true,
             ),
         )
     }
@@ -243,9 +262,9 @@ class TerminalStateTest {
     @Test
     fun `a charge's own outcome is the line when no ineligible landing stands`() {
         assertEquals(
-            "✗ Charge failed: The card was declined. (3020)",
+            "✗ The card was declined. (3020)",
             chargeStepFailure(
-                "✗ Charge failed: The card was declined. (3020)",
+                "✗ The card was declined. (3020)",
                 TerminalSessionState.Ready,
                 null,
             ),
@@ -273,7 +292,7 @@ class TerminalStateTest {
             TerminalActionOutcome.from(TerminalAction.Reinitialize, Result.success("")),
         )
         assertEquals(
-            "✗ Re-initialize failed: nope",
+            "✗ nope",
             TerminalActionOutcome.from(TerminalAction.Reinitialize, Result.failure(IllegalStateException("nope"))),
         )
     }

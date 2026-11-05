@@ -1,5 +1,6 @@
 package com.payabli.example.app.demo.ui.setup
 
+import android.content.ClipData
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,7 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import com.payabli.example.app.BuildConfig
 import com.payabli.example.app.demo.config.DemoConfiguration
@@ -29,6 +33,7 @@ import com.payabli.example.app.demo.ui.components.SwitchRow
 import com.payabli.example.app.demo.ui.theme.Dimens
 import com.payabli.example.app.sdk.DemoEnvironment
 import com.payabli.example.app.sdk.PayInForms
+import kotlinx.coroutines.launch
 
 /**
  * Everything the SDK was configured with, read back.
@@ -71,6 +76,8 @@ fun SetupScreen(
                 onCheckedChange = onShowSimpleCaptureChange,
             )
         }
+
+        SupportSection(state)
 
         Section(
             title = "Token endpoint",
@@ -142,6 +149,36 @@ fun SetupScreen(
         PrefillSection(state)
 
         BuildSection(state)
+    }
+}
+
+@Composable
+private fun SupportSection(state: SetupUiState) {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    val deviceId = state.deviceId
+    Section(
+        title = "Support",
+        note = "The value Payabli support asks for. Not the activation ID.",
+    ) {
+        DetailRow(
+            label = "Device ID",
+            value =
+                when {
+                    !state.deviceIdAnswered -> "Reading…"
+                    deviceId == null -> "Unavailable"
+                    else -> deviceId
+                },
+            problem = state.deviceIdProblem,
+            onCopy =
+                deviceId?.let { id ->
+                    {
+                        scope.launch {
+                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Device ID", id)))
+                        }
+                    }
+                },
+        )
     }
 }
 
@@ -271,6 +308,8 @@ private fun SetupScreenPreview() {
                             packageName = "com.payabli.example.app",
                             signingCertificateDigest = "AB:CD",
                         ),
+                    deviceId = "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+                    deviceIdAnswered = true,
                     readiness = Readiness.NotAvailable,
                     problems =
                         listOf(

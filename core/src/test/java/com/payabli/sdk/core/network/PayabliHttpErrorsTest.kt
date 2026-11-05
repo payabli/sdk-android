@@ -84,7 +84,7 @@ class PayabliHttpErrorsTest {
 
     @Test
     fun `a 409 is a conflict, and its body never reaches the reason`() {
-        // The service names the duplicated idempotency key in that body, and reason is displayable.
+        // The service names the duplicated idempotency key in that body, and reason reaches a host.
         val mapped = map(409, "Duplicated idempotencyKey: key-9")
 
         assertTrue(mapped is PayabliGenericException)
@@ -94,7 +94,7 @@ class PayabliHttpErrorsTest {
     }
 
     @Test
-    fun `a 400 problem document populates every field it carries`() {
+    fun `a 400 problem document populates every field the exception carries`() {
         val body =
             """
             {"type":"https://payabli.com/errors/validation","title":"One or more fields are invalid",
@@ -106,8 +106,6 @@ class PayabliHttpErrorsTest {
 
         assertEquals("One or more fields are invalid", mapped.reason)
         assertEquals("See errors", mapped.detail)
-        assertEquals("https://payabli.com/errors/validation", mapped.problemType)
-        assertEquals("/api/v2/MoneyIn/getpaid", mapped.instance)
         assertEquals("E1001", mapped.rawCode)
         assertEquals(400, mapped.httpStatus)
         assertEquals(
@@ -282,7 +280,6 @@ class PayabliHttpErrorsTest {
         assertEquals("Internal error", mapped.reason)
         assertEquals("Trace 9", mapped.detail)
         assertEquals("E5000", mapped.rawCode)
-        assertEquals("https://payabli.com/errors/server", mapped.problemType)
     }
 
     @Test

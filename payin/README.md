@@ -56,11 +56,11 @@ the activity misses the outcome. Every call is a `suspend` function.
 `PayabliPayInForm` is a Composable card and bank account form. `operation` says what a submission does:
 
 ```kotlin
+import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import java.math.BigDecimal
 
@@ -72,48 +72,49 @@ PayabliPayInForm(
     configuration = PayInFormConfiguration(),
     onCompleted = { succeeded ->
         when (succeeded) { // store the ID; don't log it
-            is PayInSubmissionState.Succeeded.Payment -> order.paymentTransId = succeeded.result.transaction?.paymentTransId
-            is PayInSubmissionState.Succeeded.Method -> order.storedMethodId = succeeded.storedMethod.storedMethodId
+            is PayInFormSuccess.Payment -> order.paymentTransId = succeeded.result.transaction?.paymentTransId
+            is PayInFormSuccess.Method -> order.storedMethodId = succeeded.storedMethod.storedMethodId
         }
     },
-    onFailed = { failed -> /* failed.cause says why; see Outcomes and errors */ },
+    onFailed = { error -> /* error.type says why it failed; see Outcomes and errors */ },
     onMethodChanged = { },
 )
 ```
 
 ### Call the API from your own UI
 
-Card numbers and security codes travel in `SensitiveDigits` buffers. Collect them into `CharArray`s, never
-`String`s, which can't be erased. `SensitiveDigits.of` copies the array, so wipe yours once the buffer is
-built, and close the `SensitiveDigits` once the call returns; `use` does that.
+Pass the card number and security code as `String`s. The request copies them into buffers that can't be read
+back, and keeps no `String` of its own. Each call sends from its own copy and overwrites that copy however the call
+ends, so the same request can be sent again, including as a retry.
+
+Pass the expiry as a month and a four-digit year. Before anything is sent, the call refuses a month outside 1 to 12, a
+year that isn't four digits, a year after 2099, or an expiry before the current month, with
+`PayInException.InvalidInput` at `paymentMethod.cardexp`.
 
 ```kotlin
-import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
-import com.payabli.sdk.payin.model.SensitiveDigits
 import java.math.BigDecimal
 
-// numberChars and cvvChars are CharArrays your UI filled.
-val number = SensitiveDigits.of(numberChars).also { numberChars.fill('0') }
-val cvv = SensitiveDigits.of(cvvChars).also { cvvChars.fill('0') }
-
 val result =
-    number.use { number ->
-        cvv.use { cvv ->
-            payIn.capture(
-                PayInRequest(
-                    paymentMethod = PayInPaymentMethod.Card(
-                        PayInCardData(number, ExpiryValue(12, 2030), cvv, "Jane Doe", "12345"),
-                    ),
-                    options = PayInTransactionOptions(PayInPaymentDetails(totalAmount = BigDecimal("12.34"))),
+    payIn.capture(
+        PayInRequest(
+            paymentMethod = PayInPaymentMethod.Card(
+                PayInCardData(
+                    cardNumber = cardNumber,
+                    expiryMonth = 12,
+                    expiryYear = 2030,
+                    securityCode = securityCode,
+                    holderName = "Jane Doe",
+                    postalCode = "12345",
                 ),
-            )
-        }
-    }
+            ),
+            options = PayInTransactionOptions(PayInPaymentDetails(totalAmount = BigDecimal("12.34"))),
+        ),
+    )
 
 result.onSuccess { order.paymentTransId = it.transaction?.paymentTransId } // store it; don't log it
 ```
@@ -141,7 +142,9 @@ the same payment again, submit it with the same `paymentReference` and `attempt 
 resends that payment's key, so the service recognizes the repeat. If the SDK holds no key for that reference, or
 the service would no longer recognize it, the retry goes out under a new key. Calling again without declaring a
 retry is a new payment, and naming a reference whose outcome is still unknown fails with `PAYMENT_REFERENCE_OPEN`
-and isn't sent. The held key lives in memory only, so after a restart read the transaction back.
+and isn't sent. So does the same call on a payment another `PayabliPayIn` is still sending, a declared retry
+included, and a capture or void of a transaction another one is still capturing or voiding. The held key lives in
+memory only, so after a restart read the transaction back.
 
 If the service refuses a declared retry, it arrives as `PayInException.Unsettled` with type `RETRY_REFUSED`: the
 earlier attempt reached the service, and its outcome is still unknown. Check that payment before trying again.
@@ -150,12 +153,16 @@ A retry describes the same payment: the same amount, service fee, surcharge, cur
 and the same `orderId` when the first attempt set one. A retry that describes a different payment fails with
 `RETRY_NOT_SAME_PAYMENT` and isn't sent, and the earlier payment's key is kept for the retry that matches.
 
+On the form, while a payment's outcome is unknown, pass only that attempt's method in `allowedMethods`. The form
+then draws no method selector and keeps what the payer typed, so the total you show can't move to another method's
+fee. Pass the full list again once the outcome is settled.
+
 ## Outcomes and errors
 
 Every call returns a `Result`, except when it is cancelled: cancellation is rethrown as
 `CancellationException`. A cancelled `storeMethod` may already have saved the method, so read the stored
-methods back before storing again. A form reports through `onCompleted` and `onFailed`. Only `onFailed`'s argument, a
-`PayInSubmissionState.Failed`, has a `cause`, which is the exception.
+methods back before storing again. A form reports through `onCompleted` and `onFailed`: a success arrives as
+a `PayInFormSuccess`, and a failure as the exception the table below matches.
 
 A success means what the call did, which depends on the call:
 
@@ -184,15 +191,17 @@ have gone through.
 | A core `PayabliException`, such as a refused credential, a rate limit or `TOKEN_PROVIDER_FAILED` | On a charge, not charged: an unknown outcome arrives as `Unsettled` instead. On `storeMethod`, a network failure may have saved the method | Branch on its `type`, or its `category` for the remedy. After a network failure on `storeMethod`, read the stored methods back before storing again |
 | `PayInException.Interrupted` (form only) | On a charge, cancelled before anything was sent. On `StoreMethod`, the method may have been saved | Retry a charge. Read the stored methods back before storing again |
 
-When a form submission fails, `PayInSubmissionState.Failed` carries:
-
-- `cause`, which says whether a payment may be outstanding. Read it before anything else.
-- `fieldErrors`, what the refusal blamed, per field. It's empty when it blamed none.
+When a form submission fails, `onFailed` receives the exception, and whether it is a
+`PayInException.Unsettled` is what says a payment may be outstanding. Check for that type before anything
+else: `Unsettled` carries its cause's `type`, so the exception's `type` says why the payment failed but
+never whether one may be outstanding. The form marks the fields the service rejected, and for any other
+failure it draws one message chosen by the failure's `category`, never the exception's own text.
 
 `PayInException.Refused` and `PayInException.ServiceError` carry `failure`, a `PayInFailure` with the service's
 `code`, `reason`, `explanation` and `action`, and `paymentTransId`, the transaction it belongs to when the
-service named one. Reconcile from either. Show `reason`, `explanation` and `action`, but don't log them: they
-can repeat what was submitted.
+service named one. Reconcile from either. Don't show `reason`, `explanation` or `action` to the payer, and don't
+log them: they're the service's own text and can repeat what was submitted. Show the payer a message for the
+error's `category`, and log its `code`.
 
 ## Reference
 
@@ -226,21 +235,35 @@ can repeat what was submitted.
 | `requiredFields` | Fields the payer must fill |
 | `labelLayout`, `hiddenFieldLabels` | Where labels sit, and which are hidden |
 | `formatting` | How entered values are formatted |
-| `showsBaseAmount` | Whether the amount row shows |
+| `cardBrandIconPlacement` | Where the card number field draws the card brand: `Leading`, `Trailing` (default) or `Hidden` |
+| `failureMessagePlacement` | Where the form's failure message sits: `Top`, above the fields, or `AboveSubmitButton` (default) |
+| `showsFailureMessage` | Whether the form draws its failure message. Off, the form still marks rejected fields and `onFailed` still receives every failure |
 
 `defaultCardSections()` and `defaultBankSections()` return the instrument's fields followed by a summary
 section of the amounts, titled "Payment". An inputs section with no title draws no heading. A summary section lists only `Amount`, `ServiceFee` and
 `SurchargeFee`. Any other field there is refused when the configuration is built.
 
 `PayabliPayInForm` takes `labels`, a `PayInFormLabels` for the title, subtitle, submit button, the total row's
-label (`total`), field labels and placeholders.
+label (`total`), field labels and placeholders, and the failure messages.
+The four failure messages replace the form's own text for a failure's category, and a blank one keeps it:
+
+| Label | Replaces, on a payment | On a save |
+|---|---|---|
+| `declinedMessage` | "The payment was declined. Try another payment method." | "This payment method couldn't be saved. Try another one." |
+| `retryLaterMessage` | "The payment couldn't be completed. Please try again." | "The payment method couldn't be saved. Please try again." |
+| `outcomeUnknownMessage` | "This payment may have gone through. Check before paying again." | "We couldn't confirm the payment method was saved." |
+| `otherMessage` | "The payment couldn't be completed." | "The payment method couldn't be saved." |
+
+A failure whose outcome is unknown, `PayInException.Unsettled`, takes `outcomeUnknownMessage` whatever its cause's
+category.
+
 With no `submitButton`, the button names the operation: "Pay" for a capture, "Authorize" for an
 authorization and "Save" for a stored method, with "Paying…", "Authorizing…" and "Saving…" while it runs.
 
 `PayInSummaryRows` gives each summary row as the form draws it, for an app that draws its own:
 `labelText` and `totalLabelText` for the labels, `rowAmount` and `totalRowAmount` for the figures, and
-`formattedAmount` for a figure as text. A `null` figure means the row isn't drawn. `rowAmount` returns the
-Amount figure whatever `showsBaseAmount` is set to, so check that setting before drawing the Amount row.
+`formattedAmount` for a figure as text. A `null` figure means the row isn't drawn. The summary has no Amount
+row, so `rowAmount(PayInField.Amount, …)` is always `null`.
 
 ### Styling
 

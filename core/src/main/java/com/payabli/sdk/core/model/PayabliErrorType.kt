@@ -153,12 +153,16 @@ public enum class PayabliErrorType(
         "This retry describes a different payment from the one still unresolved, so it was not sent. Check that payment first; to charge a different payment, send it as a new payment.",
     ),
 
-    /** A new payment names a reference whose earlier payment is still unresolved, so it was not sent. */
+    /**
+     * A new payment names a reference whose earlier payment is still unresolved, or a call names a payment another
+     * instance is still sending through the same call, or a transaction another instance is still capturing or
+     * voiding, so it was not sent.
+     */
     PAYMENT_REFERENCE_OPEN(
         1023,
         "PAYMENT_REFERENCE_OPEN",
         PayabliErrorCategory.INVALID_REQUEST,
-        "A payment with this reference is still unresolved, so this one was not sent. Check that payment first, or retry it.",
+        "Another call for this payment is still under way or its outcome is unknown, so this one was not sent. Check that payment's outcome first.",
     ),
 
     // Card-present.
@@ -361,6 +365,25 @@ public enum class PayabliErrorType(
         "CHARGE_NOT_FINISHED",
         PayabliErrorCategory.OUTCOME_UNKNOWN,
         "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait four minutes.",
+    ),
+    PAYMENT_NOT_TAKEN(
+        3035,
+        "PAYMENT_NOT_TAKEN",
+        PayabliErrorCategory.RETRY_LATER,
+        "The payment was not taken, and the card was not charged. Try again.",
+    ),
+
+    /**
+     * The device's contactless radio is switched off, and the remedy is the merchant's alone: turning the radio
+     * on in Settings. It does not say whether a card was charged: met while the reader waited for a card, or on
+     * a retry of a sale whose outcome is unknown, money may have moved, so read the failure's capture before
+     * charging again. Met by `initialize`, nothing was charged.
+     */
+    CONTACTLESS_DISABLED(
+        3036,
+        "CONTACTLESS_DISABLED",
+        PayabliErrorCategory.CONFIGURATION,
+        "Contactless (NFC) is turned off on this device. Turn it on in Settings.",
     ),
 }
 

@@ -37,6 +37,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.CardBrand
+import com.payabli.sdk.payin.form.PayInCardBrandIconPlacement.Leading
+import com.payabli.sdk.payin.form.PayInCardBrandIconPlacement.Trailing
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldInput
 import com.payabli.sdk.payin.form.PayInFieldRules
@@ -106,6 +108,7 @@ private fun TypedField(
     // Keyed on the field. A configuration that puts a different secret field in this slot would
     // otherwise inherit the reveal state and show what the payer types next in clear text.
     var revealed by remember(field) { mutableStateOf(false) }
+    val badgePlacement = context.configuration.cardBrandIconPlacement
 
     OutlinedTextField(
         value = value,
@@ -120,11 +123,11 @@ private fun TypedField(
         placeholder = PayInStrings.placeholder(field, context.labels)?.let { { Text(it) } },
         visualTransformation = field.transformation(context.configuration, revealed),
         keyboardOptions = field.keyboardOptions(),
+        // The scheme the digits name, once they name one, in the slot the configuration names.
+        leadingIcon = brandBadge(field, value, context).takeIf { badgePlacement == Leading },
         trailingIcon =
             if (!isMasked) {
-                // The scheme the digits name, once they name one. The slot is the reveal control's wherever a
-                // field is masked, and a card number under a mask is the payer's own to reveal first.
-                brandBadge(field, value, context)
+                brandBadge(field, value, context).takeIf { badgePlacement == Trailing }
             } else {
                 {
                     IconButton(onClick = { revealed = !revealed }, enabled = context.enabled) {

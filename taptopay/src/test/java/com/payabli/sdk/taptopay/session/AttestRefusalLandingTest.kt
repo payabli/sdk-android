@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay.session
 
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.taptopay.TapToPayErrorCodes
+import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.challengeBody
 import com.payabli.sdk.taptopay.enrollment.decline
@@ -168,6 +169,48 @@ class AttestRefusalLandingTest {
 
                 assertEquals(PayabliErrorType.ENTRY_POINT_REFUSED, failure?.let(TapToPayErrorCodes::typeFor))
                 assertEquals(TapToPaySessionState.Failed(CONFIGURATION_REJECTED), fixture.state)
+            }
+        }
+
+    @Test
+    fun `a cold route 403 naming nothing known is not permitted, and lands pending only on a held binding`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val refusal = decline(403, "A refusal this SDK has no words for.")
+            for ((refusing, answers) in listOf(
+                RouteScript.CHALLENGE to listOf(RouteScript.CHALLENGE to listOf(refusal)),
+                RouteScript.REGISTER to
+                    listOf(RouteScript.CHALLENGE to listOf(challengeBody()), RouteScript.REGISTER to listOf(refusal)),
+                RouteScript.ATTEST to
+                    listOf(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody()),
+                        RouteScript.ATTEST to listOf(refusal),
+                    ),
+            )) {
+                // A cold run starts with no binding for its entry point, so one is held at the landing only when
+                // another run for the same entry point wrote it while this one was refused.
+                lateinit var fixture: SessionFixture
+                fixture =
+                    SessionFixture(
+                        RouteScript(*answers.toTypedArray()),
+                        sendGate = { request -> if (request.path == refusing) fixture.enrollment.seedRecord() },
+                    )
+
+                val failure = runCatching { fixture.coordinator.initialize() }.exceptionOrNull()
+
+                assertEquals(refusing, PayabliErrorType.PERMISSION_DENIED, failure?.let(TapToPayErrorCodes::typeFor))
+                assertEquals(refusing, TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
+
+                val unbound = SessionFixture(RouteScript(*answers.toTypedArray()))
+
+                val unboundFailure = runCatching { unbound.coordinator.initialize() }.exceptionOrNull()
+
+                assertEquals(
+                    refusing,
+                    PayabliErrorType.PERMISSION_DENIED,
+                    unboundFailure?.let(TapToPayErrorCodes::typeFor),
+                )
+                assertEquals(refusing, TapToPaySessionState.Failed(CONFIGURATION_REJECTED), unbound.state)
             }
         }
 

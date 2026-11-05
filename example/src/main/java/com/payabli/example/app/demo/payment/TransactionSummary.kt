@@ -22,9 +22,6 @@ object TransactionSummary {
         val transaction = result.transaction
         return listOf(
             SummaryRow("Code", result.code.ifBlank { MISSING }),
-            SummaryRow("Reason", result.reason.orMissing()),
-            SummaryRow("Explanation", result.explanation.orMissing()),
-            SummaryRow("Action", result.action.orMissing()),
             SummaryRow("Payment transaction", transaction?.paymentTransactionId.orMissing()),
             SummaryRow("Gateway transaction", transaction?.gatewayTransactionId.orMissing()),
             SummaryRow("Order", transaction?.orderId.orMissing()),
@@ -48,8 +45,8 @@ object TransactionSummary {
     internal fun formatAmount(raw: String?): String {
         if (raw.isNullOrBlank()) return MISSING
         // BigDecimal, because binary floating point cannot hold most decimal fractions exactly and
-        // a wide enough value loses digits before it is ever displayed. This is a financial readout
-        // shown beside the raw response, so the two disagreeing is the failure to avoid.
+        // a wide enough value loses digits before it is ever displayed. This is a financial readout,
+        // so a value that differs from what the service returned is the failure to avoid.
         val amount = raw.trim().toBigDecimalOrNull() ?: return raw
         return "$ " + amount.setScale(2, RoundingMode.HALF_UP).toPlainString()
     }

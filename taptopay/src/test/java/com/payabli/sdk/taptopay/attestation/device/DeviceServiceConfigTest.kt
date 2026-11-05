@@ -138,6 +138,7 @@ class DeviceServiceConfigTest {
 
             assertTrue("$failure", failure is DeviceServiceException.Forbidden)
             assertEquals(HTTP_FORBIDDEN, (failure as DeviceServiceException).resultCode)
+            assertEquals(HTTP_FORBIDDEN, failure.httpStatus)
             assertEquals("the gateway sends no service text", "", failure.reason)
         }
 
@@ -153,6 +154,33 @@ class DeviceServiceConfigTest {
             val (inactive, _) = clientFor(declineEnvelope(403, "Device is not active."))
             val pending = failureOf { inactive.config(ENTRY, ASSERTION, failureMapper = EntryPointFailures) }
             assertTrue("$pending", pending is DeviceServiceException.Forbidden)
+        }
+
+    @Test
+    fun `the service's 403 is read from its envelope, so the entry point is told apart at the real status`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val (refused, _) =
+                clientFor(declineEnvelope(403, EntryPointFailures.ENTRY_POINT_UNUSABLE), statusCode = HTTP_FORBIDDEN)
+            val entryPoint = failureOf { refused.config(ENTRY, ASSERTION, failureMapper = EntryPointFailures) }
+            assertTrue("$entryPoint", entryPoint is DeviceServiceException.EntryPointUnusable)
+            assertEquals(EntryPointFailures.ENTRY_POINT_UNUSABLE, (entryPoint as DeviceServiceException).reason)
+
+            val (inactive, _) = clientFor(declineEnvelope(403, "Device is not active."), statusCode = HTTP_FORBIDDEN)
+            val pending = failureOf { inactive.config(ENTRY, ASSERTION, failureMapper = EntryPointFailures) }
+            assertTrue("$pending", pending is DeviceServiceException.Forbidden)
+            assertEquals("Device is not active.", (pending as DeviceServiceException).reason)
+        }
+
+    @Test
+    fun `a 401 at the real status still reaches the shared status table, envelope or not`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val (client, _) =
+                clientFor(declineEnvelope(401, "Device not attested or attestation revoked."), statusCode = 401)
+
+            val failure = failureOf { client.config(ENTRY, ASSERTION, failureMapper = EntryPointFailures) }
+
+            assertTrue("$failure", failure is PayabliException)
+            assertEquals(PayabliErrorType.TOKEN_EXPIRED, (failure as PayabliException).type)
         }
 
     @Test

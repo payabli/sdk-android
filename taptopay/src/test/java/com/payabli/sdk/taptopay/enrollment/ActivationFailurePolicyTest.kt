@@ -308,7 +308,7 @@ class ActivationFailurePolicyTest {
     @Test
     fun `no exception in this taxonomy prints the service's wording`() {
         for (case in cases) {
-            val thrown = DeviceActivationFailures().map(case.resultCode, case.reason)
+            val thrown = DeviceActivationFailures().map(case.resultCode, case.reason, case.resultCode)
             assertTrue(case.reason, thrown.toString().contains("resultCode=${case.resultCode}"))
             assertTrue(case.reason, !thrown.toString().contains(case.reason))
         }

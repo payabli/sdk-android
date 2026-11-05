@@ -6,10 +6,13 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
@@ -44,6 +47,7 @@ internal class TokenStorageClient(
      * @param options everything about storing a method other than the instrument.
      * @param entered what the payer typed, for the customer data.
      * @return the stored method, identified for later use.
+     * @throws PayInException.Refused when the service refuses the method inside a 200, with no code.
      */
     suspend fun storeMethod(
         entryPoint: String,
@@ -84,7 +88,8 @@ internal class TokenStorageClient(
                 body.fill(0)
             }
 
-        PayabliHttpErrors.from(response)?.let { failure ->
+        PayabliHttpErrors.from(response)?.let { mapped ->
+            val failure = blockedByFraudControl(response, mapped) ?: withRouteText(response, mapped)
             logger.warn(
                 LogField.safe("event", "payin_store_failed"),
                 LogField.safe("route", PayInRoutes.STORE_METHOD),
@@ -126,7 +131,7 @@ internal class TokenStorageClient(
             ) { "the service refused to store the method" }
             throw PayInException.Refused(
                 PayInFailure(
-                    code = stored?.resultCode?.toString(),
+                    code = null,
                     reason = stored?.resultText ?: envelope.responseText,
                     explanation = null,
                     action = null,
@@ -147,8 +152,66 @@ internal class TokenStorageClient(
             method = instrument.storedMethodType,
             methodReferenceId = stored?.methodReferenceId,
             customerId = stored?.customerId,
-            resultCode = stored?.resultCode,
-            resultText = stored?.resultText,
+        )
+    }
+
+    /**
+     * Reads [mapped] as a refusal of the payer when it is the store's fraud block.
+     *
+     * @param response the store's answer.
+     * @param mapped what the shared status mapping read from [response].
+     * @return the refusal, carrying the 400 and its code, or null for any other failure.
+     */
+    private fun blockedByFraudControl(
+        response: PayabliResponse,
+        mapped: PayabliException,
+    ): PayInException.Refused? {
+        if (mapped !is PayabliValidationException || mapped.rawCode != BLOCKED_BY_FRAUD_CONTROL) return null
+        val said =
+            try {
+                PayabliJson.format.decodeFromString(StoredMethodEnvelope.serializer(), response.bodyAsText())
+            } catch (_: SerializationException) {
+                null
+            }
+        return PayInException.Refused(
+            PayInFailure(
+                code = mapped.rawCode,
+                reason = said?.responseText,
+                explanation = null,
+                action = null,
+                httpStatus = mapped.httpStatus,
+            ),
+        )
+    }
+
+    /**
+     * A 400 from this route carries `responseText` and no field map, so that text is put in the validation
+     * error's `detail`, where it is the only explanation a developer gets.
+     *
+     * @param response the store's answer.
+     * @param mapped what the shared status mapping read from [response].
+     * @return [mapped] with the route's text as its `detail`, or [mapped] unchanged when it already has one.
+     */
+    private fun withRouteText(
+        response: PayabliResponse,
+        mapped: PayabliException,
+    ): PayabliException {
+        if (mapped !is PayabliValidationException || mapped.detail != null) return mapped
+        val text =
+            try {
+                PayabliJson.format
+                    .decodeFromString(StoredMethodEnvelope.serializer(), response.bodyAsText())
+                    .responseText
+                    ?.trimOrNull()
+            } catch (_: SerializationException) {
+                null
+            } ?: return mapped
+        return PayabliValidationException(
+            httpStatus = mapped.httpStatus,
+            reason = mapped.reason,
+            detail = text,
+            rawCode = mapped.rawCode,
+            fieldErrors = mapped.fieldErrors,
         )
     }
 
@@ -161,12 +224,15 @@ internal class TokenStorageClient(
             LogField.safe("route", PayInRoutes.STORE_METHOD),
             LogField.safe("statusCode", statusCode),
         ) { "the stored-method response could not be read" }
-        return PayInException.Undecodable(cause)
+        return PayInException.Undecodable(cause, null, statusCode)
     }
 
     private companion object {
         /** The older envelope's own approval number, which is not an HTTP status. */
         const val RESULT_CODE_APPROVED = 1
+
+        /** The older envelope's `responseCode` for a fraud block, so it carries no `E` prefix. */
+        const val BLOCKED_BY_FRAUD_CONTROL = "9005"
     }
 }
 

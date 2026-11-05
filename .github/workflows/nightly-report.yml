@@ -1,0 +1,79 @@
+name: Nightly report
+
+# Posts the nightly's result to Slack. A credential boundary rather than a layout: `nightly.yml` carries
+# `workflow_dispatch`, a dispatch selects a ref, and GitHub runs that ref's copy of the workflow and of every
+# script it invokes, so a report job there would hand SLACK_BOT_TOKEN to whatever a branch had written.
+# GitHub triggers `workflow_run` only for a workflow file on the default branch and runs that copy, so this
+# job and the poster it runs are main's.
+#
+# GITHUB_RUN_ID, GITHUB_SHA and GITHUB_REF_NAME describe this run here and cannot be overwritten, so the
+# nightly's are passed to the poster as NIGHTLY_*.
+
+on:
+  workflow_run:
+    workflows: [Nightly]
+    types: [completed]
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Leads every Slack message, including the one sent when no facts arrived.
+  PLATFORM: Android
+
+jobs:
+  report:
+    name: Report to Slack
+    # A run superseded by `cancel-in-progress`, or cancelled by hand, stays quiet. A test job that timed out
+    # or failed does not cancel the run, so it is still announced.
+    if: github.event.workflow_run.conclusion != 'cancelled'
+    continue-on-error: true
+    environment: ci-protected
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # `actions: read` for the facts artifact of the triggering run, and for the last-green lookup.
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      # Main's copy of the poster. Shallow is right: the git history the culprit lookup needs was read by the
+      # nightly, and its answers travel in the facts file.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Non-blocking: a missing facts file is a case the poster reports, and it is the case that arises when
+      # the test job never finished.
+      - name: Download the report facts
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nightly-facts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/nightly-facts
+
+      # Posts to #mobile-sdk-nightly-build: a summary in the channel, the failure detail in its thread.
+      # SLACK_MENTION_CULPRITS is off unless set to `true`: the culprit is a labelled heuristic, and naming
+      # its author is a team-norm decision.
+      - name: Post the nightly report
+        timeout-minutes: 5
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
+          SLACK_MENTION_CULPRITS: ${{ vars.SLACK_MENTION_CULPRITS }}
+          # For the last-green lookup only. The job-scoped token above is read-only on Actions.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Only the scheduled run on the default branch owns the liveness switch: a dispatch or a probe branch
+          # vouching for it would let occasional manual runs mask a dead schedule.
+          LIVENESS_OWNER: >-
+            ${{ github.event.workflow_run.event == 'schedule'
+              && github.event.workflow_run.head_branch == github.event.repository.default_branch }}
+          NIGHTLY_JOB_RESULT: ${{ github.event.workflow_run.conclusion }}
+          NIGHTLY_RUN_ID: ${{ github.event.workflow_run.id }}
+          NIGHTLY_SHA: ${{ github.event.workflow_run.head_sha }}
+          NIGHTLY_REF_NAME: ${{ github.event.workflow_run.head_branch }}
+        run: python3 .github/scripts/nightly_slack.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"

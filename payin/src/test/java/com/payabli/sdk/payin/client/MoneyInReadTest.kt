@@ -106,6 +106,8 @@ class MoneyInReadTest {
 
             assertEquals(PayabliErrorType.TRANSACTION_NOT_FOUND, failure?.type)
             assertEquals(PayabliErrorType.TRANSACTION_NOT_FOUND.message, failure?.reason)
+            assertEquals(400, failure?.httpStatus)
+            assertEquals("7001", failure?.rawCode)
         }
 
     @Test
@@ -115,6 +117,20 @@ class MoneyInReadTest {
 
             assertEquals(PayabliErrorType.PERMISSION_DENIED, failure?.type)
             assertEquals(PayabliErrorType.PERMISSION_DENIED.message, failure?.reason)
+            assertEquals(401, failure?.httpStatus)
+            assertEquals("9001", failure?.rawCode)
+        }
+
+    @Test
+    fun `a read refusal whose body names a code reports that code`() =
+        runTest(timeout = timeout) {
+            for ((status, legacy) in listOf(400 to 7001, 401 to 9001)) {
+                val body = """{"isSuccess":false,"code":"E1001","responseCode":$legacy}"""
+                val failure = read(FakePayInTransport.answering(body, statusCode = status)) as? PayabliException
+
+                assertEquals("$status", status, failure?.httpStatus)
+                assertEquals("$status", "E1001", failure?.rawCode)
+            }
         }
 
     @Test

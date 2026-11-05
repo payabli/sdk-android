@@ -1,16 +1,16 @@
 package com.payabli.example.app.sdk
 
+import com.payabli.example.app.demo.payment.FailureKind
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.payment.StoredMethod
 import com.payabli.example.app.demo.payment.Transaction
+import com.payabli.sdk.core.model.PayabliErrorCategory
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.payin.PayInFormSuccess
+import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoredMethod
-import com.payabli.sdk.payin.payment.PayInSubmissionState
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
 
 /**
  * The SDK's outcome in this app's own words.
@@ -21,18 +21,15 @@ import kotlinx.serialization.json.buildJsonObject
  *
  * **No instrument crosses this boundary**, because none is in what the SDK returns.
  */
-internal fun PayInSubmissionState.Succeeded.toPaymentResult(): PaymentResult =
+internal fun PayInFormSuccess.toPaymentResult(): PaymentResult =
     when (this) {
-        is PayInSubmissionState.Succeeded.Payment -> result.toPaymentResult()
-        is PayInSubmissionState.Succeeded.Method -> storedMethod.toPaymentResult()
+        is PayInFormSuccess.Payment -> result.toPaymentResult()
+        is PayInFormSuccess.Method -> storedMethod.toPaymentResult()
     }
 
 internal fun PayInResult.toPaymentResult(): PaymentResult =
     PaymentResult(
         code = code,
-        reason = reason,
-        explanation = explanation,
-        action = action,
         transaction =
             transaction?.let {
                 Transaction(
@@ -45,78 +42,40 @@ internal fun PayInResult.toPaymentResult(): PaymentResult =
                     operation = "capture",
                     status = it.transStatus?.toString(),
                     // As the API returned them. A payment amount reformatted on its way to a screen is how a
-                    // display comes to disagree with the response beside it.
+                    // display comes to disagree with what the service returned.
                     totalAmount = it.totalAmount?.toPlainString(),
                     feeAmount = it.feeAmount?.toPlainString(),
                     source = it.connectorName,
                 )
             },
-        apiResponse = transaction.asJson(code, reason, explanation, action),
     )
 
+/** A stored method carries no result code, so only the identifier crosses. */
 private fun PayInStoredMethod.toPaymentResult(): PaymentResult =
     PaymentResult(
-        code = resultCode?.toString() ?: "",
-        reason = resultText,
-        storedMethod =
-            StoredMethod(
-                storedMethodId = storedMethodId,
-                responseText = resultText.orEmpty(),
-                resultText = resultText.orEmpty(),
-            ),
-        apiResponse =
-            buildJsonObject {
-                put("isSuccess", JsonPrimitive(true))
-                put("resultCode", JsonPrimitive(resultCode))
-                resultText?.let { put("resultText", JsonPrimitive(it)) }
-                customerId?.let { put("customerId", JsonPrimitive(it)) }
-            },
+        code = "",
+        storedMethod = StoredMethod(storedMethodId = storedMethodId),
     )
 
 /**
- * The response card's content, rebuilt from the fields the SDK exposes.
- *
- * The SDK decodes the body and does not keep it, so this is a rendering of what came back rather than the
- * bytes that came back. The demo says so on the screen.
+ * The failure in this app's words: only the category and the code cross, so no screen shows the error's text. An
+ * `Unsettled` wrapper is read before its cause's category, and a bare [PayInException.Interrupted] is a cancel made
+ * before anything was sent, since a later one arrives wrapped.
  */
-private fun com.payabli.sdk.payin.model.PayInTransaction?.asJson(
-    code: String,
-    reason: String?,
-    explanation: String?,
-    action: String?,
-): JsonObject =
-    buildJsonObject {
-        put("code", JsonPrimitive(code))
-        // The three beside the code. The card is headed "Exactly what came back", so a field the SDK exposes
-        // and this omits is the screen contradicting its own heading.
-        reason?.let { put("reason", JsonPrimitive(it)) }
-        explanation?.let { put("explanation", JsonPrimitive(it)) }
-        action?.let { put("action", JsonPrimitive(it)) }
-        this@asJson?.let { transaction ->
-            transaction.paymentTransId?.let { put("paymentTransId", JsonPrimitive(it)) }
-            transaction.gatewayTransId?.let { put("gatewayTransId", JsonPrimitive(it)) }
-            transaction.orderId?.let { put("orderId", JsonPrimitive(it)) }
-            transaction.method?.let { put("method", JsonPrimitive(it)) }
-            transaction.transStatus?.let { put("transStatus", JsonPrimitive(it)) }
-            transaction.totalAmount?.let { put("totalAmount", JsonPrimitive(it.toPlainString())) }
-            transaction.connectorName?.let { put("connectorName", JsonPrimitive(it)) }
-        }
-    }
-
-/**
- * The failure in this app's words.
- *
- * [PayabliException.reason] and [PayabliException.detail] are the displayable pair the SDK documents, and
- * `PaymentError.Payabli` already keeps them apart, so a decline reads as a decline rather than as whatever a
- * message happened to say. Anything that is not a `PayabliException` cannot come from the SDK's own paths and
- * reads as unexpected.
- */
-internal fun PayInSubmissionState.Failed.toPaymentError(): PaymentError = cause.toPaymentError()
-
-/** The same reading for a call that throws its failure rather than publishing it as a state. */
 internal fun Throwable.toPaymentError(): PaymentError =
     when (this) {
-        is PayabliException -> PaymentError.Payabli(reason = reason, detail = detail)
-        // Not from the SDK's own paths, so its text is the only thing there is to say.
-        else -> PaymentError.Unexpected(this::class.java.name)
+        is PayInException.Unsettled -> PaymentError(FailureKind.OUTCOME_UNKNOWN, code.toString())
+        is PayInException.Interrupted -> PaymentError(FailureKind.CANCELED_UNSENT, code.toString())
+        is PayabliException ->
+            PaymentError(
+                kind =
+                    when (category) {
+                        PayabliErrorCategory.DECLINED -> FailureKind.DECLINED
+                        PayabliErrorCategory.RETRY_LATER -> FailureKind.RETRY_LATER
+                        PayabliErrorCategory.OUTCOME_UNKNOWN -> FailureKind.OUTCOME_UNKNOWN
+                        else -> FailureKind.OTHER
+                    },
+                code = code.toString(),
+            )
+        else -> PaymentError(FailureKind.OTHER, this::class.java.name)
     }

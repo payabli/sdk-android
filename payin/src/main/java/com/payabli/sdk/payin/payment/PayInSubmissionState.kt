@@ -19,7 +19,7 @@ import java.util.Collections
  * `@Immutable`, and [Failed] copies the map it is handed, so what Compose reads cannot change under it.
  */
 @Immutable
-public sealed class PayInSubmissionState {
+internal sealed class PayInSubmissionState {
     /** Nothing has been submitted. */
     public data object Idle : PayInSubmissionState()
 

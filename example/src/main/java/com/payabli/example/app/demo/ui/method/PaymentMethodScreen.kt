@@ -113,7 +113,7 @@ private fun PaymentMethodScreenPreview() {
                 PaymentMethodUiState(
                     setup = PayInForms.storePaymentMethod(),
                     sampleIdentity = SampleIdentity.from("Google Pixel 7a"),
-                    resultText = "Stored method: demo-method-0001\nResponse: Payment method saved",
+                    resultText = "✓ Stored method: demo-method-0001",
                     diagnostics = listOf("RESPONSE 1 paymentMethod\nreason=Success"),
                 ),
             actions = PaymentFlowActions.none(),

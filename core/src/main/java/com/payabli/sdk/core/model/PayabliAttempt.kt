@@ -14,7 +14,8 @@ public enum class PayabliAttempt {
      * Another try at a payment whose outcome is not known: on card-not-present the one its payment reference
      * names, on card-present the most recent. It is sent under that payment's idempotency key, so the service
      * recognises it and does not charge twice. If no key is held for it, or the service would no longer
-     * recognise it, it is sent under a new key.
+     * recognise it, it is sent under a new key. On card-not-present a retry naming no payment reference is refused as
+     * invalid input and not sent.
      *
      * A retry describes the same payment: one that describes another is refused as
      * [PayabliErrorType.RETRY_NOT_SAME_PAYMENT] and not sent.

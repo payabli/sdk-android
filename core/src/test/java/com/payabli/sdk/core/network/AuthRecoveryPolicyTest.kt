@@ -55,8 +55,8 @@ class AuthRecoveryPolicyTest {
 
         assertTrue("reason should say what happened", failure.reason.contains("refresh", ignoreCase = true))
         // PayabliException is Exception(type.message), so reason never reaches `message`. That is the
-        // family's redaction rule rather than this policy's doing: reason and detail are displayable and
-        // never loggable, and `message` is what reaches logs and crash reports.
+        // family's redaction rule rather than this policy's doing: reason and detail are neither shown nor
+        // logged, and `message` is what reaches logs and crash reports.
         assertEquals(PayabliErrorType.TOKEN_EXPIRED.message, failure.message)
         assertFalse("no server text relayed", failure.reason.contains("401"))
     }

@@ -86,6 +86,7 @@ internal object TapToPayComponents {
                     coordinator = coordinator,
                     manager = manager,
                     reader = reader,
+                    contactlessEnabled = { nfcEnabled(application) },
                     client = TTPTransactionClient(session.transport),
                     store = store,
                     // Process-scoped: a screen rebuild reuses the key; a process death does not, matching

@@ -2,6 +2,7 @@ package com.payabli.sdk.payin.form
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -417,5 +418,57 @@ class PayInFormConfigurationTest {
             CARD_INSTRUMENT_FIELDS,
             configuration.sectionsFor(PayInMethodType.Card).single().fields,
         )
+    }
+
+    // --- placements ---
+
+    @Test
+    fun `the placements default to a trailing icon, a message above the submit button, and the message shown`() {
+        val configuration = PayInFormConfiguration()
+
+        assertEquals(PayInCardBrandIconPlacement.Trailing, configuration.cardBrandIconPlacement)
+        assertEquals(PayInFailureMessagePlacement.AboveSubmitButton, configuration.failureMessagePlacement)
+        assertTrue(configuration.showsFailureMessage)
+    }
+
+    @Test
+    fun `copy keeps the placements, and can replace them`() {
+        val configuration =
+            PayInFormConfiguration(
+                cardBrandIconPlacement = PayInCardBrandIconPlacement.Hidden,
+                failureMessagePlacement = PayInFailureMessagePlacement.Top,
+                showsFailureMessage = false,
+            )
+
+        val kept = configuration.copy(labelLayout = PayInLabelLayout.Placeholder)
+        assertEquals(PayInCardBrandIconPlacement.Hidden, kept.cardBrandIconPlacement)
+        assertEquals(PayInFailureMessagePlacement.Top, kept.failureMessagePlacement)
+        assertFalse(kept.showsFailureMessage)
+
+        assertEquals(
+            PayInCardBrandIconPlacement.Leading,
+            configuration.copy(cardBrandIconPlacement = PayInCardBrandIconPlacement.Leading).cardBrandIconPlacement,
+        )
+        assertEquals(
+            PayInFailureMessagePlacement.AboveSubmitButton,
+            configuration
+                .copy(failureMessagePlacement = PayInFailureMessagePlacement.AboveSubmitButton)
+                .failureMessagePlacement,
+        )
+        assertTrue(configuration.copy(showsFailureMessage = true).showsFailureMessage)
+    }
+
+    @Test
+    fun `two configurations differing only in a placement or the opt-out are not equal`() {
+        val plain = PayInFormConfiguration()
+
+        listOf(
+            PayInFormConfiguration(cardBrandIconPlacement = PayInCardBrandIconPlacement.Hidden),
+            PayInFormConfiguration(failureMessagePlacement = PayInFailureMessagePlacement.Top),
+            PayInFormConfiguration(showsFailureMessage = false),
+        ).forEach { other ->
+            assertNotEquals(plain, other)
+            assertNotEquals(plain.hashCode(), other.hashCode())
+        }
     }
 }

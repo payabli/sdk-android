@@ -6,11 +6,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
 import com.payabli.sdk.payin.form.PayInMethodType
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.narrowingKey
 import com.payabli.sdk.payin.payment.offering
@@ -38,9 +38,9 @@ import com.payabli.sdk.payin.ui.PayInSubmitText
  * and account number are emptied after an approval or a refusal by the service, and kept after a refusal before
  * that, such as an amount the request cannot send. A field the service rejects is marked; the payer's details stay.
  *
- * **Nothing in a failure is loggable.** [onFailed] carries the failure so a host can show it or navigate away
- * from it. `PayabliException.reason` and `detail` are displayable only: some of them can quote what was
- * submitted, so a record of a failure takes the exception's code, not its text.
+ * **Nothing in a failure is loggable.** [onFailed] carries the failure so a host can act on its category or
+ * navigate away from it. `PayabliException.reason` and `detail` are neither shown nor logged: some of them can
+ * quote what was submitted, so a screen shows a message for the category and a record takes the code.
  *
  * **Consumes no window insets.** Give it a scrolling viewport that accounts for the keyboard.
  *
@@ -50,7 +50,7 @@ import com.payabli.sdk.payin.ui.PayInSubmitText
  *
  * **Nothing typed reaches saved instance state**, so a form reopened after process death is an empty form, and
  * the interrupted payment's key died with the process: find that payment before charging again. Within one
- * process, a retry is a submission with `attempt` set to `PayabliAttempt.Retry`.
+ * process, a retry is a submission with `attempt` set to `PayabliAttempt.Retry` and the payment's `paymentReference`.
  *
  * **One form per [payIn].** The typed values are its own, so two forms given the same one draw the same
  * boxes, and two given the same one with different configurations refill each other on every frame. A second
@@ -63,7 +63,7 @@ import com.payabli.sdk.payin.ui.PayInSubmitText
  * @param labels wording decided at runtime; anything left out or blank comes from string resources.
  * @param style null takes `LocalPayInFormStyle`, then the host's theme.
  * @param onCompleted the service accepted it.
- * @param onFailed it did not complete, with the typed cause and the fields the service rejected; where the outcome is unknown the cause is `Unsettled` and the operation may have been carried out.
+ * @param onFailed it did not complete, with the typed cause; where the outcome is unknown the cause is `Unsettled` and the operation may have been carried out.
  * @param onMethodChanged the displayed method moved, by a payer switch or a configuration change; the values do not cross into the callback.
  */
 @Composable
@@ -74,8 +74,8 @@ public fun PayabliPayInForm(
     modifier: Modifier = Modifier,
     labels: PayInFormLabels = PayInFormLabels(),
     style: PayInFormStyle? = null,
-    onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
-    onFailed: (PayInSubmissionState.Failed) -> Unit,
+    onCompleted: (PayInFormSuccess) -> Unit,
+    onFailed: (PayabliException) -> Unit,
     onMethodChanged: (PayInMethodType) -> Unit,
 ) {
     // The typed values, the reports and the submission the tap starts are this module's, not the contract's:
@@ -87,7 +87,7 @@ public fun PayabliPayInForm(
         when (payIn) {
             is PayInPaymentFlow -> payIn
         }
-    val submission by payIn.state.collectAsState()
+    val submission by impl.submissionState.collectAsState()
 
     // An authorization takes entered card data only, so a bank tab beside it is a form no request can be
     // made from.

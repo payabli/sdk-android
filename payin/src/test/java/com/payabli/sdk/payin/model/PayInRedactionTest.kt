@@ -26,9 +26,10 @@ class PayInRedactionTest {
 
     private fun card() =
         PayInCardData(
-            cardNumber = SensitiveDigits.ofString(pan),
-            expiry = ExpiryValue(12, 2030),
-            securityCode = SensitiveDigits.ofString(securityCode),
+            cardNumber = pan,
+            expiryMonth = 12,
+            expiryYear = 2030,
+            securityCode = securityCode,
             holderName = "A Payer",
             postalCode = "22039",
         )
@@ -49,7 +50,7 @@ class PayInRedactionTest {
     fun `bank data carries no account number`() {
         val data =
             PayInBankAccountData(
-                accountNumber = SensitiveDigits.ofString(account),
+                accountNumber = account,
                 routingNumber = "122105278",
                 accountType = PayInAccountType.Checking,
                 holderName = "A Payer",
@@ -87,7 +88,7 @@ class PayInRedactionTest {
     }
 
     @Test
-    fun `a stored method carries neither its identifier nor its text`() {
+    fun `a stored method does not carry its identifier`() {
         // The identifier charges a card, so it is a credential rather than a label.
         val rendered =
             PayInStoredMethod(
@@ -95,11 +96,8 @@ class PayInRedactionTest {
                 PayInStoredMethodType.Card,
                 "tok-77-225810",
                 88L,
-                1,
-                "Approved on file",
             ).toString()
 
-        assertFalse(rendered.contains("Approved on file"))
         assertFalse(rendered.contains("tok-77"))
         assertEquals("PayInStoredMethod", rendered)
     }
@@ -128,7 +126,7 @@ class PayInRedactionTest {
 
     @Test
     fun `a result and a failure carry the code and not the prose`() {
-        // The service text on an approval is displayable and never loggable, exactly as a failure's is, and
+        // The service text on an approval is neither shown nor logged, exactly as a failure's is, and
         // an approval can echo what was submitted just as a refusal can.
         val approval =
             PayInResult(
@@ -227,7 +225,7 @@ class PayInRedactionTest {
             )
         val bank =
             PayInBankAccountData(
-                accountNumber = SensitiveDigits.ofString(account),
+                accountNumber = account,
                 routingNumber = "122105278",
                 accountType = PayInAccountType.Checking,
                 holderName = "A Payer",

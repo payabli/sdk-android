@@ -1,10 +1,16 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
+import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.client.FakePayInTransport
@@ -21,21 +27,32 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionStatus
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.KSerializer
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -47,6 +64,10 @@ import kotlin.time.Duration.Companion.seconds
 class PayInPaymentFlowTest {
     private val timeout = 5.seconds
 
+    @Before
+    @After
+    fun forgetHeld() = PayInKeyStore.forgetHeld()
+
     @Test
     fun `a capture answers with the transaction the service approved`() =
         runTest(timeout = timeout) {
@@ -55,7 +76,10 @@ class PayInPaymentFlowTest {
             val outcome = flow.capture(testOptions(), cardForm())
 
             assertEquals("A0000", outcome.getOrNull()?.code)
-            assertTrue("${flow.state.value}", flow.state.value is PayInSubmissionState.Succeeded.Payment)
+            assertTrue(
+                "${flow.submissionState.value}",
+                flow.submissionState.value is PayInSubmissionState.Succeeded.Payment,
+            )
         }
 
     @Test
@@ -137,39 +161,39 @@ class PayInPaymentFlowTest {
     fun `a host that collected the card captures without drawing a form`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
-            val flow: PayabliPayIn = flowOver(transport)
+            val flow = flowOver(transport)
 
             val outcome = flow.capture(cardRequest())
 
             assertEquals("A0000", outcome.getOrNull()?.code)
             assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
-            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+            assertEquals(PayInSubmissionState.Idle, flow.submissionState.value)
         }
 
     @Test
     fun `a host that collected the card authorizes without drawing a form`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
-            val flow: PayabliPayIn = flowOver(transport)
+            val flow = flowOver(transport)
 
             val outcome = flow.authorize(cardRequest())
 
             assertEquals("A0000", outcome.getOrNull()?.code)
             assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
-            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+            assertEquals(PayInSubmissionState.Idle, flow.submissionState.value)
         }
 
     @Test
     fun `a host that collected the card stores it without drawing a form`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(STORED_METHOD)
-            val flow: PayabliPayIn = flowOver(transport)
+            val flow = flowOver(transport)
 
             val outcome = flow.storeMethod(cardStoreRequest())
 
             assertEquals("tok-77", outcome.getOrNull()?.storedMethodId)
             assertEquals(PayInRoutes.STORE_METHOD, transport.request?.path)
-            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+            assertEquals(PayInSubmissionState.Idle, flow.submissionState.value)
         }
 
     @Test
@@ -196,7 +220,7 @@ class PayInPaymentFlowTest {
         }
 
     @Test
-    fun `a direct store leaves the caller's buffers intact`() =
+    fun `a direct store leaves the host's card to be sent again`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(STORED_METHOD)
             val flow: PayabliPayIn = flowOver(transport)
@@ -205,13 +229,13 @@ class PayInPaymentFlowTest {
             flow.storeMethod(cardStoreRequest(cardData))
 
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
-            assertEquals(TEST_PAN, String(cardData.cardNumber.rawCopy()))
-            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCode.rawCopy()))
+            assertEquals(TEST_PAN, String(cardData.cardNumberDigits.rawCopy()))
+            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCodeDigits.rawCopy()))
 
-            cardData.cardNumber.close()
-            cardData.securityCode.close()
-            assertEquals(0, cardData.cardNumber.length)
-            assertEquals(0, cardData.securityCode.length)
+            val again = flow.storeMethod(cardStoreRequest(cardData))
+            assertTrue("${again.exceptionOrNull()}", again.isSuccess)
+            assertEquals(2, transport.count)
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
         }
 
     /** Storing moves no money, so a dropped link is the failure it is rather than an open outcome. */
@@ -258,15 +282,9 @@ class PayInPaymentFlowTest {
             assertNotNull("an authorization went out under no key", authorized.sentKey())
         }
 
-    /**
-     * The buffers came from the caller, so the call does not close them.
-     *
-     * The form's own path builds the instrument per submission and closes it with the submission. A host
-     * that built its own has to be able to close it when it decides to, and a member that closed it first
-     * would leave a second call reading a wiped card.
-     */
+    /** Each call sends from its own copy, so a host can send the same card again, a declared retry included. */
     @Test
-    fun `a direct capture leaves the caller's buffers intact`() =
+    fun `a direct capture leaves the host's card to be sent again`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
             val flow: PayabliPayIn = flowOver(transport)
@@ -280,19 +298,19 @@ class PayInPaymentFlowTest {
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
 
             // Both buffers, because a card carries two and wiping either one is the same defect.
-            assertEquals(TEST_PAN, String(cardData.cardNumber.rawCopy()))
-            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCode.rawCopy()))
+            assertEquals(TEST_PAN, String(cardData.cardNumberDigits.rawCopy()))
+            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCodeDigits.rawCopy()))
 
-            // Still the caller's to close, and closing them still works.
-            cardData.cardNumber.close()
-            cardData.securityCode.close()
-            assertEquals(0, cardData.cardNumber.length)
-            assertEquals(0, cardData.securityCode.length)
+            val again = flow.capture(cardRequest(cardData = cardData))
+            assertTrue("${again.exceptionOrNull()}", again.isSuccess)
+            assertEquals(2, transport.count)
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_SECURITY_CODE))
         }
 
-    /** The same ownership on the other money-moving member, which delegates separately and can regress alone. */
+    /** The same on the other money-moving member, which delegates separately and can regress alone. */
     @Test
-    fun `a direct authorization leaves the caller's buffers intact`() =
+    fun `a direct authorization leaves the host's card to be sent again`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
             val flow: PayabliPayIn = flowOver(transport)
@@ -303,13 +321,13 @@ class PayInPaymentFlowTest {
             assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
 
-            assertEquals(TEST_PAN, String(cardData.cardNumber.rawCopy()))
-            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCode.rawCopy()))
+            assertEquals(TEST_PAN, String(cardData.cardNumberDigits.rawCopy()))
+            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCodeDigits.rawCopy()))
 
-            cardData.cardNumber.close()
-            cardData.securityCode.close()
-            assertEquals(0, cardData.cardNumber.length)
-            assertEquals(0, cardData.securityCode.length)
+            val again = flow.authorize(cardRequest(cardData = cardData))
+            assertTrue("${again.exceptionOrNull()}", again.isSuccess)
+            assertEquals(2, transport.count)
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
         }
 
     /** A decline is an outcome the caller acts on, so it comes back rather than being thrown. */
@@ -324,11 +342,10 @@ class PayInPaymentFlowTest {
         }
 
     /**
-     * The reason the two calls above publish nothing to [PayabliPayIn.state].
+     * The reason the two calls above publish nothing to the state the form renders.
      *
      * A terminal state stands until the form consumes it, and nothing draws these, so a first call that
-     * published would leave the second refused with no public way to clear it. Asserted through the
-     * interface, because that is the surface a host holds.
+     * published would leave the second refused with no public way to clear it.
      */
     @Test
     fun `two calls in a row both reach the wire`() =
@@ -349,11 +366,11 @@ class PayInPaymentFlowTest {
     @Test
     fun `a void leaves the form's state alone`() =
         runTest(timeout = timeout) {
-            val flow: PayabliPayIn = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
+            val flow = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
 
             flow.voidTransaction("101-abc")
 
-            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+            assertEquals(PayInSubmissionState.Idle, flow.submissionState.value)
         }
 
     @Test
@@ -562,7 +579,7 @@ class PayInPaymentFlowTest {
             val flow = flowOver(transport)
 
             val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull()
-            val published = flow.state.value as PayInSubmissionState.Failed
+            val published = flow.submissionState.value as PayInSubmissionState.Failed
             val first = transport.request?.headers?.get("idempotencyKey")
             flow.consume()
             val reference = (cause as PayInException.Unsettled).paymentReference
@@ -602,7 +619,7 @@ class PayInPaymentFlowTest {
             val flow = flowOver(FakePayInTransport.answering("Duplicated idempotencyKey", statusCode = 409))
 
             val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull()
-            val published = flow.state.value as PayInSubmissionState.Failed
+            val published = flow.submissionState.value as PayInSubmissionState.Failed
 
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertEquals(PayabliErrorType.CONFLICT, (cause as PayInException.Unsettled).type)
@@ -610,7 +627,7 @@ class PayInPaymentFlowTest {
         }
 
     @Test
-    fun `a second call while one is in flight answers that one already is`() =
+    fun `a second call while one is in flight is refused as an invalid request`() =
         runTest(timeout = timeout) {
             val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
             val flow = flowOver(transport)
@@ -618,9 +635,10 @@ class PayInPaymentFlowTest {
             val first = launch { flow.capture(testOptions(), cardForm()) }
             transport.arrived.await()
 
-            val refused = flow.capture(testOptions(), cardForm())
+            val refused = flow.capture(testOptions(), cardForm()).exceptionOrNull()
 
-            assertTrue("$refused", refused.exceptionOrNull() is PayInException.AlreadySubmitting)
+            assertTrue("$refused", refused is PayInException.AlreadySubmitting)
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, (refused as PayInException).type)
             assertEquals("a request reached the wire twice", 1, transport.sent.size)
             transport.release()
             first.join()
@@ -653,19 +671,19 @@ class PayInPaymentFlowTest {
             transport.release()
             running.join()
             assertTrue(flow.consume())
-            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+            assertEquals(PayInSubmissionState.Idle, flow.submissionState.value)
         }
 
     @Test
-    fun `nothing the payer typed reaches the state a host reads`() =
+    fun `nothing the payer typed reaches the state the form renders`() =
         runTest(timeout = timeout) {
             val flow = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
 
             flow.capture(testOptions(), cardForm())
 
             assertFalse(
-                "${flow.state.value}",
-                flow.state.value
+                "${flow.submissionState.value}",
+                flow.submissionState.value
                     .toString()
                     .contains(TEST_PAN),
             )
@@ -676,16 +694,147 @@ class PayInPaymentFlowTest {
         runTest(timeout = timeout) {
             assertEquals(
                 PayInSubmissionState.Idle,
-                flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION)).state.value,
+                flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION)).submissionState.value,
             )
             assertNull(FakePayInTransport.answering(APPROVED_TRANSACTION).request)
+        }
+
+    @Test
+    fun `isSubmitting starts false, before anything has been submitted`() =
+        runTest(timeout = timeout) {
+            assertFalse(flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION)).isSubmitting.value)
+        }
+
+    @Test
+    fun `a form submission publishes isSubmitting true, and false once it has answered`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val flow = flowOver(transport)
+
+            val running = launch { flow.capture(testOptions(), cardForm()) }
+            transport.arrived.await()
+            assertTrue("the submission in flight was not reported", flow.isSubmitting.value)
+
+            transport.release()
+            running.join()
+            assertFalse("the ended submission was still reported as in flight", flow.isSubmitting.value)
+        }
+
+    /**
+     * The flight is one per flow, whatever started it, and a host refused by a flight it cannot see has only
+     * this flag for when that flight ends.
+     */
+    @Test
+    fun `every direct call reports its submission in flight, and none once it has answered`() =
+        runTest(timeout = timeout) {
+            directCalls().forEach { (what, answers, call) ->
+                val transport = GatedPayInTransport.answering(answers)
+                val flow = flowOver(transport)
+
+                val running = launch { call(flow) }
+                transport.arrived.await()
+                assertTrue("$what did not report its submission in flight", flow.isSubmitting.value)
+
+                transport.release()
+                running.join()
+                assertFalse("$what was still reported as in flight", flow.isSubmitting.value)
+            }
+        }
+
+    /** Every paying entry point a host calls directly, what it answers, and the call. */
+    private fun directCalls(): List<Triple<String, String, suspend (PayInPaymentFlow) -> Result<*>>> =
+        listOf(
+            Triple("a capture", APPROVED_TRANSACTION) { it.capture(cardRequest()) },
+            Triple("an authorization", APPROVED_TRANSACTION) { it.authorize(cardRequest()) },
+            Triple("a store", STORED_METHOD) { it.storeMethod(cardStoreRequest()) },
+            Triple("an authorization's capture", APPROVED_TRANSACTION) {
+                it.captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+            },
+            Triple("a void", APPROVED_TRANSACTION) { it.voidTransaction("101-abc") },
+        )
+
+    @Test
+    fun `every direct call the transport fails clears the flag, and the next call is not refused`() =
+        runTest(timeout = timeout) {
+            directCalls().forEach { (what, _, call) ->
+                val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+                call(flow)
+                assertFalse("$what's failure was still reported as in flight", flow.isSubmitting.value)
+
+                val next = call(flow).exceptionOrNull()
+                assertFalse("$what's failure left the flight held: $next", next is PayInException.AlreadySubmitting)
+            }
+        }
+
+    @Test
+    fun `every direct call cancelled after its request arrived clears the flag, and the next call is not refused`() =
+        runTest(timeout = timeout) {
+            directCalls().forEach { (what, answers, call) ->
+                val transport = GatedPayInTransport.answering(answers)
+                val flow = flowOver(transport)
+
+                val running = launch { call(flow) }
+                transport.arrived.await()
+                running.cancelAndJoin()
+                assertFalse("$what's cancellation was still reported as in flight", flow.isSubmitting.value)
+
+                transport.release()
+                val next = call(flow).exceptionOrNull()
+                assertFalse(
+                    "$what's cancellation left the flight held: $next",
+                    next is PayInException.AlreadySubmitting,
+                )
+            }
+        }
+
+    @Test
+    fun `a refused second call leaves the flag to the submission in flight`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val flow = flowOver(transport)
+
+            val running = launch { flow.capture(cardRequest()) }
+            transport.arrived.await()
+            val refused = flow.capture(cardRequest())
+
+            assertTrue("$refused", refused.exceptionOrNull() is PayInException.AlreadySubmitting)
+            assertTrue("the refusal cleared the submission's flag", flow.isSubmitting.value)
+
+            transport.release()
+            running.join()
+            assertFalse("the ended submission was still reported as in flight", flow.isSubmitting.value)
+        }
+
+    @Test
+    fun `a submission the transport fails clears isSubmitting`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            flow.capture(testOptions(), cardForm())
+
+            assertFalse("the failed submission was still reported as in flight", flow.isSubmitting.value)
+        }
+
+    @Test
+    fun `a submission cancelled after its request arrived clears isSubmitting`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val flow = flowOver(transport)
+
+            val running = launch { flow.capture(testOptions(), cardForm()) }
+            transport.arrived.await()
+            assertTrue("the submission in flight was not reported", flow.isSubmitting.value)
+
+            running.cancelAndJoin()
+            assertFalse("the cancelled submission was still reported as in flight", flow.isSubmitting.value)
         }
 
     @Test
     fun `the second start is refused without waiting for a dispatch`() =
         runTest(timeout = timeout) {
             // Two forms share one flow whenever a host mounts the sheet over the inline one. Launched
-            // dispatched, `start` returned before `Submitting` was published, so both callers were told their
+            // dispatched, `start` returned before the flight was published, so both callers were told their
             // submission was accepted and both then waited on one outcome.
             val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
             val flow = flowOver(transport)
@@ -695,7 +844,7 @@ class PayInPaymentFlowTest {
 
             assertTrue("the first start was refused", first)
             assertFalse("a second submission was accepted", second)
-            assertEquals(PayInSubmissionState.Submitting, flow.state.value)
+            assertTrue("the flight was not observable before start returned", flow.isSubmitting.value)
 
             transport.arrived.await()
             transport.release()
@@ -715,7 +864,7 @@ class PayInPaymentFlowTest {
 
             val collector =
                 launch(Dispatchers.Unconfined) {
-                    flow.state.collect { state ->
+                    flow.submissionState.collect { state ->
                         if (state is PayInSubmissionState.Succeeded && secondTap == null) {
                             secondTap = flow.start(captureOf(), cardForm())
                         }
@@ -741,7 +890,7 @@ class PayInPaymentFlowTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.failingWith(dropped())
             val flow = flowOver(transport)
-            repeat(PayInSubmission.HELD_KEYS_MAX) {
+            repeat(PayInKeyStore.HELD_KEYS_MAX) {
                 flow.captureAuthorizedTransaction(PayInAuthorizedRequest("101-$it", testDetails()))
             }
 
@@ -772,6 +921,362 @@ class PayInPaymentFlowTest {
             assertFalse("$failure", failure is PayInException.Unsettled)
         }
 
+    /** A host builds a new facade after its session is replaced, and the retry still repeats the payment. */
+    @Test
+    fun `a declared retry on a facade rebuilt for the same entry point and environment resends the held key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val unknown = flowOver(transport).capture(cardRequest()).exceptionOrNull() as PayInException.Unsettled
+            val first = transport.sentKey()
+
+            flowOver(transport).capture(cardRequest(unknown.paymentReference, attempt = PayabliAttempt.Retry))
+
+            assertNotNull(first)
+            assertEquals("the retry was not sent", 2, transport.count)
+            assertEquals(first, transport.sentKey())
+        }
+
+    /** A key belongs to the merchant it was sent for, so another entry point's retry never carries it. */
+    @Test
+    fun `a declared retry on a facade for another entry point mints a new key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val unknown = flowOver(transport).capture(cardRequest()).exceptionOrNull() as PayInException.Unsettled
+            val first = transport.sentKey()
+
+            flowOver(transport, entryPoint = OTHER_ENTRY_POINT)
+                .capture(cardRequest(unknown.paymentReference, attempt = PayabliAttempt.Retry))
+
+            assertEquals("the retry was not sent", 2, transport.count)
+            assertNotEquals(first, transport.sentKey())
+        }
+
+    /** Each environment's service knows only the keys sent to it. */
+    @Test
+    fun `a declared retry on a facade for another environment mints a new key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val unknown = flowOver(transport).capture(cardRequest()).exceptionOrNull() as PayInException.Unsettled
+            val first = transport.sentKey()
+
+            flowOver(transport, environment = PayabliEnvironment.PRODUCTION)
+                .capture(cardRequest(unknown.paymentReference, attempt = PayabliAttempt.Retry))
+
+            assertEquals("the retry was not sent", 2, transport.count)
+            assertNotEquals(first, transport.sentKey())
+        }
+
+    /** A rebuilt facade reads the held key on the same clock, so the key ages out on the service's window. */
+    @Test
+    fun `a key held by one facade ages out for the next on the service's window`() =
+        runTest(timeout = timeout) {
+            val clock = AtomicLong(0)
+            val transport = FakePayInTransport.failingWith(dropped())
+            val first = flowOver(transport, clock = clock::get)
+            first.captureAuthorizedTransaction(PayInAuthorizedRequest("101-young", testDetails()))
+            val youngKey = transport.sentKey()
+            first.captureAuthorizedTransaction(PayInAuthorizedRequest("101-old", testDetails()))
+            val oldKey = transport.sentKey()
+            val rebuilt = flowOver(transport, clock = clock::get)
+
+            clock.set(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds - 1)
+            rebuilt.captureAuthorizedTransaction(PayInAuthorizedRequest("101-young", testDetails()))
+            val resent = transport.sentKey()
+            clock.set(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
+            rebuilt.captureAuthorizedTransaction(PayInAuthorizedRequest("101-old", testDetails()))
+
+            // The premise: inside the window the rebuilt facade has the key, so the age is what drops the other.
+            assertEquals("a key inside the window was not handed over", youngKey, resent)
+            assertNotEquals("a key past the window was resent", oldKey, transport.sentKey())
+        }
+
+    /** The capacity is each entry point's, so one merchant's open payments leave room for another's. */
+    @Test
+    fun `a full entry point leaves room for another entry point's key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val full = flowOver(transport)
+            repeat(PayInKeyStore.HELD_KEYS_MAX) {
+                full.captureAuthorizedTransaction(PayInAuthorizedRequest("101-$it", testDetails()))
+            }
+            val pastTheCap = PayInAuthorizedRequest("101-past-the-cap", testDetails())
+            full.captureAuthorizedTransaction(pastTheCap)
+            val notHeld = transport.sentKey()
+            full.captureAuthorizedTransaction(pastTheCap)
+            val reminted = transport.sentKey()
+            val other = flowOver(transport, entryPoint = OTHER_ENTRY_POINT)
+            val request = PayInAuthorizedRequest("101-other", testDetails())
+
+            other.captureAuthorizedTransaction(request)
+            val held = transport.sentKey()
+            other.captureAuthorizedTransaction(request)
+
+            // The premise: the first entry point is full, so the room the other finds is its own.
+            assertNotEquals("the full entry point held a key past the cap", notHeld, reminted)
+            assertEquals("the other entry point's key was not held", held, transport.sentKey())
+        }
+
+    /** Two facades settling at once on real threads both keep their keys. */
+    @Test
+    fun `two facades holding keys at once both keep them`() =
+        runTest(timeout = timeout) {
+            val transport = ConcurrentFailingTransport()
+            val flows =
+                listOf(TEST_ENTRY_POINT, OTHER_ENTRY_POINT).map {
+                    flowOver(transport, entryPoint = it, dispatcher = Dispatchers.Default)
+                }
+            val requests =
+                (0 until PayInKeyStore.HELD_KEYS_MAX).map {
+                    PayInAuthorizedRequest(
+                        "101-$it",
+                        testDetails(),
+                    )
+                }
+
+            flows
+                .map { flow ->
+                    async(Dispatchers.Default) { requests.forEach { flow.captureAuthorizedTransaction(it) } }
+                }.awaitAll()
+            val minted = transport.keys.toSet()
+            flows
+                .map { flow ->
+                    async(Dispatchers.Default) { requests.forEach { flow.captureAuthorizedTransaction(it) } }
+                }.awaitAll()
+
+            assertEquals("a first attempt was lost", 2 * requests.size, minted.size)
+            assertEquals("a resend minted instead of repeating", minted, transport.keys.drop(minted.size).toSet())
+        }
+
+    /** A new payment on a reference another facade is still sending is refused, and its retry repeats that key. */
+    @Test
+    fun `two facades sending one new payment at once send one key, and a retry repeats it`() =
+        runTest(timeout = timeout) {
+            val gated = GatedPayInTransport.failingWith(dropped())
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val sending = launch { flowOver(gated).capture(cardRequest("order-1")) }
+            gated.arrived.await()
+
+            val refused = flowOver(other).capture(cardRequest("order-1")).exceptionOrNull()
+            val sentWhileOpen = other.count
+            gated.release()
+            sending.join()
+            flowOver(other).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry))
+
+            assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
+            assertEquals("the refused payment was sent", 0, sentWhileOpen)
+            assertEquals(gated.sent.single().headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY], other.sentKey())
+        }
+
+    /** Facades sending the same new payments at once on real threads send one key for each. */
+    @Test
+    fun `facades sending the same new payments at once send one key for each`() =
+        runTest(timeout = timeout) {
+            val transport = ConcurrentFailingTransport()
+            val flows = (0 until 4).map { flowOver(transport, dispatcher = Dispatchers.Default) }
+            val references = (0 until PayInKeyStore.HELD_KEYS_MAX).map { "order-$it" }
+
+            flows
+                .map { flow ->
+                    async(Dispatchers.Default) { references.forEach { flow.capture(cardRequest(it)) } }
+                }.awaitAll()
+
+            assertEquals("a payment was sent with a second key", references.size, transport.keys.size)
+        }
+
+    /** The service sees the entry point trimmed, so a rebuilt facade given it unpadded resends the held key. */
+    @Test
+    fun `a declared retry with the entry point unpadded resends the key a padded one held`() =
+        runTest(timeout = timeout) {
+            val dropping = ConcurrentFailingTransport()
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            flowOver(dropping, entryPoint = " $TEST_ENTRY_POINT ").capture(cardRequest("order-1"))
+
+            flowOver(other).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry))
+
+            assertEquals(dropping.keys.single(), other.sentKey())
+        }
+
+    /** A declared retry while another facade's send of the key is under way is refused unsent; an answer frees it. */
+    @Test
+    fun `a declared retry while another facade sends the key is refused, and after the answer nothing is held`() =
+        runTest(timeout = timeout) {
+            val gated = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val sending = launch { flowOver(gated).capture(cardRequest("order-1")) }
+            gated.arrived.await()
+
+            val refused =
+                flowOver(other).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry)).exceptionOrNull()
+            val sentWhileOpen = other.count
+            gated.release()
+            sending.join()
+            val after = flowOver(other).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry))
+
+            assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
+            assertEquals("the refused retry was sent", 0, sentWhileOpen)
+            assertTrue("${after.exceptionOrNull()}", after.isSuccess)
+            assertNotEquals(gated.sent.single().headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY], other.sentKey())
+        }
+
+    /** A capture of one authorization from two facades at once is sent once; the other is refused unsent. */
+    @Test
+    fun `two facades capturing one authorization at once send it once`() =
+        runTest(timeout = timeout) {
+            assertOneSendAtATime({ captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails())) })
+        }
+
+    /** A void of one transaction from two facades at once is sent once; the other is refused unsent. */
+    @Test
+    fun `two facades voiding one transaction at once send it once`() =
+        runTest(timeout = timeout) { assertOneSendAtATime({ voidTransaction("101-abc") }) }
+
+    /** A void while another facade captures the same authorization is refused unsent, and so is the reverse. */
+    @Test
+    fun `a capture and a void of one transaction from two facades at once send one of them`() =
+        runTest(timeout = timeout) {
+            val capture: suspend PayInPaymentFlow.() -> Result<PayInResult> = {
+                captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+            }
+            val void: suspend PayInPaymentFlow.() -> Result<PayInResult> = { voidTransaction("101-abc") }
+
+            assertOneSendAtATime(capture, void)
+            assertOneSendAtATime(void, capture)
+        }
+
+    /** A void once the capture of its authorization was answered is sent, as the service allows. */
+    @Test
+    fun `a void after another facade's capture is answered is sent`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            flowOver(transport).captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+
+            val voided = flowOver(transport).voidTransaction("101-abc")
+
+            assertTrue("${voided.exceptionOrNull()}", voided.isSuccess)
+            assertEquals(2, transport.count)
+        }
+
+    /** A void after a capture of its authorization ended unknown carries its own key, not the capture's. */
+    @Test
+    fun `a void after another facade's capture ended unknown sends a key of its own`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val captured =
+                flowOver(transport).captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+            val captureKey = transport.sentKey()
+
+            flowOver(transport).voidTransaction("101-abc")
+
+            // The premise: the capture's key is held, because its outcome is unknown.
+            assertTrue("${captured.exceptionOrNull()}", captured.exceptionOrNull() is PayInException.Unsettled)
+            assertNotNull(captureKey)
+            assertEquals("the void was not sent", 2, transport.count)
+            assertNotEquals(captureKey, transport.sentKey())
+        }
+
+    /** A send still under way can reach the service, so its key is kept past the window until it is answered. */
+    @Test
+    fun `a key mid-send outlives the service's window until its send is answered`() =
+        runTest(timeout = timeout) {
+            val clock = AtomicLong(0)
+            val gated = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val sending = launch { flowOver(gated, clock = clock::get).capture(cardRequest("order-1")) }
+            gated.arrived.await()
+
+            clock.set(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
+            val refused = flowOver(other, clock = clock::get).capture(cardRequest("order-1")).exceptionOrNull()
+            gated.release()
+            sending.join()
+            val after = flowOver(other, clock = clock::get).capture(cardRequest("order-1"))
+
+            assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
+            assertTrue("${after.exceptionOrNull()}", after.isSuccess)
+            assertNotEquals(gated.sent.single().headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY], other.sentKey())
+        }
+
+    /** A payment that never left ran nowhere, so its reference is free for another facade's new payment. */
+    @Test
+    fun `a new payment that never left leaves its reference free for another facade`() =
+        runTest(timeout = timeout) {
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val never = flowOver(NeverLeavesTransport()).capture(cardRequest("order-1")).exceptionOrNull()
+
+            val next = flowOver(other).capture(cardRequest("order-1"))
+
+            // The premise: the first payment failed before the hand-off, so nothing about it is unknown.
+            assertFalse("$never", never == null || never is PayInException.Unsettled)
+            assertTrue("${next.exceptionOrNull()}", next.isSuccess)
+            assertEquals(1, other.count)
+        }
+
+    /** A send that may have left before an error keeps its key for the window, and frees its reference after it. */
+    @Test
+    fun `a send ending in an error after the hand-off holds its key only for the window`() =
+        runTest(timeout = timeout) {
+            val clock = AtomicLong(0)
+            val failing = ErrorTransport(handsOver = true)
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val thrown = flowOver(failing, clock = clock::get).capture(cardRequest("order-1"))
+
+            val refused = flowOver(other, clock = clock::get).capture(cardRequest("order-1")).exceptionOrNull()
+            // A dropped retry keeps the key held, so only the window can free it.
+            val dropping = ConcurrentFailingTransport()
+            flowOver(dropping, clock = clock::get).capture(cardRequest("order-1", attempt = PayabliAttempt.Retry))
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds + 1)
+            val later = flowOver(other, clock = clock::get).capture(cardRequest("order-1"))
+
+            // The premise: the error arrives converted, its outcome unknown because the send may have left.
+            val converted = thrown.exceptionOrNull()
+            assertTrue("$thrown", converted is PayInException.Unsettled)
+            assertEquals(PayabliErrorType.UNKNOWN, (converted as PayabliException).type)
+            assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
+            assertEquals(failing.keys, dropping.keys)
+            assertTrue("${later.exceptionOrNull()}", later.isSuccess)
+        }
+
+    /** A send that never left before an error ran nowhere, so its reference is free at once. */
+    @Test
+    fun `a send ending in an error before the hand-off leaves its reference free`() =
+        runTest(timeout = timeout) {
+            val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val thrown = flowOver(ErrorTransport(handsOver = false)).capture(cardRequest("order-1"))
+
+            val next = flowOver(other).capture(cardRequest("order-1"))
+
+            // The premise: the error arrives converted, and settled, because nothing left.
+            val converted = thrown.exceptionOrNull()
+            assertFalse("$thrown", converted is PayInException.Unsettled)
+            assertEquals("$thrown", PayabliErrorType.UNKNOWN, (converted as? PayabliException)?.type)
+            assertTrue("${next.exceptionOrNull()}", next.isSuccess)
+            assertEquals(1, other.count)
+        }
+
+    /**
+     * Holds [send] in flight on one facade while a second facade makes [overlapping], and asserts the second is
+     * refused with [PayabliErrorType.PAYMENT_REFERENCE_OPEN] before anything is sent.
+     *
+     * @param send the call held in flight on the first facade.
+     * @param overlapping the call made on the second facade, the same call unless named.
+     */
+    private suspend fun TestScope.assertOneSendAtATime(
+        send: suspend PayInPaymentFlow.() -> Result<PayInResult>,
+        overlapping: suspend PayInPaymentFlow.() -> Result<PayInResult> = send,
+    ) {
+        val gated = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+        val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
+        val sending = launch { flowOver(gated).send() }
+        gated.arrived.await()
+
+        val refused = flowOver(other).overlapping().exceptionOrNull()
+        gated.release()
+        sending.join()
+
+        assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
+        assertEquals("the refused call was sent", 0, other.count)
+        assertEquals(1, gated.sent.size)
+    }
+
     private fun dropped(): PayabliGenericException =
         PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)
 
@@ -794,17 +1299,73 @@ class PayInPaymentFlowTest {
 
     private fun FakePayInTransport.sentKey(): String? = request?.headers?.get(PayInRoutes.HEADER_IDEMPOTENCY_KEY)
 
-    private fun TestScope.flowOver(transport: PayabliTransport): PayInPaymentFlow =
+    private fun TestScope.flowOver(
+        transport: PayabliTransport,
+        entryPoint: String = TEST_ENTRY_POINT,
+        environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
+        clock: () -> Long = { 0 },
+        dispatcher: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
+    ): PayInPaymentFlow =
         PayInPaymentFlow.over(
             transport = transport,
-            entryPoint = TEST_ENTRY_POINT,
+            entryPoint = entryPoint,
             scope = this,
-            dispatcher = StandardTestDispatcher(testScheduler),
-            elapsedRealtimeNanos = { 0 },
+            dispatcher = dispatcher,
+            elapsedRealtimeNanos = clock,
             logger = RecordingSdkLogger(),
+            environment = environment,
         )
 
+    /** Fails every call as dropped after the hand-off, and records each key in the order it was sent. */
+    private class ConcurrentFailingTransport : PayabliTransport {
+        private val sent = ConcurrentLinkedQueue<String>()
+
+        val keys: List<String> get() = sent.toList()
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            currentCoroutineContext()[PayabliSendMark]?.mark()
+            request.headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY]?.let(sent::add)
+            throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("no route here decodes a v2 envelope")
+    }
+
+    /** Throws an error that is not an exception, after the hand-off when [handsOver], and records each key sent. */
+    private class ErrorTransport(
+        private val handsOver: Boolean,
+    ) : PayabliTransport {
+        val keys = mutableListOf<String>()
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            if (handsOver) currentCoroutineContext()[PayabliSendMark]?.mark()
+            request.headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY]?.let(keys::add)
+            throw LinkageError("a class failed to link")
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("no route here decodes a v2 envelope")
+    }
+
+    /** Fails every call before the hand-off, so no request can have reached the service. */
+    private class NeverLeavesTransport : PayabliTransport {
+        override suspend fun execute(request: PayabliRequest): PayabliResponse =
+            throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("no route here decodes a v2 envelope")
+    }
+
     private companion object {
+        const val OTHER_ENTRY_POINT = "another-merchant-entry"
+
         /** Stands in for text a real failure would carry from the wire, so a test can assert it is withheld. */
         const val DROPPED_DETAIL = "the link dropped"
 

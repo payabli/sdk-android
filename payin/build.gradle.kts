@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     id("payabli.publish")
     id("payabli.quality")
+    id("payabli.api-surface")
 }
 
 android {
@@ -111,6 +112,8 @@ dependencies {
     api(project(":core"))
     // Every payment artifact brings telemetry, so an app cannot leave it out. Nothing in it is public.
     implementation(project(":telemetry"))
+    // ComponentActivity and registerForActivityResult, for the SDK-owned Activity that receives a contract's result.
+    implementation(libs.androidx.activity)
 
     // api: the public composables take a Modifier and carry @Composable in their signatures.
     // :payabli-android depends on this module, so the umbrella carries Compose.

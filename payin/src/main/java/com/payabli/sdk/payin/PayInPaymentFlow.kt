@@ -2,6 +2,7 @@ package com.payabli.sdk.payin
 
 import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
@@ -68,6 +69,7 @@ internal class PayInPaymentFlow private constructor(
         scope: CoroutineScope,
     ) : this(
         session.transport,
+        session.telemetry.environment,
         entryPoint,
         scope,
         IO_DISPATCHER,
@@ -79,6 +81,7 @@ internal class PayInPaymentFlow private constructor(
 
     private constructor(
         transport: PayabliTransport,
+        environment: PayabliEnvironment,
         entryPoint: String,
         scope: CoroutineScope,
         dispatcher: CoroutineDispatcher,
@@ -92,6 +95,7 @@ internal class PayInPaymentFlow private constructor(
             moneyIn = if (logger == null) MoneyInClient(transport) else MoneyInClient(transport, logger),
             storage = if (logger == null) TokenStorageClient(transport) else TokenStorageClient(transport, logger),
             dispatcher = dispatcher,
+            environment = environment,
             // Random per attempt, so two payments from one screen are never one request to the service.
             newIdempotencyKey = { UUID.randomUUID().toString() },
             elapsedRealtimeNanos = elapsedRealtimeNanos,
@@ -100,14 +104,16 @@ internal class PayInPaymentFlow private constructor(
         PayInFormReports(telemetry?.forEntryPoint(entryPoint)),
     )
 
+    override val isSubmitting: StateFlow<Boolean> get() = submission.isSubmitting
+
     /**
-     * Where the current submission has got to: what a form renders, and what a host reads for its own chrome.
+     * Where the current submission has got to, which the form renders. A terminal state stands until
+     * the form delivers it, so a rotation mid-flight still gets its outcome.
      *
-     * A terminal state stands until the form has delivered it, which is what lets a rotation mid-flight still
-     * deliver an outcome. The form consumes it immediately afterwards, so nothing here has to be cleared by
-     * whoever reads it.
+     * Not on the contract: a host reads [isSubmitting]; a direct call's outcome returns on its own value.
      */
-    override val state: StateFlow<PayInSubmissionState> get() = submission.state
+    @get:JvmSynthetic
+    internal val submissionState: StateFlow<PayInSubmissionState> get() = submission.state
 
     /**
      * Consumes a terminal state, returning to [PayInSubmissionState.Idle]. Called by `PayabliPayInForm`
@@ -122,7 +128,7 @@ internal class PayInPaymentFlow private constructor(
     /**
      * Whether the service may have acted on the request [outcome] answers, which is when a form lets the instrument go.
      *
-     * @param outcome a state read from [state].
+     * @param outcome a state read from [submissionState].
      * @return true when it may have; false otherwise.
      */
     @JvmSynthetic
@@ -130,8 +136,8 @@ internal class PayInPaymentFlow private constructor(
 
     /**
      * Runs [operation] on [scope], for a caller with no coroutine at the call site. What the SDK's
-     * own form calls: the outcome is readable through [state] alone, and the suspending members
-     * below return it instead.
+     * own form calls: the outcome is readable through [submissionState] alone, and the suspending
+     * members below return it instead.
      *
      * @param operation what the submission does.
      * @param values what the payer entered, and the instrument they entered it for.
@@ -294,6 +300,7 @@ internal class PayInPaymentFlow private constructor(
          * @param elapsedRealtimeNanos the clock a retry key's window is measured on.
          * @param logger where the submissions are logged, or null for none.
          * @param telemetry the session the reports are attributed to, or null for none.
+         * @param environment the environment the held keys are kept under.
          * @return the flow, as a [PayabliPayIn].
          */
         @JvmSynthetic
@@ -305,9 +312,19 @@ internal class PayInPaymentFlow private constructor(
             elapsedRealtimeNanos: () -> Long = SystemClock::elapsedRealtimeNanos,
             logger: SdkLogger? = null,
             telemetry: TelemetrySessionContext? = null,
+            environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
         ): PayInPaymentFlow =
             try {
-                PayInPaymentFlow(transport, entryPoint, scope, dispatcher, elapsedRealtimeNanos, logger, telemetry)
+                PayInPaymentFlow(
+                    transport,
+                    environment,
+                    entryPoint,
+                    scope,
+                    dispatcher,
+                    elapsedRealtimeNanos,
+                    logger,
+                    telemetry,
+                )
             } catch (failure: PayabliException) {
                 throw failure
             } catch (original: Exception) {

@@ -7,7 +7,7 @@ package com.payabli.sdk.core {
     field public static final boolean DEBUG = false;
     field public static final String LIBRARY_PACKAGE_NAME = "com.payabli.sdk.core";
     field public static final String SDK_IDENTIFIER = "com.payabli.sdk";
-    field public static final String SDK_VERSION = "0.1.1";
+    field public static final String SDK_VERSION = "0.2.0";
   }
 
   public final class HostBindings {
@@ -275,7 +275,6 @@ package com.payabli.sdk.core.model {
     ctor public PayabliDeclineException(optional String? rawCode, optional String reason, optional String? explanation, optional String? action);
     method @InaccessibleFromKotlin public String? getAction();
     method @InaccessibleFromKotlin public String? getExplanation();
-    method @InaccessibleFromKotlin public String? getRawCode();
     property public String? action;
     property public String? explanation;
     property public String? rawCode;
@@ -318,6 +317,7 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CARD_PRESENT_NOT_ENABLED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CHARGE_NOT_FINISHED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CONFLICT;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType CONTACTLESS_DISABLED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DECODING_ERROR;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_HARDWARE_UNSUPPORTED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType DEVICE_IDENTITY_UNAVAILABLE;
@@ -340,6 +340,7 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_CLOSED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_HELD;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_OPENED;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_TAKEN;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_OUTCOME_UNKNOWN;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_REFERENCE_OPEN;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PERMISSION_DENIED;
@@ -377,11 +378,15 @@ package com.payabli.sdk.core.model {
     method @InaccessibleFromKotlin public final com.payabli.sdk.core.model.PayabliErrorCategory getCategory();
     method @InaccessibleFromKotlin public final int getCode();
     method @InaccessibleFromKotlin public final String? getDetail();
+    method @InaccessibleFromKotlin public Integer? getHttpStatus();
+    method @InaccessibleFromKotlin public String? getRawCode();
     method @InaccessibleFromKotlin public final String getReason();
     method @InaccessibleFromKotlin public final com.payabli.sdk.core.model.PayabliErrorType getType();
     property public final com.payabli.sdk.core.model.PayabliErrorCategory category;
     property public final int code;
     property public final String? detail;
+    property public Integer? httpStatus;
+    property public String? rawCode;
     property public final String reason;
     property public final com.payabli.sdk.core.model.PayabliErrorType type;
   }
@@ -396,6 +401,7 @@ package com.payabli.sdk.core.model {
 
   public final class PayabliGenericException extends com.payabli.sdk.core.model.PayabliException {
     ctor public PayabliGenericException(com.payabli.sdk.core.model.PayabliErrorType type, String reason, optional String? detail, optional Throwable? cause);
+    ctor @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public PayabliGenericException(com.payabli.sdk.core.model.PayabliErrorType type, String reason, String? detail, Throwable? cause, Integer? httpStatus, String? rawCode);
   }
 
   public final class PayabliRateLimitException extends com.payabli.sdk.core.model.PayabliException implements com.payabli.sdk.core.model.PayabliRetryAfter {
@@ -417,15 +423,9 @@ package com.payabli.sdk.core.model {
   }
 
   public final class PayabliServerException extends com.payabli.sdk.core.model.PayabliException implements com.payabli.sdk.core.model.PayabliRetryAfter {
-    ctor public PayabliServerException(int httpStatus, optional String reason, optional String? detail, optional String? problemType, optional String? instance, optional String? rawCode, optional Long? retryAfterMillis);
-    method @InaccessibleFromKotlin public int getHttpStatus();
-    method @InaccessibleFromKotlin public String? getInstance();
-    method @InaccessibleFromKotlin public String? getProblemType();
-    method @InaccessibleFromKotlin public String? getRawCode();
+    ctor public PayabliServerException(int httpStatus, optional String reason, optional String? detail, optional String? rawCode, optional Long? retryAfterMillis);
     method @InaccessibleFromKotlin public Long? getRetryAfterMillis();
     property public int httpStatus;
-    property public String? instance;
-    property public String? problemType;
     property public String? rawCode;
     property public Long? retryAfterMillis;
     field public static final com.payabli.sdk.core.model.PayabliServerException.Companion Companion;
@@ -437,16 +437,10 @@ package com.payabli.sdk.core.model {
   }
 
   public final class PayabliValidationException extends com.payabli.sdk.core.model.PayabliException {
-    ctor public PayabliValidationException(int httpStatus, optional String reason, optional String? detail, optional String? problemType, optional String? instance, optional String? rawCode, optional java.util.Map<java.lang.String,? extends java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> fieldErrors);
+    ctor public PayabliValidationException(int httpStatus, optional String reason, optional String? detail, optional String? rawCode, optional java.util.Map<java.lang.String,? extends java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> fieldErrors);
     method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> getFieldErrors();
-    method @InaccessibleFromKotlin public int getHttpStatus();
-    method @InaccessibleFromKotlin public String? getInstance();
-    method @InaccessibleFromKotlin public String? getProblemType();
-    method @InaccessibleFromKotlin public String? getRawCode();
     property public java.util.Map<java.lang.String,java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> fieldErrors;
     property public int httpStatus;
-    property public String? instance;
-    property public String? problemType;
     property public String? rawCode;
     field public static final com.payabli.sdk.core.model.PayabliValidationException.Companion Companion;
     field public static final String DEFAULT_REASON = "Validation failed";
@@ -796,6 +790,7 @@ package com.payabli.sdk.core.telemetry {
     property public static String SDK_INITIALIZED;
     property public static String SDK_INITIALIZE_FAILED;
     property public static String SDK_INITIALIZE_STARTED;
+    property public static String TELEMETRY_OVERFLOW;
     property public static String TTP_ATTESTATION_FAILED;
     property public static String TTP_ATTESTATION_QUOTA_EXHAUSTED;
     property public static String TTP_ATTESTATION_STARTED;
@@ -835,6 +830,7 @@ package com.payabli.sdk.core.telemetry {
     field public static final String SDK_INITIALIZED = "sdk.initialized";
     field public static final String SDK_INITIALIZE_FAILED = "sdk.initialize.failed";
     field public static final String SDK_INITIALIZE_STARTED = "sdk.initialize.started";
+    field public static final String TELEMETRY_OVERFLOW = "sdk.telemetryOverflow";
     field public static final String TTP_ATTESTATION_FAILED = "ttp.attestation.failed";
     field public static final String TTP_ATTESTATION_QUOTA_EXHAUSTED = "ttp.attestation.quotaExhausted";
     field public static final String TTP_ATTESTATION_STARTED = "ttp.attestation.started";
@@ -902,6 +898,7 @@ package com.payabli.sdk.core.telemetry {
     property public String key;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty ATTEMPT;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty CODE;
+    enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty DROPPED;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty DURATION_MS;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty ERROR_NUMBER;
     enum_constant public static final com.payabli.sdk.core.telemetry.TelemetryProperty FAILURE_TYPE;

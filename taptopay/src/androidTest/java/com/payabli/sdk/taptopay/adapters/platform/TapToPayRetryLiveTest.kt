@@ -113,6 +113,7 @@ class TapToPayRetryLiveTest {
                         coordinator = coordinator,
                         manager = manager,
                         reader = reader,
+                        contactlessEnabled = { true },
                         client = TTPTransactionClient(transport),
                         store = AttestedDeviceStore(DeviceTrust.open(context).store),
                         keys = ChargeKeyStore(elapsedRealtimeNanos = SystemClock::elapsedRealtimeNanos),

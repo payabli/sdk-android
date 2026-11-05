@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,15 +26,10 @@ import com.payabli.example.app.demo.ui.theme.LocalStatusColors
 import com.payabli.example.app.demo.ui.theme.monospaceBodyMedium
 
 /**
- * One configured value, shown and not edited.
+ * One configured value, shown as text because nothing at runtime can change it.
  *
- * Text and never a text field. Every value this displays was captured when the app started and
- * nothing at runtime can change it, so an editable field would promise something the app cannot
- * honour.
- *
- * @param problem when set, an amber line under the value saying what is wrong with it. This is how a
- *   blank entry point or a mismatched app id becomes visible on the screen that reads it, before it
- *   can surface much later as a rejected request.
+ * @param problem when set, an amber line under the value saying what is wrong with it.
+ * @param onCopy when set, a copy button beside the value.
  */
 @Composable
 fun DetailRow(
@@ -41,6 +37,7 @@ fun DetailRow(
     value: String,
     modifier: Modifier = Modifier,
     problem: String? = null,
+    onCopy: (() -> Unit)? = null,
 ) {
     Column(
         modifier =
@@ -70,6 +67,7 @@ fun DetailRow(
                         textAlign = TextAlign.End,
                     )
                 }
+                CopyButton(label, onCopy)
             }
         } else {
             Text(
@@ -77,13 +75,16 @@ fun DetailRow(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            SelectionContainer {
-                Text(
-                    text = shown,
-                    style = monospaceBodyMedium(),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SelectionContainer(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = shown,
+                        style = monospaceBodyMedium(),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                CopyButton(label, onCopy)
             }
         }
         if (problem != null) {
@@ -107,6 +108,17 @@ fun DetailRow(
     }
 }
 
+@Composable
+private fun CopyButton(
+    label: String,
+    onCopy: (() -> Unit)?,
+) {
+    if (onCopy == null) return
+    IconButton(onClick = onCopy) {
+        Icon(imageVector = DemoIcons.Copy, contentDescription = "Copy $label")
+    }
+}
+
 /** Past this many characters a value gets its own line. */
 private const val INLINE_VALUE_LIMIT = 22
 
@@ -123,5 +135,6 @@ private fun DetailRowPreview() {
         // looking at: a dash where a value should be, and the reason underneath it.
         DetailRow(label = "Entry point", value = "", problem = "Not set. Configuration is keyed by entry point.")
         DetailRow(label = "Payment trans ID", value = "txn_01JQ8F3M2K7WZ9XB4C6D8E0GHR")
+        DetailRow(label = "Device ID", value = "a1b2c3d4e5f60718293a4b5c6d7e8f90", onCopy = {})
     }
 }

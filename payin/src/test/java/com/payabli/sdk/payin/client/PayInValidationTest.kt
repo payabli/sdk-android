@@ -11,7 +11,6 @@ import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInValidationOptions
-import com.payabli.sdk.payin.model.SensitiveDigits
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -33,9 +32,10 @@ class PayInValidationTest {
         holderName: String = "A Payer",
         postalCode: String = "22039",
     ) = PayInCardData(
-        cardNumber = SensitiveDigits.ofString(pan),
-        expiry = TEST_EXPIRY,
-        securityCode = SensitiveDigits.ofString(securityCode),
+        cardNumber = pan,
+        expiryMonth = TEST_EXPIRY.month,
+        expiryYear = TEST_EXPIRY.year,
+        securityCode = securityCode,
         holderName = holderName,
         postalCode = postalCode,
     )
@@ -45,7 +45,7 @@ class PayInValidationTest {
         routing: String = "122105278",
         holderName: String = "A Payer",
     ) = PayInBankAccountData(
-        accountNumber = SensitiveDigits.ofString(number),
+        accountNumber = number,
         routingNumber = routing,
         accountType = PayInAccountType.Checking,
         holderName = holderName,
@@ -53,9 +53,10 @@ class PayInValidationTest {
 
     private fun cardExpiring(expiry: ExpiryValue) =
         PayInCardData(
-            cardNumber = SensitiveDigits.ofString("4111111111111111"),
-            expiry = expiry,
-            securityCode = SensitiveDigits.ofString("999"),
+            cardNumber = "4111111111111111",
+            expiryMonth = expiry.month,
+            expiryYear = expiry.year,
+            securityCode = "999",
             holderName = "A Payer",
             postalCode = "22039",
         )
@@ -284,53 +285,15 @@ class PayInValidationTest {
     }
 
     @Test
-    fun `a surcharge above the total is refused naming the total`() {
-        assertEquals(
-            "paymentDetails.totalAmount",
-            refusal {
-                PayInValidation.paymentDetails(
-                    PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.50")),
-                )
-            }?.field,
-        )
-    }
-
-    @Test
-    fun `a service fee equal to the total is refused naming the total`() {
-        assertEquals(
-            "paymentDetails.totalAmount",
-            refusal {
-                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("1.00"), serviceFee = BigDecimal("1.00")))
-            }?.field,
-        )
-    }
-
-    @Test
-    fun `a fee and a surcharge a cent below the total are accepted`() {
-        assertNull(
-            refusal {
-                PayInValidation.paymentDetails(
-                    PayInPaymentDetails(
-                        BigDecimal("1.00"),
-                        serviceFee = BigDecimal("0.50"),
-                        surchargeFee = BigDecimal("0.49"),
-                    ),
-                )
-            },
-        )
-    }
-
-    @Test
-    fun `fees are judged against the total at the scale they are sent`() {
-        // 0.995 is sent as 1.00, which reaches a total of 1.00.
-        assertEquals(
-            "paymentDetails.totalAmount",
-            refusal {
-                PayInValidation.paymentDetails(
-                    PayInPaymentDetails(BigDecimal("1.00"), serviceFee = BigDecimal("0.995")),
-                )
-            }?.field,
-        )
+    fun `fees that reach or pass the total are left to the service`() {
+        listOf(
+            PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.50")),
+            PayInPaymentDetails(BigDecimal("1.00"), serviceFee = BigDecimal("1.00")),
+            PayInPaymentDetails(BigDecimal("1.00"), serviceFee = BigDecimal("0.50"), surchargeFee = BigDecimal("0.50")),
+            PayInPaymentDetails(BigDecimal("1.00"), serviceFee = BigDecimal("0.995")),
+        ).forEach { paymentDetails ->
+            assertNull("$paymentDetails", refusal { PayInValidation.paymentDetails(paymentDetails) })
+        }
     }
 
     @Test
@@ -371,6 +334,42 @@ class PayInValidationTest {
     }
 
     @Test
+    fun `a device clock outside 2000 to 2099 still judges the expiry`() {
+        val card = PayInCardData("4111111111111111", 12, 2030, "999", "A Payer", "22039")
+        val options = PayInValidationOptions()
+        val checks: List<(() -> Long) -> Unit> =
+            listOf(
+                { clock -> PayInValidation.instrument(PayInInstrument.Card(card), options, clock) },
+                { clock -> PayInValidation.paymentMethod(PayInPaymentMethod.Card(card), options, clock) },
+            )
+        // Mid-year, so no time zone moves either one into another year.
+        val in1970 = { 15_638_400_000L }
+        val in2130 = { 5_064_768_000_000L }
+
+        checks.forEach { check ->
+            assertNull(runCatching { check(in1970) }.exceptionOrNull())
+            assertEquals("paymentMethod.cardexp", refusal { check(in2130) }?.field)
+        }
+    }
+
+    @Test
+    fun `a year before 2000 is refused on a clock that hasn't reached it`() {
+        // 1999 goes out as 99, which the service reads as 2099.
+        val card = PayInCardData("4111111111111111", 12, 1999, "999", "A Payer", "22039")
+        val in1970 = { 15_638_400_000L }
+
+        assertEquals(
+            "paymentMethod.cardexp",
+            refusal { PayInValidation.instrument(PayInInstrument.Card(card), PayInValidationOptions(), in1970) }?.field,
+        )
+        assertEquals(
+            "paymentMethod.cardexp",
+            refusal { PayInValidation.paymentMethod(PayInPaymentMethod.Card(card), PayInValidationOptions(), in1970) }
+                ?.field,
+        )
+    }
+
+    @Test
     fun `validation leaves no readable copy of a card number behind`() {
         // Each read is scoped, so a refusal partway through still overwrites what it read.
         val data = card(pan = "4111111111111112")
@@ -378,7 +377,7 @@ class PayInValidationTest {
         refusal { PayInValidation.instrument(PayInInstrument.Card(data), PayInValidationOptions()) }
 
         // The value itself is untouched: validation reads it, it does not consume it.
-        assertEquals("4111111111111112", String(data.cardNumber.rawCopy()))
+        assertEquals("4111111111111112", String(data.cardNumberDigits.rawCopy()))
     }
 
     @Test
@@ -532,7 +531,7 @@ class PayInValidationTest {
     @Test
     fun `a closed buffer reads as a missing field rather than an exception`() {
         val data = card()
-        data.cardNumber.close()
+        data.cardNumberDigits.close()
 
         val refused = refusal { PayInValidation.instrument(PayInInstrument.Card(data), PayInValidationOptions()) }
 

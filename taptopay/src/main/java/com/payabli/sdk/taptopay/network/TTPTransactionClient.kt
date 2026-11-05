@@ -8,6 +8,7 @@ import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
@@ -23,7 +24,11 @@ import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import java.net.HttpURLConnection
+import java.net.HttpURLConnection.HTTP_CONFLICT
 import java.net.HttpURLConnection.HTTP_NOT_FOUND
+import java.util.Locale
 
 /**
  * The two MoneyIn calls a card-present charge is bracketed by.
@@ -101,8 +106,19 @@ internal class TTPTransactionClient(
                 bodySerializer = InitiateBody.serializer(),
                 route = TTPRoutes.INITIATE,
                 headers = mapOf(PayabliRequest.IDEMPOTENCY_KEY_HEADER to idempotencyKey),
+                isCallerRefusal = ::isFraudBlock,
             )
-        return read(TTPRoutes.INITIATE, transport.execute(request)).paymentTransId
+        val response = transport.execute(request)
+        fraudBlockCode(response)?.let { code ->
+            logger.warn(
+                LogField.safe("event", "ttp_transaction_not_approved"),
+                LogField.safe("route", TTPRoutes.INITIATE),
+                LogField.safe("statusCode", response.statusCode),
+                LogField.safe("errorCode", code),
+            ) { "fraud control blocked the payer" }
+            throw TTPTransactionException.Refused(code, stringField(response, "reason"), response.statusCode)
+        }
+        return read(TTPRoutes.INITIATE, response).paymentTransId
     }
 
     /**
@@ -196,7 +212,11 @@ internal class TTPTransactionClient(
         failureFor(route, response)?.let { failure ->
             // A 409 whose body is not a JSON object is the idempotency check refusing the key. Any other 409,
             // such as a refused duplicate sale, stays a conflict.
-            throw if (failure.isConflict() && !response.bodyAsText().isJsonObject()) ChargeKeyRefusal() else failure
+            throw when {
+                failure.isConflict() && !response.bodyAsText().isJsonObject() -> ChargeKeyRefusal()
+                failure is PayabliValidationException -> CustomerDataRefusal.of(failure) ?: failure
+                else -> failure
+            }
         }
         val envelope =
             try {
@@ -219,9 +239,9 @@ internal class TTPTransactionClient(
             // Only a `D` is the payment being refused. Anything else is the service reporting a problem, and
             // a caller acts on the two differently.
             throw if (envelope.isDeclined) {
-                TTPTransactionException.Refused(envelope.code, envelope.reason)
+                TTPTransactionException.Refused(envelope.code, envelope.reason, response.statusCode)
             } else {
-                TTPTransactionException.ServiceRejected(envelope.code, envelope.reason)
+                TTPTransactionException.ServiceRejected(envelope.code, envelope.reason, response.statusCode)
             }
         }
         // Blank counts as absent. The field is required, so kotlinx accepts `""` and the identifier is the
@@ -255,7 +275,7 @@ internal class TTPTransactionClient(
     ): Throwable? {
         val failure =
             if (response.statusCode == HTTP_NOT_FOUND) {
-                TTPTransactionException.NotEnabled()
+                TTPTransactionException.NotEnabled(PayabliHttpErrors.from(response)?.rawCode)
             } else {
                 PayabliHttpErrors.from(response)
             } ?: return null
@@ -280,7 +300,7 @@ internal class TTPTransactionClient(
             LogField.safe("route", route),
             LogField.safe("statusCode", statusCode),
         ) { "the transaction response could not be read" }
-        return TTPTransactionException.Undecodable(cause)
+        return TTPTransactionException.Undecodable(cause, statusCode)
     }
 
     private companion object {
@@ -333,9 +353,114 @@ internal fun String.isUsableTransId(): Boolean {
  *
  * A conflict like any other until the charge reads it, which tells a resent held key from a new one.
  */
-internal class ChargeKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)")
+internal class ChargeKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)") {
+    override val httpStatus: Int get() = HTTP_CONFLICT
+}
+
+/**
+ * The service refused the customer the opening carried, before any card was read.
+ *
+ * Classified exactly as the [validation] failure it is: the type, reason and detail are that failure's.
+ *
+ * @property validation the refusal as the transport read it.
+ * @property requiredFields the customer fields the refusal names, empty when it names none.
+ */
+internal class CustomerDataRefusal(
+    val validation: PayabliValidationException,
+    val requiredFields: List<String>,
+) : PayabliException(PayabliErrorType.VALIDATION_ERROR, validation.reason, validation.detail, validation) {
+    override val httpStatus: Int get() = validation.httpStatus
+
+    override val rawCode: String? get() = validation.rawCode
+
+    companion object {
+        private const val CODE = "E7020"
+        private const val FIELD = "customerData"
+        private const val IDENTIFIERS_PREFIX = "Missing customer identifiers: "
+
+        /** The [TapToPayCustomerData] field that sets each identifier key, by the key lowercased. */
+        private val FIELD_FOR_KEY =
+            mapOf(
+                "customernumber" to "customerNumber",
+                "firstname" to "firstName",
+                "lastname" to "lastName",
+                "company" to "company",
+                "phone" to "billingPhone",
+                "email" to "billingEmail",
+                "city" to "billingCity",
+                "state" to "billingState",
+                "zip" to "billingZip",
+                "country" to "billingCountry",
+                "shippingcity" to "shippingCity",
+                "shippingstate" to "shippingState",
+                "shippingzip" to "shippingZip",
+                "shippingcountry" to "shippingCountry",
+            )
+
+        /**
+         * The refusal [validation] is, when it refuses the opening's customer.
+         *
+         * @param validation a 400 the opening was answered with.
+         * @return the refusal, with the fields its text names, or null when [validation] refuses something else.
+         */
+        fun of(validation: PayabliValidationException): CustomerDataRefusal? {
+            if (validation.rawCode != CODE) return null
+            val failures = validation.fieldErrors[FIELD] ?: return null
+            val fields = failures.firstNotNullOfOrNull { fieldsNamed(it.message) }.orEmpty()
+            return CustomerDataRefusal(validation, fields)
+        }
+
+        /**
+         * The customer fields [message] lists after its fixed prefix, or null when it lists none.
+         *
+         * @param message the refusal's text for the customer.
+         * @return each listed key as the customer field that sets it, or as given when no field does, in order.
+         */
+        private fun fieldsNamed(message: String): List<String>? {
+            if (!message.startsWith(IDENTIFIERS_PREFIX)) return null
+            return message
+                .removePrefix(IDENTIFIERS_PREFIX)
+                .split(',')
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .map { key -> FIELD_FOR_KEY[key.lowercase(Locale.ROOT)] ?: key }
+        }
+    }
+}
 
 private fun Throwable.isConflict(): Boolean = this is PayabliException && type == PayabliErrorType.CONFLICT
+
+private val FRAUD_BLOCK_CODES = setOf("E9005", "E9051")
+
+/**
+ * The fraud block [response] names, whatever its status.
+ *
+ * @param response the opening's answer.
+ * @return the standard code, or null when the body names no fraud block.
+ */
+private fun fraudBlockCode(response: PayabliResponse): String? =
+    stringField(response, "code")?.takeIf { it in FRAUD_BLOCK_CODES }
+
+/**
+ * Whether a 401 refuses the payer, which a token refresh cannot fix and a replay would send again.
+ *
+ * @param response the answered request.
+ * @return true for a 401 whose body names a fraud block; false otherwise.
+ */
+private fun isFraudBlock(response: PayabliResponse): Boolean =
+    response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED && fraudBlockCode(response) != null
+
+private fun stringField(
+    response: PayabliResponse,
+    name: String,
+): String? =
+    try {
+        ((PayabliJson.format.parseToJsonElement(response.bodyAsText()) as? JsonObject)?.get(name) as? JsonPrimitive)
+            ?.takeIf { it.isString }
+            ?.content
+    } catch (_: SerializationException) {
+        null
+    }
 
 /**
  * Whether this body is a JSON object, which the idempotency check's refusal never is.

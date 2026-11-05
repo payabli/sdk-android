@@ -1,5 +1,7 @@
 package com.payabli.sdk.taptopay.session
 
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.taptopay.TapToPayErrorCodes
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
@@ -57,6 +59,62 @@ class SessionWarmStartTest {
             assertTrue("$failure", failure is DeviceServiceException.EntryPointUnusable)
             assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.CONFIGURATION_REJECTED), fixture.state)
             assertEquals("the reader was never reached", 0, fixture.reader.configureCount)
+        }
+
+    @Test
+    fun `a config refusal of the entry point at its real status is 3009 and keeps the binding`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CONFIG to listOf(decline(403, EntryPointFailures.ENTRY_POINT_UNUSABLE)),
+                        statusFor = { path -> 403.takeIf { path == RouteScript.CONFIG } },
+                    ),
+                )
+            fixture.seedRecord()
+
+            val failure = failureOf { fixture.coordinator.initialize() }
+
+            assertEquals(PayabliErrorType.ENTRY_POINT_REFUSED, failure?.let(TapToPayErrorCodes::typeFor))
+            assertEquals(EntryPointFailures.ENTRY_POINT_UNUSABLE, (failure as? DeviceServiceException)?.reason)
+            assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.CONFIGURATION_REJECTED), fixture.state)
+            assertEquals("the binding is kept", DEVICE_ID, fixture.enrollment.storedRecord()?.deviceId)
+            assertEquals(listOf(RouteScript.CONFIG), fixture.routes)
+        }
+
+    @Test
+    fun `any other config 403 still asks for the activation code, with or without a body`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Only the service's exact words name the entry point. Anything near them, and a refusal from the
+            // gateway with no body at all, is the device still owing its code.
+            val bodies =
+                listOf(
+                    decline(403, "Device is not in a state that allows this operation."),
+                    decline(403, "${EntryPointFailures.ENTRY_POINT_UNUSABLE} "),
+                    decline(403, EntryPointFailures.ENTRY_POINT_UNUSABLE.lowercase()),
+                    decline(403, "Entry point is not available"),
+                    "",
+                )
+            for (body in bodies) {
+                val fixture =
+                    SessionFixture(
+                        RouteScript(
+                            RouteScript.CONFIG to listOf(body),
+                            statusFor = { path -> 403.takeIf { path == RouteScript.CONFIG } },
+                        ),
+                    )
+                fixture.seedRecord()
+
+                val failure = failureOf { fixture.coordinator.initialize() }
+
+                assertEquals(
+                    body,
+                    PayabliErrorType.DEVICE_PENDING_ACTIVATION,
+                    failure?.let(TapToPayErrorCodes::typeFor),
+                )
+                assertEquals(body, TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
+                assertEquals(body, DEVICE_ID, fixture.enrollment.storedRecord()?.deviceId)
+            }
         }
 
     @Test
