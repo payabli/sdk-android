@@ -24,6 +24,8 @@ import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import java.net.HttpURLConnection
 import java.net.HttpURLConnection.HTTP_CONFLICT
 import java.net.HttpURLConnection.HTTP_NOT_FOUND
 import java.util.Locale
@@ -104,8 +106,20 @@ internal class TTPTransactionClient(
                 bodySerializer = InitiateBody.serializer(),
                 route = TTPRoutes.INITIATE,
                 headers = mapOf(PayabliRequest.IDEMPOTENCY_KEY_HEADER to idempotencyKey),
+                isCallerRefusal = ::isFraudBlock,
             )
-        return read(TTPRoutes.INITIATE, transport.execute(request)).paymentTransId
+        val response = transport.execute(request)
+        // Before the status: the service answers it as a refusal of the request, but it refuses the payer.
+        fraudBlockCode(response)?.let { code ->
+            logger.warn(
+                LogField.safe("event", "ttp_transaction_not_approved"),
+                LogField.safe("route", TTPRoutes.INITIATE),
+                LogField.safe("statusCode", response.statusCode),
+                LogField.safe("errorCode", code),
+            ) { "fraud control blocked the payer" }
+            throw TTPTransactionException.Refused(code, stringField(response, "reason"), response.statusCode)
+        }
+        return read(TTPRoutes.INITIATE, response).paymentTransId
     }
 
     /**
@@ -416,6 +430,40 @@ internal class CustomerDataRefusal(
 }
 
 private fun Throwable.isConflict(): Boolean = this is PayabliException && type == PayabliErrorType.CONFLICT
+
+/** Fraud control's blocks: the blacklist, and the risk workflow. */
+private val FRAUD_BLOCK_CODES = setOf("E9005", "E9051")
+
+/**
+ * The fraud block [response] names, whatever its status.
+ *
+ * @param response the opening's answer.
+ * @return the standard code, or null when the body names no fraud block.
+ */
+private fun fraudBlockCode(response: PayabliResponse): String? =
+    stringField(response, "code")?.takeIf { it in FRAUD_BLOCK_CODES }
+
+/**
+ * Whether a 401 is fraud control refusing the payer rather than the service refusing the token, which a refresh
+ * cannot fix and a replay would send again.
+ *
+ * @param response the answered request.
+ * @return true for a 401 whose body names a fraud block; false otherwise.
+ */
+private fun isFraudBlock(response: PayabliResponse): Boolean =
+    response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED && fraudBlockCode(response) != null
+
+private fun stringField(
+    response: PayabliResponse,
+    name: String,
+): String? =
+    try {
+        ((PayabliJson.format.parseToJsonElement(response.bodyAsText()) as? JsonObject)?.get(name) as? JsonPrimitive)
+            ?.takeIf { it.isString }
+            ?.content
+    } catch (_: SerializationException) {
+        null
+    }
 
 /**
  * Whether this body is a JSON object, which the idempotency check's refusal never is.

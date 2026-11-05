@@ -104,6 +104,36 @@ class TTPTransactionClientTest {
         }
 
     @Test
+    fun `a fraud block on the opening is the payment being refused, whatever the status`() =
+        runTest(timeout = timeout) {
+            listOf("E9005", "E9051").forEach { code ->
+                listOf(400, 401, 403).forEach { status ->
+                    val (_, client) = client(answer("""{"code":"$code","reason":"Blocked"}""", status))
+
+                    val failure = runCatching { client.open() }.exceptionOrNull() as? TTPTransactionException.Refused
+
+                    assertEquals("$code $status", code, failure?.code)
+                    assertEquals("$code $status", status, failure?.httpStatus)
+                }
+            }
+        }
+
+    @Test
+    fun `the opening declares a 401 fraud block as its caller's refusal, and no other 401`() =
+        runTest(timeout = timeout) {
+            val (transport, client) = client(answer(approved("""{"paymentTransId":"101-abc"}""")))
+            client.open()
+            val isCallerRefusal = transport.requests.single().isCallerRefusal
+
+            listOf("E9005", "E9051").forEach { code ->
+                assertTrue(code, isCallerRefusal(answer("""{"code":"$code"}""", 401)))
+                assertFalse("$code on 400", isCallerRefusal(answer("""{"code":"$code"}""", 400)))
+            }
+            assertFalse("a 401 with no body is the credential's", isCallerRefusal(answer("", 401)))
+            assertFalse("another code", isCallerRefusal(answer("""{"code":"E9001"}""", 401)))
+        }
+
+    @Test
     fun `an opening the service neither approved nor declined is the service's problem`() =
         runTest(timeout = timeout) {
             val (_, client) = client(answer("""{"code":"E7018","reason":"Device not found"}"""))
