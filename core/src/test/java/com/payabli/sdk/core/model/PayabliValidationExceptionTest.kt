@@ -62,4 +62,28 @@ class PayabliValidationExceptionTest {
 
         assertEquals(2, exception.fieldErrors.getValue("cardNumber").size)
     }
+
+    @Test
+    fun `a host builds the exception from every parameter, in order`() {
+        val fieldErrors =
+            mapOf(
+                "cardNumber" to listOf(PayabliFieldError("is required"), PayabliFieldError("is not a card number")),
+                "firstName" to listOf(PayabliFieldError("is required"), PayabliFieldError("is too long")),
+            )
+
+        val exception =
+            PayabliValidationException(
+                422,
+                "One or more fields are invalid",
+                "See errors",
+                "E1001",
+                fieldErrors,
+            )
+
+        assertEquals(422, exception.httpStatus)
+        assertEquals("One or more fields are invalid", exception.reason)
+        assertEquals("See errors", exception.detail)
+        assertEquals("E1001", exception.rawCode)
+        assertEquals(fieldErrors, exception.fieldErrors)
+    }
 }

@@ -210,8 +210,6 @@ internal class TokenStorageClient(
             httpStatus = mapped.httpStatus,
             reason = mapped.reason,
             detail = text,
-            problemType = mapped.problemType,
-            instance = mapped.instance,
             rawCode = mapped.rawCode,
             fieldErrors = mapped.fieldErrors,
         )

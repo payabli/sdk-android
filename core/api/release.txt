@@ -423,13 +423,9 @@ package com.payabli.sdk.core.model {
   }
 
   public final class PayabliServerException extends com.payabli.sdk.core.model.PayabliException implements com.payabli.sdk.core.model.PayabliRetryAfter {
-    ctor public PayabliServerException(int httpStatus, optional String reason, optional String? detail, optional String? problemType, optional String? instance, optional String? rawCode, optional Long? retryAfterMillis);
-    method @InaccessibleFromKotlin public String? getInstance();
-    method @InaccessibleFromKotlin public String? getProblemType();
+    ctor public PayabliServerException(int httpStatus, optional String reason, optional String? detail, optional String? rawCode, optional Long? retryAfterMillis);
     method @InaccessibleFromKotlin public Long? getRetryAfterMillis();
     property public int httpStatus;
-    property public String? instance;
-    property public String? problemType;
     property public String? rawCode;
     property public Long? retryAfterMillis;
     field public static final com.payabli.sdk.core.model.PayabliServerException.Companion Companion;
@@ -441,14 +437,10 @@ package com.payabli.sdk.core.model {
   }
 
   public final class PayabliValidationException extends com.payabli.sdk.core.model.PayabliException {
-    ctor public PayabliValidationException(int httpStatus, optional String reason, optional String? detail, optional String? problemType, optional String? instance, optional String? rawCode, optional java.util.Map<java.lang.String,? extends java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> fieldErrors);
+    ctor public PayabliValidationException(int httpStatus, optional String reason, optional String? detail, optional String? rawCode, optional java.util.Map<java.lang.String,? extends java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> fieldErrors);
     method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> getFieldErrors();
-    method @InaccessibleFromKotlin public String? getInstance();
-    method @InaccessibleFromKotlin public String? getProblemType();
     property public java.util.Map<java.lang.String,java.util.List<com.payabli.sdk.core.model.PayabliFieldError>> fieldErrors;
     property public int httpStatus;
-    property public String? instance;
-    property public String? problemType;
     property public String? rawCode;
     field public static final com.payabli.sdk.core.model.PayabliValidationException.Companion Companion;
     field public static final String DEFAULT_REASON = "Validation failed";

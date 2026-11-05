@@ -8,8 +8,6 @@ import java.util.Collections
  * [httpStatus] comes from the response, not from the body's own `status` field. The body's `token` field
  * is not decoded: it is a temporary page identifier, and this `Throwable` may reach a crash reporter.
  *
- * @property problemType the error's `type` field, a documentation URI naming the kind of problem.
- * @property instance the error `instance`, the request path. A resolved path, so never logged.
  * @property rawCode Payabli's own wire code, for example `E1001`. Absent when the body carried none.
  * @property fieldErrors parameter name to its failures, empty when the body carried none or used an
  *   unexpected shape. The platform sends each failure as a bare string, which arrives as
@@ -20,8 +18,6 @@ public class PayabliValidationException(
     override val httpStatus: Int,
     reason: String = DEFAULT_REASON,
     detail: String? = null,
-    public val problemType: String? = null,
-    public val instance: String? = null,
     override val rawCode: String? = null,
     fieldErrors: Map<String, List<PayabliFieldError>> = emptyMap(),
 ) : PayabliException(PayabliErrorType.VALIDATION_ERROR, reason, detail) {
