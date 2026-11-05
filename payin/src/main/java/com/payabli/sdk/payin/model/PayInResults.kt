@@ -70,15 +70,9 @@ public class PayInTransaction(
 /**
  * What the service said when it approved a transaction.
  *
- * [code] is the unified response code, which begins with `A` for the approved family. It is kept rather than
- * reduced to a boolean because the specific code is what a caller reconciles against.
- *
- * [reason], [explanation] and [action] are the words beside it. An approval is not always the same act: a
- * void answers `A0003` and calls itself canceled, where a capture answers `A0000`. A caller showing the
- * outcome needs what the service called it, and reducing every approval to its code throws that away.
- *
- * @property reason the service's text: never shown to a payer and never logged, the same rule
- *   [PayInFailure.reason] carries, for the same reason.
+ * [code] begins with `A`, and the specific code tells a void (`A0003`) from a capture (`A0000`), so reconcile
+ * and word the outcome from it. [reason], [explanation] and [action] are the service's text: never shown to a
+ * payer and never logged, the same rule [PayInFailure.reason] carries, for the same reason.
  */
 public class PayInResult(
     public val code: String,
