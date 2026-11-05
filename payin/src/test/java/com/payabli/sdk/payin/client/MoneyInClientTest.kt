@@ -610,6 +610,43 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `a 402 is a decline on every route, a D code or not, naming the transaction`() =
+        runTest(timeout = timeout) {
+            val answers =
+                mapOf(
+                    "D0101" to """{"code":"D0101","reason":"Declined","data":{"paymentTransId":"101-dcl"}}""",
+                    "E1001" to """{"code":"E1001","reason":"Declined","data":{"paymentTransId":"101-dcl"}}""",
+                    "5017" to """{"responseCode":5017,"data":{"paymentTransId":"101-dcl"}}""",
+                    null to "",
+                )
+            answers.forEach { (code, body) ->
+                routes.forEach { (name, call) ->
+                    val failure = failureOf(body, 402, call) as? PayInException.Refused
+
+                    assertEquals("$name $code", PayabliErrorType.PAYMENT_DECLINED, failure?.type)
+                    assertEquals("$name $code", 402, failure?.httpStatus)
+                    assertEquals("$name $code", code, failure?.rawCode)
+                    assertEquals("$name $code", code?.let { "101-dcl" }, failure?.failure?.paymentTransId)
+                }
+            }
+        }
+
+    @Test
+    fun `a 402 carrying a code that leaves the outcome open stays open on every route`() =
+        runTest(timeout = timeout) {
+            mapOf(
+                PROCESSOR_TIMEOUT to PayabliErrorType.UNKNOWN,
+                PROCESSOR_UNRECOGNISED to PayabliErrorType.SERVER_ERROR,
+            ).forEach { (body, type) ->
+                routes.forEach { (name, call) ->
+                    val failure = failureOf(body, 402, call) as? PayInException.ServiceError
+
+                    assertEquals("$name $type", type, failure?.type)
+                }
+            }
+        }
+
+    @Test
     fun `a payment and an authorization declare a 401 fraud block as their caller's refusal, and no other 401`() =
         runTest(timeout = timeout) {
             listOf<Pair<String, suspend MoneyInClient.() -> Unit>>(
