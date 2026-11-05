@@ -183,6 +183,30 @@ class SimpleCaptureKeyTest {
     }
 
     @Test
+    fun `the held payment keeps the method it was sent with after a save picks another`() {
+        // Capture by card is unsettled, the payer saves a bank account, then returns to Capture.
+        val card = PayInMethodType.Card
+        val bank = PayInMethodType.BankAccount
+        val held = heldMethodAfter(null, heldFor = FormOperation.Capture, sent = card)
+        val afterSave = heldMethodAfter(held, heldFor = FormOperation.Capture, sent = bank)
+
+        assertEquals(card, afterSave)
+        assertEquals(card, methodFor(FormOperation.Capture, FormOperation.Capture, afterSave, onScreen = bank))
+        assertEquals(bank, methodFor(FormOperation.Tokenize, FormOperation.Capture, afterSave, onScreen = bank))
+    }
+
+    @Test
+    fun `settling the retry lets go of the held method`() {
+        val card = PayInMethodType.Card
+
+        assertNull(heldMethodAfter(card, heldFor = null, sent = card))
+        assertEquals(
+            PayInMethodType.BankAccount,
+            methodFor(FormOperation.Capture, heldFor = null, heldMethod = null, onScreen = PayInMethodType.BankAccount),
+        )
+    }
+
+    @Test
     fun `a stored method is announced without naming the instrument`() {
         assertEquals("Payment method saved", outcomeMessage(FormOperation.Tokenize, succeeded = true))
         assertEquals("Payment approved", outcomeMessage(FormOperation.Capture, succeeded = true))
