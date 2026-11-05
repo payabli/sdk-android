@@ -200,8 +200,6 @@ public object PayabliHttpErrors {
     internal class ErrorDetails(
         val title: String? = null,
         val detail: String? = null,
-        val type: String? = null,
-        val instance: String? = null,
     )
 
     /** The `errors` map alone, so an unexpected shape there costs only the field list. */
@@ -253,8 +251,6 @@ public object PayabliHttpErrors {
             httpStatus = status,
             reason = errorDetails?.title ?: PayabliValidationException.DEFAULT_REASON,
             detail = errorDetails?.detail,
-            problemType = errorDetails?.type,
-            instance = errorDetails?.instance,
             rawCode = code,
             fieldErrors = PayabliJson.decodeOrNull(ErrorsMap.serializer(), body)?.errors ?: emptyMap(),
         )
@@ -271,8 +267,6 @@ public object PayabliHttpErrors {
             httpStatus = status,
             reason = errorDetails?.title ?: PayabliServerException.DEFAULT_REASON,
             detail = errorDetails?.detail,
-            problemType = errorDetails?.type,
-            instance = errorDetails?.instance,
             rawCode = code,
             retryAfterMillis = retryAfterMillis,
         )

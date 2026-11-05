@@ -452,12 +452,8 @@ class PayInLiveFlowsInstrumentedTest {
         }
 
     /**
-     * The value, or a failure that says what the service answered.
-     *
-     * `PayabliException.toString` carries the classification and nothing else, which is right for a log line and
-     * useless in a test report: a live run that says only `SERVER_ERROR` names neither the status nor the route.
-     * The status, the type and the wire code are safe to print. `reason` and `detail` are not, because either
-     * can quote what was submitted.
+     * The value, or a failure naming the classification, status and wire codes the service answered with.
+     * `reason` and `detail` are never printed: either can quote what was submitted.
      */
     private fun <T> Result<T>.orFail(what: String): T =
         getOrElse { failure ->
@@ -468,7 +464,6 @@ class PayInLiveFlowsInstrumentedTest {
                     "code=${(failure as? PayabliException)?.code ?: failure.javaClass.simpleName}",
                     server?.let { "httpStatus=${it.httpStatus}" },
                     server?.rawCode?.let { "serviceCode=$it" },
-                    server?.problemType?.let { "type=$it" },
                     // Which decline, which is the whole content of a refusal and the one thing worth reading
                     // off a live run. A unified code, and published API surface.
                     refused?.code?.let { "declineCode=$it" },
