@@ -445,14 +445,14 @@ class PayInSubmissionTest {
         runTest(timeout = timeout) {
             val transport = HandOffTransport(handsOff = true)
             val submission = submissionOver(transport)
-            val reachingTheTotal =
+            val negativeSurcharge =
                 PayabliPayInOperation.Capture(
                     PayInTransactionOptions(
-                        paymentDetails = PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("0.50")),
+                        paymentDetails = PayInPaymentDetails(BigDecimal("0.30"), surchargeFee = BigDecimal("-0.50")),
                     ),
                 )
 
-            val refused = requireNotNull(submission.submit(TEST_ENTRY_POINT, reachingTheTotal, cardForm()))
+            val refused = requireNotNull(submission.submit(TEST_ENTRY_POINT, negativeSurcharge, cardForm()))
 
             assertTrue("${failed(refused).cause}", failed(refused).cause is PayInException.InvalidInput)
             assertFalse(submission.sent(refused))

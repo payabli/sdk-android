@@ -129,6 +129,28 @@ class MoneyInClientTest {
             assertTrue(body, body.contains(""""achCode":"WEB""""))
         }
 
+    @Test
+    fun `a fee and a surcharge that reach the total are sent, for the service to decide`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val request =
+                PayInRequest(
+                    paymentMethod = PayInPaymentMethod.Card(testCard()),
+                    options =
+                        PayInTransactionOptions(
+                            paymentDetails = testDetails("1.00", fee = "0.50", surcharge = "0.50"),
+                        ),
+                )
+
+            val refused = refusal { MoneyInClient(transport, RecordingSdkLogger()).capture("merchant-entry", request) }
+
+            assertNull("refused on the device: ${refused?.message}", refused)
+            val body = transport.bodyText()
+            assertTrue(body, body.contains(""""totalAmount":1.00"""))
+            assertTrue(body, body.contains(""""serviceFee":0.50"""))
+            assertTrue(body, body.contains(""""surchargeFee":0.50"""))
+        }
+
     private suspend fun refusal(block: suspend () -> Unit): PayInException.InvalidInput? =
         runCatching { block() }.exceptionOrNull() as? PayInException.InvalidInput
 
