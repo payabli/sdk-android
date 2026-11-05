@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.payabli.sdk.core.model.PayabliErrorCategory
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -55,10 +56,23 @@ internal class PayInFormDraft {
     var rejectedFields: Map<PayInField, PayInFieldError> by mutableStateOf(emptyMap())
 
     /**
+     * The last submission's failure where no box on screen was marked for it, or where its outcome is unknown, or
+     * null for none.
+     * Cleared when the next submission starts, when one succeeds, and with the rest of the draft.
+     */
+    var failureNotice: PayInFailureNotice? by mutableStateOf(null)
+
+    /**
      * True from the tap until an outcome arrives, which is how a success this form sent is told from one the
      * host was already holding.
      */
     var submissionPending: Boolean by mutableStateOf(false)
+
+    /**
+     * True when the last submission sent saved a payment method. Taken at the tap, because a host can change the
+     * operation before the answer arrives, and the notice describes the submission that was sent.
+     */
+    var sentSavesMethod: Boolean by mutableStateOf(false)
 
     /**
      * Starts the form the first time, and applies a different configuration without starting it
@@ -98,7 +112,8 @@ internal class PayInFormDraft {
     }
 
     /**
-     * The payer switched instrument, dropping what the new one has no box for.
+     * The payer switched instrument, dropping what the new one has no box for. Ignored while a submission is
+     * pending: the selector is disabled only from the next frame, and the method on screen is the one sent.
      *
      * @param method the instrument switched to.
      * @param configuration the configuration the new instrument's form comes from.
@@ -107,6 +122,7 @@ internal class PayInFormDraft {
         method: PayInMethodType,
         configuration: PayInFormConfiguration,
     ) {
+        if (submissionPending) return
         chosen = method
         // A card number typed under the card tab is not sent with a bank payment, and is not kept out of sight
         // either.
@@ -131,6 +147,27 @@ internal class PayInFormDraft {
         seededFrom.set(null)
         entered.clear()
         rejectedFields = emptyMap()
+        failureNotice = null
         submissionPending = false
     }
+}
+
+/**
+ * A failure the form shows a message for, and whether the submission it describes saved a method.
+ *
+ * @property category the failure's catalog category, which picks the message.
+ * @property savesMethod true when the failed submission saved a payment method rather than paying.
+ */
+internal data class PayInFailureNotice(
+    val category: PayabliErrorCategory,
+    val savesMethod: Boolean,
+) {
+    /**
+     * The category to draw on a form doing [savesMethod]'s operation. A message about a payment is not drawn on a
+     * save form, or the reverse: it would describe a submission that form never sent.
+     *
+     * @param savesMethod true when the form on screen saves a payment method.
+     * @return [category], or null when the form's operation is not the one that failed.
+     */
+    fun categoryOn(savesMethod: Boolean): PayabliErrorCategory? = category.takeIf { this.savesMethod == savesMethod }
 }

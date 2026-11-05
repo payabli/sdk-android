@@ -152,6 +152,10 @@ A retry describes the same payment: the same amount, service fee, surcharge, cur
 and the same `orderId` when the first attempt set one. A retry that describes a different payment fails with
 `RETRY_NOT_SAME_PAYMENT` and isn't sent, and the earlier payment's key is kept for the retry that matches.
 
+On the form, while a payment's outcome is unknown, pass only that attempt's method in `allowedMethods`. The form
+then draws no method selector and keeps what the payer typed, so the total you show can't move to another method's
+fee. Pass the full list again once the outcome is settled.
+
 ## Outcomes and errors
 
 Every call returns a `Result`, except when it is cancelled: cancellation is rethrown as
@@ -189,12 +193,14 @@ have gone through.
 When a form submission fails, `onFailed` receives the exception, and whether it is a
 `PayInException.Unsettled` is what says a payment may be outstanding. Check for that type before anything
 else: `Unsettled` carries its cause's `type`, so the exception's `type` says why the payment failed but
-never whether one may be outstanding. The form marks the fields the service rejected.
+never whether one may be outstanding. The form marks the fields the service rejected, and for any other
+failure it draws one message chosen by the failure's `category`, never the exception's own text.
 
 `PayInException.Refused` and `PayInException.ServiceError` carry `failure`, a `PayInFailure` with the service's
 `code`, `reason`, `explanation` and `action`, and `paymentTransId`, the transaction it belongs to when the
-service named one. Reconcile from either. Show `reason`, `explanation` and `action`, but don't log them: they
-can repeat what was submitted.
+service named one. Reconcile from either. Don't show `reason`, `explanation` or `action` to the payer, and don't
+log them: they're the service's own text and can repeat what was submitted. Show the payer a message for the
+error's `category`, and log its `code`.
 
 ## Reference
 
@@ -229,13 +235,28 @@ can repeat what was submitted.
 | `labelLayout`, `hiddenFieldLabels` | Where labels sit, and which are hidden |
 | `formatting` | How entered values are formatted |
 | `showsBaseAmount` | Whether the amount row shows |
+| `cardBrandIconPlacement` | Where the card number field draws the card brand: `Leading`, `Trailing` (default) or `Hidden` |
+| `failureMessagePlacement` | Where the form's failure message sits: `Top`, above the fields, or `AboveSubmitButton` (default) |
+| `showsFailureMessage` | Whether the form draws its failure message. Off, the form still marks rejected fields and `onFailed` still receives every failure |
 
 `defaultCardSections()` and `defaultBankSections()` return the instrument's fields followed by a summary
 section of the amounts, titled "Payment". An inputs section with no title draws no heading. A summary section lists only `Amount`, `ServiceFee` and
 `SurchargeFee`. Any other field there is refused when the configuration is built.
 
 `PayabliPayInForm` takes `labels`, a `PayInFormLabels` for the title, subtitle, submit button, the total row's
-label (`total`), field labels and placeholders.
+label (`total`), field labels and placeholders, and the failure messages.
+The four failure messages replace the form's own text for a failure's category, and a blank one keeps it:
+
+| Label | Replaces, on a payment | On a save |
+|---|---|---|
+| `declinedMessage` | "The payment was declined. Try another payment method." | "This payment method couldn't be saved. Try another one." |
+| `retryLaterMessage` | "The payment couldn't be completed. Please try again." | "The payment method couldn't be saved. Please try again." |
+| `outcomeUnknownMessage` | "This payment may have gone through. Check before paying again." | "We couldn't confirm the payment method was saved." |
+| `otherMessage` | "The payment couldn't be completed." | "The payment method couldn't be saved." |
+
+A failure whose outcome is unknown, `PayInException.Unsettled`, takes `outcomeUnknownMessage` whatever its cause's
+category.
+
 With no `submitButton`, the button names the operation: "Pay" for a capture, "Authorize" for an
 authorization and "Save" for a stored method, with "Paying…", "Authorizing…" and "Saving…" while it runs.
 

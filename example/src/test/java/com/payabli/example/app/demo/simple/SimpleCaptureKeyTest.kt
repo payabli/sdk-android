@@ -4,6 +4,8 @@ import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.example.app.demo.ui.customize.FormSettings
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -153,6 +155,55 @@ class SimpleCaptureKeyTest {
         assertFalse(betweenPayments(isSubmitting = false, retryOpen = true))
         assertFalse(betweenPayments(isSubmitting = true, retryOpen = false))
         assertTrue(betweenPayments(isSubmitting = false, retryOpen = false))
+    }
+
+    @Test
+    fun `an open retry offers only the held attempt's method, and settling it offers every method again`() {
+        // A payer switching method under a held key would see a total the retry does not carry.
+        val form = PayInFormConfiguration()
+        val bank = PayInMethodType.BankAccount
+
+        val held = methodsWhileHeld(form, FormOperation.Capture, heldFor = FormOperation.Capture, method = bank)
+        val settled = methodsWhileHeld(form, FormOperation.Capture, heldFor = null, method = bank)
+
+        assertEquals(listOf(bank), held.methodsOffered)
+        assertEquals(bank, held.startingMethod)
+        assertEquals(form, settled)
+    }
+
+    @Test
+    fun `a save while a payment's retry is open keeps every method`() {
+        // A save moves no money and sends no retry, so the held payment's method does not bind it.
+        val form = PayInFormConfiguration()
+
+        val save =
+            methodsWhileHeld(form, FormOperation.Tokenize, heldFor = FormOperation.Capture, PayInMethodType.BankAccount)
+
+        assertEquals(form, save)
+    }
+
+    @Test
+    fun `the held payment keeps the method it was sent with after a save picks another`() {
+        // Capture by card is unsettled, the payer saves a bank account, then returns to Capture.
+        val card = PayInMethodType.Card
+        val bank = PayInMethodType.BankAccount
+        val held = heldMethodAfter(null, heldFor = FormOperation.Capture, sent = card)
+        val afterSave = heldMethodAfter(held, heldFor = FormOperation.Capture, sent = bank)
+
+        assertEquals(card, afterSave)
+        assertEquals(card, methodFor(FormOperation.Capture, FormOperation.Capture, afterSave, onScreen = bank))
+        assertEquals(bank, methodFor(FormOperation.Tokenize, FormOperation.Capture, afterSave, onScreen = bank))
+    }
+
+    @Test
+    fun `settling the retry lets go of the held method`() {
+        val card = PayInMethodType.Card
+
+        assertNull(heldMethodAfter(card, heldFor = null, sent = card))
+        assertEquals(
+            PayInMethodType.BankAccount,
+            methodFor(FormOperation.Capture, heldFor = null, heldMethod = null, onScreen = PayInMethodType.BankAccount),
+        )
     }
 
     @Test

@@ -8,7 +8,7 @@ import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 
 /**
  * A refusal the device service spoke, in its envelope. Keyed on [resultCode]; a [DeviceFailureMapper] splits one by
- * text. [reason] is server text: displayable, never logged, and kept off `toString`.
+ * text. [reason] is server text: never shown, never logged, and kept off `toString`.
  */
 internal sealed class DeviceServiceException(
     message: String,

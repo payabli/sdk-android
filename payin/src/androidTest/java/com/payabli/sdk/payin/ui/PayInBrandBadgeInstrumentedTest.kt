@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -17,6 +18,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.CardBrand
+import com.payabli.sdk.payin.form.PayInCardBrandIconPlacement
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormSection
@@ -25,6 +27,7 @@ import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.schemeName
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.telemetry.PayInFormReports
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -147,6 +150,45 @@ class PayInBrandBadgeInstrumentedTest {
         rule.onNodeWithContentDescription(CardBrand.Discover.name).assertExists()
     }
 
+    @Test
+    fun byDefaultTheMarkSitsAfterTheNumber() {
+        showCardForm()
+
+        typeNumber("4111111111111111")
+
+        assertTrue(
+            "the mark is not on the trailing side",
+            markCenterX() > numberField().getUnclippedBoundsInRoot().let { (it.left + it.right) / 2 },
+        )
+    }
+
+    @Test
+    fun aLeadingPlacementPutsTheMarkBeforeTheNumber() {
+        showCardForm(PayInCardBrandIconPlacement.Leading)
+
+        typeNumber("4111111111111111")
+
+        assertTrue(
+            "the mark is not on the leading side",
+            markCenterX() < numberField().getUnclippedBoundsInRoot().let { (it.left + it.right) / 2 },
+        )
+    }
+
+    @Test
+    fun aHiddenPlacementDrawsNoMark() {
+        showCardForm(PayInCardBrandIconPlacement.Hidden)
+
+        typeNumber("4111111111111111")
+
+        rule.onNodeWithContentDescription(CardBrand.Visa.schemeName(), useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    private fun markCenterX() =
+        rule
+            .onNodeWithContentDescription(CardBrand.Visa.schemeName(), useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+            .let { (it.left + it.right) / 2 }
+
     private fun typeNumber(number: String) {
         numberField().performTextClearance()
         numberField().performTextInput(number)
@@ -156,13 +198,14 @@ class PayInBrandBadgeInstrumentedTest {
     private fun numberField() =
         rule.onNode(hasSetTextAction() and hasText(string(R.string.payabli_payin_field_card_number)))
 
-    private fun showCardForm() {
+    private fun showCardForm(placement: PayInCardBrandIconPlacement = PayInCardBrandIconPlacement.Trailing) {
         val configuration =
             PayInFormConfiguration(
                 allowedMethods = listOf(PayInMethodType.Card),
                 defaultMethod = PayInMethodType.Card,
                 cardSections = listOf(PayInFormSection(fields = CARD_INSTRUMENT_FIELDS)),
                 labelLayout = PayInLabelLayout.Placeholder,
+                cardBrandIconPlacement = placement,
             )
         rule.setContent {
             MaterialTheme {

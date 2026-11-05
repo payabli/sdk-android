@@ -40,6 +40,7 @@ import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
+import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInException
 import kotlinx.coroutines.launch
@@ -121,6 +122,55 @@ internal fun betweenPayments(
     retryOpen: Boolean,
 ): Boolean = !isSubmitting && !retryOpen
 
+/**
+ * The form for the operation an open retry belongs to offers only the held attempt's method, so it draws no
+ * selector and the fee stays priced for the method the retry sends. Any other operation, such as a save, keeps every
+ * method, and so does this one once the outcome is settled.
+ *
+ * @param form the configuration the screen's settings build.
+ * @param operation the operation on screen.
+ * @param heldFor the operation the open retry belongs to, or null when none is open.
+ * @param method the method the held attempt was sent with.
+ * @return [form] limited to [method] while [operation] holds the open retry, otherwise [form] unchanged.
+ */
+internal fun methodsWhileHeld(
+    form: PayInFormConfiguration,
+    operation: FormOperation,
+    heldFor: FormOperation?,
+    method: PayInMethodType,
+): PayInFormConfiguration =
+    if (operation == heldFor) form.copy(allowedMethods = listOf(method), defaultMethod = method) else form
+
+/**
+ * The method the open retry must send. A submission that holds no retry, such as a save, does not change it.
+ *
+ * @param held the method held so far, or null when no retry was open.
+ * @param heldFor the operation the open retry belongs to after this outcome, or null when none is open.
+ * @param sent the method the submission that just ended was sent with.
+ * @return the method the retry must send, or null when no retry is open.
+ */
+internal fun heldMethodAfter(
+    held: PayInMethodType?,
+    heldFor: FormOperation?,
+    sent: PayInMethodType,
+): PayInMethodType? = if (heldFor == null) null else held ?: sent
+
+/**
+ * The method the form is limited to and priced for: the held one on the operation that owns the retry.
+ *
+ * @param operation the operation on screen.
+ * @param heldFor the operation the open retry belongs to, or null when none is open.
+ * @param heldMethod the method the retry must send, or null when none is open.
+ * @param onScreen the method the form last reported.
+ * @return the method to configure and price the form with.
+ */
+internal fun methodFor(
+    operation: FormOperation,
+    heldFor: FormOperation?,
+    heldMethod: PayInMethodType?,
+    onScreen: PayInMethodType,
+): PayInMethodType = if (operation == heldFor) heldMethod ?: onScreen else onScreen
+
 /** What the screen says when [operation] ends, for either instrument. */
 internal fun outcomeMessage(
     operation: FormOperation,
@@ -169,9 +219,8 @@ class SimpleCaptureViewModel(
     var amountText by mutableStateOf(DEFAULT_AMOUNT)
 
     /**
-     * The instrument the form last said is on screen, which is the one this app prices a fee for.
-     * Seeded from the configuration when the form first appears, and moved only by the form after
-     * that.
+     * The instrument the form last said is on screen, which this app prices a fee for unless a retry holds
+     * another. Seeded from the configuration when the form first appears, and moved only by the form after that.
      */
     var method by mutableStateOf<PayInMethodType?>(null)
 
@@ -183,19 +232,29 @@ class SimpleCaptureViewModel(
         }
     }
 
+    /** The method the open retry must send, or null when none is open. */
+    var heldMethod by mutableStateOf<PayInMethodType?>(null)
+        private set
+
     fun failed(
         submitted: FormOperation,
         outcome: PayabliException,
+        sent: PayInMethodType,
     ) {
         retryOpen = retryAfter(retryOpen, submitted, outcome)
         paymentReference = referenceAfter(paymentReference, retryOpen)
         heldFor = retryOwnerAfter(heldFor, submitted, retryOpen)
+        heldMethod = heldMethodAfter(heldMethod, heldFor, sent)
     }
 
-    fun succeeded(submitted: FormOperation) {
+    fun succeeded(
+        submitted: FormOperation,
+        sent: PayInMethodType,
+    ) {
         retryOpen = retryAfter(retryOpen, submitted, outcome = null)
         paymentReference = referenceAfter(paymentReference, retryOpen)
         heldFor = retryOwnerAfter(heldFor, submitted, retryOpen)
+        heldMethod = heldMethodAfter(heldMethod, heldFor, sent)
     }
 
     init {
@@ -326,7 +385,13 @@ fun SimpleCaptureScreen(
 
                         // The form opens silently, so the method on screen starts as the one this
                         // configuration opens on, taken once.
-                        val method = viewModel.method ?: form.startingMethod
+                        val method =
+                            methodFor(
+                                operation,
+                                viewModel.heldFor,
+                                viewModel.heldMethod,
+                                viewModel.method ?: form.startingMethod,
+                            )
 
                         // 3. The form. It collects, validates and submits; the outcome arrives here.
                         PayabliPayInForm(
@@ -340,11 +405,11 @@ fun SimpleCaptureScreen(
                                     attemptFor(viewModel.retryOpen),
                                     method,
                                 ),
-                            configuration = form,
+                            configuration = methodsWhileHeld(form, operation, viewModel.heldFor, method),
                             labels = FormCustomization.labels(settings, operation),
                             style = FormCustomization.style(settings.look),
                             onCompleted = {
-                                viewModel.succeeded(operation)
+                                viewModel.succeeded(operation, method)
                                 Toast
                                     .makeText(
                                         context,
@@ -353,7 +418,7 @@ fun SimpleCaptureScreen(
                                     ).show()
                             },
                             onFailed = {
-                                viewModel.failed(operation, it)
+                                viewModel.failed(operation, it, method)
                                 Toast
                                     .makeText(
                                         context,

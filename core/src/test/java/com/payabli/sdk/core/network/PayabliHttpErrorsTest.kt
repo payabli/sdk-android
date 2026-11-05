@@ -84,7 +84,7 @@ class PayabliHttpErrorsTest {
 
     @Test
     fun `a 409 is a conflict, and its body never reaches the reason`() {
-        // The service names the duplicated idempotency key in that body, and reason is displayable.
+        // The service names the duplicated idempotency key in that body, and reason reaches a host.
         val mapped = map(409, "Duplicated idempotencyKey: key-9")
 
         assertTrue(mapped is PayabliGenericException)

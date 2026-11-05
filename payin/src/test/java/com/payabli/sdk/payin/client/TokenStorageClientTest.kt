@@ -2,6 +2,7 @@ package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
@@ -363,5 +364,46 @@ class TokenStorageClientTest {
             listOf(TEST_PAN, TEST_SECURITY_CODE, "Integration Test").forEach { value ->
                 assertFalse(value, written.contains(value))
             }
+        }
+
+    @Test
+    fun `a 400 from the store keeps the route's text in the validation error's detail`() =
+        runTest(timeout = timeout) {
+            // The store route refuses a request with no field map, so its text is the only explanation a
+            // developer gets.
+            val transport =
+                FakePayInTransport.answering(
+                    """{"isSuccess":false,"responseText":"Customer and vendor can't both be sent"}""",
+                    statusCode = 400,
+                )
+
+            val failure =
+                runCatching {
+                    TokenStorageClient(transport, RecordingSdkLogger())
+                        .storeMethod("e", PayInInstrument.Card(testCard()))
+                }.exceptionOrNull()
+
+            val validation = failure as PayabliValidationException
+            assertEquals(400, validation.httpStatus)
+            assertEquals("Customer and vendor can't both be sent", validation.detail)
+            assertEquals(PayabliValidationException.DEFAULT_REASON, validation.reason)
+        }
+
+    @Test
+    fun `a 400 that already carries a detail keeps it`() =
+        runTest(timeout = timeout) {
+            val transport =
+                FakePayInTransport.answering(
+                    """{"title":"Bad request","detail":"the problem's own detail","responseText":"other"}""",
+                    statusCode = 400,
+                )
+
+            val failure =
+                runCatching {
+                    TokenStorageClient(transport, RecordingSdkLogger())
+                        .storeMethod("e", PayInInstrument.Card(testCard()))
+                }.exceptionOrNull()
+
+            assertEquals("the problem's own detail", (failure as PayabliValidationException).detail)
         }
 }

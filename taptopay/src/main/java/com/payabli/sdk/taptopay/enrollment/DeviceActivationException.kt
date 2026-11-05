@@ -1,18 +1,9 @@
 package com.payabli.sdk.taptopay.enrollment
 
 /**
- * Why an activation did not complete, named for what the caller should do about it.
- *
- * Named `DeviceActivationException`: `ActivationException` would sit one word from `AttestationException`
- * in files that import both.
- *
- * Most of these share one result code, so the taxonomy is built by [DeviceActivationFailures] and that is the
- * only place in the module permitted to read a refusal's text. The subtype is the classification;
- * [resultCode] is a diagnostic and is the same value across most of the table, which is exactly why the
- * taxonomy cannot be built on it.
- *
- * [reason] is the refusal's own wording. Displayable, and **never logged** — it can quote what was sent,
- * which is the same rule `DeviceServiceException` states for the same field.
+ * Why an activation did not complete. The subtype is the classification, built only by [DeviceActivationFailures];
+ * [resultCode] is a diagnostic most refusals share. [reason] is the refusal's own wording: never shown and never
+ * logged, because it can quote what was sent.
  */
 internal sealed class DeviceActivationException(
     message: String,

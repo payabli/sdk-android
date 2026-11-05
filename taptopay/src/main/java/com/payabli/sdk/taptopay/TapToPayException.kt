@@ -27,11 +27,10 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
  * A repair does not always succeed on the next call: where the reader was refused, it succeeds once that
  * refusal is settled with the vendor.
  *
- * **`cause` is the SDK's own failure, and some of what it holds is displayable but not loggable.** The
- * service's `reason` text is written by the service rather than by this SDK, and it can echo what the
- * request carried. Showing it to a merchant is what it is for; sending the chain to a crash reporter is
- * not, and a reporter that reads fields rather than `toString` will find it. `toString` on those types
- * omits it.
+ * **`cause` is the SDK's own failure, and some of what it holds is neither shown nor logged.** The service's
+ * `reason` text is written by the service rather than by this SDK, and it can echo what the request carried.
+ * The operator's screen shows a message for the category instead, and a crash reporter that reads fields
+ * rather than `toString` will find it, so the chain is not sent to one. `toString` on those types omits it.
  *
  * [paymentTransId] is the payment this failure belongs to, or null when no identifier was received. Null is not
  * proof that nothing was opened: the call that opens a payment may have succeeded with its answer lost, which is
