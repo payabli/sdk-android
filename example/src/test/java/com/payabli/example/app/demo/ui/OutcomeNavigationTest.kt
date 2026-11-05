@@ -179,13 +179,21 @@ class OutcomeNavigationTest {
     }
 
     @Test
-    fun `the reason the SDK gave is what the card shows`() {
+    fun `a declined payment shows the declined message and not the SDK's reason`() {
         val model = captureModel()
         model.onFailed(refusedOutcome())
-        assertTrue(
-            model.uiState.value.resultText
-                .contains("Insufficient funds"),
-        )
+        val shown = model.uiState.value.resultText
+
+        assertEquals("✗ The payment was declined. Try another payment method.", shown)
+        assertFalse(shown, shown.contains("Insufficient funds"))
+    }
+
+    @Test
+    fun `a declined save shows the save's message, which says nothing of a payment`() {
+        val model = methodModel()
+        model.onFailed(refusedOutcome())
+
+        assertEquals("✗ This payment method couldn't be saved. Try another one.", model.uiState.value.resultText)
     }
 
     @Test

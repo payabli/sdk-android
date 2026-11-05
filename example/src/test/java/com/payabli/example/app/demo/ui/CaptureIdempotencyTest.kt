@@ -2,6 +2,7 @@ package com.payabli.example.app.demo.ui
 
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
+import com.payabli.example.app.demo.payment.FailureKind
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
@@ -57,7 +58,7 @@ class CaptureIdempotencyTest {
         keepsItsPaymentReference: Boolean,
         isOutcomeUnknown: Boolean = false,
     ) = PayInOutcome.Refused(
-        error = PaymentError.Payabli("Refused", null),
+        error = PaymentError(FailureKind.DECLINED, "D0001"),
         diagnostic = "PayInException.Refused(code=D0001)",
         keepsItsPaymentReference = keepsItsPaymentReference,
         isOutcomeUnknown = isOutcomeUnknown,

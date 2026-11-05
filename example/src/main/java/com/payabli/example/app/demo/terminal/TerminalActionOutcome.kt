@@ -8,6 +8,10 @@ enum class TerminalAction(
     Reinitialize("Re-initialize"),
     Charge("Charge"),
     Activate("Activate device"),
+    ;
+
+    /** Whether this action sets the terminal up. */
+    val setsUp: Boolean get() = this == Initialize || this == Reinitialize
 }
 
 /**
@@ -23,9 +27,10 @@ object TerminalActionOutcome {
     ): String = if (detail.isEmpty()) "✓ ${action.label} succeeded" else "✓ ${action.label}: $detail"
 
     /**
-     * The error's own words, with no step name: the step list beside the line shows which step failed.
+     * The line this app shows for the error, with no step name: the step list beside the line shows which step
+     * failed.
      *
-     * @param error the failure the action met, whose own words the line carries.
+     * @param error the failure the action met.
      * @return the line the screen shows for the action's outcome.
      */
     fun failure(error: Throwable): String = "✗ ${describe(error)}"

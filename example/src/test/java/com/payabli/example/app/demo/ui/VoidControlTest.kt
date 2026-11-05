@@ -5,7 +5,6 @@ import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
 import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
-import com.payabli.example.app.sdk.PayInOutcome
 import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.interruptedOutcome
 import com.payabli.example.app.sdk.readyStartup
@@ -128,7 +127,7 @@ class VoidControlTest {
         assertEquals("101-abc", after.voidedTransactionId)
         assertNull("the control was still offered", after.voidableTransactionId)
         assertTrue(after.resultText, after.resultText.startsWith("✓ Voided: A0003"))
-        assertTrue(after.resultText, after.resultText.contains("Reason: Canceled"))
+        assertFalse("the service's reason was shown", after.resultText.contains("Canceled"))
         assertTrue(after.resultText, after.resultText.contains("Payment transaction: 101-abc"))
     }
 
@@ -159,9 +158,8 @@ class VoidControlTest {
         assertNull("the void was offered again under doubt", after.voidableTransactionId)
         assertNull("an unknown outcome recorded the transaction as reversed", after.voidedTransactionId)
         assertEquals("101-abc", after.readableTransactionId)
-        // The SDK's reason says to read the transaction back, and the panel adds nothing beneath it.
-        assertTrue(after.resultText, after.resultText.contains("Read the transaction back"))
-        assertEquals("✗ ${(unsettledOutcome() as PayInOutcome.Refused).error.displayMessage}", after.resultText)
+        // The sample's own text for a void says to read the transaction back, and the panel adds nothing beneath it.
+        assertEquals("✗ This void may have gone through. Read the transaction before voiding again.", after.resultText)
     }
 
     @Test

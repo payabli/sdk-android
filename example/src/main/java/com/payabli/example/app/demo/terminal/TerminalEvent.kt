@@ -1,11 +1,6 @@
 package com.payabli.example.app.demo.terminal
 
-/**
- * Something the terminal reported while it was working.
- *
- * The wire names are kept as written, so this stream compares directly against a backend log or a
- * support ticket.
- */
+/** Something the terminal reported while it was working. */
 enum class TerminalEventCode {
     AttestationStarted,
     AttestationCompleted,
@@ -25,10 +20,11 @@ enum class TerminalEventCode {
     ActivationStarted,
     ActivationCompleted,
     ActivationFailed,
+    SetupFailed,
     ;
 
-    /** camelCase, matching how these appear on the wire. */
-    val wireName: String get() = name.replaceFirstChar { it.lowercase() }
+    /** The event's name in camelCase. */
+    val eventName: String get() = name.replaceFirstChar { it.lowercase() }
 }
 
 /**
@@ -41,3 +37,21 @@ data class TerminalEvent(
     val code: TerminalEventCode,
     val detail: String = "",
 )
+
+/** The step a failure event names in this app's words, or null for an event that is not a failed step. */
+private val TerminalEventCode.failedStep: String?
+    get() =
+        when (this) {
+            TerminalEventCode.SetupFailed -> "setup"
+            TerminalEventCode.ActivationFailed -> "activation"
+            TerminalEventCode.UpdateFailed -> "charge"
+            else -> null
+        }
+
+/** The row's first line: a failed step and its code, or else the event's name. */
+val TerminalEvent.label: String
+    get() = code.failedStep?.let { "$it failed · $detail" } ?: code.eventName
+
+/** The row's second line, empty for a failed step, whose detail is already on the first. */
+val TerminalEvent.shownDetail: String
+    get() = if (code.failedStep == null) detail else ""

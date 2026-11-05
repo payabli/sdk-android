@@ -1,6 +1,7 @@
 package com.payabli.example.app.sdk
 
 import android.content.Context
+import com.payabli.example.app.demo.payment.FailureText
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.terminal.ChargeReceipt
 import com.payabli.example.app.demo.terminal.TerminalController
@@ -62,7 +63,7 @@ class TapToPayTerminal(
     override val failureReason: StateFlow<TerminalFailureReason?> = _failureReason.asStateFlow()
 
     /**
-     * The message of the error that landed the ineligible reason: set when one is caught, kept
+     * The line for the error that landed the ineligible reason: set when one is caught, kept
      * while the landing stands, cleared by any other state. The reason decides when it shows.
      */
     private val _deviceFailure = MutableStateFlow<String?>(null)
@@ -85,13 +86,16 @@ class TapToPayTerminal(
      * for the same reason.
      */
     override suspend fun initialize(): Result<Unit> =
-        attempt { terminal().initialize() }
+        attempt(failedAs = null) { terminal().initialize() }
             .recoverCatching { failure ->
-                if (terminal?.sessionState?.value !is TapToPaySessionState.PendingActivation) throw failure
+                if (terminal?.sessionState?.value !is TapToPaySessionState.PendingActivation) {
+                    emit(TerminalEventCode.SetupFailed, failureEventDetail(failure))
+                    throw failure
+                }
             }
 
     override suspend fun charge(amount: BigDecimal): Result<ChargeReceipt> =
-        attempt {
+        attempt(failedAs = TerminalEventCode.UpdateFailed) {
             val ttp = terminal()
             // No NFC events here. `charge` is one call covering the open, the tap and the close, so a
             // pair emitted around it would name the radio and time the whole payment: NfcStarted before
@@ -136,14 +140,14 @@ class TapToPayTerminal(
      */
     override suspend fun activateDevice(activationCode: String): Result<Unit> {
         val activated =
-            attempt {
+            attempt(failedAs = TerminalEventCode.ActivationFailed) {
                 val ttp = terminal()
                 emit(TerminalEventCode.ActivationStarted)
                 ttp.activateDevice(activationCode)
                 emit(TerminalEventCode.ActivationCompleted)
             }
         if (activated.isFailure) return activated
-        attempt { terminal().initialize() }
+        initialize()
         return activated
     }
 
@@ -173,7 +177,7 @@ class TapToPayTerminal(
         _sessionState.value = shown
         _isReady.value = shown == TerminalSessionState.Ready
         _failureReason.value = (state as? TapToPaySessionState.Failed)?.reason?.asTerminalReason()
-        // The message lives as long as the landing does: kept while the reason is ineligible,
+        // The line lives as long as the landing does: kept while the reason is ineligible,
         // cleared by any other state, so a stale one cannot read as the current failure's.
         if (_failureReason.value != TerminalFailureReason.DeviceIneligible) _deviceFailure.value = null
         // A charge ending is not the reader coming up.
@@ -225,18 +229,31 @@ class TapToPayTerminal(
             TapToPaySessionState.Idle, is TapToPaySessionState.Charging, is TapToPaySessionState.Failed -> null
         }
 
-    /** A withdrawn caller unwinds. Turning it into a failed [Result] reports an error to a screen that left. */
-    private suspend fun <T> attempt(block: suspend () -> T): Result<T> =
-        try {
-            Result.success(block())
-        } catch (withdrawn: CancellationException) {
-            throw withdrawn
-        } catch (failure: PayabliException) {
-            failure.ineligibleMessage?.let { _deviceFailure.value = it }
-            Result.failure(failure.forScreen())
-        } catch (failure: Exception) {
-            Result.failure(failure)
-        }
+    /**
+     * A withdrawn caller unwinds. Turning it into a failed [Result] reports an error to a screen that left.
+     *
+     * @param failedAs the event a failure adds to the event list with its code, or null when the caller adds it.
+     * @param block the action.
+     * @return the action's value, or its failure in the screen's words.
+     */
+    private suspend fun <T> attempt(
+        failedAs: TerminalEventCode?,
+        block: suspend () -> T,
+    ): Result<T> {
+        val failed =
+            try {
+                return Result.success(block())
+            } catch (withdrawn: CancellationException) {
+                throw withdrawn
+            } catch (failure: PayabliException) {
+                failure.ineligibleLine?.let { _deviceFailure.value = it }
+                failure.forScreen()
+            } catch (failure: Exception) {
+                failure
+            }
+        failedAs?.let { emit(it, failureEventDetail(failed)) }
+        return Result.failure(failed)
+    }
 
     private suspend fun emit(
         code: TerminalEventCode,
@@ -245,28 +262,93 @@ class TapToPayTerminal(
 }
 
 /**
- * An SDK failure's `message` is its classification, so the line a person reads is built from `reason` and the
- * catalog number support looks up.
+ * The operator's line for a failure, read from a Tap to Pay failure's capture and payment when it is one.
+ *
+ * @return the failure in this app's words.
  */
-internal fun PayabliException.forScreen(): TerminalFailure = TerminalFailure("$reason ($code)", this)
+internal fun PayabliException.forScreen(): TerminalFailure =
+    (this as? TapToPayException).let { forScreen(it?.capture ?: TapToPayCapture.NOT_CHARGED, it?.paymentTransId) }
 
 /**
- * The message of an error whose landing is the ineligible reason, or null when it landed another.
+ * Whether the card was charged is read first: the category alone can say try again after a sale that may be taken.
+ * An uncharged failure reads this app's ineligible-device or activation line, else its category's message, never
+ * its `reason`, which is the service's text. The code stays on the cause, in the failure's `toString`.
  *
- * Four error codes land that one reason and a line fixed to the reason cannot say which, so the
- * thrown error's message, which is its code's own text, is carried beside the reason.
+ * @param capture whether the card was charged.
+ * @param paymentTransId the payment the failure belongs to, shown with a charged or may-have-been-charged line.
+ * @return the failure in this app's words.
  */
-internal val PayabliException.ineligibleMessage: String?
-    get() = message.takeIf { type in INELIGIBLE_TYPES }
-
-/** The error codes whose landing is the ineligible reason, so their messages are its line. */
-internal val INELIGIBLE_TYPES: Set<PayabliErrorType> =
-    setOf(
-        PayabliErrorType.DEVICE_OS_UNSUPPORTED,
-        PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
-        PayabliErrorType.READER_DEVICE_REFUSED,
-        PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE,
+internal fun PayabliException.forScreen(
+    capture: TapToPayCapture,
+    paymentTransId: String?,
+): TerminalFailure {
+    val charge = chargeLine(capture, paymentTransId)
+    return TerminalFailure(
+        charge ?: ineligibleLine ?: activationLine ?: FailureText.terminal(toPaymentError().kind),
+        this,
+        code.toString(),
+        asksForSetup = type == PayabliErrorType.DEVICE_NOT_PENDING,
+        warnsOfCharge = charge != null,
     )
+}
+
+private fun chargeLine(
+    capture: TapToPayCapture,
+    paymentTransId: String?,
+): String? {
+    val line =
+        when (capture) {
+            TapToPayCapture.CHARGED -> "The card was charged. Don't charge it again."
+            TapToPayCapture.UNKNOWN -> "This payment may have gone through. Check before charging again."
+            TapToPayCapture.NOT_CHARGED -> return null
+        }
+    return if (paymentTransId == null) line else "$line · txn $paymentTransId"
+}
+
+/**
+ * This app's own line for a refused activation, naming what the operator does next, or null for any other error.
+ * The category alone would give six refusals with six different remedies one line.
+ */
+internal val PayabliException.activationLine: String?
+    get() =
+        when (type) {
+            PayabliErrorType.ACTIVATION_CODE_MALFORMED -> "Enter the six-digit activation code."
+            PayabliErrorType.ACTIVATION_CODE_INCORRECT ->
+                "That activation code isn't right. Check it and enter it again."
+            PayabliErrorType.ACTIVATION_CODE_EXPIRED -> "That activation code has expired. Get a new code and enter it."
+            PayabliErrorType.ACTIVATION_ATTEMPTS_EXHAUSTED ->
+                "Too many wrong codes were entered. Get a new code and enter it."
+            PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED ->
+                "No activation code has been issued for this phone. Get a code and enter it."
+            PayabliErrorType.DEVICE_NOT_PENDING -> "This phone isn't waiting for activation. Set up the terminal again."
+            else -> null
+        }
+
+/**
+ * The event list's detail for a failure: its catalog code, or the class name of a failure the SDK did not raise.
+ *
+ * @param failure the failure, before or after [forScreen].
+ * @return the detail, never the failure's text.
+ */
+internal fun failureEventDetail(failure: Throwable): String =
+    "code=" + ((failure as? TerminalFailure)?.code ?: failure.toPaymentError().code)
+
+/**
+ * This app's own line for an error whose landing is the ineligible reason, or null when it landed another.
+ *
+ * Four error codes land that one reason, so the line is chosen by the error's type. The code stays on the
+ * cause, in the failure's `toString`.
+ */
+internal val PayabliException.ineligibleLine: String?
+    get() =
+        when (type) {
+            PayabliErrorType.DEVICE_OS_UNSUPPORTED -> "This phone's Android version is too old for Tap to Pay."
+            PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED -> "This phone can't take contactless payments."
+            PayabliErrorType.READER_DEVICE_REFUSED ->
+                "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID."
+            PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE -> "This phone couldn't be identified for Tap to Pay."
+            else -> null
+        }
 
 /**
  * A charge for the open sale's amount, compared in cents as the SDK charges it, so `1.0`, `1.00` and `1.001`

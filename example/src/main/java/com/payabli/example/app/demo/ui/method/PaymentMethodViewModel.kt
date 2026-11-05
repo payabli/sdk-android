@@ -6,6 +6,7 @@ import com.payabli.example.app.AppContainer
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
 import com.payabli.example.app.demo.net.checkToken
+import com.payabli.example.app.demo.payment.FailureText
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.payment.StoredMethod
@@ -56,8 +57,8 @@ data class PaymentMethodUiState(
         storePaymentMethod(),
 ) : PaymentFlowUiState {
     /**
-     * Its own, for the reason `StoredMethod` declares one: `resultText` quotes the identifier a later
-     * transaction charges, so a synthesized `toString` would carry it into anything that stringifies this.
+     * Its own, for the reason `StoredMethod` declares one: the identifier is what a later transaction charges, so
+     * a synthesized `toString` would carry it into anything that stringifies this.
      */
     override fun toString(): String = "PaymentMethodUiState(finished=$finished)"
 
@@ -135,11 +136,8 @@ class PaymentMethodViewModel(
     }
 
     /**
-     * The SDK refused it.
-     *
-     * What the panel records is the exception's own `toString`, which carries the error code and nothing from
-     * the wire. `reason` and `detail` are displayable and never loggable, because either can quote what was
-     * submitted, and this panel is on screen and gets copied into bug reports.
+     * The SDK refused it. The panel records the exception's own `toString`, which carries the error code and
+     * nothing from the wire, and the screen shows the message for its category.
      */
     fun onFailed(outcome: PayInOutcome.Refused) {
         record("ERROR paymentMethod\n${outcome.diagnostic}")
@@ -155,13 +153,9 @@ class PaymentMethodViewModel(
                 // Marked, because success and failure land in the same card. Without a glyph a
                 // decline reads exactly like a stored method, which is the one thing this card
                 // must never do. The Tap to pay screen has always done this; these two had not.
-                listOf(
-                    "✓ Stored method: ${method.storedMethodId}",
-                    "Response: ${method.responseText}",
-                    "Result: ${method.resultText}",
-                ).joinToString("\n")
+                "✓ Stored method: ${method.storedMethodId}"
             }
-        record("RESPONSE paymentMethod\ncode=${result.code}")
+        record("RESPONSE paymentMethod")
         _uiState.update {
             it.copy(
                 resultText = text,
@@ -188,7 +182,7 @@ class PaymentMethodViewModel(
             // "Payment method saved" screen on top of the error just recorded, and that screen reads
             // storedMethod to decide it still has something to describe.
             it.copy(
-                resultText = "✗ ${error.displayMessage}",
+                resultText = "✗ ${FailureText.save(error.kind)}",
                 outcomeReady = false,
                 storedMethod = null,
                 submitFailed = true,

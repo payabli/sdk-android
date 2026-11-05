@@ -57,11 +57,11 @@ private fun ResultCardPreview() {
         // be wrong and the least likely to be looked at.
         ResultCard(text = "", emptyText = PREVIEW_EMPTY)
         ResultCard(
-            text = "Stored method: mth_2f9c1\nResponse: Success\nResult: Approved",
+            text = "✓ Stored method: mth_2f9c1",
             emptyText = PREVIEW_EMPTY,
         )
         ResultCard(
-            text = "Could not store the payment method.\nThe card number failed validation.",
+            text = "The payment method couldn't be saved.",
             emptyText = PREVIEW_EMPTY,
         )
     }

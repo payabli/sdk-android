@@ -23,6 +23,7 @@ object TerminalSteps {
         activated: Boolean = false,
         readerDenied: Boolean = false,
         charged: Boolean = false,
+        setupAskedAgain: Boolean = false,
     ): List<FlowStep> {
         val device =
             when (readiness) {
@@ -40,6 +41,9 @@ object TerminalSteps {
                 working == TerminalAction.Initialize ||
                     working == TerminalAction.Reinitialize -> StepStatus.InProgress
                 session == TerminalSessionState.Ready || session.isCharging -> StepStatus.Done
+                // The service said the device is not waiting for a code, so its next step is this one, not
+                // activation, which the session still reports as pending.
+                setupAskedAgain -> StepStatus.Failed
                 // Activation is a separate step, so reaching it means this one finished.
                 session == TerminalSessionState.PendingActivation -> StepStatus.Done
                 // Activating chains an initialize, which walks back through this step's own states.

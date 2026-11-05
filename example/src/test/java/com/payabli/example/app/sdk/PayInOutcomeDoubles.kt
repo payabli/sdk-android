@@ -100,7 +100,7 @@ internal fun unsettledOutcome() =
 
 internal fun interruptedOutcome() = Result.failure<PayInResult>(PayInException.Interrupted()).toOutcome()
 
-/** A decline, which is the failure a payer meets most and the one whose wording reaches the screen. */
+/** A decline, which is the failure a payer meets most. */
 internal fun refusedOutcome() =
     PayInException
         .Refused(
