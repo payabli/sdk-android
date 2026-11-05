@@ -23,6 +23,29 @@ class PayInFormDraftTest {
     private val draft = PayInFormDraft()
 
     @Test
+    fun aSwitchWhileASubmissionIsPendingKeepsTheMethodSentAndWhatWasTyped() {
+        // The selector is disabled only once the form recomposes, so a tap in the frame after the submit lands.
+        draft.seed(configuration)
+        draft.enter(PayInField.CardNumber, "4111111111111111")
+        draft.submissionPending = true
+
+        draft.switchTo(PayInMethodType.BankAccount, configuration)
+
+        assertEquals(PayInMethodType.Card, draft.method)
+        assertEquals("4111111111111111", draft.typed[PayInField.CardNumber])
+    }
+
+    @Test
+    fun aSwitchOnceTheOutcomeArrivedMovesTheMethod() {
+        draft.seed(configuration)
+        draft.submissionPending = false
+
+        draft.switchTo(PayInMethodType.BankAccount, configuration)
+
+        assertEquals(PayInMethodType.BankAccount, draft.method)
+    }
+
+    @Test
     fun seedingTwiceWithTheSameConfigurationKeepsWhatWasTypedInBetween() {
         // The rotation. The second call is the new composition, and the caller has handed over the same one.
         draft.seed(configuration)

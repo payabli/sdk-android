@@ -112,7 +112,8 @@ internal class PayInFormDraft {
     }
 
     /**
-     * The payer switched instrument, dropping what the new one has no box for.
+     * The payer switched instrument, dropping what the new one has no box for. Ignored while a submission is
+     * pending: the selector is disabled only from the next frame, and the method on screen is the one sent.
      *
      * @param method the instrument switched to.
      * @param configuration the configuration the new instrument's form comes from.
@@ -121,6 +122,7 @@ internal class PayInFormDraft {
         method: PayInMethodType,
         configuration: PayInFormConfiguration,
     ) {
+        if (submissionPending) return
         chosen = method
         // A card number typed under the card tab is not sent with a bank payment, and is not kept out of sight
         // either.
