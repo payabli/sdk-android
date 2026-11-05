@@ -86,14 +86,14 @@ class EntryPointRefusalTest {
         assertEquals(
             TapToPaySessionState.Failed(CONFIGURATION_REJECTED),
             TapToPaySessionFailures.landingFor(
-                DeviceServiceException.EntryPointUnusable(403, EntryPointFailures.ENTRY_POINT_UNUSABLE),
+                DeviceServiceException.EntryPointUnusable(403, EntryPointFailures.ENTRY_POINT_UNUSABLE, 403),
                 StoredRegistration.None,
             ),
         )
         assertEquals(
             TapToPaySessionState.Failed(CONFIGURATION_REJECTED),
             TapToPaySessionFailures.landingFor(
-                DeviceActivationException.EntryPointUnusable(403, EntryPointFailures.ENTRY_POINT_UNUSABLE),
+                DeviceActivationException.EntryPointUnusable(403, EntryPointFailures.ENTRY_POINT_UNUSABLE, 403),
                 StoredRegistration.None,
             ),
         )

@@ -197,6 +197,7 @@ public sealed class PayInException(
     public class Undecodable internal constructor(
         cause: Throwable?,
         internal val paymentTransId: String?,
+        override val httpStatus: Int? = null,
     ) : PayInException(
             PayabliErrorType.DECODING_ERROR,
             DEFAULT_UNDECODABLE_REASON,
@@ -279,17 +280,20 @@ public sealed class PayInException(
          */
         public val paymentTransId: String? = cause.namedTransaction()
 
+        override val httpStatus: Int? = cause.httpStatus
+
+        override val rawCode: String? = cause.rawCode
+
         override fun toString(): String = "PayInException.Unsettled(code=${type.wireName})"
     }
 
     /**
      * A submission was already in flight, so this one was refused and nothing was sent.
      *
-     * A sequencing mistake by the caller rather than anything that came back, which is why it carries
-     * [PayabliErrorType.INVALID_CONFIGURATION] and no failure from the wire.
+     * It carries [PayabliErrorType.VALIDATION_ERROR] and no failure from the wire.
      */
     public class AlreadySubmitting :
-        PayInException(PayabliErrorType.INVALID_CONFIGURATION, DEFAULT_ALREADY_SUBMITTING_REASON) {
+        PayInException(PayabliErrorType.VALIDATION_ERROR, DEFAULT_ALREADY_SUBMITTING_REASON) {
         override fun toString(): String = "PayInException.AlreadySubmitting"
     }
 

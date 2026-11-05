@@ -59,6 +59,7 @@ internal class DeviceServiceClient(
             bodySerializer = ChallengeRequest.serializer(),
             payloadSerializer = ChallengeResponse.serializer(),
             failureMapper = failureMapper,
+            isUsable = { DeviceAttestationBinding.isChallengeDecodable(it.challenge) },
         )
 
     /**
@@ -205,7 +206,7 @@ internal class DeviceServiceClient(
                 if (statusCode == HTTP_FORBIDDEN) {
                     // Reached only by a 403 with no envelope declining under it: the gateway's refusal carries
                     // no service text, and inventing one would put words in its mouth that a caller could display.
-                    DeviceServiceException.Forbidden(statusCode, "")
+                    DeviceServiceException.Forbidden(statusCode, "", statusCode)
                 } else {
                     null
                 }
@@ -242,6 +243,7 @@ internal class DeviceServiceClient(
         failureMapper: DeviceFailureMapper,
         headers: Map<String, String> = emptyMap(),
         emptyPayload: T? = null,
+        isUsable: (T) -> Boolean = { true },
     ): T {
         // The four POSTs resolve to their own template, because none of them embeds an identifier. Passed
         // anyway, because `route` is the only form the transport may log and defaulting it to null would cost
@@ -264,6 +266,7 @@ internal class DeviceServiceClient(
                 failureMapper = failureMapper,
                 emptyPayload = emptyPayload,
                 refusesAtStatus = true,
+                isUsable = isUsable,
             )
         }
     }
@@ -379,6 +382,7 @@ internal class DeviceServiceClient(
         emptyPayload: T? = null,
         refusesAtStatus: Boolean = false,
         statusOverride: (Int) -> Throwable? = { null },
+        isUsable: (T) -> Boolean = { true },
     ): T {
         val declineOutcome = PayabliEnvelope.declineOutcome(response.body)
         val status = response.statusCode
@@ -390,7 +394,11 @@ internal class DeviceServiceClient(
             when {
                 serviceRefused -> null
                 refusesAtStatus && status == HTTP_BAD_REQUEST && declineOutcome == null ->
-                    DeviceServiceException.BadRequest(status, PayabliHttpErrors.from(response)?.reason.orEmpty())
+                    DeviceServiceException.BadRequest(
+                        status,
+                        PayabliHttpErrors.from(response)?.reason.orEmpty(),
+                        status,
+                    )
                 else -> statusOverride(status) ?: pinnedRefusalOf(PayabliHttpErrors.from(response), status)
             }
         transportFailure?.let {
@@ -410,8 +418,8 @@ internal class DeviceServiceClient(
                 // sent.
                 LogField.safe("errorCode", declined.code?.toString()),
             ) { "the device service declined the call" }
-            throw failureMapper.map(declined.code, declined.reason)
-                ?: DeviceServiceException.of(declined.code, declined.reason)
+            throw failureMapper.map(declined.code, declined.reason, status)
+                ?: DeviceServiceException.of(declined.code, declined.reason, status)
         }
         val body = response.bodyAsText()
         // Success has to be *claimed*, not merely not-denied. `declineOutcome` above reads an absent or null
@@ -445,6 +453,9 @@ internal class DeviceServiceClient(
                 throw undecodable(route, response.statusCode, failure)
             }
         val resolved = payload ?: emptyPayload ?: throw undecodable(route, response.statusCode, null)
+        if (!isUsable(resolved)) {
+            throw undecodable(route, response.statusCode, null)
+        }
         logger.debug(
             LogField.safe("event", "device_call_succeeded"),
             LogField.safe("route", route),
@@ -470,7 +481,7 @@ internal class DeviceServiceClient(
             LogField.safe("route", route),
             LogField.safe("statusCode", statusCode),
         ) { "the device service response could not be decoded" }
-        return DeviceServiceException.Undecodable(cause)
+        return DeviceServiceException.Undecodable(cause, statusCode)
     }
 
     /**
@@ -486,7 +497,7 @@ internal class DeviceServiceClient(
         status: Int,
     ): PayabliException? =
         if (failure != null && status == HTTP_UNAUTHORIZED && failure.type == PayabliErrorType.TOKEN_EXPIRED) {
-            PinnedTokenRefusal(failure.reason)
+            PinnedTokenRefusal(failure)
         } else {
             failure
         }

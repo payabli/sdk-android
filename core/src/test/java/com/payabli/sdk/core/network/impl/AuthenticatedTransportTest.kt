@@ -315,6 +315,40 @@ class AuthenticatedTransportTest {
             }
         }
 
+    @Test
+    fun `a second 401 reports the status and code it was answered with`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(
+                    UNAUTHORIZED to """{"responseCode":9001}""",
+                    UNAUTHORIZED to """{"responseCode":9002}""",
+                )
+                val auth = testAuth(tokenProvider = { REFRESHED })
+
+                val failure = failureFrom { stack(server, auth).execute(ping()) }
+
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure.type)
+                assertEquals(401, failure.httpStatus)
+                assertEquals("9002", failure.rawCode)
+            }
+        }
+
+    @Test
+    fun `a refresh refused by the finished session carries no other request's answer`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to """{"responseCode":9001}""")
+                val auth = testAuth(tokenProvider = { REFRESHED })
+                failureFrom { stack(server, auth).execute(ping()) }
+
+                val later = runCatching { auth.invalidateAndRefresh(REFRESHED) }.exceptionOrNull() as? PayabliException
+
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, later?.type)
+                assertNull(later?.httpStatus)
+                assertNull(later?.rawCode)
+            }
+        }
+
     // ---- a run of failing calls --------------------------------------------------------------------
 
     @Test
@@ -1308,10 +1342,11 @@ class AuthenticatedTransportTest {
         runTest(timeout = TEST_TIMEOUT) {
             val base = UnauthorizedUntilReplayed()
             val calls = AtomicInteger()
+            val auth = authWithCountingRefresh(calls)
             val subject =
                 AuthenticatedTransport(
                     base = base,
-                    auth = authWithCountingRefresh(calls),
+                    auth = auth,
                     recovery = AuthRecoveryPolicy(),
                     logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                 )
@@ -1321,6 +1356,7 @@ class AuthenticatedTransportTest {
             assertEquals("the rejection arrives as it came", UNAUTHORIZED, response.statusCode)
             assertEquals("no refresh", 0, calls.get())
             assertEquals("no replay", 1, base.sends.size)
+            assertNull("the session is not finished", auth.terminalFailure)
         }
 
     /** An expired credential is refreshed first, and the refusal only arrives on the replay. */

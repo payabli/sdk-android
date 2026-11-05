@@ -20,6 +20,7 @@ internal sealed class DeviceActivationException(
     val resultCode: Int?,
     val reason: String,
     cause: Throwable? = null,
+    val httpStatus: Int? = null,
 ) : Exception(message, cause) {
     /** Never [reason]. */
     override fun toString(): String = "${javaClass.simpleName}(resultCode=$resultCode)"
@@ -41,40 +42,48 @@ internal sealed class DeviceActivationException(
     class CodeIncorrect(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ) : DeviceActivationException(
             "the activation code is wrong; ask for it again, and an attempt is now spent",
             resultCode,
             reason,
+            httpStatus = httpStatus,
         )
 
     /** The code is no longer valid, and the merchant issues another. */
     class CodeExpired(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ) : DeviceActivationException(
             "the activation code has expired; the merchant must issue a new one",
             resultCode,
             reason,
+            httpStatus = httpStatus,
         )
 
     /** Too many wrong codes. Nothing else can be tried until the merchant issues a new one. */
     class AttemptsExhausted(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ) : DeviceActivationException(
             "too many activation attempts failed; the merchant must issue a new code",
             resultCode,
             reason,
+            httpStatus = httpStatus,
         )
 
     /** No code has been issued for this device. */
     class CodeNotIssued(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ) : DeviceActivationException(
             "no activation code has been issued for this device; the merchant must issue one",
             resultCode,
             reason,
+            httpStatus = httpStatus,
         )
 
     /**
@@ -86,10 +95,12 @@ internal sealed class DeviceActivationException(
     class CodeUnreadable(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ) : DeviceActivationException(
             "the stored activation code could not be read; the merchant must issue a new one",
             resultCode,
             reason,
+            httpStatus = httpStatus,
         )
 
     /**
@@ -105,10 +116,12 @@ internal sealed class DeviceActivationException(
     class DeviceNotPending(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ) : DeviceActivationException(
             "this device is not awaiting activation; it may already be active, or it may have been replaced",
             resultCode,
             reason,
+            httpStatus = httpStatus,
         )
 
     /**
@@ -124,10 +137,12 @@ internal sealed class DeviceActivationException(
     class AssertionRejected(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ) : DeviceActivationException(
             "the device assertion did not verify; check the device clock and send the code again",
             resultCode,
             reason,
+            httpStatus = httpStatus,
         )
 
     /**
@@ -139,10 +154,12 @@ internal sealed class DeviceActivationException(
     class RequestRejected(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ) : DeviceActivationException(
             "the activation request was malformed; this is an SDK defect, please report it",
             resultCode,
             reason,
+            httpStatus = httpStatus,
         )
 
     /**
@@ -152,7 +169,13 @@ internal sealed class DeviceActivationException(
     class AttestationRevoked(
         resultCode: Int?,
         reason: String,
-    ) : DeviceActivationException("this device is no longer attested; enroll again to attest it", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceActivationException(
+            "this device is no longer attested; enroll again to attest it",
+            resultCode,
+            reason,
+            httpStatus = httpStatus,
+        )
 
     /**
      * The entry point this call names cannot be used for it.
@@ -162,28 +185,38 @@ internal sealed class DeviceActivationException(
     class EntryPointUnusable(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ) : DeviceActivationException(
             "the configured entry point cannot be used with this access token; check the entry point in " +
                 "PayabliConfig and the token your tokenProvider returns",
             resultCode,
             reason,
+            httpStatus = httpStatus,
         )
 
     /** A live attestation for this device is held under another credential. Discards nothing. */
     class CredentialMismatch(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ) : DeviceActivationException(
             "this device is attested under another credential",
             resultCode,
             reason,
+            httpStatus = httpStatus,
         )
 
     /** The device this record names does not exist under this paypoint. Discards the stored identity. */
     class DeviceUnknown(
         resultCode: Int?,
         reason: String,
-    ) : DeviceActivationException("the service has no record of this device; enroll again", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceActivationException(
+            "the service has no record of this device; enroll again",
+            resultCode,
+            reason,
+            httpStatus = httpStatus,
+        )
 
     /** Activation was attempted with no stored identity to activate. Nothing was sent. */
     class NotEnrolled : DeviceActivationException("this device is not enrolled; enroll before activating", null, "")
@@ -208,5 +241,11 @@ internal sealed class DeviceActivationException(
     class Unclassified(
         resultCode: Int?,
         reason: String,
-    ) : DeviceActivationException("the device service refused the activation", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceActivationException(
+            "the device service refused the activation",
+            resultCode,
+            reason,
+            httpStatus = httpStatus,
+        )
 }

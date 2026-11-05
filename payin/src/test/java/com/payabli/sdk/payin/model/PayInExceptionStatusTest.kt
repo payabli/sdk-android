@@ -35,4 +35,12 @@ class PayInExceptionStatusTest {
         assertNull(error.httpStatus)
         assertNull(error.rawCode)
     }
+
+    @Test
+    fun `an unsettled payment reports the status and code of the failure it wraps`() {
+        val error: PayabliException = PayInException.Unsettled(PayInException.ServiceError(failure("E9999", 503)))
+
+        assertEquals(503, error.httpStatus)
+        assertEquals("E9999", error.rawCode)
+    }
 }

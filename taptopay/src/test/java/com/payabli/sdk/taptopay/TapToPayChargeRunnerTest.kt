@@ -58,6 +58,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.KSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -2487,6 +2488,37 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a bare 404 on the close of an approved tap is the payment not closed, carrying the 404`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The opening passed the same paypoint check moments earlier, so this 404 says nothing about
+            // card-present being enabled, and the card may already be charged.
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to listOf(approved("""{"paymentTransId":"$TRANS_ID"}""")),
+                        UPDATE to List(3) { "" },
+                        statusFor = { if (it == UPDATE) 404 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertEquals("the close was retried", 1, fixture.requestsTo(UPDATE).size)
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, failure.type)
+            assertEquals(404, failure.httpStatus)
+            assertNull(failure.rawCode)
+            assertEquals(TRANS_ID, failure.paymentTransId)
+            assertEquals(TapToPayCapture.CHARGED, failure.capture)
+        }
+
+    @Test
     fun `a close that failed says the card was charged`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The sharp case: the money has moved and charging again takes it twice, so a caller has to be
@@ -3798,6 +3830,44 @@ class TapToPayChargeRunnerTest {
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             assertEquals(listOf(TapToPaySessionState.Ready, opening, TapToPaySessionState.Ready), seen)
+        }
+
+    @Test
+    fun `a fraud block on the opening is the payment not opened, asks for no card, and releases the key`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            listOf("E9005", "E9051").forEach { code ->
+                listOf(400, 401).forEach { status ->
+                    var openings = 0
+                    val fixture =
+                        SessionFixture(
+                            RouteScript(
+                                RouteScript.CHALLENGE to listOf(challengeBody()),
+                                RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                                RouteScript.ATTEST to listOf(attestBody()),
+                                RouteScript.CONFIG to listOf(configBody()),
+                                INITIATE to listOf("""{"code":"$code","reason":"Blocked"}""", rejected()),
+                                statusFor = { path -> if (path == INITIATE && ++openings == 1) status else 200 },
+                            ),
+                        ).also { it.coordinator.initialize() }
+                    val seen = statesOf(fixture)
+
+                    val failure =
+                        runCatching {
+                            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                        }.exceptionOrNull() as? TapToPayException
+                    runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+                    assertEquals("$code $status", PayabliErrorType.PAYMENT_NOT_OPENED, failure?.type)
+                    assertEquals("$code $status", status, failure?.httpStatus)
+                    assertEquals("$code $status", code, failure?.rawCode)
+                    assertEquals(
+                        "$code $status: no card asked for",
+                        listOf(TapToPaySessionState.Ready, opening, TapToPaySessionState.Ready),
+                        seen.take(3),
+                    )
+                    assertNotEquals("$code $status: the key was released", fixture.keySent(0), fixture.keySent(1))
+                }
+            }
         }
 
     @Test

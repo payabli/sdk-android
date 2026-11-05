@@ -262,6 +262,7 @@ internal class MoneyInClient(
                         query = request.options.query(allowsAchValidation),
                         headers = request.options.headers(idempotencyKey),
                         body = body,
+                        isCallerRefusal = ::isFraudBlock,
                     ),
                 )
             } finally {
@@ -271,7 +272,7 @@ internal class MoneyInClient(
     }
 
     /**
-     * Reads the outcome: a code that leaves it open, whatever the status; then the status; then the
+     * Reads the outcome: a code that leaves it open, or a fraud block, whatever the status; then the status; then the
      * envelope, because a decline behind a 2xx otherwise reads as an approval; then the payload. A success
      * is a 201 as often as a 200.
      *
@@ -294,6 +295,15 @@ internal class MoneyInClient(
             ) { "the service left the transaction's outcome open" }
             throw PayInException.ServiceError(said.failure(response.statusCode), type)
         }
+        if (said.code in FRAUD_BLOCK_CODES) {
+            logger.warn(
+                LogField.safe("event", "payin_transaction_not_approved"),
+                LogField.safe("route", route),
+                LogField.safe("statusCode", response.statusCode),
+                LogField.safe("errorCode", said.code),
+            ) { "fraud control blocked the payer" }
+            throw PayInException.Refused(said.failure(response.statusCode))
+        }
         PayabliHttpErrors.from(response)?.let { failure ->
             logger.warn(
                 LogField.safe("event", "payin_call_failed"),
@@ -306,7 +316,8 @@ internal class MoneyInClient(
             throw if (failure.type == PayabliErrorType.CONFLICT && !text.isJsonObject()) {
                 PayInKeyRefusal()
             } else if (failure.type.leavesThePaymentOpen && said.paymentTransId != null) {
-                PayInException.ServiceError(said.failure(response.statusCode), failure.type)
+                val code = said.code ?: failure.rawCode
+                PayInException.ServiceError(said.failure(response.statusCode, code), failure.type)
             } else {
                 failure
             }
@@ -376,7 +387,7 @@ internal class MoneyInClient(
             LogField.safe("route", route),
             LogField.safe("statusCode", statusCode),
         ) { "the transaction response could not be read" }
-        return PayInException.Undecodable(cause, paymentTransId)
+        return PayInException.Undecodable(cause, paymentTransId, statusCode)
     }
 }
 
@@ -389,6 +400,8 @@ private val OPEN_OUTCOME_CODES: Map<String?, PayabliErrorType> =
         "E9060" to PayabliErrorType.UNKNOWN,
         "E9999" to PayabliErrorType.SERVER_ERROR,
     )
+
+private val FRAUD_BLOCK_CODES: Set<String?> = setOf("E9005", "E9051")
 
 /**
  * The v2 envelope's fields, each read on its own, so a missing or malformed field costs only itself.
@@ -406,10 +419,13 @@ private class AnswerFields(
      * The failure these fields describe.
      *
      * @param httpStatus the status the answer arrived with.
+     * @param code the code to report. Defaults to the body's own `code`.
      * @return the failure, naming the transaction where the answer named one.
      */
-    fun failure(httpStatus: Int): PayInFailure =
-        PayInFailure(code, reason, explanation, action, httpStatus, paymentTransId)
+    fun failure(
+        httpStatus: Int,
+        code: String? = this.code,
+    ): PayInFailure = PayInFailure(code, reason, explanation, action, httpStatus, paymentTransId)
 
     companion object {
         /**
@@ -461,7 +477,9 @@ private class AnswerFields(
  *
  * A conflict like any other until the flow reads it, which tells a resent held key from a new one.
  */
-internal class PayInKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)")
+internal class PayInKeyRefusal : PayabliException(PayabliErrorType.CONFLICT, "Conflict (409)") {
+    override val httpStatus: Int get() = HttpURLConnection.HTTP_CONFLICT
+}
 
 /**
  * Whether this body is a JSON object, which the idempotency check's refusal never is. No field is read, so
@@ -536,6 +554,16 @@ private fun legacyCode(response: PayabliResponse): Int? =
     }
 
 /**
+ * Whether a 401 refuses the payer, which a token refresh cannot fix and a replay would send again.
+ *
+ * @param response the answered request.
+ * @return true for a 401 whose body names a fraud block; false otherwise.
+ */
+private fun isFraudBlock(response: PayabliResponse): Boolean =
+    response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED &&
+        AnswerFields.of(response.bodyAsText()).code in FRAUD_BLOCK_CODES
+
+/**
  * Whether a read was refused because this caller may not read the transaction.
  *
  * @param response the answered request.
@@ -548,20 +576,25 @@ private fun isNotPermitted(response: PayabliResponse): Boolean =
  * Maps the two refusals specific to a read. Any other failure goes to the shared status mapping.
  *
  * @param response the answered request.
- * @return the refusal, or null when the response is neither.
+ * @return the refusal, carrying the response's status and code, or null when the response is neither.
  */
-private fun readRefusal(response: PayabliResponse): PayabliGenericException? =
-    when {
-        isNotPermitted(response) ->
-            PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, PayabliErrorType.PERMISSION_DENIED.message)
-        response.statusCode == HttpURLConnection.HTTP_BAD_REQUEST &&
-            legacyCode(response) == LegacyRefusal.NOT_VISIBLE ->
-            PayabliGenericException(
-                PayabliErrorType.TRANSACTION_NOT_FOUND,
-                PayabliErrorType.TRANSACTION_NOT_FOUND.message,
-            )
-        else -> null
-    }
+private fun readRefusal(response: PayabliResponse): PayabliGenericException? {
+    val type =
+        when {
+            isNotPermitted(response) -> PayabliErrorType.PERMISSION_DENIED
+            response.statusCode == HttpURLConnection.HTTP_BAD_REQUEST &&
+                legacyCode(response) == LegacyRefusal.NOT_VISIBLE -> PayabliErrorType.TRANSACTION_NOT_FOUND
+            else -> return null
+        }
+    return PayabliGenericException(
+        type,
+        type.message,
+        null,
+        null,
+        response.statusCode,
+        AnswerFields.of(response.bodyAsText()).code ?: legacyCode(response)?.toString(),
+    )
+}
 
 /**
  * Only the flags that were set: an absent flag and a false one are different statements to the service.

@@ -1,7 +1,9 @@
 package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliValidationException
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInCustomerData
@@ -568,6 +570,49 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `a fraud block is a decline on every route, carrying the status and code it was answered with`() =
+        runTest(timeout = timeout) {
+            listOf("E9005", "E9051").forEach { code ->
+                listOf(400, 401, 403).forEach { status ->
+                    routes.forEach { (name, call) ->
+                        val body = """{"code":"$code","reason":"Blocked","data":{"paymentTransId":null}}"""
+                        val failure = failureOf(body, status, call) as? PayInException.Refused
+
+                        assertEquals("$name $code $status", PayabliErrorType.PAYMENT_DECLINED, failure?.type)
+                        assertEquals("$name $code $status", status, failure?.httpStatus)
+                        assertEquals("$name $code $status", code, failure?.rawCode)
+                        assertEquals("$name $code $status", "Blocked", failure?.failure?.reason)
+                    }
+                }
+            }
+        }
+
+    @Test
+    fun `a payment and an authorization declare a 401 fraud block as their caller's refusal, and no other 401`() =
+        runTest(timeout = timeout) {
+            listOf<Pair<String, suspend MoneyInClient.() -> Unit>>(
+                "capture" to { capture("e", cardRequest()) },
+                "authorize" to { authorize("e", cardRequest()) },
+            ).forEach { (name, call) ->
+                val transport = FakePayInTransport.answering(approved)
+                MoneyInClient(transport, RecordingSdkLogger()).call()
+                val isCallerRefusal = transport.request!!.isCallerRefusal
+
+                listOf("E9005", "E9051").forEach { code ->
+                    assertTrue("$name $code", isCallerRefusal(response(401, """{"code":"$code"}""")))
+                    assertFalse("$name $code on 400", isCallerRefusal(response(400, """{"code":"$code"}""")))
+                }
+                assertFalse("$name: a 401 with no body is the credential's", isCallerRefusal(response(401, "")))
+                assertFalse("$name: another code", isCallerRefusal(response(401, """{"code":"E9001"}""")))
+            }
+        }
+
+    private fun response(
+        status: Int,
+        body: String,
+    ) = PayabliResponse(status, emptyMap(), body.toByteArray(Charsets.UTF_8))
+
+    @Test
     fun `any other code on a 400 is still the field refusal the status says`() =
         runTest(timeout = timeout) {
             val body = """{"code":"E9001","reason":"Bad entry","data":{"paymentTransId":"101-abc"}}"""
@@ -638,6 +683,16 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `a repeated key reports the 409 it was answered with and no code`() =
+        runTest(timeout = timeout) {
+            val failure = failureOf("Duplicated idempotencyKey", 409) as? PayabliException
+
+            assertTrue("$failure", failure is PayInKeyRefusal)
+            assertEquals(409, failure?.httpStatus)
+            assertNull(failure?.rawCode)
+        }
+
+    @Test
     fun `an answer that cannot be read still names its transaction`() =
         runTest(timeout = timeout) {
             // A malformed sibling field fails the envelope, and must not take the identifier with it.
@@ -689,6 +744,20 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `an answer that will not decode reports its status and no code`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering("<html>502</html>", statusCode = 202)
+
+            val failure: PayabliException? =
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                    .exceptionOrNull() as? PayabliException
+
+            assertTrue("$failure", failure is PayInException.Undecodable)
+            assertEquals(202, failure?.httpStatus)
+            assertNull(failure?.rawCode)
+        }
+
+    @Test
     fun `a 401 reaches the caller as an expired token, whatever the body says`() =
         runTest(timeout = timeout) {
             // Behind a session this never runs: the authenticated transport consumes a 401, refreshes, replays,
@@ -737,6 +806,33 @@ class MoneyInClientTest {
                 assertFalse("$field: $failure", failure is PayInKeyRefusal)
                 assertEquals(PayabliErrorType.CONFLICT, (failure as com.payabli.sdk.core.model.PayabliException).type)
             }
+        }
+
+    @Test
+    fun `a 409 naming a transaction keeps the older body's code beside it`() =
+        runTest(timeout = timeout) {
+            val duplicate = """{"isSuccess":false,"responseCode":9005,"responseData":{"referenceId":"101-first"}}"""
+            val transport = FakePayInTransport.answering(duplicate, statusCode = 409)
+
+            val failure =
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                    .exceptionOrNull() as? com.payabli.sdk.core.model.PayabliException
+
+            assertTrue("$failure", failure is PayInException.ServiceError)
+            assertEquals("101-first", (failure as PayInException.ServiceError).failure.paymentTransId)
+            assertEquals(409, failure.httpStatus)
+            assertEquals("9005", failure.rawCode)
+        }
+
+    @Test
+    fun `a 5xx naming a transaction keeps its code when another field will not decode`() =
+        runTest(timeout = timeout) {
+            val body = """{"code":"E0001","title":{},"data":{"paymentTransId":"101-abc"}}"""
+
+            val failure = failureOf(body, 503) as? PayInException.ServiceError
+
+            assertEquals("101-abc", failure?.failure?.paymentTransId)
+            assertEquals("E0001", failure?.rawCode)
         }
 
     @Test

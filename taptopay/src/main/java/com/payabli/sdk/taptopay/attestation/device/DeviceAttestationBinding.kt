@@ -41,7 +41,7 @@ internal object DeviceAttestationBinding {
             try {
                 Base64.getDecoder().decode(challenge)
             } catch (malformed: IllegalArgumentException) {
-                throw DeviceServiceException.Undecodable(malformed)
+                throw DeviceServiceException.Undecodable(malformed, httpStatus = null)
             }
         val digest = MessageDigest.getInstance(SHA_256).digest(material)
         return AttestationChallenge.classic(Base64.getUrlEncoder().withoutPadding().encodeToString(digest))
@@ -57,6 +57,20 @@ internal object DeviceAttestationBinding {
      */
     fun attestationField(token: AttestationToken): String =
         Base64.getEncoder().encodeToString(token.value.toByteArray(Charsets.UTF_8))
+
+    /**
+     * Whether [nonceChallenge] can decode [challenge].
+     *
+     * @param challenge the challenge as the device service issued it.
+     * @return true when it decodes.
+     */
+    fun isChallengeDecodable(challenge: String): Boolean =
+        try {
+            Base64.getDecoder().decode(challenge)
+            true
+        } catch (_: IllegalArgumentException) {
+            false
+        }
 
     private const val SHA_256 = "SHA-256"
 }

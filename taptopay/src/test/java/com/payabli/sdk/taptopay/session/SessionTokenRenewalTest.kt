@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.session
 
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.telemetry.TelemetryEvents
@@ -406,6 +407,7 @@ class SessionTokenRenewalTest {
             val failure = runCatching { fixture.coordinator.activateDevice("123456") }.exceptionOrNull()
 
             assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure?.let(TapToPayErrorCodes::typeFor))
+            assertEquals(401, (failure as? PayabliException)?.httpStatus)
             assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
             assertEquals(1, renewal.statesSeen.size)
         }

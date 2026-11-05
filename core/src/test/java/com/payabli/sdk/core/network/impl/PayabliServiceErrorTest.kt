@@ -130,6 +130,8 @@ class PayabliServiceErrorTest {
                     }
 
                 assertEquals(PayabliErrorType.DECODING_ERROR, failure.type)
+                assertEquals(200, failure.httpStatus)
+                assertEquals(null, failure.rawCode)
                 // The failure type survives, so the cause still says what went wrong.
                 assertTrue("cause was ${failure.cause}", failure.cause is RedactedCause)
                 assertTrue(

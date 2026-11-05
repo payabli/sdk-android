@@ -138,6 +138,7 @@ class DeviceServiceConfigTest {
 
             assertTrue("$failure", failure is DeviceServiceException.Forbidden)
             assertEquals(HTTP_FORBIDDEN, (failure as DeviceServiceException).resultCode)
+            assertEquals(HTTP_FORBIDDEN, failure.httpStatus)
             assertEquals("the gateway sends no service text", "", failure.reason)
         }
 

@@ -20,6 +20,7 @@ internal sealed class DeviceServiceException(
     val resultCode: Int?,
     val reason: String,
     cause: Throwable? = null,
+    val httpStatus: Int? = null,
 ) : Exception(message, cause) {
     /** Never [reason]: it is server text that can quote what was sent. */
     override fun toString(): String = "${javaClass.simpleName}(resultCode=$resultCode)"
@@ -33,7 +34,8 @@ internal sealed class DeviceServiceException(
     class BadRequest(
         resultCode: Int?,
         reason: String,
-    ) : DeviceServiceException("the device service refused the request", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceServiceException("the device service refused the request", resultCode, reason, httpStatus = httpStatus)
 
     /**
      * The attestation this call was made against is missing or revoked.
@@ -45,7 +47,13 @@ internal sealed class DeviceServiceException(
     class NotAttested(
         resultCode: Int?,
         reason: String,
-    ) : DeviceServiceException("the device is not attested, or its attestation was revoked", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceServiceException(
+            "the device is not attested, or its attestation was revoked",
+            resultCode,
+            reason,
+            httpStatus = httpStatus,
+        )
 
     /**
      * The device or the application is not permitted this call.
@@ -60,7 +68,8 @@ internal sealed class DeviceServiceException(
     class Forbidden(
         resultCode: Int?,
         reason: String,
-    ) : DeviceServiceException("the device service forbade the request", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceServiceException("the device service forbade the request", resultCode, reason, httpStatus = httpStatus)
 
     /**
      * The entry point this call names cannot be used for it.
@@ -74,25 +83,49 @@ internal sealed class DeviceServiceException(
     class EntryPointUnusable(
         resultCode: Int?,
         reason: String,
-    ) : DeviceServiceException("the device service refused the entry point", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceServiceException(
+            "the device service refused the entry point",
+            resultCode,
+            reason,
+            httpStatus = httpStatus,
+        )
 
     /** The service judged the attestation and refused this device. Attesting again is the remedy. */
     class IntegrityRefused(
         resultCode: Int?,
         reason: String,
-    ) : DeviceServiceException("the device service refused this device's attestation", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceServiceException(
+            "the device service refused this device's attestation",
+            resultCode,
+            reason,
+            httpStatus = httpStatus,
+        )
 
     /** The attestation could not be judged this time. Nothing was decided about the device, so asking again works. */
     class VerificationUnavailable(
         resultCode: Int?,
         reason: String,
-    ) : DeviceServiceException("the device service could not verify the attestation", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceServiceException(
+            "the device service could not verify the attestation",
+            resultCode,
+            reason,
+            httpStatus = httpStatus,
+        )
 
     /** This build of the app is not one the environment accepts. Installing the right build is the remedy. */
     class AppNotAccepted(
         resultCode: Int?,
         reason: String,
-    ) : DeviceServiceException("the device service does not accept this build of the app", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceServiceException(
+            "the device service does not accept this build of the app",
+            resultCode,
+            reason,
+            httpStatus = httpStatus,
+        )
 
     /**
      * The app is not registered on the paypoint this call was made for.
@@ -103,23 +136,37 @@ internal sealed class DeviceServiceException(
     class AppNotRegistered(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ) : DeviceServiceException(
             "the device service does not have this app registered for this paypoint",
             resultCode,
             reason,
+            httpStatus = httpStatus,
         )
 
     /** The registration this attestation was for is gone or no longer takes this key. Registering again repairs it. */
     class RegistrationGone(
         resultCode: Int?,
         reason: String,
-    ) : DeviceServiceException("the registration this attestation was for is no longer usable", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceServiceException(
+            "the registration this attestation was for is no longer usable",
+            resultCode,
+            reason,
+            httpStatus = httpStatus,
+        )
 
     /** The entity, paypoint or device named in the request does not exist. */
     class NotFound(
         resultCode: Int?,
         reason: String,
-    ) : DeviceServiceException("the device service found nothing for this request", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceServiceException(
+            "the device service found nothing for this request",
+            resultCode,
+            reason,
+            httpStatus = httpStatus,
+        )
 
     /**
      * The service failed internally.
@@ -132,7 +179,8 @@ internal sealed class DeviceServiceException(
     class ServerFailure(
         resultCode: Int?,
         reason: String,
-    ) : DeviceServiceException("the device service failed", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceServiceException("the device service failed", resultCode, reason, httpStatus = httpStatus)
 
     /**
      * A refusal carrying a code this SDK does not recognise, or none at all.
@@ -144,7 +192,13 @@ internal sealed class DeviceServiceException(
     class Unclassified(
         resultCode: Int?,
         reason: String,
-    ) : DeviceServiceException("the device service refused the request for an unrecognised reason", resultCode, reason)
+        httpStatus: Int?,
+    ) : DeviceServiceException(
+            "the device service refused the request for an unrecognised reason",
+            resultCode,
+            reason,
+            httpStatus = httpStatus,
+        )
 
     /**
      * The response said success and its body could not be read as one.
@@ -159,6 +213,7 @@ internal sealed class DeviceServiceException(
         // that never claimed success is one — but every call site knows which case it is in, and a default
         // would let one omit the cause by accident rather than by decision.
         original: Throwable?,
+        httpStatus: Int?,
     ) : DeviceServiceException(
             "the device service response could not be decoded",
             null,
@@ -168,6 +223,7 @@ internal sealed class DeviceServiceException(
             // holds a challenge, a challengeId and a deviceId. Redacting `toString` on this class buys nothing
             // if a cause chain underneath it carries the body, and a crash reporter renders the whole chain.
             original?.let { RedactedCause(it) },
+            httpStatus,
         )
 
     internal companion object {
@@ -184,14 +240,15 @@ internal sealed class DeviceServiceException(
         fun of(
             resultCode: Int?,
             reason: String,
+            httpStatus: Int?,
         ): DeviceServiceException =
             when {
-                resultCode == HTTP_BAD_REQUEST -> BadRequest(resultCode, reason)
-                resultCode == HTTP_UNAUTHORIZED -> NotAttested(resultCode, reason)
-                resultCode == HTTP_FORBIDDEN -> Forbidden(resultCode, reason)
-                resultCode == HTTP_NOT_FOUND -> NotFound(resultCode, reason)
-                resultCode != null && resultCode >= HTTP_INTERNAL_ERROR -> ServerFailure(resultCode, reason)
-                else -> Unclassified(resultCode, reason)
+                resultCode == HTTP_BAD_REQUEST -> BadRequest(resultCode, reason, httpStatus)
+                resultCode == HTTP_UNAUTHORIZED -> NotAttested(resultCode, reason, httpStatus)
+                resultCode == HTTP_FORBIDDEN -> Forbidden(resultCode, reason, httpStatus)
+                resultCode == HTTP_NOT_FOUND -> NotFound(resultCode, reason, httpStatus)
+                resultCode != null && resultCode >= HTTP_INTERNAL_ERROR -> ServerFailure(resultCode, reason, httpStatus)
+                else -> Unclassified(resultCode, reason, httpStatus)
             }
     }
 }
@@ -224,10 +281,11 @@ internal fun interface DeviceFailureMapper {
     fun map(
         resultCode: Int?,
         reason: String,
+        httpStatus: Int?,
     ): Throwable?
 
     companion object {
         /** Defers everything. The default at every call site. */
-        val None: DeviceFailureMapper = DeviceFailureMapper { _, _ -> null }
+        val None: DeviceFailureMapper = DeviceFailureMapper { _, _, _ -> null }
     }
 }

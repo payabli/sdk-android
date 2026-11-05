@@ -493,7 +493,7 @@ internal class TapToPaySessionCoordinator(
      */
     private fun pendingActivation(): TapToPaySessionState.PendingActivation =
         state.value as? TapToPaySessionState.PendingActivation
-            ?: throw DeviceActivationException.DeviceNotPending(null, "")
+            ?: throw DeviceActivationException.DeviceNotPending(null, "", httpStatus = null)
 }
 
 /**

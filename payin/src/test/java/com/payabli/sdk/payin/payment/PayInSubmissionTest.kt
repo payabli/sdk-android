@@ -836,6 +836,33 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
+    @Test
+    fun `a fraud block on the held key's repeat settles the payment, at 400 and at 401`() =
+        runTest(timeout = timeout) {
+            listOf("E9005", "E9051").forEach { code ->
+                listOf(400, 401).forEach { status ->
+                    val transport =
+                        ScriptedPayInTransport(
+                            listOf(
+                                ScriptedPayInTransport.failingWith(dropped()),
+                                ScriptedPayInTransport.answering(status, """{"code":"$code","reason":"Blocked"}"""),
+                            ),
+                        )
+                    // The authenticated transport takes the hand-off back on every 401, the declared ones too.
+                    val submission = submissionOver(LowersTheMarkOn401(transport))
+                    val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+                    submission.captureAuthorized(TEST_ENTRY_POINT, request)
+                    val held = sentKey(transport)
+                    submission.captureAuthorized(TEST_ENTRY_POINT, request)
+                    assertEquals("$code $status: the repeat carries the held key", held, sentKey(transport))
+                    submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+                    assertNotEquals("$code $status: the next capture is a new attempt", held, sentKey(transport))
+                }
+            }
+        }
+
     /** Two form submissions of equal value are two payments, so nothing is held across them. */
     @Test
     fun `a form submission holds no key for the next one`() =
@@ -1319,6 +1346,8 @@ class PayInSubmissionTest {
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertEquals(PayabliErrorType.RETRY_REFUSED, cause.type)
             assertEquals("order-1", (cause as PayInException.Unsettled).paymentReference)
+            assertEquals(409, cause.httpStatus)
+            assertNull(cause.rawCode)
         }
 
     /** A refused retry does not keep the key past the window, so a later retry is a new payment. */
@@ -1539,7 +1568,10 @@ class PayInSubmissionTest {
 
             submission.submit(TEST_ENTRY_POINT, captureOf("order-1", PayabliAttempt.Retry), cardForm())
 
-            assertEquals(PayabliErrorType.CONFLICT, failed(submission.state.value).cause.type)
+            val cause = failed(submission.state.value).cause
+            assertEquals(PayabliErrorType.CONFLICT, cause.type)
+            assertEquals(409, cause.httpStatus)
+            assertNull(cause.rawCode)
         }
 
     /** The single flight is still shared, so a void cannot slip past a submission the form started. */
@@ -1861,6 +1893,20 @@ class PayInSubmissionTest {
             val cause = failed(submission.state.value).cause
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertEquals("101-abc", (cause as PayInException.Unsettled).paymentTransId)
+        }
+
+    @Test
+    fun `a 5xx that leaves the outcome open reports its status and code through the base type`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(SERVICE_ERROR_NAMING_TRANSACTION, statusCode = 503)
+            val submission = submissionOver(transport)
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            val cause: PayabliException = failed(submission.state.value).cause
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(503, cause.httpStatus)
+            assertEquals("E0001", cause.rawCode)
         }
 
     @Test
@@ -2272,6 +2318,21 @@ class PayInSubmissionTest {
             this.request = request
             throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the link dropped")
         }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = throw UnsupportedOperationException("the PayIn clients decode their own envelopes")
+    }
+
+    /** Takes the hand-off back on a 401, as the authenticated transport does, around [base]. */
+    private class LowersTheMarkOn401(
+        private val base: PayabliTransport,
+    ) : PayabliTransport {
+        override suspend fun execute(request: PayabliRequest): PayabliResponse =
+            base.execute(request).also {
+                if (it.statusCode == 401) currentCoroutineContext()[PayabliSendMark]?.lower()
+            }
 
         override suspend fun <T> execute(
             request: PayabliRequest,

@@ -24,12 +24,29 @@ package com.payabli.sdk.core.model
  * @property reason short human-readable summary. Displayable; never loggable.
  * @property detail longer explanation when the server or the SDK has one. Displayable; never loggable.
  */
-public abstract class PayabliException protected constructor(
+public abstract class PayabliException internal constructor(
     public val type: PayabliErrorType,
     public val reason: String,
-    public val detail: String? = null,
-    cause: Throwable? = null,
+    public val detail: String?,
+    cause: Throwable?,
+    private val responseStatus: Int?,
+    private val responseCode: String?,
 ) : Exception(type.message, cause) {
+    /**
+     * A failure carrying neither a status nor a code.
+     *
+     * @param type the catalog entry.
+     * @param reason short human-readable summary.
+     * @param detail longer explanation, when there is one.
+     * @param cause the underlying failure, when there is one.
+     */
+    protected constructor(
+        type: PayabliErrorType,
+        reason: String,
+        detail: String? = null,
+        cause: Throwable? = null,
+    ) : this(type, reason, detail, cause, null, null)
+
     /** The catalog number. */
     public val code: Int get() = type.code
 
@@ -42,14 +59,14 @@ public abstract class PayabliException protected constructor(
      * Null when no response was read: the request never reached the service, its answer was lost, or this SDK
      * refused the call before sending it.
      */
-    public open val httpStatus: Int? get() = null
+    public open val httpStatus: Int? get() = responseStatus
 
     /**
      * The service's own code for this failure, for example `E1001`.
      *
      * Null when no response was read, when the response named no code, or when its body could not be read.
      */
-    public open val rawCode: String? get() = null
+    public open val rawCode: String? get() = responseCode
 
     /**
      * Never includes [reason] or [detail]: either may echo request data.

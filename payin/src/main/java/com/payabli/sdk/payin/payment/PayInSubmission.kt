@@ -525,9 +525,16 @@ internal class PayInSubmission(
 
                 this is PayInKeyRefusal ->
                     if (retry.reused) {
-                        PayabliGenericException(PayabliErrorType.RETRY_REFUSED, REASON_RETRY_REFUSED)
+                        PayabliGenericException(
+                            PayabliErrorType.RETRY_REFUSED,
+                            REASON_RETRY_REFUSED,
+                            null,
+                            null,
+                            httpStatus,
+                            null,
+                        )
                     } else {
-                        PayabliGenericException(PayabliErrorType.CONFLICT, reason)
+                        PayabliGenericException(PayabliErrorType.CONFLICT, reason, null, null, httpStatus, null)
                     }
 
                 else -> this

@@ -54,8 +54,9 @@ internal object TapToPayErrorCodes {
         type: PayabliErrorType,
         paymentTransId: String?,
         capture: TapToPayCapture,
-    ): TapToPayException =
-        TapToPayException.of(
+    ): TapToPayException {
+        val (httpStatus, rawCode) = answerOf(failure)
+        return TapToPayException.of(
             type = type,
             reason = (failure as? PayabliException)?.takeIf { it.type == type }?.reason ?: type.message,
             cause = failure,
@@ -64,7 +65,10 @@ internal object TapToPayErrorCodes {
             capture = capture,
             retryAfterMillis = retryAfterOf(failure),
             refusal = refusalOf(failure),
+            httpStatus = httpStatus,
+            rawCode = rawCode,
         )
+    }
 
     /** The charge's own refusal [failure] carries, or null when it is not one. */
     private fun refusalOf(failure: Throwable): TapToPayChargeRefusal? =
@@ -76,6 +80,36 @@ internal object TapToPayErrorCodes {
             .take(MAX_CAUSES)
             .firstOrNull { it is PayabliRetryAfter }
             ?.let { (it as PayabliRetryAfter).retryAfterMillis }
+
+    /**
+     * The status and code of the first link in [failure]'s chain that carries either, so the pair is always one
+     * response's.
+     *
+     * @param failure the failure a host is about to be told about.
+     * @return the status and the service's code, each null when no link carried it.
+     */
+    private fun answerOf(failure: Throwable): Pair<Int?, String?> =
+        generateSequence(failure) { it.cause }
+            .take(MAX_CAUSES)
+            .map(::ownAnswerOf)
+            .firstOrNull { (status, code) -> status != null || code != null }
+            ?: (null to null)
+
+    /**
+     * The status and the service's code [failure] itself carries, without reading its causes.
+     *
+     * @param failure one link of a chain.
+     * @return the status and the code, each null when [failure] carries none. A card-present failure's code
+     *   counts only beside a status, since one read off the card reader names the gateway's state.
+     */
+    private fun ownAnswerOf(failure: Throwable): Pair<Int?, String?> =
+        when (failure) {
+            is PayabliException -> failure.httpStatus to failure.rawCode
+            is TTPTransactionException -> failure.httpStatus to failure.code?.takeIf { failure.httpStatus != null }
+            is DeviceServiceException -> failure.httpStatus to null
+            is DeviceActivationException -> failure.httpStatus to null
+            else -> null to null
+        }
 
     /**
      * The first text a service sent, anywhere in [failure]'s chain. A session refusal wraps the service's own

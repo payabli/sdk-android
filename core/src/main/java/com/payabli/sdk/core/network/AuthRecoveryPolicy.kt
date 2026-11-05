@@ -46,4 +46,22 @@ public open class AuthRecoveryPolicy {
      */
     public fun exhausted(): PayabliGenericException =
         PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, REASON_REFRESH_REJECTED)
+
+    /**
+     * [exhausted], carrying the status and code of the refusal that ended recovery.
+     *
+     * @param refusal the answer that refused the refreshed token.
+     * @return the TOKEN_EXPIRED failure, with the status and code [PayabliHttpErrors.from] reads off [refusal].
+     */
+    internal fun exhaustedBy(refusal: PayabliResponse): PayabliGenericException {
+        val answered = PayabliHttpErrors.from(refusal)
+        return PayabliGenericException(
+            PayabliErrorType.TOKEN_EXPIRED,
+            REASON_REFRESH_REJECTED,
+            null,
+            null,
+            answered?.httpStatus,
+            answered?.rawCode,
+        )
+    }
 }

@@ -125,7 +125,7 @@ internal class AuthenticatedTransport(
 
         // Outside the lock: telling the session runs a listener, and a listener is foreign code.
         if (finished) onAuthFailure.onUnrecoverable(exhausted)
-        throw exhausted
+        throw recovery.exhaustedBy(second)
     }
 
     /**
