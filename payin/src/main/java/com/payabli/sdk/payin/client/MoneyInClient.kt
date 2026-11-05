@@ -297,7 +297,6 @@ internal class MoneyInClient(
             ) { "the service left the transaction's outcome open" }
             throw PayInException.ServiceError(said.failure(response.statusCode), type)
         }
-        // Before the status: the service answers it as a refusal of the request, but it refuses the payer.
         if (said.code in FRAUD_BLOCK_CODES) {
             logger.warn(
                 LogField.safe("event", "payin_transaction_not_approved"),

@@ -109,7 +109,6 @@ internal class TTPTransactionClient(
                 isCallerRefusal = ::isFraudBlock,
             )
         val response = transport.execute(request)
-        // Before the status: the service answers it as a refusal of the request, but it refuses the payer.
         fraudBlockCode(response)?.let { code ->
             logger.warn(
                 LogField.safe("event", "ttp_transaction_not_approved"),
