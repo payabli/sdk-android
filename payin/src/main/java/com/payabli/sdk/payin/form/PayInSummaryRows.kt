@@ -42,22 +42,22 @@ public object PayInSummaryRows {
 
     /**
      * The figure on [field]'s row. Amount is the total less the service fee and the surcharge, read only beside
-     * a fee or a surcharge, whatever [PayInFormConfiguration.showsBaseAmount] is set to.
+     * a fee or a surcharge.
      *
      * @param field the row's field.
-     * @param details what is being charged, or null.
+     * @param paymentDetails what is being charged, or null.
      * @return the figure on [field]'s row, or null when the row is not drawn.
      */
     public fun rowAmount(
         field: PayInField,
-        details: PayInPaymentDetails?,
+        paymentDetails: PayInPaymentDetails?,
     ): BigDecimal? {
-        if (details == null || details.amountRefusal() != null) return null
-        val fee = details.shownAmount(PayInField.ServiceFee)
-        val surcharge = details.shownAmount(PayInField.SurchargeFee)
+        if (paymentDetails == null || paymentDetails.amountRefusal() != null) return null
+        val fee = paymentDetails.shownAmount(PayInField.ServiceFee)
+        val surcharge = paymentDetails.shownAmount(PayInField.SurchargeFee)
         return when (field) {
             PayInField.Amount ->
-                details
+                paymentDetails
                     .shownAmount(PayInField.Amount)
                     ?.takeIf { fee != null || surcharge != null }
                     ?.subtract(fee ?: BigDecimal.ZERO)
@@ -72,12 +72,12 @@ public object PayInSummaryRows {
     /**
      * The figure on the Total row: the total amount, which holds any surcharge sent and is what is charged.
      *
-     * @param details what is being charged, or null.
+     * @param paymentDetails what is being charged, or null.
      * @return the figure on the Total row, or null when the row is not drawn.
      */
-    public fun totalRowAmount(details: PayInPaymentDetails?): BigDecimal? {
-        if (details == null || details.amountRefusal() != null) return null
-        return details.shownAmount(PayInField.Amount)
+    public fun totalRowAmount(paymentDetails: PayInPaymentDetails?): BigDecimal? {
+        if (paymentDetails == null || paymentDetails.amountRefusal() != null) return null
+        return paymentDetails.shownAmount(PayInField.Amount)
     }
 
     /**

@@ -440,7 +440,7 @@ class PayInFormConfigurationTest {
                 showsFailureMessage = false,
             )
 
-        val kept = configuration.copy(showsBaseAmount = true)
+        val kept = configuration.copy(labelLayout = PayInLabelLayout.Placeholder)
         assertEquals(PayInCardBrandIconPlacement.Hidden, kept.cardBrandIconPlacement)
         assertEquals(PayInFailureMessagePlacement.Top, kept.failureMessagePlacement)
         assertFalse(kept.showsFailureMessage)

@@ -202,7 +202,7 @@ internal fun PayInFormContent(
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.section)) {
-            placeAmounts(sections, amounts, configuration.showsBaseAmount).forEach { drawn ->
+            placeAmounts(sections, amounts).forEach { drawn ->
                 FormSection(drawn, typed, context, draft::enter)
             }
         }

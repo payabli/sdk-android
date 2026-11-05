@@ -117,18 +117,7 @@ class PayInApiBoundsTest {
     }
 
     @Test
-    fun `configurations that differ on the base amount row are not equal`() {
-        val shown = PayInFormConfiguration()
-        val hidden = PayInFormConfiguration(showsBaseAmount = false)
-
-        assertTrue("the declared default stopped showing the base amount row", shown.showsBaseAmount)
-        assertNotEquals("equal while one draws a row the other hides", shown, hidden)
-        assertNotEquals(shown.hashCode(), hidden.hashCode())
-    }
-
-    @Test
     fun `a configuration's own description names the switches it was given`() {
-        assertTrue("showsBaseAmount=false" in PayInFormConfiguration(showsBaseAmount = false).toString())
         assertTrue(
             "hiddenFieldLabels=[CardNumber]" in
                 PayInFormConfiguration(hiddenFieldLabels = setOf(PayInField.CardNumber)).toString(),
@@ -329,11 +318,7 @@ class PayInApiBoundsTest {
     fun `copy carries the switches it is given`() {
         val configuration = PayInFormConfiguration()
         val hidden = PayInFormConfiguration(hiddenFieldLabels = setOf(PayInField.CardNumber))
-        val withoutTheRow = configuration.copy(showsBaseAmount = false)
-        val copiedWithoutTheRow = PayInFormConfiguration(showsBaseAmount = false).copy()
 
-        assertFalse("the copy kept the source's base amount row", withoutTheRow.showsBaseAmount)
-        assertFalse("the copy reset the source's hidden row", copiedWithoutTheRow.showsBaseAmount)
         assertEquals("the copy dropped the source's hidden labels", hidden, hidden.copy())
         assertNotEquals(
             "the copy kept the source's hidden labels",
