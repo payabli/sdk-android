@@ -2598,7 +2598,7 @@ class TapToPayChargeRunnerTest {
         runTest(timeout = TEST_TIMEOUT) {
             // Its type says nothing was sent, which is not true once the reader may have taken the card.
             val fixture = readyFixture(updates = 2)
-            fixture.reader.failNextRead(IllegalStateException("the vendor's own state check"))
+            fixture.reader.failNextRead(TapToPayGuardException("a guard refused the read"))
 
             val failure =
                 runCatching {
@@ -2606,6 +2606,20 @@ class TapToPayChargeRunnerTest {
                 }.exceptionOrNull() as TapToPayException
 
             assertEquals(PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN, failure.type)
+        }
+
+    @Test
+    fun `a collaborator's own state check during the read is an unexamined failure`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2)
+            fixture.reader.failNextRead(IllegalStateException("the vendor's own state check"))
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.UNKNOWN, failure.type)
         }
 
     @Test

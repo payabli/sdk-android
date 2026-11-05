@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.attestation
 
+import com.payabli.sdk.taptopay.checkGuard
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -29,7 +30,7 @@ internal class MintProjectResolver(
         number: Long,
         block: suspend () -> T,
     ): T {
-        check(pinned.compareAndSet(null, number)) { "mint project already pinned" }
+        checkGuard(pinned.compareAndSet(null, number)) { "mint project already pinned" }
         try {
             return block()
         } finally {

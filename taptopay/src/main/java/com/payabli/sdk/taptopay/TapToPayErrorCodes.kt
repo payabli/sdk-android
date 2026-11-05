@@ -38,8 +38,7 @@ internal object TapToPayErrorCodes {
             is TTPTransactionException -> transactionCode(failure)
             is ChargeKeyStoreFullException -> PayabliErrorType.TOO_MANY_OPEN_CHARGES
             is TapToPayArgumentException -> PayabliErrorType.VALIDATION_ERROR
-            // A guard inside this SDK that refused its own sequence, which is a defect rather than a refusal.
-            is IllegalStateException -> PayabliErrorType.SDK_INTERNAL_ERROR
+            is TapToPayGuardException -> PayabliErrorType.SDK_INTERNAL_ERROR
             else -> PayabliErrorType.UNKNOWN
         }
 

@@ -6,6 +6,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.info
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.taptopay.checkGuard
 import com.payabli.sdk.taptopay.telemetry.TapToPayReports
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -88,7 +89,7 @@ internal class TapToPaySessionManager(
      */
     private fun writeOrThrow(to: TapToPaySessionState) {
         val written = write(to)
-        check(written.permitted) {
+        checkGuard(written.permitted) {
             "a session cannot move to ${to.diagnosticName} from ${written.from.diagnosticName}"
         }
     }

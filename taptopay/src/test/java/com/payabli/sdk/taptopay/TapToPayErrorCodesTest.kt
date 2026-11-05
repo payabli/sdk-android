@@ -108,7 +108,8 @@ class TapToPayErrorCodesTest {
             ChargeKeyStoreFullException(4) to PayabliErrorType.TOO_MANY_OPEN_CHARGES,
             TapToPayArgumentException("an amount has to be greater than zero") to PayabliErrorType.VALIDATION_ERROR,
             IllegalArgumentException("a decoder's own complaint") to PayabliErrorType.UNKNOWN,
-            IllegalStateException("refused transition") to PayabliErrorType.SDK_INTERNAL_ERROR,
+            TapToPayGuardException("refused transition") to PayabliErrorType.SDK_INTERNAL_ERROR,
+            IllegalStateException("a collaborator's own state check") to PayabliErrorType.UNKNOWN,
             RuntimeException("unexamined") to PayabliErrorType.UNKNOWN,
         )
 
