@@ -52,6 +52,13 @@ class PayInExpiryRefusalTest {
             },
         )
 
+    private class Refusal(
+        val name: String,
+        val month: Int,
+        val year: Int,
+        val reason: String,
+    )
+
     private fun lastMonth(): Pair<Int, Int> {
         val today = ExpiryValue.today()
         return if (today.month == 1) 12 to today.year - 1 else today.month - 1 to today.year
@@ -61,25 +68,27 @@ class PayInExpiryRefusalTest {
     fun `an expiry the service can't take is refused at the expiry field, before anything is sent`() =
         runTest(timeout = timeout) {
             val farYear = ExpiryValue.today().year + 5
+            val (lastMonth, lastMonthYear) = lastMonth()
             val refused =
-                mapOf(
-                    "month 0" to (0 to farYear),
-                    "month 13" to (13 to farYear),
-                    "two-digit year" to (12 to 30),
-                    "five-digit year" to (12 to 20300),
-                    "year after 2099" to (1 to 2100),
-                    "last month" to lastMonth(),
+                listOf(
+                    Refusal("month 0", 0, farYear, "The expiry month is not 1 to 12"),
+                    Refusal("month 13", 13, farYear, "The expiry month is not 1 to 12"),
+                    Refusal("two-digit year", 12, 30, "The expiry year is not four digits"),
+                    Refusal("five-digit year", 12, 20300, "The expiry year is not four digits"),
+                    Refusal("year after 2099", 1, 2100, "The expiry year is after 2099"),
+                    Refusal("last month", lastMonth, lastMonthYear, "The card has expired"),
                 )
 
-            refused.forEach { (case, expiry) ->
+            refused.forEach { case ->
                 val transport = FakePayInTransport.failingWith(IOException("not expected to be reached"))
                 calls(transport).forEach { (call, send) ->
-                    val failure = runCatching { send(card(expiry.first, expiry.second)) }.exceptionOrNull()
+                    val failure = runCatching { send(card(case.month, case.year)) }.exceptionOrNull()
 
-                    assertTrue("$call, $case: $failure", failure is PayInException.InvalidInput)
+                    assertTrue("$call, ${case.name}: $failure", failure is PayInException.InvalidInput)
                     val field = (failure as PayInException.InvalidInput).field
-                    assertEquals("$call, $case", "paymentMethod.cardexp", field)
-                    assertEquals("$call, $case reached the transport", 0, transport.count)
+                    assertEquals("$call, ${case.name}", "paymentMethod.cardexp", field)
+                    assertEquals("$call, ${case.name}", case.reason, failure.reason)
+                    assertEquals("$call, ${case.name} reached the transport", 0, transport.count)
                 }
             }
         }
