@@ -308,9 +308,10 @@ payment before charging again.
 Map the SDK's errors to the outcome as [Handle the outcome](../README.md#handle-the-outcome) does:
 
 ```kotlin
-fun cardOutcome(error: Throwable): Map<String, Any?> = when (error) {
+import com.payabli.sdk.core.model.PayabliException
+
+fun cardOutcome(error: PayabliException): Map<String, Any?> = when (error) {
     is PayInException.Unsettled -> mapOf("status" to "unknown", "paymentTransId" to error.paymentTransId)
-    is kotlinx.coroutines.CancellationException -> mapOf("status" to "unknown", "paymentTransId" to null)
     else -> mapOf("status" to "notCharged", "paymentTransId" to null)
 }
 ```
