@@ -117,6 +117,7 @@ internal class MoneyInClient(
 
         // No buffered field in this body, so it goes through the ordinary JSON request builder: the method was
         // settled when the transaction was authorized, and only the amount is being sent now.
+        // No fraud block is declared: this takes no new payment, so a 401 here is the credential's.
         val payabliRequest =
             PayabliRequest.json(
                 method = HttpMethod.POST,
@@ -146,6 +147,7 @@ internal class MoneyInClient(
     ): PayInResult {
         PayInValidation.transId(transId)
 
+        // No fraud block is declared: a void takes no payment, so a 401 here is the credential's.
         val payabliRequest =
             PayabliRequest(
                 method = HttpMethod.POST,
