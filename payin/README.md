@@ -262,7 +262,8 @@ authorization and "Save" for a stored method, with "Paying…", "Authorizing…"
 
 `PayInSummaryRows` gives each summary row as the form draws it, for an app that draws its own:
 `labelText` and `totalLabelText` for the labels, `rowAmount` and `totalRowAmount` for the figures, and
-`formattedAmount` for a figure as text. A `null` figure means the row isn't drawn.
+`formattedAmount` for a figure as text. A `null` figure means the row isn't drawn. The summary has no Amount
+row, so `rowAmount(PayInField.Amount, …)` is always `null`.
 
 ### Styling
 
