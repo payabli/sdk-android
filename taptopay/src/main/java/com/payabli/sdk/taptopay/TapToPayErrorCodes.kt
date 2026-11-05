@@ -23,7 +23,17 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionException
  * host to check before repeating: an unexamined failure is the one whose outcome nobody knows.
  */
 internal object TapToPayErrorCodes {
-    fun typeFor(failure: Throwable): PayabliErrorType =
+    fun typeFor(failure: Throwable): PayabliErrorType = recognised(failure) ?: PayabliErrorType.UNKNOWN
+
+    /**
+     * Whether [failure] is one this SDK raised or classified, rather than one it never examined.
+     *
+     * @param failure what a run or a call failed with.
+     * @return false for a failure [typeFor] reports only because nothing recognised it.
+     */
+    fun isRecognised(failure: Throwable): Boolean = recognised(failure) != null
+
+    private fun recognised(failure: Throwable): PayabliErrorType? =
         when (failure) {
             is PayabliException -> failure.type
             is TapToPayCallException -> callCode(failure)
@@ -39,7 +49,7 @@ internal object TapToPayErrorCodes {
             is ChargeKeyStoreFullException -> PayabliErrorType.TOO_MANY_OPEN_CHARGES
             is TapToPayArgumentException -> PayabliErrorType.VALIDATION_ERROR
             is TapToPayGuardException -> PayabliErrorType.SDK_INTERNAL_ERROR
-            else -> PayabliErrorType.UNKNOWN
+            else -> null
         }
 
     /**
@@ -144,6 +154,7 @@ internal object TapToPayErrorCodes {
             // Nothing was sent for this caller, and this cause has no code of its own.
             is TapToPaySessionException.SetupAbandoned -> PayabliErrorType.UNKNOWN
             is TapToPaySessionException.SetupFailed -> PayabliErrorType.SDK_INTERNAL_ERROR
+            is TapToPaySessionException.Unexpected -> PayabliErrorType.SDK_INTERNAL_ERROR
         }
 
     private fun serviceCode(failure: DeviceServiceException): PayabliErrorType =

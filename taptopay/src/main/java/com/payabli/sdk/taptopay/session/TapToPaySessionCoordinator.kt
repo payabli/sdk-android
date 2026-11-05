@@ -285,8 +285,9 @@ internal class TapToPaySessionCoordinator(
     private fun settledActivation(failure: Exception): Exception {
         if (failure === settledFailure) return failure
         TapToPaySessionFailures.landingForActivationRun(failure)?.let(manager::settle)
-        settledFailure = failure
-        return failure
+        val raised = TapToPaySessionFailures.examined(failure)
+        settledFailure = raised
+        return raised
     }
 
     /** Lands [failure] as its kind of run does and returns what the caller is given. */

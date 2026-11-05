@@ -1,5 +1,7 @@
 package com.payabli.sdk.taptopay.session
 
+import com.payabli.sdk.taptopay.attestation.device.RedactedCause
+
 /**
  * A card-present session could not be built or repaired.
  *
@@ -66,4 +68,13 @@ internal sealed class TapToPaySessionException(
      * here would hand every waiter a reference to whatever died.
      */
     class SetupFailed : TapToPaySessionException("the caller that owned this session setup failed")
+
+    /**
+     * A session run failed on something this SDK does not classify, which is a defect in the SDK.
+     *
+     * [cause] keeps the original's type and stack trace and drops its message.
+     */
+    class Unexpected(
+        cause: RedactedCause,
+    ) : TapToPaySessionException("a session run failed on something this SDK does not classify", cause)
 }
