@@ -247,11 +247,8 @@ internal class TapToPayChargeRunner(
                                 manager.chargeActivity(TapToPayChargeActivity.CLOSING)
                                 val closeStartedAt = System.nanoTime()
                                 TapToPayReports.closeStarted(TelemetryProperties.Origin.CHARGE)
-                                try {
-                                    client.update(paymentTransId, result)
-                                } catch (withdrawn: CancellationException) {
-                                    throw withdrawn
-                                } catch (failure: Exception) {
+
+                                suspend fun refused(failure: Throwable): Throwable {
                                     TapToPayReports.closeFailed(
                                         failure,
                                         closeStartedAt,
@@ -263,7 +260,18 @@ internal class TapToPayChargeRunner(
                                     if (!resentKey && result.outcome == CardReadOutcome.DECLINED) {
                                         keys.settle(entry, environment, idempotencyKey)
                                     }
-                                    return@withContext failure
+                                    return failure
+                                }
+                                try {
+                                    client.update(paymentTransId, result)
+                                } catch (withdrawn: CancellationException) {
+                                    throw withdrawn
+                                } catch (failure: Exception) {
+                                    return@withContext refused(failure)
+                                } catch (failure: LinkageError) {
+                                    // The vendor loads native code, so a linkage failure is a reachable close
+                                    // failure and leaves the payment exactly as unclosed as any other.
+                                    return@withContext refused(failure)
                                 }
                                 TapToPayReports.closeSucceeded(closeStartedAt, TelemetryProperties.Origin.CHARGE)
                                 // A resent key names an earlier opening, so this run's answer never settles it.

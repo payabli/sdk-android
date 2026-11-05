@@ -2609,6 +2609,35 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a close that failed on a linkage error is the payment not closed, held for a retry`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val reported = mutableListOf<String>()
+            TelemetryRecorders.install { event, _ -> reported += event }
+            try {
+                val fixture = readyFixture(updates = 2)
+                var closes = 0
+                val runner =
+                    runnerGatedOnClose(fixture) {
+                        if (closes++ == 0) throw NoClassDefFoundError("a class the close needs")
+                    }
+
+                val failure =
+                    runCatching {
+                        runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                    }.exceptionOrNull()
+
+                assertTrue(failure.toString(), failure is TapToPayException)
+                assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, (failure as TapToPayException).type)
+                assertEquals(TapToPayCapture.CHARGED, failure.capture)
+                assertEquals(1, reported.count { it == TelemetryEvents.TTP_CLOSE_FAILED })
+                runner.closeCaptured(TRANS_ID)
+                assertEquals(1, reported.count { it == TelemetryEvents.TTP_CLOSE_SUCCEEDED })
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
+
+    @Test
     fun `a close that failed reaches the caller and telemetry as the payment not closed`() =
         runTest(timeout = TEST_TIMEOUT) {
             val reported = mutableListOf<Pair<String, Map<String, String>>>()
