@@ -82,8 +82,8 @@ internal object TapToPayErrorCodes {
             ?.let { (it as PayabliRetryAfter).retryAfterMillis }
 
     /**
-     * The status and code of the first answer in [failure]'s chain. Both come from one link, so the pair is always
-     * one response's, and a session refusal wrapping the service's own failure reports that failure's answer.
+     * The status and code of the first link in [failure]'s chain that carries either, so the pair is always one
+     * response's.
      *
      * @param failure the failure a host is about to be told about.
      * @return the status and the service's code, each null when no link carried it.

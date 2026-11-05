@@ -59,8 +59,10 @@ internal object DeviceAttestationBinding {
         Base64.getEncoder().encodeToString(token.value.toByteArray(Charsets.UTF_8))
 
     /**
+     * Whether [nonceChallenge] can decode [challenge].
+     *
      * @param challenge the challenge as the device service issued it.
-     * @return true when [nonceChallenge] can decode [challenge].
+     * @return true when it decodes.
      */
     fun isChallengeDecodable(challenge: String): Boolean =
         try {

@@ -187,7 +187,7 @@ public object PayabliHttpErrors {
         val code: String? = null,
         val responseCode: JsonElement? = null,
     ) {
-        /** [code], else [responseCode] as a string when it reads as an integer, quoted or not, else null. */
+        /** A quoted [responseCode] counts as well as a bare one. */
         val rawCode: String? get() = code ?: (responseCode as? JsonPrimitive)?.intOrNull?.toString()
     }
 

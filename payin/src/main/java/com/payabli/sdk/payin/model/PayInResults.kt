@@ -290,8 +290,7 @@ public sealed class PayInException(
     /**
      * A submission was already in flight, so this one was refused and nothing was sent.
      *
-     * It carries [PayabliErrorType.VALIDATION_ERROR] and no failure from the wire: a call made out of order
-     * is fixed by changing the call, not the configuration, as [PayabliErrorType.SESSION_NOT_INITIALIZED] is.
+     * It carries [PayabliErrorType.VALIDATION_ERROR] and no failure from the wire.
      */
     public class AlreadySubmitting :
         PayInException(PayabliErrorType.VALIDATION_ERROR, DEFAULT_ALREADY_SUBMITTING_REASON) {

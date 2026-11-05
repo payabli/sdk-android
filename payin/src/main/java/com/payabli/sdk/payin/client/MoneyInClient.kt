@@ -117,7 +117,6 @@ internal class MoneyInClient(
 
         // No buffered field in this body, so it goes through the ordinary JSON request builder: the method was
         // settled when the transaction was authorized, and only the amount is being sent now.
-        // No fraud block is declared: this takes no new payment, so a 401 here is the credential's.
         val payabliRequest =
             PayabliRequest.json(
                 method = HttpMethod.POST,
@@ -147,7 +146,6 @@ internal class MoneyInClient(
     ): PayInResult {
         PayInValidation.transId(transId)
 
-        // No fraud block is declared: a void takes no payment, so a 401 here is the credential's.
         val payabliRequest =
             PayabliRequest(
                 method = HttpMethod.POST,
@@ -403,7 +401,6 @@ private val OPEN_OUTCOME_CODES: Map<String?, PayabliErrorType> =
         "E9999" to PayabliErrorType.SERVER_ERROR,
     )
 
-/** Fraud control's blocks: the blacklist, and the risk workflow. */
 private val FRAUD_BLOCK_CODES: Set<String?> = setOf("E9005", "E9051")
 
 /**
@@ -422,8 +419,7 @@ private class AnswerFields(
      * The failure these fields describe.
      *
      * @param httpStatus the status the answer arrived with.
-     * @param code the code to report: the body's own `code` where it has one, so a field that fails to decode
-     *   costs only that field, else the code the status mapping read from the older body.
+     * @param code the code to report. Defaults to the body's own `code`.
      * @return the failure, naming the transaction where the answer named one.
      */
     fun failure(
@@ -558,8 +554,7 @@ private fun legacyCode(response: PayabliResponse): Int? =
     }
 
 /**
- * Whether a 401 is fraud control refusing the payer rather than the service refusing the token, which a refresh
- * cannot fix and a replay would send again.
+ * Whether a 401 refuses the payer, which a token refresh cannot fix and a replay would send again.
  *
  * @param response the answered request.
  * @return true for a 401 whose body names a fraud block; false otherwise.
@@ -581,8 +576,7 @@ private fun isNotPermitted(response: PayabliResponse): Boolean =
  * Maps the two refusals specific to a read. Any other failure goes to the shared status mapping.
  *
  * @param response the answered request.
- * @return the refusal, carrying the response's status and the body's `code`, else its older `responseCode`, or
- *   null when the response is neither.
+ * @return the refusal, carrying the response's status and code, or null when the response is neither.
  */
 private fun readRefusal(response: PayabliResponse): PayabliGenericException? {
     val type =

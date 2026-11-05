@@ -10,8 +10,8 @@ import kotlinx.coroutines.yield
 import kotlinx.serialization.KSerializer
 
 /**
- * A scripted [PayabliTransport] with no decoration chain and no auth, because these tests exercise a client's own
- * request assembly and response handling. `:core`'s `FakePayabliTransport` is `internal` to its tests.
+ * A scripted [PayabliTransport] with no decoration chain and no auth, so a test exercises only a client's own
+ * request assembly and response handling.
  */
 internal class FakeDeviceTransport(
     /** A failure raised before the request is handed over, as one that never left the device is. */

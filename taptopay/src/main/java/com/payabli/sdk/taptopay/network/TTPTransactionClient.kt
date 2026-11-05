@@ -430,7 +430,6 @@ internal class CustomerDataRefusal(
 
 private fun Throwable.isConflict(): Boolean = this is PayabliException && type == PayabliErrorType.CONFLICT
 
-/** Fraud control's blocks: the blacklist, and the risk workflow. */
 private val FRAUD_BLOCK_CODES = setOf("E9005", "E9051")
 
 /**
@@ -443,8 +442,7 @@ private fun fraudBlockCode(response: PayabliResponse): String? =
     stringField(response, "code")?.takeIf { it in FRAUD_BLOCK_CODES }
 
 /**
- * Whether a 401 is fraud control refusing the payer rather than the service refusing the token, which a refresh
- * cannot fix and a replay would send again.
+ * Whether a 401 refuses the payer, which a token refresh cannot fix and a replay would send again.
  *
  * @param response the answered request.
  * @return true for a 401 whose body names a fraud block; false otherwise.
