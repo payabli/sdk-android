@@ -163,6 +163,20 @@ class PayabliTapToPayTest {
         }
 
     @Test
+    fun `a failure converted at the facade keeps the original's type and never its message`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val original = NoClassDefFoundError(SENTINEL)
+            val fixture = SessionFixture(script(), eligibilityFailure = original)
+            val terminal = terminalOver(fixture)
+
+            val failure = runCatching { terminal.initialize() }.exceptionOrNull() as TapToPayException
+
+            assertNeverCarries(SENTINEL, failure)
+            assertEquals(NoClassDefFoundError::class.java.name, failure.cause?.message)
+            assertEquals(original.stackTrace.toList(), failure.cause?.stackTrace?.toList())
+        }
+
+    @Test
     fun `a failure refused at the facade is a PayabliException carrying its classification, not its prose`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = SessionFixture(script())
@@ -365,3 +379,5 @@ class PayabliTapToPayTest {
             assertFalse(terminal.isReady.value)
         }
 }
+
+private const val SENTINEL = "sentinel 4111 1111 1111 1111"

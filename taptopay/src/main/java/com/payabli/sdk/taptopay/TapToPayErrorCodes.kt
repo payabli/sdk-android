@@ -8,6 +8,7 @@ import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
+import com.payabli.sdk.taptopay.attestation.device.RedactedCause
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.network.CustomerDataRefusal
 import com.payabli.sdk.taptopay.network.TTPTransactionException
@@ -68,7 +69,7 @@ internal object TapToPayErrorCodes {
         return TapToPayException.of(
             type = type,
             reason = (failure as? PayabliException)?.takeIf { it.type == type }?.reason ?: type.message,
-            cause = failure,
+            cause = hostCauseOf(failure),
             detail = serviceTextOf(failure),
             paymentTransId = paymentTransId,
             capture = capture,
@@ -78,6 +79,22 @@ internal object TapToPayErrorCodes {
             rawCode = rawCode,
         )
     }
+
+    /**
+     * The cause a host is handed for [failure].
+     *
+     * @param failure what the call failed with.
+     * @return [failure] when this SDK recognises it; otherwise a cause keeping its type and stack trace and
+     *   dropping its message. What it suppressed rides along, each one under the same rule.
+     */
+    private fun hostCauseOf(failure: Throwable): Throwable =
+        if (isRecognised(failure)) {
+            failure
+        } else {
+            RedactedCause(failure).also { redacted ->
+                failure.suppressed.forEach { redacted.addSuppressed(if (isRecognised(it)) it else RedactedCause(it)) }
+            }
+        }
 
     /** The charge's own refusal [failure] carries, or null when it is not one. */
     private fun refusalOf(failure: Throwable): TapToPayChargeRefusal? =

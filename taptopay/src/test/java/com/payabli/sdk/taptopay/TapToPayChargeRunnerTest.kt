@@ -60,7 +60,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
@@ -2130,6 +2129,40 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a charge that failed on something unclassified keeps the original's type and never its message`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2)
+            val original = IllegalStateException(SENTINEL)
+            fixture.reader.failNextRead(original)
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertNeverCarries(SENTINEL, failure)
+            assertEquals(IllegalStateException::class.java.name, failure.cause?.message)
+            assertEquals(original.stackTrace.toList(), failure.cause?.stackTrace?.toList())
+        }
+
+    @Test
+    fun `a close retry that failed on something unclassified keeps the original's type and never its message`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2)
+            val runner = runnerGatedOnClose(fixture) { throw IllegalStateException(SENTINEL) }
+            val charged =
+                runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }.exceptionOrNull()
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, (charged as? TapToPayException)?.type)
+
+            val failure = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, failure.type)
+            assertNeverCarries(SENTINEL, charged as TapToPayException)
+            assertNeverCarries(SENTINEL, failure)
+            assertEquals(IllegalStateException::class.java.name, failure.cause?.message)
+        }
+
+    @Test
     fun `a JVM error during the tap keeps its place when the close says the processor has no record`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The vendor loads native code, so a LinkageError from the reader is the reachable shape here. The
@@ -2150,8 +2183,13 @@ class TapToPayChargeRunnerTest {
                 PayabliErrorType.UNKNOWN,
                 (failure as TapToPayException).type,
             )
-            assertSame("the error that ended the charge was lost", raised, failure.cause)
-            val suppressed = raised.suppressed
+            assertEquals(
+                "the error that ended the charge was lost",
+                LinkageError::class.java.name,
+                failure.cause?.message,
+            )
+            assertEquals(raised.stackTrace.toList(), failure.cause?.stackTrace?.toList())
+            val suppressed = failure.cause?.suppressed.orEmpty()
             assertTrue(
                 "the close's refusal was dropped: ${suppressed.toList()}",
                 suppressed.singleOrNull() is PayabliException,
@@ -4377,3 +4415,5 @@ class TapToPayChargeRunnerTest {
         event: String,
     ): List<String?> = recorded.filter { it.first == event }.map { it.second[TelemetryProperty.ORIGIN.key] }
 }
+
+private const val SENTINEL = "sentinel 4111 1111 1111 1111"
