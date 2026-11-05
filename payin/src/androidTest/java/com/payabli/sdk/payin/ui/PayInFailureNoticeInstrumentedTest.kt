@@ -61,6 +61,9 @@ class PayInFailureNoticeInstrumentedTest {
 
     private var delivered: PayabliException? = null
 
+    /** The operation the host shows, which a host can change while a submission is pending. */
+    private var submitTextOnScreen by mutableStateOf(PayInSubmitText.Capture)
+
     private fun failing(type: PayabliErrorType) = failing(PayabliGenericException(type, "the service's own text"))
 
     private fun failing(
@@ -149,6 +152,22 @@ class PayInFailureNoticeInstrumentedTest {
 
         rule.onNodeWithText("We couldn't confirm the payment method was saved.").assertExists()
         rule.onNodeWithText("The payment method couldn't be saved.").assertDoesNotExist()
+    }
+
+    @Test
+    fun aPaymentSwitchedToASaveBeforeItsAnswerKeepsItsPossibleChargeWarning() {
+        showForm(bankForm(), PayInFormLabels(), PayInSubmitText.Capture)
+        fillBank()
+        submit(PayInSubmitText.Capture)
+        rule.runOnIdle { submitTextOnScreen = PayInSubmitText.StoreMethod }
+        rule.runOnIdle { submission = failing(PayabliErrorType.UNKNOWN) }
+        rule.waitForIdle()
+
+        rule.onNodeWithText("We couldn't confirm the payment method was saved.").assertDoesNotExist()
+
+        rule.runOnIdle { submitTextOnScreen = PayInSubmitText.Capture }
+
+        rule.onNodeWithText("This payment may have gone through. Check before paying again.").assertExists()
     }
 
     @Test
@@ -295,6 +314,7 @@ class PayInFailureNoticeInstrumentedTest {
         labels: PayInFormLabels,
         submitText: PayInSubmitText,
     ) {
+        submitTextOnScreen = submitText
         rule.setContent {
             MaterialTheme {
                 PayInFormContent(
@@ -303,7 +323,7 @@ class PayInFailureNoticeInstrumentedTest {
                     sent = { true },
                     configuration = configuration,
                     reports = PayInFormReports.None,
-                    submitText = submitText,
+                    submitText = submitTextOnScreen,
                     labels = labels,
                     onSubmit = { true },
                     onFailed = { delivered = it },

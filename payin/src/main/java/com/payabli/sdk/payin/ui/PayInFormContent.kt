@@ -161,7 +161,7 @@ internal fun PayInFormContent(
             (outcome as? PayInSubmissionState.Failed)
                 ?.cause
                 ?.takeIf { it is PayInException.Unsettled || !anyRejectedFieldStands(draft.method) }
-                ?.let { PayInFailureNotice(PayInFailureMessage.categoryOf(it), savesMethod) }
+                ?.let { PayInFailureNotice(PayInFailureMessage.categoryOf(it), draft.sentSavesMethod) }
         // On the composition's dispatcher; moving either call to the flow's coroutine needs withContext(Main).
         // Only once the service may have acted on it: a refusal before that, of any kind, leaves what the payer typed.
         val clearInstrument = { if (wasSent(outcome)) draft.clearInstrument() }
@@ -230,6 +230,7 @@ internal fun PayInFormContent(
                         configuration.isComplete(typed, chosen, today)
                 if (readyToSend) {
                     justSubmitted = true
+                    draft.sentSavesMethod = savesMethod
                     // Only once it was accepted. Refused, nothing was sent, so nothing is pending.
                     draft.submissionPending = onSubmit(configuration.valuesFor(chosen, typed))
                 }

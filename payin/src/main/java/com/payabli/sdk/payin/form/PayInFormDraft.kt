@@ -69,6 +69,12 @@ internal class PayInFormDraft {
     var submissionPending: Boolean by mutableStateOf(false)
 
     /**
+     * True when the last submission sent saved a payment method. Taken at the tap, because a host can change the
+     * operation before the answer arrives, and the notice describes the submission that was sent.
+     */
+    var sentSavesMethod: Boolean by mutableStateOf(false)
+
+    /**
      * Starts the form the first time, and applies a different configuration without starting it
      * again, keeping the values, the marks and the method the new one still offers, dropping what has no box. The comparison
      * stays here: a `remember` key is gone with its composition, and a write the same composition reads never settles.
