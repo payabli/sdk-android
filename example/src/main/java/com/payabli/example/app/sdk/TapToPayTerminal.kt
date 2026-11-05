@@ -281,14 +281,16 @@ internal fun PayabliException.forScreen(): TerminalFailure =
 internal fun PayabliException.forScreen(
     capture: TapToPayCapture,
     paymentTransId: String?,
-): TerminalFailure =
-    TerminalFailure(
-        chargeLine(capture, paymentTransId) ?: ineligibleLine ?: activationLine
-            ?: FailureText.terminal(toPaymentError().kind),
+): TerminalFailure {
+    val charge = chargeLine(capture, paymentTransId)
+    return TerminalFailure(
+        charge ?: ineligibleLine ?: activationLine ?: FailureText.terminal(toPaymentError().kind),
         this,
         code.toString(),
         asksForSetup = type == PayabliErrorType.DEVICE_NOT_PENDING,
+        warnsOfCharge = charge != null,
     )
+}
 
 private fun chargeLine(
     capture: TapToPayCapture,

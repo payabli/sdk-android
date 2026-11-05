@@ -243,6 +243,23 @@ class TerminalStateTest {
     }
 
     @Test
+    fun `a charge that may have taken money keeps its warning beside the ineligible landing's line`() {
+        val refused = "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID."
+        val warning = "This payment may have gone through. Check before charging again."
+
+        assertEquals(
+            "$warning\n$refused",
+            chargeStepFailure(
+                warning,
+                TerminalSessionState.Error,
+                TerminalFailureReason.DeviceIneligible,
+                deviceLine = refused,
+                chargeWarns = true,
+            ),
+        )
+    }
+
+    @Test
     fun `a charge's own outcome is the line when no ineligible landing stands`() {
         assertEquals(
             "✗ The card was declined. (3020)",

@@ -6,12 +6,14 @@ package com.payabli.example.app.demo.terminal
  *
  * @property code the failure's catalog code, or null when it has none.
  * @property asksForSetup the operator's next step is setting the terminal up again, not another activation code.
+ * @property warnsOfCharge [shown] says the card was or may have been charged.
  */
 class TerminalFailure(
     val shown: String,
     cause: Throwable,
     val code: String? = null,
     val asksForSetup: Boolean = false,
+    val warnsOfCharge: Boolean = false,
 ) : Exception(cause.message, cause) {
     override fun toString(): String = code?.let { "TerminalFailure(code=$it)" } ?: "TerminalFailure(${cause?.message})"
 }

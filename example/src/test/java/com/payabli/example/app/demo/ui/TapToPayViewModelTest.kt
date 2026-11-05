@@ -302,7 +302,35 @@ class TapToPayViewModelTest {
             assertNotNull("the charge's outcome was dropped", state.chargeFailure)
             assertEquals(
                 "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID.",
-                chargeStepFailure(state.chargeFailure, state.session, state.failureReason, state.deviceFailure),
+                chargeStepFailure(
+                    state.chargeFailure,
+                    state.session,
+                    state.failureReason,
+                    state.deviceFailure,
+                    state.chargeWarns,
+                ),
+            )
+        }
+
+    @Test
+    fun `a retry refused by the reader keeps its may-have-gone-through warning on the charge step`() =
+        runTest {
+            val warning = "This payment may have gone through. Check before charging again."
+            val refused = TerminalFailure(warning, RuntimeException("refused"), warnsOfCharge = true)
+            val viewModel = model(terminal = RefusedDeviceTerminal(chargeFailure = refused))
+            viewModel.setAmount("12.34")
+            viewModel.charge()
+
+            val state = viewModel.uiState.value
+            assertEquals(
+                "✗ $warning\nThis device isn't set up for Tap to Pay. Contact Payabli support with the device ID.",
+                chargeStepFailure(
+                    state.chargeFailure,
+                    state.session,
+                    state.failureReason,
+                    state.deviceFailure,
+                    state.chargeWarns,
+                ),
             )
         }
 
@@ -373,7 +401,9 @@ class TapToPayViewModelTest {
 }
 
 /** A device the reader refused: initialize fails and the session lands the ineligible reason. */
-private class RefusedDeviceTerminal : TerminalController {
+private class RefusedDeviceTerminal(
+    private val chargeFailure: Throwable = RuntimeException("not reached"),
+) : TerminalController {
     private val session = MutableStateFlow(TerminalSessionState.Error)
 
     override val sessionState: StateFlow<TerminalSessionState> = session.asStateFlow()
@@ -400,8 +430,7 @@ private class RefusedDeviceTerminal : TerminalController {
             ),
         )
 
-    override suspend fun charge(amount: BigDecimal): Result<ChargeReceipt> =
-        Result.failure(RuntimeException("not reached"))
+    override suspend fun charge(amount: BigDecimal): Result<ChargeReceipt> = Result.failure(chargeFailure)
 
     override suspend fun activateDevice(activationCode: String): Result<Unit> =
         Result.failure(RuntimeException("not reached"))

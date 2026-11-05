@@ -18,6 +18,7 @@ import com.payabli.example.app.demo.terminal.EventBuffer
 import com.payabli.example.app.demo.terminal.TerminalAction
 import com.payabli.example.app.demo.terminal.TerminalActionOutcome
 import com.payabli.example.app.demo.terminal.TerminalController
+import com.payabli.example.app.demo.terminal.TerminalFailure
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import com.payabli.example.app.demo.terminal.setupAskedAfter
@@ -59,6 +60,8 @@ data class TapToPayUiState(
     val setupAskedAgain: Boolean = false,
     /** Why the last charge failed. The session reports Ready either way. */
     val chargeFailure: String? = null,
+    /** [chargeFailure] says the card was or may have been charged. */
+    val chargeWarns: Boolean = false,
     /** An activation succeeded. [session] reads Ready whether one was needed or not. */
     val activated: Boolean = false,
     val charged: Boolean = false,
@@ -241,6 +244,12 @@ class TapToPayViewModel(
                         it.activated || (action == TerminalAction.Activate && result.isSuccess),
                     chargeFailure =
                         if (action == TerminalAction.Charge) reason else it.chargeFailure,
+                    chargeWarns =
+                        if (action == TerminalAction.Charge) {
+                            (result.exceptionOrNull() as? TerminalFailure)?.warnsOfCharge == true
+                        } else {
+                            it.chargeWarns
+                        },
                     charged =
                         if (action == TerminalAction.Charge) result.isSuccess else it.charged,
                     isApprovalOpen =

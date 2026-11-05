@@ -147,7 +147,13 @@ fun TapToPayScreen(
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
                 FailureReason(
                     steps[3],
-                    chargeStepFailure(state.chargeFailure, state.session, state.failureReason, state.deviceFailure),
+                    chargeStepFailure(
+                        state.chargeFailure,
+                        state.session,
+                        state.failureReason,
+                        state.deviceFailure,
+                        state.chargeWarns,
+                    ),
                 )
                 PaymentBlock(state, actions.onAmountChange, actions.onCharge)
             }

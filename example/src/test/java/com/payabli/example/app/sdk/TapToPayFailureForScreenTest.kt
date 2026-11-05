@@ -55,6 +55,15 @@ class TapToPayFailureForScreenTest {
     }
 
     @Test
+    fun `only a failure that may have taken money warns of a charge`() {
+        val failure = PayabliGenericException(PayabliErrorType.READER_DEVICE_REFUSED, "a reason")
+
+        assertTrue(failure.forScreen(TapToPayCapture.UNKNOWN, paymentTransId = null).warnsOfCharge)
+        assertTrue(failure.forScreen(TapToPayCapture.CHARGED, paymentTransId = null).warnsOfCharge)
+        assertFalse(failure.forScreen(TapToPayCapture.NOT_CHARGED, paymentTransId = null).warnsOfCharge)
+    }
+
+    @Test
     fun `an unknown outcome on a step that charged nothing does not say a payment`() {
         val failure = PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "a reason")
 
