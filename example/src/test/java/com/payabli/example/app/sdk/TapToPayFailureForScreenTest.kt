@@ -9,6 +9,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TapToPayFailureForScreenTest {
@@ -42,6 +43,14 @@ class TapToPayFailureForScreenTest {
         assertEquals(
             "This device isn't set up for Tap to Pay. Contact Payabli support with the device ID.",
             PayabliGenericException(PayabliErrorType.READER_DEVICE_REFUSED, "a reason").ineligibleLine,
+        )
+    }
+
+    @Test
+    fun `only a device that is not waiting for activation asks for setup again`() {
+        assertTrue(PayabliGenericException(PayabliErrorType.DEVICE_NOT_PENDING, "a reason").forScreen().asksForSetup)
+        assertFalse(
+            PayabliGenericException(PayabliErrorType.ACTIVATION_CODE_INCORRECT, "a reason").forScreen().asksForSetup,
         )
     }
 

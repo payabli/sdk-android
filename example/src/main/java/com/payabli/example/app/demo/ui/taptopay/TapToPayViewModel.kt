@@ -20,6 +20,7 @@ import com.payabli.example.app.demo.terminal.TerminalActionOutcome
 import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
+import com.payabli.example.app.demo.terminal.setupAskedAfter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,6 +55,8 @@ data class TapToPayUiState(
      * for a device that was refused and one that never needed activating.
      */
     val activationFailure: String? = null,
+    /** The last activation was refused because the device is not waiting for one, until a setup finishes. */
+    val setupAskedAgain: Boolean = false,
     /** Why the last charge failed. The session reports Ready either way. */
     val chargeFailure: String? = null,
     /** An activation succeeded. [session] reads Ready whether one was needed or not. */
@@ -225,10 +228,15 @@ class TapToPayViewModel(
                 it.copy(
                     resultText = outcome,
                     workingAction = null,
-                    // Only an activation attempt moves this, either way, so a later failure
-                    // elsewhere does not leave the activation step reporting one of its own.
+                    // An activation attempt moves this either way, and a setup clears a refusal that asked for one.
+                    // Nothing else does, so a later failure elsewhere is not reported by the activation step.
                     activationFailure =
-                        if (action == TerminalAction.Activate) reason else it.activationFailure,
+                        when {
+                            action == TerminalAction.Activate -> reason
+                            it.setupAskedAgain && action.setsUp -> null
+                            else -> it.activationFailure
+                        },
+                    setupAskedAgain = setupAskedAfter(it.setupAskedAgain, action, result),
                     activated =
                         it.activated || (action == TerminalAction.Activate && result.isSuccess),
                     chargeFailure =

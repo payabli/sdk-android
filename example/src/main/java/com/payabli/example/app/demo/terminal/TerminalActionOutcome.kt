@@ -8,6 +8,10 @@ enum class TerminalAction(
     Reinitialize("Re-initialize"),
     Charge("Charge"),
     Activate("Activate device"),
+    ;
+
+    /** Whether this action sets the terminal up. */
+    val setsUp: Boolean get() = this == Initialize || this == Reinitialize
 }
 
 /**

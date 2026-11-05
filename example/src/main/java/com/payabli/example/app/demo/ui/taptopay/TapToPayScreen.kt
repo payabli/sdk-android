@@ -77,6 +77,7 @@ fun TapToPayScreen(
             working = state.workingAction,
             activated = state.activated,
             charged = state.charged,
+            setupAskedAgain = state.setupAskedAgain,
             readerDenied =
                 state.failureReason == TerminalFailureReason.DeviceIneligible &&
                     state.readiness != Readiness.NotAvailable,
@@ -109,7 +110,11 @@ fun TapToPayScreen(
 
         StepRow(index = 2, step = steps[1]) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-                FailureReason(steps[1], sessionFailureReason(state.session, state.failureReason, state.deviceFailure))
+                FailureReason(
+                    steps[1],
+                    state.activationFailure.takeIf { state.setupAskedAgain }
+                        ?: sessionFailureReason(state.session, state.failureReason, state.deviceFailure),
+                )
                 ProminentButton(
                     text = "Set up the terminal",
                     icon = DemoIcons.TapToPay,

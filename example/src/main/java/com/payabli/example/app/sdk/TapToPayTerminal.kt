@@ -287,6 +287,7 @@ internal fun PayabliException.forScreen(
             ?: FailureText.terminal(toPaymentError().kind),
         this,
         code.toString(),
+        asksForSetup = type == PayabliErrorType.DEVICE_NOT_PENDING,
     )
 
 private fun chargeLine(
