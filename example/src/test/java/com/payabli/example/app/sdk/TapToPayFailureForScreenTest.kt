@@ -46,6 +46,15 @@ class TapToPayFailureForScreenTest {
     }
 
     @Test
+    fun `an unknown outcome on a step that charged nothing does not say a payment`() {
+        val failure = PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "a reason")
+
+        val shown = failure.forScreen(TapToPayCapture.NOT_CHARGED, paymentTransId = null).shown
+
+        assertEquals("This may have gone through. Check before trying again.", shown)
+    }
+
+    @Test
     fun `an ineligible device's result line is its own line, not the category's`() {
         val shown = PayabliGenericException(PayabliErrorType.DEVICE_OS_UNSUPPORTED, "a reason").forScreen().shown
 

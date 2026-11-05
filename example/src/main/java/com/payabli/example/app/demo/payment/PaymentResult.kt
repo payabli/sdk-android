@@ -120,7 +120,7 @@ object FailureText {
             FailureKind.DECLINED -> "The payment was declined. Try another payment method."
             FailureKind.RETRY_LATER -> "That couldn't be completed. Please try again."
             FailureKind.OUTCOME_UNKNOWN, FailureKind.CANCELED_UNSENT ->
-                "This payment may have gone through. Check before charging again."
+                "This may have gone through. Check before trying again."
             FailureKind.OTHER -> "That couldn't be completed."
         }
 
