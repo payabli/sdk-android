@@ -13,6 +13,7 @@ import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInValidationOptions
+import java.util.Calendar
 
 /**
  * What this module refuses before it builds a request. A bound [PayInFieldRules] or [amountRefusal] carries is read
@@ -26,6 +27,12 @@ internal object PayInValidation {
     /** Letters, digits, spaces and the three punctuation marks a bank will accept in a name. */
     private val HOLDER_NAME = Regex("^[A-Za-z0-9 .'-]+$")
 
+    private val EXPIRY_MONTHS = 1..12
+
+    private val EXPIRY_YEARS = 1000..9999
+
+    private val WIRE_EXPIRY_YEARS = 2000..2099
+
     fun entryPoint(value: String) {
         if (value.isBlank()) throw PayInException.InvalidInput(FIELD_ENTRY_POINT, "An entry point is required")
     }
@@ -33,9 +40,10 @@ internal object PayInValidation {
     fun instrument(
         instrument: PayInInstrument,
         options: PayInValidationOptions,
+        nowMillis: () -> Long = System::currentTimeMillis,
     ) {
         when (instrument) {
-            is PayInInstrument.Card -> card(instrument.data, options)
+            is PayInInstrument.Card -> card(instrument.data, options, nowMillis)
             is PayInInstrument.BankAccount -> bankAccount(instrument.data, options)
         }
     }
@@ -43,9 +51,10 @@ internal object PayInValidation {
     fun paymentMethod(
         method: PayInPaymentMethod,
         options: PayInValidationOptions,
+        nowMillis: () -> Long = System::currentTimeMillis,
     ) {
         when (method) {
-            is PayInPaymentMethod.Card -> card(method.data, options)
+            is PayInPaymentMethod.Card -> card(method.data, options, nowMillis)
             is PayInPaymentMethod.BankAccount -> bankAccount(method.data, options)
             is PayInPaymentMethod.Stored ->
                 required(method.storedMethodId, "paymentMethod.storedMethodId", "A stored method id is required")
@@ -98,10 +107,12 @@ internal object PayInValidation {
      *
      * @param data the card to check.
      * @param options which structural checks run.
+     * @param nowMillis the clock a past expiry is judged against.
      */
     private fun card(
         data: PayInCardData,
         options: PayInValidationOptions,
+        nowMillis: () -> Long,
     ) {
         data.cardNumberDigits.useDigits { number ->
             if (number.isMissing()) {
@@ -125,9 +136,26 @@ internal object PayInValidation {
                 ?.let { throw PayInException.InvalidInput(FIELD_CARD_CVV, "The security code is not valid") }
         }
 
+        if (data.expiryMonth !in EXPIRY_MONTHS) {
+            throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The expiry month is not 1 to 12")
+        }
+        if (data.expiryYear !in EXPIRY_YEARS) {
+            throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The expiry year is not four digits")
+        }
+        // Only the year's last two digits are sent, and the service reads them as 20YY, so 2130 would be charged as 2030.
+        if (data.expiryYear > WIRE_EXPIRY_YEARS.last) {
+            throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The expiry year is after ${WIRE_EXPIRY_YEARS.last}")
+        }
+        // On a clock still before the card's year, 1999 isn't past, and would be charged as 2099.
+        if (data.expiryYear < WIRE_EXPIRY_YEARS.first) {
+            throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The card has expired")
+        }
         // The service refuses a past expiry too; refusing it here saves the round trip.
-        val today = ExpiryValue.today()
-        if (ExpiryValue.isExpired(data.expiryMonth, data.expiryYear, today.year, today.month)) {
+        // Read as plain integers, so a device clock outside the years ExpiryValue holds can't throw here.
+        val now = Calendar.getInstance().apply { timeInMillis = nowMillis() }
+        val currentYear = now.get(Calendar.YEAR)
+        val currentMonth = now.get(Calendar.MONTH) + 1
+        if (ExpiryValue.isExpired(data.expiryMonth, data.expiryYear, currentYear, currentMonth)) {
             throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The card has expired")
         }
 

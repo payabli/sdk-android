@@ -372,6 +372,42 @@ class PayInValidationTest {
     }
 
     @Test
+    fun `a device clock outside 2000 to 2099 still judges the expiry`() {
+        val card = PayInCardData("4111111111111111", 12, 2030, "999", "A Payer", "22039")
+        val options = PayInValidationOptions()
+        val checks: List<(() -> Long) -> Unit> =
+            listOf(
+                { clock -> PayInValidation.instrument(PayInInstrument.Card(card), options, clock) },
+                { clock -> PayInValidation.paymentMethod(PayInPaymentMethod.Card(card), options, clock) },
+            )
+        // Mid-year, so no time zone moves either one into another year.
+        val in1970 = { 15_638_400_000L }
+        val in2130 = { 5_064_768_000_000L }
+
+        checks.forEach { check ->
+            assertNull(runCatching { check(in1970) }.exceptionOrNull())
+            assertEquals("paymentMethod.cardexp", refusal { check(in2130) }?.field)
+        }
+    }
+
+    @Test
+    fun `a year before 2000 is refused on a clock that hasn't reached it`() {
+        // 1999 goes out as 99, which the service reads as 2099.
+        val card = PayInCardData("4111111111111111", 12, 1999, "999", "A Payer", "22039")
+        val in1970 = { 15_638_400_000L }
+
+        assertEquals(
+            "paymentMethod.cardexp",
+            refusal { PayInValidation.instrument(PayInInstrument.Card(card), PayInValidationOptions(), in1970) }?.field,
+        )
+        assertEquals(
+            "paymentMethod.cardexp",
+            refusal { PayInValidation.paymentMethod(PayInPaymentMethod.Card(card), PayInValidationOptions(), in1970) }
+                ?.field,
+        )
+    }
+
+    @Test
     fun `validation leaves no readable copy of a card number behind`() {
         // Each read is scoped, so a refusal partway through still overwrites what it read.
         val data = card(pan = "4111111111111112")

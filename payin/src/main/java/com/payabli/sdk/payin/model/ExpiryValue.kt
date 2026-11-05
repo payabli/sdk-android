@@ -79,17 +79,18 @@ internal data class ExpiryValue(
         val SUPPORTED_YEARS: IntRange = 2000..2099
 
         /**
-         * The current month, in the device's time zone. The only clock read in this file. `Calendar`
-         * because the module's floor is API 23 with no core library desugaring, so `LocalDate` is not
-         * on the device.
+         * The current month, in the device's time zone, with a year outside [SUPPORTED_YEARS] held to the
+         * nearest one, so no clock throws here. `Calendar` because the module's floor is API 23 with no core
+         * library desugaring, so `LocalDate` is not on the device; Android's is always Gregorian.
          *
-         * @return the current month and year.
+         * @param nowMillis the clock read.
+         * @return the current month and year, the year held to [SUPPORTED_YEARS].
          */
-        fun today(): ExpiryValue {
-            val now = Calendar.getInstance()
+        fun today(nowMillis: () -> Long = System::currentTimeMillis): ExpiryValue {
+            val now = Calendar.getInstance().apply { timeInMillis = nowMillis() }
             return ExpiryValue(
                 month = now.get(Calendar.MONTH) + 1,
-                year = now.get(Calendar.YEAR),
+                year = now.get(Calendar.YEAR).coerceIn(SUPPORTED_YEARS),
             )
         }
 
