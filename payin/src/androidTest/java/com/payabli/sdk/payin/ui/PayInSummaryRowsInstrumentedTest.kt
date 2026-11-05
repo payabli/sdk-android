@@ -100,20 +100,6 @@ class PayInSummaryRowsInstrumentedTest {
     }
 
     @Test
-    fun aFormThatHidesTheBaseAmountStillShowsTheTotal() {
-        show(
-            PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("0.10"), currency = "USD"),
-            configuration.copy(showsBaseAmount = false),
-        )
-
-        rule
-            .onNode(
-                hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.34", "USD")),
-            ).assertExists()
-        rule.onNodeWithText(string(R.string.payabli_payin_field_amount)).assertDoesNotExist()
-    }
-
-    @Test
     fun aRowIsReadAsItsLabelAndFigureTogether() {
         show(PayInPaymentDetails(BigDecimal("12.34"), currency = "USD"))
 

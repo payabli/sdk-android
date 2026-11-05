@@ -108,8 +108,8 @@ package com.payabli.sdk.payin.form {
 
   @androidx.compose.runtime.Immutable public final class PayInFormConfiguration {
     ctor public PayInFormConfiguration();
-    ctor public PayInFormConfiguration(optional java.util.List<? extends com.payabli.sdk.payin.form.PayInMethodType> allowedMethods, optional com.payabli.sdk.payin.form.PayInMethodType defaultMethod, optional java.util.List<com.payabli.sdk.payin.form.PayInFormSection> cardSections, optional java.util.List<com.payabli.sdk.payin.form.PayInFormSection> bankSections, optional java.util.Set<? extends com.payabli.sdk.payin.form.PayInField> requiredFields, optional com.payabli.sdk.payin.form.PayInLabelLayout labelLayout, optional java.util.Set<? extends com.payabli.sdk.payin.form.PayInField> hiddenFieldLabels, optional com.payabli.sdk.payin.form.PayInFormatting formatting, optional boolean showsBaseAmount, optional com.payabli.sdk.payin.form.PayInCardBrandIconPlacement cardBrandIconPlacement, optional com.payabli.sdk.payin.form.PayInFailureMessagePlacement failureMessagePlacement, optional boolean showsFailureMessage);
-    method public com.payabli.sdk.payin.form.PayInFormConfiguration copy(optional java.util.List<? extends com.payabli.sdk.payin.form.PayInMethodType> allowedMethods, optional com.payabli.sdk.payin.form.PayInMethodType defaultMethod, optional java.util.List<com.payabli.sdk.payin.form.PayInFormSection> cardSections, optional java.util.List<com.payabli.sdk.payin.form.PayInFormSection> bankSections, optional java.util.Set<? extends com.payabli.sdk.payin.form.PayInField> requiredFields, optional com.payabli.sdk.payin.form.PayInLabelLayout labelLayout, optional java.util.Set<? extends com.payabli.sdk.payin.form.PayInField> hiddenFieldLabels, optional com.payabli.sdk.payin.form.PayInFormatting formatting, optional boolean showsBaseAmount, optional com.payabli.sdk.payin.form.PayInCardBrandIconPlacement cardBrandIconPlacement, optional com.payabli.sdk.payin.form.PayInFailureMessagePlacement failureMessagePlacement, optional boolean showsFailureMessage);
+    ctor public PayInFormConfiguration(optional java.util.List<? extends com.payabli.sdk.payin.form.PayInMethodType> allowedMethods, optional com.payabli.sdk.payin.form.PayInMethodType defaultMethod, optional java.util.List<com.payabli.sdk.payin.form.PayInFormSection> cardSections, optional java.util.List<com.payabli.sdk.payin.form.PayInFormSection> bankSections, optional java.util.Set<? extends com.payabli.sdk.payin.form.PayInField> requiredFields, optional com.payabli.sdk.payin.form.PayInLabelLayout labelLayout, optional java.util.Set<? extends com.payabli.sdk.payin.form.PayInField> hiddenFieldLabels, optional com.payabli.sdk.payin.form.PayInFormatting formatting, optional com.payabli.sdk.payin.form.PayInCardBrandIconPlacement cardBrandIconPlacement, optional com.payabli.sdk.payin.form.PayInFailureMessagePlacement failureMessagePlacement, optional boolean showsFailureMessage);
+    method public com.payabli.sdk.payin.form.PayInFormConfiguration copy(optional java.util.List<? extends com.payabli.sdk.payin.form.PayInMethodType> allowedMethods, optional com.payabli.sdk.payin.form.PayInMethodType defaultMethod, optional java.util.List<com.payabli.sdk.payin.form.PayInFormSection> cardSections, optional java.util.List<com.payabli.sdk.payin.form.PayInFormSection> bankSections, optional java.util.Set<? extends com.payabli.sdk.payin.form.PayInField> requiredFields, optional com.payabli.sdk.payin.form.PayInLabelLayout labelLayout, optional java.util.Set<? extends com.payabli.sdk.payin.form.PayInField> hiddenFieldLabels, optional com.payabli.sdk.payin.form.PayInFormatting formatting, optional com.payabli.sdk.payin.form.PayInCardBrandIconPlacement cardBrandIconPlacement, optional com.payabli.sdk.payin.form.PayInFailureMessagePlacement failureMessagePlacement, optional boolean showsFailureMessage);
     method @InaccessibleFromKotlin public java.util.List<com.payabli.sdk.payin.form.PayInMethodType> getAllowedMethods();
     method @InaccessibleFromKotlin public java.util.List<com.payabli.sdk.payin.form.PayInFormSection> getBankSections();
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.form.PayInCardBrandIconPlacement getCardBrandIconPlacement();
@@ -121,7 +121,6 @@ package com.payabli.sdk.payin.form {
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.form.PayInLabelLayout getLabelLayout();
     method @InaccessibleFromKotlin public java.util.List<com.payabli.sdk.payin.form.PayInMethodType> getMethodsOffered();
     method @InaccessibleFromKotlin public java.util.Set<com.payabli.sdk.payin.form.PayInField> getRequiredFields();
-    method @InaccessibleFromKotlin public boolean getShowsBaseAmount();
     method @InaccessibleFromKotlin public boolean getShowsFailureMessage();
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.form.PayInMethodType getStartingMethod();
     method public java.util.List<com.payabli.sdk.payin.form.PayInField> inputFieldsFor(com.payabli.sdk.payin.form.PayInMethodType method);
@@ -141,7 +140,6 @@ package com.payabli.sdk.payin.form {
     property public com.payabli.sdk.payin.form.PayInLabelLayout labelLayout;
     property public java.util.List<com.payabli.sdk.payin.form.PayInMethodType> methodsOffered;
     property public java.util.Set<com.payabli.sdk.payin.form.PayInField> requiredFields;
-    property public boolean showsBaseAmount;
     property public boolean showsFailureMessage;
     property public com.payabli.sdk.payin.form.PayInMethodType startingMethod;
     field public static final com.payabli.sdk.payin.form.PayInFormConfiguration.Companion Companion;
@@ -334,9 +332,9 @@ package com.payabli.sdk.payin.form {
   public final class PayInSummaryRows {
     method public String formattedAmount(java.math.BigDecimal amount, String? currency);
     method public String labelText(com.payabli.sdk.payin.form.PayInField field, com.payabli.sdk.payin.form.PayInFormLabels labels, android.content.Context context);
-    method public java.math.BigDecimal? rowAmount(com.payabli.sdk.payin.form.PayInField field, com.payabli.sdk.payin.model.PayInPaymentDetails? details);
+    method public java.math.BigDecimal? rowAmount(com.payabli.sdk.payin.form.PayInField field, com.payabli.sdk.payin.model.PayInPaymentDetails? paymentDetails);
     method public String totalLabelText(com.payabli.sdk.payin.form.PayInFormLabels labels, android.content.Context context);
-    method public java.math.BigDecimal? totalRowAmount(com.payabli.sdk.payin.model.PayInPaymentDetails? details);
+    method public java.math.BigDecimal? totalRowAmount(com.payabli.sdk.payin.model.PayInPaymentDetails? paymentDetails);
     field public static final com.payabli.sdk.payin.form.PayInSummaryRows INSTANCE;
   }
 

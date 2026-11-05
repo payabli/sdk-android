@@ -235,7 +235,6 @@ error's `category`, and log its `code`.
 | `requiredFields` | Fields the payer must fill |
 | `labelLayout`, `hiddenFieldLabels` | Where labels sit, and which are hidden |
 | `formatting` | How entered values are formatted |
-| `showsBaseAmount` | Whether the amount row shows |
 | `cardBrandIconPlacement` | Where the card number field draws the card brand: `Leading`, `Trailing` (default) or `Hidden` |
 | `failureMessagePlacement` | Where the form's failure message sits: `Top`, above the fields, or `AboveSubmitButton` (default) |
 | `showsFailureMessage` | Whether the form draws its failure message. Off, the form still marks rejected fields and `onFailed` still receives every failure |
@@ -263,8 +262,7 @@ authorization and "Save" for a stored method, with "Paying…", "Authorizing…"
 
 `PayInSummaryRows` gives each summary row as the form draws it, for an app that draws its own:
 `labelText` and `totalLabelText` for the labels, `rowAmount` and `totalRowAmount` for the figures, and
-`formattedAmount` for a figure as text. A `null` figure means the row isn't drawn. `rowAmount` returns the
-Amount figure whatever `showsBaseAmount` is set to, so check that setting before drawing the Amount row.
+`formattedAmount` for a figure as text. A `null` figure means the row isn't drawn.
 
 ### Styling
 

@@ -118,8 +118,6 @@ public data class PayInFormatting(
  * What the form collects and how it is arranged. Colors, type and spacing are [PayInFormStyle]'s.
  *
  * The summary ends with a Total row carrying what is charged, drawn whenever that charge is not zero.
- * With [showsBaseAmount] on and a fee or a surcharge to show, an Amount row carries the amount before
- * them, drawn whenever that amount is not zero.
  *
  * [allowedMethods] and [defaultMethod] are what a caller passed, unchanged. Two corrections apply to
  * what the form reads instead: [methodsOffered] drops duplicates and is never empty, and
@@ -144,7 +142,6 @@ public class PayInFormConfiguration(
     public val labelLayout: PayInLabelLayout = PayInLabelLayout.External,
     hiddenFieldLabels: Set<PayInField> = emptySet(),
     public val formatting: PayInFormatting = PayInFormatting(),
-    public val showsBaseAmount: Boolean = true,
     public val cardBrandIconPlacement: PayInCardBrandIconPlacement = PayInCardBrandIconPlacement.Trailing,
     public val failureMessagePlacement: PayInFailureMessagePlacement = PayInFailureMessagePlacement.AboveSubmitButton,
     public val showsFailureMessage: Boolean = true,
@@ -300,7 +297,6 @@ public class PayInFormConfiguration(
      * @param labelLayout where a field's label sits.
      * @param hiddenFieldLabels the fields whose labels the form hides.
      * @param formatting how the fields format what is typed.
-     * @param showsBaseAmount whether the summary shows the base amount.
      * @param cardBrandIconPlacement where the card number field draws the brand icon.
      * @param failureMessagePlacement where the form draws its failure message.
      * @param showsFailureMessage whether the form draws its failure message.
@@ -315,7 +311,6 @@ public class PayInFormConfiguration(
         labelLayout: PayInLabelLayout = this.labelLayout,
         hiddenFieldLabels: Set<PayInField> = this.hiddenFieldLabels,
         formatting: PayInFormatting = this.formatting,
-        showsBaseAmount: Boolean = this.showsBaseAmount,
         cardBrandIconPlacement: PayInCardBrandIconPlacement = this.cardBrandIconPlacement,
         failureMessagePlacement: PayInFailureMessagePlacement = this.failureMessagePlacement,
         showsFailureMessage: Boolean = this.showsFailureMessage,
@@ -329,7 +324,6 @@ public class PayInFormConfiguration(
             labelLayout,
             hiddenFieldLabels,
             formatting,
-            showsBaseAmount,
             cardBrandIconPlacement,
             failureMessagePlacement,
             showsFailureMessage,
@@ -342,7 +336,6 @@ public class PayInFormConfiguration(
                     defaultMethod == other.defaultMethod &&
                     labelLayout == other.labelLayout &&
                     formatting == other.formatting &&
-                    showsBaseAmount == other.showsBaseAmount &&
                     cardBrandIconPlacement == other.cardBrandIconPlacement &&
                     failureMessagePlacement == other.failureMessagePlacement &&
                     showsFailureMessage == other.showsFailureMessage &&
@@ -358,7 +351,6 @@ public class PayInFormConfiguration(
             defaultMethod,
             labelLayout,
             formatting,
-            showsBaseAmount,
             cardBrandIconPlacement,
             failureMessagePlacement,
             showsFailureMessage,
@@ -373,7 +365,7 @@ public class PayInFormConfiguration(
         "PayInFormConfiguration(allowedMethods=$allowedMethods, defaultMethod=$defaultMethod, " +
             "cardSections=$cardSections, bankSections=$bankSections, requiredFields=$requiredFields, " +
             "labelLayout=$labelLayout, hiddenFieldLabels=$hiddenFieldLabels, formatting=$formatting, " +
-            "showsBaseAmount=$showsBaseAmount, cardBrandIconPlacement=$cardBrandIconPlacement, " +
+            "cardBrandIconPlacement=$cardBrandIconPlacement, " +
             "failureMessagePlacement=$failureMessagePlacement, showsFailureMessage=$showsFailureMessage)"
 
     public companion object {
