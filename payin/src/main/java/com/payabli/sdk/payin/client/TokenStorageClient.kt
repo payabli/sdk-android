@@ -152,8 +152,6 @@ internal class TokenStorageClient(
             method = instrument.storedMethodType,
             methodReferenceId = stored?.methodReferenceId,
             customerId = stored?.customerId,
-            resultCode = stored?.resultCode,
-            resultText = stored?.resultText,
         )
     }
 

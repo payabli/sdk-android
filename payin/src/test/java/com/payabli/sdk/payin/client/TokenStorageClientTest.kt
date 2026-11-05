@@ -57,7 +57,6 @@ class TokenStorageClientTest {
             assertEquals("tok-77", result.storedMethodId)
             assertEquals("65960bf4-46ea-42dd-ac89-250b181b3584-225810", result.methodReferenceId)
             assertEquals(88L, result.customerId)
-            assertEquals(1, result.resultCode)
             assertEquals(PayInStoredMethodType.Card, result.method)
         }
 

@@ -17,8 +17,6 @@ public class PayInStoredMethod(
     public val method: PayInStoredMethodType,
     public val methodReferenceId: String?,
     public val customerId: Long?,
-    public val resultCode: Int?,
-    public val resultText: String?,
 ) {
     /**
      * The identifier charges a card, so it is a credential rather than a label, and it is not in a message.

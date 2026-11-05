@@ -683,18 +683,14 @@ package com.payabli.sdk.payin.model {
   }
 
   public final class PayInStoredMethod {
-    ctor public PayInStoredMethod(String storedMethodId, com.payabli.sdk.payin.model.PayInStoredMethodType method, String? methodReferenceId, Long? customerId, Integer? resultCode, String? resultText);
+    ctor public PayInStoredMethod(String storedMethodId, com.payabli.sdk.payin.model.PayInStoredMethodType method, String? methodReferenceId, Long? customerId);
     method @InaccessibleFromKotlin public Long? getCustomerId();
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInStoredMethodType getMethod();
     method @InaccessibleFromKotlin public String? getMethodReferenceId();
-    method @InaccessibleFromKotlin public Integer? getResultCode();
-    method @InaccessibleFromKotlin public String? getResultText();
     method @InaccessibleFromKotlin public String getStoredMethodId();
     property public Long? customerId;
     property public com.payabli.sdk.payin.model.PayInStoredMethodType method;
     property public String? methodReferenceId;
-    property public Integer? resultCode;
-    property public String? resultText;
     property public String storedMethodId;
   }
 
