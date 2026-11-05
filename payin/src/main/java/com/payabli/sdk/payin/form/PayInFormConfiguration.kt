@@ -32,6 +32,27 @@ public enum class PayInLabelLayout {
     Placeholder,
 }
 
+/** Where the card number field draws the brand icon. */
+public enum class PayInCardBrandIconPlacement {
+    /** Before the number. */
+    Leading,
+
+    /** After the number. */
+    Trailing,
+
+    /** Not drawn. */
+    Hidden,
+}
+
+/** Where the form draws its failure message. */
+public enum class PayInFailureMessagePlacement {
+    /** Above the form's fields. */
+    Top,
+
+    /** Below the form's fields, above the submit button. */
+    AboveSubmitButton,
+}
+
 /**
  * One group of fields, with a heading.
  *
@@ -108,6 +129,10 @@ public data class PayInFormatting(
  * parameters are not `val`, as `PayabliResponse` in `:core` writes it: a property beside the copy
  * would publish the uncopied original, and a `data class`'s generated `copy()` would rebuild from
  * it, so a no-argument copy could differ from its source.
+ *
+ * @property cardBrandIconPlacement where the card number field draws the brand icon.
+ * @property failureMessagePlacement where the form draws its failure message.
+ * @property showsFailureMessage whether the form draws its failure message.
  */
 @Immutable
 public class PayInFormConfiguration(
@@ -120,6 +145,9 @@ public class PayInFormConfiguration(
     hiddenFieldLabels: Set<PayInField> = emptySet(),
     public val formatting: PayInFormatting = PayInFormatting(),
     public val showsBaseAmount: Boolean = true,
+    public val cardBrandIconPlacement: PayInCardBrandIconPlacement = PayInCardBrandIconPlacement.Trailing,
+    public val failureMessagePlacement: PayInFailureMessagePlacement = PayInFailureMessagePlacement.AboveSubmitButton,
+    public val showsFailureMessage: Boolean = true,
 ) {
     public val allowedMethods: List<PayInMethodType> = Collections.unmodifiableList(allowedMethods.toList())
     public val cardSections: List<PayInFormSection> = Collections.unmodifiableList(cardSections.toList())
@@ -273,6 +301,9 @@ public class PayInFormConfiguration(
      * @param hiddenFieldLabels the fields whose labels the form hides.
      * @param formatting how the fields format what is typed.
      * @param showsBaseAmount whether the summary shows the base amount.
+     * @param cardBrandIconPlacement where the card number field draws the brand icon.
+     * @param failureMessagePlacement where the form draws its failure message.
+     * @param showsFailureMessage whether the form draws its failure message.
      * @return the configuration rebuilt from the named parts.
      */
     public fun copy(
@@ -285,6 +316,9 @@ public class PayInFormConfiguration(
         hiddenFieldLabels: Set<PayInField> = this.hiddenFieldLabels,
         formatting: PayInFormatting = this.formatting,
         showsBaseAmount: Boolean = this.showsBaseAmount,
+        cardBrandIconPlacement: PayInCardBrandIconPlacement = this.cardBrandIconPlacement,
+        failureMessagePlacement: PayInFailureMessagePlacement = this.failureMessagePlacement,
+        showsFailureMessage: Boolean = this.showsFailureMessage,
     ): PayInFormConfiguration =
         PayInFormConfiguration(
             allowedMethods,
@@ -296,6 +330,9 @@ public class PayInFormConfiguration(
             hiddenFieldLabels,
             formatting,
             showsBaseAmount,
+            cardBrandIconPlacement,
+            failureMessagePlacement,
+            showsFailureMessage,
         )
 
     override fun equals(other: Any?): Boolean =
@@ -306,6 +343,9 @@ public class PayInFormConfiguration(
                     labelLayout == other.labelLayout &&
                     formatting == other.formatting &&
                     showsBaseAmount == other.showsBaseAmount &&
+                    cardBrandIconPlacement == other.cardBrandIconPlacement &&
+                    failureMessagePlacement == other.failureMessagePlacement &&
+                    showsFailureMessage == other.showsFailureMessage &&
                     allowedMethods == other.allowedMethods &&
                     cardSections == other.cardSections &&
                     bankSections == other.bankSections &&
@@ -319,6 +359,9 @@ public class PayInFormConfiguration(
             labelLayout,
             formatting,
             showsBaseAmount,
+            cardBrandIconPlacement,
+            failureMessagePlacement,
+            showsFailureMessage,
             allowedMethods,
             cardSections,
             bankSections,
@@ -330,7 +373,8 @@ public class PayInFormConfiguration(
         "PayInFormConfiguration(allowedMethods=$allowedMethods, defaultMethod=$defaultMethod, " +
             "cardSections=$cardSections, bankSections=$bankSections, requiredFields=$requiredFields, " +
             "labelLayout=$labelLayout, hiddenFieldLabels=$hiddenFieldLabels, formatting=$formatting, " +
-            "showsBaseAmount=$showsBaseAmount)"
+            "showsBaseAmount=$showsBaseAmount, cardBrandIconPlacement=$cardBrandIconPlacement, " +
+            "failureMessagePlacement=$failureMessagePlacement, showsFailureMessage=$showsFailureMessage)"
 
     public companion object {
         /**
