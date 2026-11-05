@@ -444,6 +444,7 @@ Act on `type`. Log `httpStatus` and `rawCode`, and quote them when you contact s
 | [Card-not-present](payin/README.md) | The form, the direct API, stored methods, authorize and capture, void, configuration and styling |
 | [Tap to Pay](taptopay/README.md) | Phone and build requirements, enrollment, authorized apps, activation, states and errors |
 | [Sample app](example/README.md) and [token server](example-server/README.md) | Running both ways to pay against your sandbox paypoint |
+| [Other technologies](Documentation/OtherTechnologies.md) | Taking payments from a React Native or Flutter app through your own native module |
 | [Payabli developer documentation](https://docs.payabli.com) | The API, OAuth, test accounts and the portal |
 
 ### Language support
