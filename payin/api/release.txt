@@ -56,15 +56,6 @@ package com.payabli.sdk.payin.form {
     method public com.payabli.sdk.payin.form.CardBrand of(String digits);
   }
 
-  public final class ExpiryChoices {
-    method public int coerceMonth(int month, java.util.List<java.lang.Integer> available);
-    method public java.util.List<java.lang.Integer> months(com.payabli.sdk.payin.model.ExpiryValue today, int selectedYear);
-    method public java.util.List<java.lang.Integer> years(com.payabli.sdk.payin.model.ExpiryValue today);
-    property public static int YEARS_AHEAD;
-    field public static final com.payabli.sdk.payin.form.ExpiryChoices INSTANCE;
-    field public static final int YEARS_AHEAD = 20; // 0x14
-  }
-
   public enum PayInField {
     method @InaccessibleFromKotlin public String getFieldName();
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.form.PayInFieldInput getInput();
@@ -361,27 +352,6 @@ package com.payabli.sdk.payin.form {
 
 package com.payabli.sdk.payin.model {
 
-  public final class ExpiryValue {
-    ctor public ExpiryValue(int month, int year);
-    method public int component1();
-    method public int component2();
-    method public com.payabli.sdk.payin.model.ExpiryValue copy(optional int month, optional int year);
-    method public String format(optional String separator);
-    method @InaccessibleFromKotlin public int getMonth();
-    method @InaccessibleFromKotlin public int getYear();
-    method public boolean isExpired(int currentYear, int currentMonth);
-    property public int month;
-    property public int year;
-    field public static final com.payabli.sdk.payin.model.ExpiryValue.Companion Companion;
-  }
-
-  public static final class ExpiryValue.Companion {
-    method @InaccessibleFromKotlin public kotlin.ranges.IntRange getSUPPORTED_YEARS();
-    method public com.payabli.sdk.payin.model.ExpiryValue? parse(String text);
-    method public com.payabli.sdk.payin.model.ExpiryValue today();
-    property public kotlin.ranges.IntRange SUPPORTED_YEARS;
-  }
-
   public enum PayInAccountHolderType {
     method @InaccessibleFromKotlin public String getWireName();
     property public String wireName;
@@ -421,11 +391,13 @@ package com.payabli.sdk.payin.model {
   }
 
   public final class PayInCardData {
-    ctor public PayInCardData(String cardNumber, com.payabli.sdk.payin.model.ExpiryValue expiry, String securityCode, String holderName, String postalCode);
-    method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.ExpiryValue getExpiry();
+    ctor public PayInCardData(String cardNumber, int expiryMonth, int expiryYear, String securityCode, String holderName, String postalCode);
+    method @InaccessibleFromKotlin public int getExpiryMonth();
+    method @InaccessibleFromKotlin public int getExpiryYear();
     method @InaccessibleFromKotlin public String getHolderName();
     method @InaccessibleFromKotlin public String getPostalCode();
-    property public com.payabli.sdk.payin.model.ExpiryValue expiry;
+    property public int expiryMonth;
+    property public int expiryYear;
     property public String holderName;
     property public String postalCode;
   }
