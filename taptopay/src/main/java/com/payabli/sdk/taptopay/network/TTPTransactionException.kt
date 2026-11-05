@@ -4,19 +4,9 @@ import com.payabli.sdk.taptopay.attestation.device.RedactedCause
 import java.net.HttpURLConnection.HTTP_NOT_FOUND
 
 /**
- * A refusal from one of the two MoneyIn routes a card-present charge uses.
- *
- * **These routes answer in the v2 envelope, where the code's first letter is the outcome.** An `A` is an
- * approval, a `D` is the payment being refused, and anything else is the service reporting a problem with
- * the request or with itself. The HTTP status agrees with that most of the time and not always, which is
- * why the envelope is read rather than the status.
- *
- * Module-local, because each subtype is what this SDK does about an answer. Each cause has its own `PayabliErrorType`,
- * which is the classification a host reads. A genuine transport failure arrives as `PayabliException` from
- * `PayabliHttpErrors`, so which type is raised here says which layer failed.
- *
- * [reason] is text this SDK did not author, so treat it as able to carry back anything the request
- * contained: never shown, and **never loggable**. That is how `PayabliException` treats the same field.
+ * A refusal from a MoneyIn route a card-present charge uses, read from the v2 envelope's code, not the HTTP status:
+ * `A` approves, `D` declines, anything else is a request or service problem. [reason] is the service's text: never
+ * shown and never logged, because it can carry back what the request contained.
  */
 internal sealed class TTPTransactionException(
     message: String,
