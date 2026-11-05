@@ -41,7 +41,7 @@ public object PayInSummaryRows {
     ): String = labels.totalOrNull() ?: context.getString(R.string.payabli_payin_summary_total)
 
     /**
-     * The figure on [field]'s row: the service fee or the surcharge as supplied. Amount has no row.
+     * The figure on [field]'s row: the service fee or the surcharge as supplied. Every other field, Amount included, has none.
      *
      * @param field the row's field.
      * @param paymentDetails what is being charged, or null.
