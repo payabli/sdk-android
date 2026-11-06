@@ -130,6 +130,27 @@ class TelemetryCatalogTest {
         }
     }
 
+    /** What the host was told about a close goes on `ttp.close.failed`, and on no other event. */
+    @Test
+    fun onlyAFailedCloseCarriesWhatTheHostWasToldAboutIt() {
+        val told =
+            mapOf(
+                TelemetryProperty.CAPTURE.key to "charged",
+                TelemetryProperty.HTTP_STATUS.key to "400",
+            )
+        assertEquals(told, TelemetryCatalog.scrub(TelemetryEvents.TTP_CLOSE_FAILED, told))
+        assertEquals(
+            mapOf(TelemetryProperty.REASON.key to "processor_no_record"),
+            TelemetryCatalog.scrub(
+                TelemetryEvents.TTP_CLOSE_FAILED,
+                mapOf(TelemetryProperty.REASON.key to "processor_no_record"),
+            ),
+        )
+        for (event in TelemetryCatalog.events - TelemetryEvents.TTP_CLOSE_FAILED) {
+            assertEquals(event, emptyMap<String, String>(), TelemetryCatalog.scrub(event, told))
+        }
+    }
+
     /**
      * The record gives `ttp.attestation.failed` and `ttp.nfc.failed` no `failure_type`, so the catalog
      * drops it there, which is why the widening above is per event rather than on the `FAILED` set.

@@ -1941,6 +1941,110 @@ class TapToPayChargeRunnerTest {
     private fun problemBody(detail: String) =
         """{"type":"https://docs.payabli.com/","title":"Bad Request","status":400,"detail":"$detail","code":"400","errors":{}}"""
 
+    /** Every `ttp.close.failed` a run reports, with its properties, while [block] runs. */
+    private suspend fun closeFailuresDuring(block: suspend () -> Unit): List<Map<String, String>> {
+        val reported = mutableListOf<Pair<String, Map<String, String>>>()
+        TelemetryRecorders.install { event, properties -> reported += event to properties }
+        try {
+            block()
+        } finally {
+            TelemetryRecorders.clear()
+        }
+        return reported.filter { it.first == TelemetryEvents.TTP_CLOSE_FAILED }.map { it.second }
+    }
+
+    @Test
+    fun `an approved read whose close the processor has no record of reports what the host was told`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+
+            val closes =
+                closeFailuresDuring {
+                    runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                }
+
+            val close = closes.single()
+            assertEquals(TelemetryProperties.Origin.CHARGE, close[TelemetryProperty.ORIGIN.key])
+            assertEquals("charged", close[TelemetryProperty.CAPTURE.key])
+            assertEquals("400", close[TelemetryProperty.HTTP_STATUS.key])
+            assertEquals("processor_no_record", close[TelemetryProperty.REASON.key])
+        }
+
+    @Test
+    fun `a close nothing answered carries no status, and one refused for another reason carries no reason`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val unanswered =
+                closeFailuresDuring {
+                    val fixture = readyFixture(updates = 2)
+                    val runner = runnerGatedOnClose(fixture) { throw java.io.IOException("no route to host") }
+                    runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                }.single()
+            val refused =
+                closeFailuresDuring {
+                    val fixture = failedTapClosedWith(400, problemBody("The request was not valid"))
+                    runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                }.single()
+
+            assertNull(unanswered[TelemetryProperty.HTTP_STATUS.key])
+            assertNull(unanswered[TelemetryProperty.REASON.key])
+            assertEquals("charged", unanswered[TelemetryProperty.CAPTURE.key])
+            assertEquals("400", refused[TelemetryProperty.HTTP_STATUS.key])
+            assertNull(refused[TelemetryProperty.REASON.key])
+        }
+
+    @Test
+    fun `a failed tap's close the processor has no record of reports the payment not charged`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+            var failure: Throwable? = null
+            val close =
+                closeFailuresDuring {
+                    failure =
+                        runCatching {
+                            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                        }.exceptionOrNull()
+                }.single()
+
+            assertEquals(TapToPayCapture.NOT_CHARGED, (failure as TapToPayException).capture)
+            assertEquals("not_charged", close[TelemetryProperty.CAPTURE.key])
+            assertEquals("processor_no_record", close[TelemetryProperty.REASON.key])
+        }
+
+    @Test
+    fun `a failed tap whose close is refused otherwise reports the outcome unknown, as the host is told`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody("The request was not valid"))
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+            var failure: Throwable? = null
+            val close =
+                closeFailuresDuring {
+                    failure =
+                        runCatching {
+                            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                        }.exceptionOrNull()
+                }.single()
+
+            assertEquals((failure as TapToPayException).capture.name.lowercase(), close[TelemetryProperty.CAPTURE.key])
+            assertNull(close[TelemetryProperty.REASON.key])
+        }
+
+    @Test
+    fun `a close retry that failed reports the held payment's capture, as its origin says`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2)
+            val runner = runnerGatedOnClose(fixture) { throw java.io.IOException("no route to host") }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            val retry =
+                closeFailuresDuring { runCatching { runner.closeCaptured(TRANS_ID) } }.single()
+
+            assertEquals(TelemetryProperties.Origin.RETRY, retry[TelemetryProperty.ORIGIN.key])
+            assertEquals("charged", retry[TelemetryProperty.CAPTURE.key])
+        }
+
     @Test
     fun `a failed tap the processor never saw settles its attempt`() =
         runTest(timeout = TEST_TIMEOUT) {

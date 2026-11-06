@@ -79,7 +79,14 @@ public object TelemetryCatalog {
             TelemetryEvents.TTP_CLOSE_STARTED to setOf(TelemetryProperty.ORIGIN.key),
             TelemetryEvents.TTP_CLOSE_SUCCEEDED to TIMED + TelemetryProperty.ORIGIN.key,
             TelemetryEvents.TTP_CLOSE_FAILED to
-                FAILED + TelemetryProperty.ORIGIN.key + TelemetryProperty.FAILURE_TYPE.key,
+                FAILED +
+                setOf(
+                    TelemetryProperty.ORIGIN.key,
+                    TelemetryProperty.FAILURE_TYPE.key,
+                    TelemetryProperty.CAPTURE.key,
+                    TelemetryProperty.HTTP_STATUS.key,
+                    TelemetryProperty.REASON.key,
+                ),
             TelemetryEvents.TTP_NFC_STARTED to NONE,
             TelemetryEvents.TTP_NFC_SUCCEEDED to TIMED,
             // Carries both, and the code is the half that earns its place. [TelemetryProperty.REASON] is the

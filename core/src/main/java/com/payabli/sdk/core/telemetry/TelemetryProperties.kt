@@ -61,6 +61,12 @@ public enum class TelemetryProperty {
 
     /** How many events the queue evicted, as text. */
     DROPPED,
+
+    /** Whether a card-present payment took money, as the host's error says: `charged`, `unknown` or `not_charged`. */
+    CAPTURE,
+
+    /** The HTTP status that answered the call, as text. Absent when nothing answered. */
+    HTTP_STATUS,
     ;
 
     /** The key as it goes on the wire. */

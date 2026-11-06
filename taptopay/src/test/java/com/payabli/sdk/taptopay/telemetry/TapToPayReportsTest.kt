@@ -7,6 +7,7 @@ import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.taptopay.TapToPayCapture
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
 import com.payabli.sdk.taptopay.adapters.ReaderFailureKind
@@ -89,6 +90,8 @@ class TapToPayReportsTest {
             PayabliDeclineException(rawCode = "D0329"),
             System.nanoTime(),
             TelemetryProperties.Origin.CHARGE,
+            TapToPayCapture.CHARGED,
+            processorHasNoRecord = false,
         )
 
         val (_, properties) = recorded.single()
@@ -98,7 +101,13 @@ class TapToPayReportsTest {
 
     @Test
     fun `a close that was not confirmed says how long it took and how it ended`() {
-        TapToPayReports.closeFailed(deniedBy("677"), System.nanoTime(), TelemetryProperties.Origin.CHARGE)
+        TapToPayReports.closeFailed(
+            deniedBy("677"),
+            System.nanoTime(),
+            TelemetryProperties.Origin.CHARGE,
+            TapToPayCapture.UNKNOWN,
+            processorHasNoRecord = false,
+        )
 
         val (event, properties) = recorded.single()
         assertEquals(TelemetryEvents.TTP_CLOSE_FAILED, event)
@@ -110,6 +119,7 @@ class TapToPayReportsTest {
                 TelemetryProperty.ORIGIN.key,
                 TelemetryProperty.ERROR_NUMBER.key,
                 TelemetryProperty.FAILURE_TYPE.key,
+                TelemetryProperty.CAPTURE.key,
             ),
             properties.keys,
         )

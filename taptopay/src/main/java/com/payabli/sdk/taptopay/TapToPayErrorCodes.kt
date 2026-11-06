@@ -96,6 +96,14 @@ internal object TapToPayErrorCodes {
             }
         }
 
+    /**
+     * The HTTP status that answered the call [failure] ended.
+     *
+     * @param failure what the call failed with.
+     * @return the status on the first link of its chain that carries one, or null when nothing answered.
+     */
+    fun httpStatusOf(failure: Throwable): Int? = answerOf(failure).first
+
     /** The charge's own refusal [failure] carries, or null when it is not one. */
     private fun refusalOf(failure: Throwable): TapToPayChargeRefusal? =
         (failure as? CustomerDataRefusal)?.let { TapToPayChargeRefusal.CustomerDataRefused(it.requiredFields) }
