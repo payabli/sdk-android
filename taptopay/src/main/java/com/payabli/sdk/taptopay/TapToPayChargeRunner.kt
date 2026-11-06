@@ -401,7 +401,7 @@ internal class TapToPayChargeRunner(
             closeAfterFailedRead(paymentTransId, withdrawn, idempotencyKey, resentKey, TapToPayCapture.UNKNOWN)
             throw withdrawn
         } catch (failure: Throwable) {
-            // The reader answering that it was never set up touched no card, which a minted key's charge says.
+            // A reader that was never set up touched no card, so a run that minted its key charged nothing.
             val told =
                 if (!resentKey && failure is CardReaderException.SessionUnusable) {
                     TapToPayCapture.NOT_CHARGED
