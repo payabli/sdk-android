@@ -272,9 +272,9 @@ internal class MoneyInClient(
     }
 
     /**
-     * Reads the outcome: a code that leaves it open, or a fraud block, whatever the status; then the status; then the
-     * envelope, because a decline behind a 2xx otherwise reads as an approval; then the payload. A success
-     * is a 201 as often as a 200.
+     * Reads the outcome: a code that leaves it open, or a fraud block, whatever the status; then a 402, a decline
+     * whatever its code; then the status; then the envelope, because a decline behind a 2xx otherwise reads as an
+     * approval; then the payload. A success is a 201 as often as a 200.
      *
      * @param route the route template a log may carry.
      * @param response the answered request.
@@ -303,6 +303,17 @@ internal class MoneyInClient(
                 LogField.safe("errorCode", said.code),
             ) { "fraud control blocked the payer" }
             throw PayInException.Refused(said.failure(response.statusCode))
+        }
+        if (response.statusCode == HttpURLConnection.HTTP_PAYMENT_REQUIRED) {
+            logger.warn(
+                LogField.safe("event", "payin_transaction_not_approved"),
+                LogField.safe("route", route),
+                LogField.safe("statusCode", response.statusCode),
+                LogField.safe("errorCode", said.code),
+            ) { "the service declined the transaction" }
+            throw PayInException.Refused(
+                said.failure(response.statusCode, said.code ?: legacyCode(response)?.toString()),
+            )
         }
         PayabliHttpErrors.from(response)?.let { failure ->
             logger.warn(
