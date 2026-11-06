@@ -256,6 +256,8 @@ internal class TapToPaySessionCoordinator(
             throw withdrawn
         } catch (failure: Exception) {
             throw landed(kind, failure)
+        } catch (failure: LinkageError) {
+            throw landed(kind, TapToPaySessionFailures.unexpected(failure))
         }
     }
 
@@ -316,6 +318,12 @@ internal class TapToPaySessionCoordinator(
             throw withdrawn
         } catch (failure: Exception) {
             val raised = landed(kind, failure)
+            reports.failed(raised, startedAt)
+            throw raised
+        } catch (failure: LinkageError) {
+            // Converted at the entry point, so it lands here like any unclassified failure rather than
+            // leaving the session in the state the run reached.
+            val raised = landed(kind, TapToPaySessionFailures.unexpected(failure))
             reports.failed(raised, startedAt)
             throw raised
         } catch (fatal: Throwable) {

@@ -89,11 +89,15 @@ internal object TapToPaySessionFailures {
      *   and never its message.
      */
     fun examined(failure: Exception): Exception =
-        if (TapToPayErrorCodes.isRecognised(failure)) {
-            failure
-        } else {
-            TapToPaySessionException.Unexpected(RedactedCause(failure))
-        }
+        if (TapToPayErrorCodes.isRecognised(failure)) failure else unexpected(failure)
+
+    /**
+     * [failure], which this SDK does not classify, as a run's caller is given it.
+     *
+     * @param failure what the run failed with: an unrecognised exception, or a linkage failure.
+     * @return the SDK's own defect, carrying the original's type and never its message.
+     */
+    fun unexpected(failure: Throwable): Exception = TapToPaySessionException.Unexpected(RedactedCause(failure))
 
     /**
      * The failures that say the device owes activation, and the only ones a registration decides. A device

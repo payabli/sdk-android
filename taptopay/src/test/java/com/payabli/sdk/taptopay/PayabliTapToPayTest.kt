@@ -150,7 +150,8 @@ class PayabliTapToPayTest {
     @Test
     fun `a linkage failure reaches a host as the SDK's own failure, converted`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // A linkage failure is no Exception, so it crossed every catch here untouched and escaped raw.
+            // A linkage failure is no Exception, so it crossed every catch here untouched and escaped raw. Raised
+            // in a session run, it lands as an unclassified exception there does: the SDK's own defect.
             val fixture =
                 SessionFixture(script(), eligibilityFailure = NoClassDefFoundError("a class the reader needs"))
             val terminal = terminalOver(fixture)
@@ -159,7 +160,8 @@ class PayabliTapToPayTest {
 
             assertTrue(failure.toString(), failure is TapToPayException)
             val thrown = failure as TapToPayException
-            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+            assertEquals(PayabliErrorType.SDK_INTERNAL_ERROR, thrown.type)
+            assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.SDK_INTERNAL_ERROR), fixture.state)
         }
 
     @Test
@@ -172,8 +174,11 @@ class PayabliTapToPayTest {
             val failure = runCatching { terminal.initialize() }.exceptionOrNull() as TapToPayException
 
             assertNeverCarries(SENTINEL, failure)
-            assertEquals(NoClassDefFoundError::class.java.name, failure.cause?.message)
-            assertEquals(original.stackTrace.toList(), failure.cause?.stackTrace?.toList())
+            val redacted =
+                generateSequence<Throwable>(failure) { it.cause }
+                    .singleOrNull { it.message == NoClassDefFoundError::class.java.name }
+                    ?: throw AssertionError("the original's type is not in the chain")
+            assertEquals(original.stackTrace.toList(), redacted.stackTrace.toList())
         }
 
     @Test
