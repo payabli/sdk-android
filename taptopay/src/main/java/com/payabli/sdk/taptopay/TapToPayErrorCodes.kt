@@ -81,13 +81,13 @@ internal object TapToPayErrorCodes {
     }
 
     /**
-     * The cause a host is handed for [failure].
+     * [failure] as a host may read it, as a cause or suppressed on one.
      *
      * @param failure what the call failed with.
      * @return [failure] when this SDK recognises it; otherwise a cause keeping its type and stack trace and
      *   dropping its message. What it suppressed rides along, each one under the same rule.
      */
-    private fun hostCauseOf(failure: Throwable): Throwable =
+    fun hostCauseOf(failure: Throwable): Throwable =
         if (isRecognised(failure)) {
             failure
         } else {

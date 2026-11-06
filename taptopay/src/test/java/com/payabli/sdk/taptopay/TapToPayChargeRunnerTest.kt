@@ -2785,7 +2785,10 @@ class TapToPayChargeRunnerTest {
             }
         }
 
-    private fun runnerWhoseKeyHandOnFails(fixture: SessionFixture) =
+    private fun runnerWhoseKeyHandOnFails(
+        fixture: SessionFixture,
+        failure: Throwable = IllegalStateException(SENTINEL),
+    ) =
         TapToPayChargeRunner(
             entry = ENTRY,
             environment = PayabliEnvironment.SANDBOX,
@@ -2796,7 +2799,7 @@ class TapToPayChargeRunnerTest {
             client = TTPTransactionClient(fixture.enrollment.transport, fixture.enrollment.logger),
             store = fixture.enrollment.store,
             keys = fixture.keys,
-            handOnKey = { _, _ -> throw IllegalStateException("the key store could not be written") },
+            handOnKey = { _, _ -> throw failure },
         )
 
     @Test
@@ -2826,10 +2829,8 @@ class TapToPayChargeRunnerTest {
             val thrown = failure as TapToPayException
             assertEquals(TapToPayCapture.UNKNOWN, thrown.capture)
             assertEquals(TRANS_ID, thrown.paymentTransId)
-            assertTrue(
-                thrown.suppressed.toList().toString(),
-                thrown.suppressed.any { it is IllegalStateException },
-            )
+            assertEquals(listOf(IllegalStateException::class.java.name), thrown.suppressed.map { it.message })
+            assertNeverCarries(SENTINEL, thrown)
         }
 
     @Test

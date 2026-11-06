@@ -377,7 +377,7 @@ internal class TapToPayChargeRunner(
                 endCharge(reserved, arrivedAt, locked, inRegion)?.let { cleanup ->
                     val ending = endingWith
                     if (ending != null) {
-                        ending.addSuppressed(cleanup)
+                        ending.addSuppressed(TapToPayErrorCodes.hostCauseOf(cleanup))
                     } else {
                         logger.warn(
                             LogField.safe("event", "ttp_charge_cleanup_failed"),
