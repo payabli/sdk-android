@@ -1,11 +1,13 @@
 package com.payabli.sdk.taptopay.attestation
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.taptopay.TapToPayGuardException
 import com.payabli.sdk.taptopay.attestation.impl.ClassicAttestor
 import com.payabli.sdk.taptopay.attestation.impl.FakeClassicGateway
 import com.payabli.sdk.taptopay.enrollment.FakeSecureStore
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.time.Duration.Companion.seconds
 
@@ -63,6 +65,20 @@ class MintProjectResolverTest {
             mintProject.whilePinned(222L) {
                 assertEquals(222L, mintProject.resolve())
             }
+            assertEquals(333L, mintProject.resolve())
+        }
+
+    @Test
+    fun `pinning inside a pin is a defect in this SDK`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val mintProject = MintProjectResolver { 333L }
+
+            val nested =
+                runCatching {
+                    mintProject.whilePinned(111L) { mintProject.whilePinned(222L) { } }
+                }.exceptionOrNull()
+
+            assertTrue(nested.toString(), nested is TapToPayGuardException)
             assertEquals(333L, mintProject.resolve())
         }
 }

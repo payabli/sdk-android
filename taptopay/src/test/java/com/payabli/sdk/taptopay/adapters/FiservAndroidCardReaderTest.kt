@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.adapters
 
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.taptopay.TapToPayGuardException
 import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
@@ -51,7 +52,7 @@ class FiservAndroidCardReaderTest {
 
             val failure = runCatching { readerFor(gateway).prepareReader() }.exceptionOrNull()
 
-            assertTrue(failure.toString(), failure is IllegalStateException)
+            assertTrue(failure.toString(), failure is TapToPayGuardException)
             assertEquals(0, gateway.prepareCount)
         }
 
@@ -81,7 +82,7 @@ class FiservAndroidCardReaderTest {
 
             val failure = runCatching { reader.prepareReader() }.exceptionOrNull()
 
-            assertTrue(failure.toString(), failure is IllegalStateException)
+            assertTrue(failure.toString(), failure is TapToPayGuardException)
             assertEquals(1, gateway.prepareCount)
         }
 
@@ -121,7 +122,7 @@ class FiservAndroidCardReaderTest {
             val second = runCatching { reader.prepareReader() }.exceptionOrNull()
 
             assertTrue(denied.toString(), denied is CardReaderException.DeviceDenied)
-            assertTrue(second.toString(), second is IllegalStateException)
+            assertTrue(second.toString(), second is TapToPayGuardException)
             assertEquals(1, gateway.prepareCount)
         }
 
@@ -136,7 +137,7 @@ class FiservAndroidCardReaderTest {
             val armed = runCatching { reader.prepareReader() }.exceptionOrNull()
 
             assertTrue(refusal.toString(), refusal is CardReaderException.CredentialsUnusable)
-            assertTrue(armed.toString(), armed is IllegalStateException)
+            assertTrue(armed.toString(), armed is TapToPayGuardException)
             assertEquals(0, gateway.prepareCount)
         }
 

@@ -55,6 +55,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.KSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -513,6 +514,25 @@ class TapToPayChargeRunnerTest {
 
             assertEquals(TRANS_ID, fixture.reader.lastReadRequest?.merchantTransactionId)
             assertEquals(TRANS_ID, fixture.reader.lastReadRequest?.merchantOrderId)
+        }
+
+    @Test
+    fun `a linkage failure during a charge is converted where the payment is known`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Not left to the facade's own boundary, which knows no payment: the charge names the one it
+            // opened, so the conversion has to happen here to carry it.
+            val fixture = readyFixture()
+            fixture.reader.failNextRead(NoClassDefFoundError("a class the reader's native side needs"))
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+            assertEquals(TRANS_ID, thrown.paymentTransId)
         }
 
     @Test
@@ -1584,11 +1604,11 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a JVM error during the tap still closes the transaction, and reaches the caller unchanged`() =
+    fun `a JVM error during the tap still closes the transaction, and arrives converted`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The vendor loads native code, so a LinkageError from the reader is the reachable shape here.
-            // It is not an attestation outcome or a payment outcome and must not be converted into one, but
-            // the transaction it leaves open is a real payment at the paypoint with nothing to resolve it.
+            // It is no attestation outcome and no payment outcome, so it reaches a host as the SDK's own
+            // unknown failure, still naming the payment it left open and the capture nobody knows.
             val fixture = readyFixture()
             val raised = LinkageError("libmc3.so")
             fixture.reader.failNextRead(raised)
@@ -1598,7 +1618,11 @@ class TapToPayChargeRunnerTest {
                     runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
-            assertSame("the error was converted rather than rethrown", raised, failure)
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+            assertEquals(TRANS_ID, thrown.paymentTransId)
+            assertEquals(TapToPayCapture.UNKNOWN, thrown.capture)
             assertTrue("the opened payment was left standing", UPDATE in fixture.routes)
         }
 
@@ -1919,6 +1943,110 @@ class TapToPayChargeRunnerTest {
     private fun problemBody(detail: String) =
         """{"type":"https://docs.payabli.com/","title":"Bad Request","status":400,"detail":"$detail","code":"400","errors":{}}"""
 
+    /** Every `ttp.close.failed` a run reports, with its properties, while [block] runs. */
+    private suspend fun closeFailuresDuring(block: suspend () -> Unit): List<Map<String, String>> {
+        val reported = mutableListOf<Pair<String, Map<String, String>>>()
+        TelemetryRecorders.install { event, properties -> reported += event to properties }
+        try {
+            block()
+        } finally {
+            TelemetryRecorders.clear()
+        }
+        return reported.filter { it.first == TelemetryEvents.TTP_CLOSE_FAILED }.map { it.second }
+    }
+
+    @Test
+    fun `an approved read whose close the processor has no record of reports what the host was told`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+
+            val closes =
+                closeFailuresDuring {
+                    runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                }
+
+            val close = closes.single()
+            assertEquals(TelemetryProperties.Origin.CHARGE, close[TelemetryProperty.ORIGIN.key])
+            assertEquals("charged", close[TelemetryProperty.CAPTURE.key])
+            assertEquals("400", close[TelemetryProperty.HTTP_STATUS.key])
+            assertEquals("processor_no_record", close[TelemetryProperty.REASON.key])
+        }
+
+    @Test
+    fun `a close nothing answered carries no status, and one refused for another reason carries no reason`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val unanswered =
+                closeFailuresDuring {
+                    val fixture = readyFixture(updates = 2)
+                    val runner = runnerGatedOnClose(fixture) { throw java.io.IOException("no route to host") }
+                    runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                }.single()
+            val refused =
+                closeFailuresDuring {
+                    val fixture = failedTapClosedWith(400, problemBody("The request was not valid"))
+                    runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                }.single()
+
+            assertNull(unanswered[TelemetryProperty.HTTP_STATUS.key])
+            assertNull(unanswered[TelemetryProperty.REASON.key])
+            assertEquals("charged", unanswered[TelemetryProperty.CAPTURE.key])
+            assertEquals("400", refused[TelemetryProperty.HTTP_STATUS.key])
+            assertNull(refused[TelemetryProperty.REASON.key])
+        }
+
+    @Test
+    fun `a failed tap's close the processor has no record of reports the payment not charged`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+            var failure: Throwable? = null
+            val close =
+                closeFailuresDuring {
+                    failure =
+                        runCatching {
+                            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                        }.exceptionOrNull()
+                }.single()
+
+            assertEquals(TapToPayCapture.NOT_CHARGED, (failure as TapToPayException).capture)
+            assertEquals("not_charged", close[TelemetryProperty.CAPTURE.key])
+            assertEquals("processor_no_record", close[TelemetryProperty.REASON.key])
+        }
+
+    @Test
+    fun `a failed tap whose close is refused otherwise reports the outcome unknown, as the host is told`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody("The request was not valid"))
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+            var failure: Throwable? = null
+            val close =
+                closeFailuresDuring {
+                    failure =
+                        runCatching {
+                            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                        }.exceptionOrNull()
+                }.single()
+
+            assertEquals((failure as TapToPayException).capture.name.lowercase(), close[TelemetryProperty.CAPTURE.key])
+            assertNull(close[TelemetryProperty.REASON.key])
+        }
+
+    @Test
+    fun `a close retry that failed reports the held payment's capture, as its origin says`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2)
+            val runner = runnerGatedOnClose(fixture) { throw java.io.IOException("no route to host") }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            val retry =
+                closeFailuresDuring { runCatching { runner.closeCaptured(TRANS_ID) } }.single()
+
+            assertEquals(TelemetryProperties.Origin.RETRY, retry[TelemetryProperty.ORIGIN.key])
+            assertEquals("charged", retry[TelemetryProperty.CAPTURE.key])
+        }
+
     @Test
     fun `a failed tap the processor never saw settles its attempt`() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -2107,13 +2235,102 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a JVM error during the tap keeps its place when the close says the processor has no record`() =
+    fun `a charge that failed on something unclassified keeps the original's type and never its message`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // The vendor loads native code, so a LinkageError from the reader is the reachable shape here. The
-            // close's refusal naming a payment the processor holds no record of is about the charge, but an
-            // `Error` is the caller's to see: the refusal rides suppressed, never in the error's place.
+            val fixture = readyFixture(updates = 2)
+            val original = IllegalStateException(SENTINEL)
+            fixture.reader.failNextRead(original)
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertNeverCarries(SENTINEL, failure)
+            assertEquals(IllegalStateException::class.java.name, failure.cause?.message)
+            assertEquals(original.stackTrace.toList(), failure.cause?.stackTrace?.toList())
+        }
+
+    @Test
+    fun `a charge that failed on something unclassified reports the type, and a close the error that ended it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val reported = mutableListOf<Pair<String, Map<String, String>>>()
+            TelemetryRecorders.install { event, properties -> reported += event to properties }
+            try {
+                val fixture = readyFixture(updates = 2)
+                fixture.reader.failNextRead(IllegalStateException(SENTINEL))
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+                var closes = 0
+                val runner =
+                    runnerGatedOnClose(readyFixture(updates = 2)) {
+                        if (closes++ == 0) throw NoClassDefFoundError(SENTINEL)
+                    }
+                runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+                val charge = reported.first { it.first == TelemetryEvents.TTP_CHARGE_FAILED }.second
+                val close = reported.single { it.first == TelemetryEvents.TTP_CLOSE_FAILED }.second
+                assertEquals("IllegalStateException", charge[TelemetryProperty.FAILURE_TYPE.key])
+                assertEquals("NoClassDefFoundError", close[TelemetryProperty.FAILURE_TYPE.key])
+                assertTrue(reported.toString(), reported.none { (_, p) -> p.values.any { it.contains(SENTINEL) } })
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
+
+    @Test
+    fun `a close retry that failed on something unclassified keeps the original's type and never its message`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2)
+            val runner = runnerGatedOnClose(fixture) { throw IllegalStateException(SENTINEL) }
+            val charged =
+                runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }.exceptionOrNull()
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, (charged as? TapToPayException)?.type)
+
+            val failure = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, failure.type)
+            assertNeverCarries(SENTINEL, charged as TapToPayException)
+            assertNeverCarries(SENTINEL, failure)
+            assertEquals(IllegalStateException::class.java.name, failure.cause?.message)
+        }
+
+    @Test
+    fun `a linkage error during the tap gives way to the close saying the processor has no record`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The vendor loads native code, so a LinkageError from the reader is the reachable shape here. It
+            // converts like any unclassified failure, so the close's no-record refusal answers for the charge:
+            // the payment was not taken, as the key's release and the close's report already say.
             val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
-            val raised = LinkageError("libmc3.so")
+            fixture.reader.failNextRead(LinkageError("libmc3.so"))
+
+            var failure: Throwable? = null
+            val closes =
+                closeFailuresDuring {
+                    failure =
+                        runCatching {
+                            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                        }.exceptionOrNull()
+                }
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorType.PAYMENT_NOT_TAKEN, thrown.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, thrown.capture)
+            assertEquals(
+                "the close reported a capture the host was not told",
+                listOf(thrown.capture.name.lowercase()),
+                closes.map { it[TelemetryProperty.CAPTURE.key] },
+            )
+            assertTrue("the opened payment was left standing", UPDATE in fixture.routes)
+        }
+
+    @Test
+    fun `an error that is no linkage failure keeps its place when the close says the processor has no record`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Not converted, so the error is what the caller gets; the close's refusal rides suppressed on it.
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            val raised = OutOfMemoryError("the heap is gone")
             fixture.reader.failNextRead(raised)
 
             val failure =
@@ -2121,11 +2338,10 @@ class TapToPayChargeRunnerTest {
                     runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
-            assertSame("the error was converted rather than rethrown", raised, failure)
-            val suppressed = failure?.suppressed.orEmpty()
+            assertSame(raised, failure)
             assertTrue(
-                "the close's refusal was dropped: ${suppressed.toList()}",
-                suppressed.singleOrNull() is PayabliException,
+                "the close's refusal was dropped: ${raised.suppressed.toList()}",
+                raised.suppressed.singleOrNull() is PayabliException,
             )
             assertTrue("the opened payment was left standing", UPDATE in fixture.routes)
         }
@@ -2542,6 +2758,97 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a close that failed on a linkage error is the payment not closed, held for a retry`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val reported = mutableListOf<String>()
+            TelemetryRecorders.install { event, _ -> reported += event }
+            try {
+                val fixture = readyFixture(updates = 2)
+                var closes = 0
+                val runner =
+                    runnerGatedOnClose(fixture) {
+                        if (closes++ == 0) throw NoClassDefFoundError("a class the close needs")
+                    }
+
+                val failure =
+                    runCatching {
+                        runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                    }.exceptionOrNull()
+
+                assertTrue(failure.toString(), failure is TapToPayException)
+                assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, (failure as TapToPayException).type)
+                assertEquals(TapToPayCapture.CHARGED, failure.capture)
+                assertEquals(1, reported.count { it == TelemetryEvents.TTP_CLOSE_FAILED })
+                runner.closeCaptured(TRANS_ID)
+                assertEquals(1, reported.count { it == TelemetryEvents.TTP_CLOSE_SUCCEEDED })
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
+
+    private fun runnerWhoseKeyHandOnFails(
+        fixture: SessionFixture,
+        failure: Throwable = IllegalStateException(SENTINEL),
+    ) = TapToPayChargeRunner(
+        entry = ENTRY,
+        environment = PayabliEnvironment.SANDBOX,
+        coordinator = fixture.coordinator,
+        manager = fixture.manager,
+        reader = fixture.reader,
+        contactlessEnabled = { true },
+        client = TTPTransactionClient(fixture.enrollment.transport, fixture.enrollment.logger),
+        store = fixture.enrollment.store,
+        keys = fixture.keys,
+        handOnKey = { _, _ -> throw failure },
+    )
+
+    @Test
+    fun `a cleanup that fails after an approved charge still returns the charge`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2, opens = 2)
+
+            val receipt = runnerWhoseKeyHandOnFails(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            assertEquals(TRANS_ID, receipt.paymentTransId)
+            // The steps after the failed one ran: the entry point takes its next charge.
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+        }
+
+    @Test
+    fun `a cleanup step that raises a JVM Error still releases the entry point, then rethrows it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2, opens = 2)
+
+            val thrown =
+                runCatching {
+                    runnerWhoseKeyHandOnFails(fixture, StackOverflowError())
+                        .charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(thrown.toString(), thrown is StackOverflowError)
+            withTimeout(1_000) { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+        }
+
+    @Test
+    fun `a cleanup that fails after the card was asked keeps the failure the charge was ending with`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "?"))
+
+            val failure =
+                runCatching {
+                    runnerWhoseKeyHandOnFails(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val thrown = failure as TapToPayException
+            assertEquals(TapToPayCapture.UNKNOWN, thrown.capture)
+            assertEquals(TRANS_ID, thrown.paymentTransId)
+            assertEquals(listOf(IllegalStateException::class.java.name), thrown.suppressed.map { it.message })
+            assertNeverCarries(SENTINEL, thrown)
+        }
+
+    @Test
     fun `a close that failed reaches the caller and telemetry as the payment not closed`() =
         runTest(timeout = TEST_TIMEOUT) {
             val reported = mutableListOf<Pair<String, Map<String, String>>>()
@@ -2569,7 +2876,7 @@ class TapToPayChargeRunnerTest {
         runTest(timeout = TEST_TIMEOUT) {
             // Its type says nothing was sent, which is not true once the reader may have taken the card.
             val fixture = readyFixture(updates = 2)
-            fixture.reader.failNextRead(IllegalStateException("the vendor's own state check"))
+            fixture.reader.failNextRead(TapToPayGuardException("a guard refused the read"))
 
             val failure =
                 runCatching {
@@ -2577,6 +2884,20 @@ class TapToPayChargeRunnerTest {
                 }.exceptionOrNull() as TapToPayException
 
             assertEquals(PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN, failure.type)
+        }
+
+    @Test
+    fun `a collaborator's own state check during the read is an unexamined failure`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2)
+            fixture.reader.failNextRead(IllegalStateException("the vendor's own state check"))
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.UNKNOWN, failure.type)
         }
 
     @Test
@@ -2665,6 +2986,27 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a refused card whose close failed on something unclassified carries its type and never its message`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2)
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            var closes = 0
+            val runner = runnerGatedOnClose(fixture) { if (closes++ == 0) throw NoClassDefFoundError(SENTINEL) }
+
+            val refused =
+                runCatching {
+                    runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.CARD_DECLINED, refused.type)
+            assertEquals(TRANS_ID, refused.paymentTransId)
+            assertEquals(listOf(NoClassDefFoundError::class.java.name), refused.cause?.suppressed?.map { it.message })
+            assertNeverCarries(SENTINEL, refused)
+        }
+
+    @Test
     fun `a refused card on a resent key whose close failed keeps the earlier attempt`() =
         runTest(timeout = TEST_TIMEOUT) {
             var closeFails = false
@@ -2709,6 +3051,36 @@ class TapToPayChargeRunnerTest {
             val unknown = failure as TapToPayException
             assertTrue(unknown.cause.toString(), unknown.cause is PayabliException)
             assertEquals(TapToPayCapture.UNKNOWN, unknown.capture)
+        }
+
+    @Test
+    fun `a linkage failure during a close is converted, and the payment stays held`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Three answers for the close that gives up, which is what leaves a payment held to close
+            // later, and one for the close that lands after this one.
+            var closeFails = true
+            var failOnClose = false
+            val fixture =
+                SessionFixture(scriptWithCloseControl(closes = 4) { closeFails })
+                    .also { it.coordinator.initialize() }
+            val runner =
+                runnerGatedOnClose(fixture) {
+                    if (failOnClose) throw NoClassDefFoundError("a class the close needs")
+                }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            closeFails = false
+            failOnClose = true
+            val failure = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, thrown.type)
+            assertEquals(TRANS_ID, thrown.paymentTransId)
+
+            // Still held, so the close can be tried again.
+            failOnClose = false
+            runner.closeCaptured(TRANS_ID)
         }
 
     @Test
@@ -4304,3 +4676,5 @@ class TapToPayChargeRunnerTest {
         event: String,
     ): List<String?> = recorded.filter { it.first == event }.map { it.second[TelemetryProperty.ORIGIN.key] }
 }
+
+private const val SENTINEL = "sentinel 4111 1111 1111 1111"

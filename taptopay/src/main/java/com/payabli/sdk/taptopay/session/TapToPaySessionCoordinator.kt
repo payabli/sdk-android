@@ -256,6 +256,8 @@ internal class TapToPaySessionCoordinator(
             throw withdrawn
         } catch (failure: Exception) {
             throw landed(kind, failure)
+        } catch (failure: LinkageError) {
+            throw landed(kind, TapToPaySessionFailures.unexpected(failure))
         }
     }
 
@@ -285,8 +287,9 @@ internal class TapToPaySessionCoordinator(
     private fun settledActivation(failure: Exception): Exception {
         if (failure === settledFailure) return failure
         TapToPaySessionFailures.landingForActivationRun(failure)?.let(manager::settle)
-        settledFailure = failure
-        return failure
+        val raised = TapToPaySessionFailures.examined(failure)
+        settledFailure = raised
+        return raised
     }
 
     /** Lands [failure] as its kind of run does and returns what the caller is given. */
@@ -315,6 +318,12 @@ internal class TapToPaySessionCoordinator(
             throw withdrawn
         } catch (failure: Exception) {
             val raised = landed(kind, failure)
+            reports.failed(raised, startedAt)
+            throw raised
+        } catch (failure: LinkageError) {
+            // Converted at the entry point, so it lands here like any unclassified failure rather than
+            // leaving the session in the state the run reached.
+            val raised = landed(kind, TapToPaySessionFailures.unexpected(failure))
             reports.failed(raised, startedAt)
             throw raised
         } catch (fatal: Throwable) {

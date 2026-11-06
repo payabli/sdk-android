@@ -1217,7 +1217,7 @@ class PayInPaymentFlowTest {
             val clock = AtomicLong(0)
             val failing = ErrorTransport(handsOver = true)
             val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
-            val thrown = runCatching { flowOver(failing, clock = clock::get).capture(cardRequest("order-1")) }
+            val thrown = flowOver(failing, clock = clock::get).capture(cardRequest("order-1"))
 
             val refused = flowOver(other, clock = clock::get).capture(cardRequest("order-1")).exceptionOrNull()
             // A dropped retry keeps the key held, so only the window can free it.
@@ -1226,8 +1226,10 @@ class PayInPaymentFlowTest {
             clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds + 1)
             val later = flowOver(other, clock = clock::get).capture(cardRequest("order-1"))
 
-            // The premise: the error escapes the facade.
-            assertTrue("$thrown", thrown.exceptionOrNull() is LinkageError)
+            // The premise: the error arrives converted, its outcome unknown because the send may have left.
+            val converted = thrown.exceptionOrNull()
+            assertTrue("$thrown", converted is PayInException.Unsettled)
+            assertEquals(PayabliErrorType.UNKNOWN, (converted as PayabliException).type)
             assertEquals("$refused", PayabliErrorType.PAYMENT_REFERENCE_OPEN, (refused as? PayabliException)?.type)
             assertEquals(failing.keys, dropping.keys)
             assertTrue("${later.exceptionOrNull()}", later.isSuccess)
@@ -1238,11 +1240,14 @@ class PayInPaymentFlowTest {
     fun `a send ending in an error before the hand-off leaves its reference free`() =
         runTest(timeout = timeout) {
             val other = FakePayInTransport.answering(APPROVED_TRANSACTION)
-            val thrown = runCatching { flowOver(ErrorTransport(handsOver = false)).capture(cardRequest("order-1")) }
+            val thrown = flowOver(ErrorTransport(handsOver = false)).capture(cardRequest("order-1"))
 
             val next = flowOver(other).capture(cardRequest("order-1"))
 
-            assertTrue("$thrown", thrown.exceptionOrNull() is LinkageError)
+            // The premise: the error arrives converted, and settled, because nothing left.
+            val converted = thrown.exceptionOrNull()
+            assertFalse("$thrown", converted is PayInException.Unsettled)
+            assertEquals("$thrown", PayabliErrorType.UNKNOWN, (converted as? PayabliException)?.type)
             assertTrue("${next.exceptionOrNull()}", next.isSuccess)
             assertEquals(1, other.count)
         }

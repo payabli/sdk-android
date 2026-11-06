@@ -4,9 +4,11 @@ import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.storage.SecureStorageException
+import com.payabli.sdk.taptopay.TapToPayErrorCodes
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
+import com.payabli.sdk.taptopay.attestation.device.RedactedCause
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.enrollment.StoredRegistration
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
@@ -70,7 +72,7 @@ internal object TapToPaySessionFailures {
         registration: StoredRegistration,
     ): Exception =
         when {
-            !owesActivation(failure) -> failure
+            !owesActivation(failure) -> examined(failure)
             registration is StoredRegistration.Unreadable -> registration.refusal
             registration is StoredRegistration.Held && failure is TapToPaySessionException.PendingActivation ->
                 failure
@@ -78,6 +80,24 @@ internal object TapToPaySessionFailures {
             failure is PayabliException -> failure
             else -> TapToPaySessionException.NotPermitted(failure)
         }
+
+    /**
+     * [failure] as a run's caller is given it.
+     *
+     * @param failure what the run failed with.
+     * @return [failure] when this SDK recognises it; otherwise the SDK's own defect, carrying the original's type
+     *   and never its message.
+     */
+    fun examined(failure: Exception): Exception =
+        if (TapToPayErrorCodes.isRecognised(failure)) failure else unexpected(failure)
+
+    /**
+     * [failure], which this SDK does not classify, as a run's caller is given it.
+     *
+     * @param failure what the run failed with: an unrecognised exception, or a linkage failure.
+     * @return the SDK's own defect, carrying the original's type and never its message.
+     */
+    fun unexpected(failure: Throwable): Exception = TapToPaySessionException.Unexpected(RedactedCause(failure))
 
     /**
      * The failures that say the device owes activation, and the only ones a registration decides. A device

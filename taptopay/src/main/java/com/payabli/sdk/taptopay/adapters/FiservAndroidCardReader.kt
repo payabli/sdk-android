@@ -8,6 +8,7 @@ import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.taptopay.TapToPayErrorCodes
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
+import com.payabli.sdk.taptopay.guardFailed
 import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.CardReadResult
@@ -61,7 +62,7 @@ internal class FiservAndroidCardReader(
         // clear and leave the vendor's key and secret held for the life of the reader.
         val arming =
             withContext(NonCancellable) { setup.withLock { pending.also { pending = null } } }
-                ?: error("prepareReader was called with no credentials; configure comes first")
+                ?: guardFailed("prepareReader was called with no credentials; configure comes first")
 
         armWithin(arming)?.let { failure ->
             record("arm", failure)

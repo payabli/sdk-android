@@ -110,6 +110,67 @@ class TelemetryCatalogTest {
         }
     }
 
+    /** The failure events an entry point reports through, per the record's system and card-present rows. */
+    @Test
+    fun everyEntryPointFailureEventCarriesItsFailureType() {
+        listOf(
+            TelemetryEvents.SDK_INITIALIZE_FAILED,
+            TelemetryEvents.AUTH_TOKEN_FAILED,
+            TelemetryEvents.TTP_INITIALIZE_FAILED,
+            TelemetryEvents.TTP_CHARGE_FAILED,
+            TelemetryEvents.TTP_CLOSE_FAILED,
+        ).forEach { event ->
+            val scrubbed =
+                TelemetryCatalog.scrub(
+                    event,
+                    mapOf(TelemetryProperty.FAILURE_TYPE.key to "NullPointerException"),
+                )
+
+            assertEquals(event, mapOf(TelemetryProperty.FAILURE_TYPE.key to "NullPointerException"), scrubbed)
+        }
+    }
+
+    /** What the host was told about a close goes on `ttp.close.failed`, and on no other event. */
+    @Test
+    fun onlyAFailedCloseCarriesWhatTheHostWasToldAboutIt() {
+        val told =
+            mapOf(
+                TelemetryProperty.CAPTURE.key to "charged",
+                TelemetryProperty.HTTP_STATUS.key to "400",
+            )
+        assertEquals(told, TelemetryCatalog.scrub(TelemetryEvents.TTP_CLOSE_FAILED, told))
+        assertEquals(
+            mapOf(TelemetryProperty.REASON.key to "processor_no_record"),
+            TelemetryCatalog.scrub(
+                TelemetryEvents.TTP_CLOSE_FAILED,
+                mapOf(TelemetryProperty.REASON.key to "processor_no_record"),
+            ),
+        )
+        for (event in TelemetryCatalog.events - TelemetryEvents.TTP_CLOSE_FAILED) {
+            assertEquals(event, emptyMap<String, String>(), TelemetryCatalog.scrub(event, told))
+        }
+    }
+
+    /**
+     * The record gives `ttp.attestation.failed` and `ttp.nfc.failed` no `failure_type`, so the catalog
+     * drops it there, which is why the widening above is per event rather than on the `FAILED` set.
+     */
+    @Test
+    fun theFailuresTheRecordGivesNoFailureTypeDropIt() {
+        listOf(
+            TelemetryEvents.TTP_ATTESTATION_FAILED,
+            TelemetryEvents.TTP_NFC_FAILED,
+        ).forEach { event ->
+            val scrubbed =
+                TelemetryCatalog.scrub(
+                    event,
+                    mapOf(TelemetryProperty.FAILURE_TYPE.key to "NullPointerException"),
+                )
+
+            assertEquals(event, emptyMap<String, String>(), scrubbed)
+        }
+    }
+
     @Test
     fun everyCloseEventCarriesItsOrigin() {
         listOf(
@@ -300,6 +361,21 @@ class TelemetryCatalogTest {
                     TelemetryCatalog.allowedKeys(it)
             }
         assertEquals(listOf(TelemetryEvents.TELEMETRY_OVERFLOW), carriers)
+    }
+
+    /**
+     * A token failure waits for its batch: the upload rides the session's own token, so a send forced by the
+     * failure cannot deliver, and a session that never minted would ask the provider again to make it.
+     */
+    @Test
+    fun aTokenFailureWaitsForItsBatch() {
+        assertFalse(TelemetryEvents.AUTH_TOKEN_FAILED in TelemetryCatalog.immediateEvents)
+        assertFalse(
+            TelemetryCatalog.forcesSend(
+                TelemetryEvents.AUTH_TOKEN_FAILED,
+                mapOf(TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.FAILED),
+            ),
+        )
     }
 
     /** The overflow event waits for its batch: it reports a gap, not a failure that needs sending now. */

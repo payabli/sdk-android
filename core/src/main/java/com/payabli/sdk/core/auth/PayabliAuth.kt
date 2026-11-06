@@ -14,6 +14,11 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.network.impl.RedactedCause
+import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.core.telemetry.failureTypeOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
@@ -29,6 +34,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.lang.ref.WeakReference
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
@@ -40,6 +46,14 @@ private const val REASON_BLANK_TOKEN = "the tokenProvider returned a blank token
 private const val REASON_UNUSABLE_TOKEN = "the tokenProvider returned a token that cannot be a header value"
 private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejected token"
 private const val REASON_PROVIDER_READ_UNMINTED = "the tokenProvider read the token it was called to mint"
+
+// The `reason` values `auth.tokenFailed` reports, one per way a provider call gives no usable token.
+private const val FAILED_THREW = "threw"
+private const val FAILED_TIMED_OUT = "timedOut"
+private const val FAILED_BLANK_TOKEN = "blankToken"
+private const val FAILED_UNUSABLE_TOKEN = "unusableToken"
+private const val FAILED_UNCHANGED_TOKEN = "unchangedToken"
+private const val FAILED_REENTERED = "reentered"
 
 /**
  * The ceiling on one call to the host's token provider.
@@ -271,6 +285,7 @@ internal class PayabliAuth(
         // Appended rather than replaced: an element is keyed by its companion, so installing a fresh one
         // hides every enclosing refresh, and a call back into one of those joins the refresh awaiting it.
         val marks = currentCoroutineContext()[RefreshInProgress]?.marks.orEmpty() + Mark(this, refresh.id)
+        val startedAt = System.nanoTime()
 
         val minted: String? =
             try {
@@ -283,7 +298,7 @@ internal class PayabliAuth(
                 // A provider can raise cancellation of its own, from a nested timeout for instance, while
                 // this coroutine is still active. That is a provider failure, not the caller withdrawing.
                 if (currentCoroutineContext().isActive) {
-                    fail(shared, providerFailure(cancellation))
+                    fail(shared, providerFailure(cancellation)) { reportThrown(refresh, startedAt, cancellation) }
                 }
                 // Waiters were not cancelled, so they get a token failure; a foreign CancellationException
                 // would make their own scope look like it is unwinding.
@@ -294,7 +309,7 @@ internal class PayabliAuth(
                 throw cancellation
             } catch (failure: Exception) {
                 // Exception, not Throwable: an OutOfMemoryError or LinkageError is not a token failure.
-                fail(shared, providerFailure(failure))
+                fail(shared, providerFailure(failure)) { reportThrown(refresh, startedAt, failure) }
             } catch (fatal: Throwable) {
                 // It still reaches the caller unchanged, but the claim cannot outlive it or every later
                 // reader waits on a deferred nobody owns. No cause attached: it would pin whatever died.
@@ -308,18 +323,22 @@ internal class PayabliAuth(
             minted ?: fail(
                 shared,
                 PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_PROVIDER_TIMEOUT),
-            )
+            ) { reportFailed(FAILED_TIMED_OUT, startedAt) }
 
         // A blank token cannot authenticate anything, so it is refused rather than installed. This is the
         // only place the rule holds, since nothing validates a token before it reaches here.
         if (fresh.isBlank()) {
-            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_BLANK_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_BLANK_TOKEN)) {
+                reportFailed(FAILED_BLANK_TOKEN, startedAt)
+            }
         }
 
         // A CR or LF here would be header injection, and the platform would throw an unchecked exception from
         // inside the transport rather than a PayabliException. Refused for the same reason blank is.
         if (!fresh.isHeaderSafe()) {
-            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_UNUSABLE_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_UNUSABLE_TOKEN)) {
+                reportFailed(FAILED_UNUSABLE_TOKEN, startedAt)
+            }
         }
 
         // The same credential the server just refused. Committing it would publish a rotation that did not
@@ -327,7 +346,9 @@ internal class PayabliAuth(
         // would be unchanged, the next rejection starts another provider call instead of taking the
         // already-rotated shortcut: one provider call per 401, for as long as the provider keeps doing it.
         if (fresh == rejectedToken) {
-            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_UNCHANGED_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_UNCHANGED_TOKEN)) {
+                reportFailed(FAILED_UNCHANGED_TOKEN, startedAt)
+            }
         }
 
         // Emitted under the same lock that commits and releases, so a second refresh cannot publish its
@@ -355,6 +376,53 @@ internal class PayabliAuth(
     }
 
     /**
+     * Reports a provider call that raised: `reentered` when the provider had asked for the token it was minting,
+     * since that refusal is what it raised on, otherwise `threw` with the type it raised.
+     *
+     * @param refresh the refresh whose provider call raised.
+     * @param startedAt when the provider was called.
+     * @param failure what the provider raised.
+     */
+    private fun reportThrown(
+        refresh: Refresh,
+        startedAt: Long,
+        failure: Throwable,
+    ) {
+        if (refresh.reentered) {
+            reportFailed(FAILED_REENTERED, startedAt)
+        } else {
+            reportFailed(FAILED_THREW, startedAt, failure)
+        }
+    }
+
+    /**
+     * Records `auth.tokenFailed` for this refresh's provider call. Only the refresh that called the provider
+     * reaches here, so a caller that joined it records nothing. The event waits for its batch, as the catalog
+     * decides.
+     *
+     * @param reason which of the catalog's values the call failed with.
+     * @param startedAt when the provider was called.
+     * @param thrown what the provider raised, whose type is reported; null for every reason but `threw`.
+     */
+    private fun reportFailed(
+        reason: String,
+        startedAt: Long,
+        thrown: Throwable? = null,
+    ) {
+        TelemetryRecorders.record(TelemetryEvents.AUTH_TOKEN_FAILED) {
+            buildMap {
+                put(TelemetryProperty.OUTCOME.key, TelemetryProperties.Outcome.FAILED)
+                put(TelemetryProperty.REASON.key, reason)
+                put(
+                    TelemetryProperty.DURATION_MS.key,
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt).toString(),
+                )
+                thrown?.let { put(TelemetryProperty.FAILURE_TYPE.key, failureTypeOf(it)) }
+            }
+        }
+    }
+
+    /**
      * Anything the provider raised, redacted: it is host code, whatever type it chose to throw.
      *
      * @param failure what the provider raised.
@@ -368,16 +436,25 @@ internal class PayabliAuth(
         )
 
     /**
-     * Releases the claim and hands [outcome] to the waiters, then throws it.
+     * Runs [report], then releases the claim and hands [outcome] to the waiters, then throws it. The claim is
+     * released whatever [report] raises: an `Exception` from it is dropped, and anything else is rethrown after.
      *
      * @param shared the claim to release.
      * @param outcome the failure the waiters are handed.
+     * @param report records the failure, before the claim is released.
      */
     private suspend fun fail(
         shared: CompletableDeferred<String>,
         outcome: PayabliGenericException,
+        report: () -> Unit = {},
     ): Nothing {
-        finish(shared, outcome)
+        try {
+            report()
+        } catch (ignored: Exception) {
+            // Telemetry never decides a token outcome.
+        } finally {
+            finish(shared, outcome)
+        }
         logger.error(outcome, LogField.safe("errorCode", outcome.type)) { "token refresh failed" }
         throw outcome
     }
@@ -417,11 +494,13 @@ internal class PayabliAuth(
                 // is the first mint. Then the value being asked for is the one the provider running above
                 // was called to produce, and joining the claim would be joining itself, so it fails here
                 // rather than waiting for a token only this caller can supply.
-                currentToken
-                    ?: throw PayabliGenericException(
+                currentToken ?: run {
+                    live.reentered = true
+                    throw PayabliGenericException(
                         PayabliErrorType.TOKEN_PROVIDER_FAILED,
                         REASON_PROVIDER_READ_UNMINTED,
                     )
+                }
             }
         }
     }
@@ -469,6 +548,10 @@ internal class PayabliAuth(
     private class Refresh {
         val claim = CompletableDeferred<String>()
         val id: UUID = UUID.randomUUID()
+
+        /** Set when the provider asked for the token this refresh is minting, so its failure is reported as that. */
+        @Volatile
+        var reentered = false
     }
 
     private sealed interface RefreshPlan {

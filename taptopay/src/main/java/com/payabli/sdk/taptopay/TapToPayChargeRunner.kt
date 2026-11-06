@@ -117,6 +117,10 @@ internal class TapToPayChargeRunner(
     private val store: AttestedDeviceStore,
     private val keys: ChargeKeyStore,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
+    // The one cleanup step that writes, supplied so a test can make it fail.
+    private val handOnKey: suspend (key: String, arrivedAt: Long?) -> Unit = { key, arrivedAt ->
+        keys.supersede(entry, environment, key, arrivedAt)
+    },
 ) {
     /**
      * What a retained payment belongs to: the entry point, under the environment it was opened against.
@@ -163,6 +167,7 @@ internal class TapToPayChargeRunner(
             var askedForCard = false
             var inRegion: CompletableDeferred<Unit>? = null
             var locked = false
+            var endingWith: Throwable? = null
             try {
                 // Claimed before the lock, so a refused charge never waits on it.
                 val admitted =
@@ -228,7 +233,7 @@ internal class TapToPayChargeRunner(
 
                         // Again here, because a replacement can land while the payment opens.
                         if (!coordinator.isSessionLive()) {
-                            refuseRetiredCharge(paymentTransId, idempotencyKey, resentKey)
+                            refuseRetiredCharge(paymentTransId, idempotencyKey, resentKey, capture)
                         }
 
                         // Before the read: the processor takes the sale before the answer arrives.
@@ -247,15 +252,14 @@ internal class TapToPayChargeRunner(
                                 manager.chargeActivity(TapToPayChargeActivity.CLOSING)
                                 val closeStartedAt = System.nanoTime()
                                 TapToPayReports.closeStarted(TelemetryProperties.Origin.CHARGE)
-                                try {
-                                    client.update(paymentTransId, result)
-                                } catch (withdrawn: CancellationException) {
-                                    throw withdrawn
-                                } catch (failure: Exception) {
+
+                                suspend fun refused(failure: Throwable): Throwable {
                                     TapToPayReports.closeFailed(
                                         failure,
                                         closeStartedAt,
                                         TelemetryProperties.Origin.CHARGE,
+                                        captureOf(result.outcome, resentKey),
+                                        failure.saysTheProcessorHasNoRecord(),
                                     )
                                     // A declined card settles whatever its close was refused with. An indeterminate
                                     // read's authorisation may still be handling at the processor, so no answer
@@ -263,7 +267,18 @@ internal class TapToPayChargeRunner(
                                     if (!resentKey && result.outcome == CardReadOutcome.DECLINED) {
                                         keys.settle(entry, environment, idempotencyKey)
                                     }
-                                    return@withContext failure
+                                    return failure
+                                }
+                                try {
+                                    client.update(paymentTransId, result)
+                                } catch (withdrawn: CancellationException) {
+                                    throw withdrawn
+                                } catch (failure: Exception) {
+                                    return@withContext refused(failure)
+                                } catch (failure: LinkageError) {
+                                    // The vendor loads native code, so a linkage failure is a reachable close
+                                    // failure and leaves the payment exactly as unclosed as any other.
+                                    return@withContext refused(failure)
                                 }
                                 TapToPayReports.closeSucceeded(closeStartedAt, TelemetryProperties.Origin.CHARGE)
                                 // A resent key names an earlier opening, so this run's answer never settles it.
@@ -286,7 +301,7 @@ internal class TapToPayChargeRunner(
 
                             CardReadOutcome.DECLINED ->
                                 throw TTPTransactionException.CardRefused(result.providerState).apply {
-                                    closeFailure?.let(::addSuppressed)
+                                    closeFailure?.let { addSuppressed(TapToPayErrorCodes.hostCauseOf(it)) }
                                 }
 
                             CardReadOutcome.INDETERMINATE ->
@@ -302,6 +317,7 @@ internal class TapToPayChargeRunner(
                 }
                 // Withdrawn before the opening was handed over, a resend wrote nothing, so its key's clock stands.
                 if (!askedForCard && !sendMark.mayHaveLeft) arrivedAt = null
+                endingWith = withdrawn
                 throw withdrawn
             } catch (failure: Throwable) {
                 // A refused key extends no marker an earlier send wrote, and a send that never left writes none.
@@ -346,26 +362,79 @@ internal class TapToPayChargeRunner(
                 // The code that says the payment was not taken is the one answer whose capture is known: the
                 // card was not charged, so a retry cannot take the money twice.
                 if (type == PayabliErrorType.PAYMENT_NOT_TAKEN) capture = TapToPayCapture.NOT_CHARGED
-                // A JVM Error passes through unwrapped, as the facade promises.
-                throw if (failure is Exception) failed(failure, type, openedAs, capture) else failure
+                // A JVM Error that is no linkage failure passes through unwrapped, as the facade promises.
+                val thrown =
+                    if (failure is Exception || failure is LinkageError) {
+                        failed(failure, type, openedAs, capture)
+                    } else {
+                        failure
+                    }
+                endingWith = thrown
+                throw thrown
             } finally {
-                // A key still held names the newest unsettled charge, the only one a retry can claim.
-                try {
-                    reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it, arrivedAt) } }
-                } finally {
-                    if (locked) region.unlock()
-                    inRegion?.let {
-                        it.complete(Unit)
-                        HOLDERS.releaseCharge(entry)
+                // Thrown from here, a cleanup failure would discard the outcome in flight and reach the host as
+                // not charged, naming no payment.
+                endCharge(reserved, arrivedAt, locked, inRegion)?.let { cleanup ->
+                    val ending = endingWith
+                    if (ending != null) {
+                        ending.addSuppressed(TapToPayErrorCodes.hostCauseOf(cleanup))
+                    } else {
+                        logger.warn(
+                            LogField.safe("event", "ttp_charge_cleanup_failed"),
+                            LogField.safe("errorKind", cleanup.javaClass.simpleName),
+                        ) { "a charge's cleanup failed after it succeeded" }
                     }
                 }
             }
         }
 
     /**
-     * Asks for one card for [amount], at the scale the paypoint recorded. Every other exit, cancellation and a
-     * JVM `Error` included, closes [paymentTransId] and rethrows what it caught. A minted-key run's `Exception`
-     * gives way to the close's no-record refusal, which settles the key, unless the reader's session was unusable.
+     * Hands [reserved] on, leaves the region and releases the entry point, each whether or not the step before it
+     * failed. A JVM `Error` from a step is rethrown unchanged once every step has run.
+     *
+     * @param reserved the key this charge held, or null when it reserved none.
+     * @param arrivedAt when a send of [reserved] may have reached the service, or null.
+     * @param locked whether this charge holds the region.
+     * @param inRegion the admission to complete, or null when this charge was never admitted.
+     * @return the first step's failure, with any later one suppressed on it, or null when every step succeeded.
+     */
+    private suspend fun endCharge(
+        reserved: String?,
+        arrivedAt: Long?,
+        locked: Boolean,
+        inRegion: CompletableDeferred<Unit>?,
+    ): Throwable? {
+        var first: Throwable? = null
+        var fatal: Throwable? = null
+
+        suspend fun step(block: suspend () -> Unit) {
+            try {
+                block()
+            } catch (failure: Exception) {
+                first?.addSuppressed(failure) ?: run { first = failure }
+            } catch (failure: LinkageError) {
+                first?.addSuppressed(failure) ?: run { first = failure }
+            } catch (failure: Throwable) {
+                fatal?.addSuppressed(failure) ?: run { fatal = failure }
+            }
+        }
+        // A key still held names the newest unsettled charge, the only one a retry can claim.
+        step { reserved?.let { withContext(NonCancellable) { handOnKey(it, arrivedAt) } } }
+        step { if (locked) region.unlock() }
+        step {
+            inRegion?.let {
+                it.complete(Unit)
+                HOLDERS.releaseCharge(entry)
+            }
+        }
+        fatal?.let { throw it }
+        return first
+    }
+
+    /**
+     * Asks for one card for [amount], at the paypoint's scale. Every other exit, cancellation and a JVM `Error`
+     * included, closes [paymentTransId] and rethrows. A minted-key run's `Exception` or `LinkageError` gives way
+     * to the close's no-record refusal, which settles the key, unless the reader's session was unusable.
      */
     private suspend fun readCard(
         paymentTransId: String,
@@ -384,10 +453,17 @@ internal class TapToPayChargeRunner(
                 ),
             )
         } catch (withdrawn: CancellationException) {
-            closeAfterFailedRead(paymentTransId, withdrawn, idempotencyKey, resentKey)
+            closeAfterFailedRead(paymentTransId, withdrawn, idempotencyKey, resentKey, TapToPayCapture.UNKNOWN)
             throw withdrawn
         } catch (failure: Throwable) {
-            val noRecord = closeAfterFailedRead(paymentTransId, failure, idempotencyKey, resentKey)
+            // A reader that was never set up touched no card, so a run that minted its key charged nothing.
+            val told =
+                if (!resentKey && failure is CardReaderException.SessionUnusable) {
+                    TapToPayCapture.NOT_CHARGED
+                } else {
+                    TapToPayCapture.UNKNOWN
+                }
+            val noRecord = closeAfterFailedRead(paymentTransId, failure, idempotencyKey, resentKey, told)
             // After the close, which publishes CLOSING only while the charge holds the session. Expires this
             // terminal's session, where no setup runs during a charge; a denial's repair lands DEVICE_INELIGIBLE.
             if (failure is CardReaderException.SessionUnusable ||
@@ -400,10 +476,12 @@ internal class TapToPayChargeRunner(
             if (failure is CardReaderException.ContactlessDisabled) {
                 manager.failCharge(TapToPayFailureReason.CONTACTLESS_DISABLED)
             }
-            // A JVM Error is never converted into a payment outcome, and a reader gone before the read keeps the
-            // expiry, whose cause is the session: each keeps its place, the close's refusal suppressed on it, the
-            // way a failed close rides on a refused card.
-            if (noRecord != null && (failure is Error || failure is CardReaderException.SessionUnusable)) {
+            // A JVM Error other than a linkage failure is never converted into a payment outcome, and a reader gone
+            // before the read keeps the expiry, whose cause is the session: each keeps its place, the close's
+            // refusal suppressed on it, the way a failed close rides on a refused card.
+            val keepsItsPlace =
+                (failure is Error && failure !is LinkageError) || failure is CardReaderException.SessionUnusable
+            if (noRecord != null && keepsItsPlace) {
                 failure.addSuppressed(noRecord)
                 throw failure
             }
@@ -496,17 +574,36 @@ internal class TapToPayChargeRunner(
                 // rethrow.
                 throw withdrawn
             } catch (failure: Exception) {
-                TapToPayReports.closeFailed(failure, startedAt, TelemetryProperties.Origin.RETRY)
-                // Still held, so this can be tried again.
-                throw failed(
-                    failure,
-                    PayabliErrorType.PAYMENT_NOT_CLOSED,
-                    pending.paymentTransId,
-                    captureOf(pending.read.outcome, pending.resentKey),
-                )
+                throw closeRetryFailed(failure, startedAt, pending)
+            } catch (failure: LinkageError) {
+                throw closeRetryFailed(failure, startedAt, pending)
             }
             TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.RETRY)
         }
+
+    /**
+     * A failed close retry's answer: reported as the close it was, still held so this can be tried again,
+     * and the failure converted under the payment's own capture state.
+     */
+    private fun closeRetryFailed(
+        failure: Throwable,
+        startedAt: Long,
+        pending: PendingClose,
+    ): Nothing {
+        TapToPayReports.closeFailed(
+            failure,
+            startedAt,
+            TelemetryProperties.Origin.RETRY,
+            captureOf(pending.read.outcome, pending.resentKey),
+            failure.saysTheProcessorHasNoRecord(),
+        )
+        throw failed(
+            failure,
+            PayabliErrorType.PAYMENT_NOT_CLOSED,
+            pending.paymentTransId,
+            captureOf(pending.read.outcome, pending.resentKey),
+        )
+    }
 
     /**
      * What the reader's answer says about the money, which is not the same as whether it answered.
@@ -580,7 +677,7 @@ internal class TapToPayChargeRunner(
 
     /** The failure a caller sees, under [type], carrying the payment it belongs to and whether the money moved. */
     private fun failed(
-        failure: Exception,
+        failure: Throwable,
         type: PayabliErrorType,
         paymentTransId: String?,
         capture: TapToPayCapture,
@@ -594,9 +691,10 @@ internal class TapToPayChargeRunner(
         paymentTransId: String,
         idempotencyKey: String,
         resentKey: Boolean,
+        capture: TapToPayCapture,
     ): Nothing {
         val refusal = PayabliGenericException(PayabliErrorType.SESSION_NOT_INITIALIZED, REASON_RETIRED)
-        closeAfterFailedRead(paymentTransId, refusal, idempotencyKey, resentKey)
+        closeAfterFailedRead(paymentTransId, refusal, idempotencyKey, resentKey, capture)
         manager.failCharge(TapToPayFailureReason.SESSION_ENDED)
         throw refusal
     }
@@ -613,6 +711,7 @@ internal class TapToPayChargeRunner(
         failure: Throwable,
         idempotencyKey: String,
         resentKey: Boolean,
+        capture: TapToPayCapture,
     ) = withContext(NonCancellable) {
         manager.chargeActivity(TapToPayChargeActivity.CLOSING)
         val startedAt = System.nanoTime()
@@ -623,10 +722,18 @@ internal class TapToPayChargeRunner(
                 client.updateAfterFailedRead(paymentTransId, failure.javaClass.simpleName)
                 true
             } catch (failedClose: Throwable) {
-                TapToPayReports.closeFailed(failedClose, startedAt, TelemetryProperties.Origin.CHARGE)
+                val noRecord = failedClose.saysTheProcessorHasNoRecord()
+                TapToPayReports.closeFailed(
+                    failedClose,
+                    startedAt,
+                    TelemetryProperties.Origin.CHARGE,
+                    // A minted key's charge the processor has no record of is reported not charged.
+                    if (!resentKey && noRecord) TapToPayCapture.NOT_CHARGED else capture,
+                    noRecord,
+                )
                 // The processor holding no record of the payment means nothing was captured. A resent key names
                 // an earlier opening, so this answer never settles it.
-                if (!resentKey && failedClose.saysTheProcessorHasNoRecord()) {
+                if (!resentKey && noRecord) {
                     keys.settle(entry, environment, idempotencyKey)
                 }
                 // On a run that minted its key, the refusal naming this payment one the processor holds no
@@ -637,7 +744,7 @@ internal class TapToPayChargeRunner(
                     LogField.safe("phase", "update"),
                     LogField.safe("errorKind", failedClose.javaClass.simpleName),
                 ) { "an opened payment could not be closed after a failed tap" }
-                noRecordRefusal = failedClose.takeIf { !resentKey && it.saysTheProcessorHasNoRecord() }
+                noRecordRefusal = failedClose.takeIf { !resentKey && noRecord }
                 false
             }
         if (closed) TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.CHARGE)

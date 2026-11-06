@@ -21,6 +21,7 @@ import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABL
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 private val REASON = "server text"
@@ -290,13 +291,31 @@ class TapToPaySessionFailuresTest {
             val consultsRegistration =
                 TapToPaySessionFailures.landingFor(failure, HELD) !=
                     TapToPaySessionFailures.landingFor(failure, StoredRegistration.None)
-            if (failure !is Exception || consultsRegistration) continue
+            if (failure !is Exception || consultsRegistration || !TapToPayErrorCodes.isRecognised(failure)) continue
             for (registration in EVERY_REGISTRATION) {
                 assertSame(
                     "${failure::class.qualifiedName} under $registration",
                     failure,
                     TapToPaySessionFailures.raisedFor(failure, registration),
                 )
+            }
+        }
+    }
+
+    @Test
+    fun `a failure this SDK does not recognise is raised as its defect, keeping only the type`() {
+        val unrecognised =
+            cases.map { it.first }.filterIsInstance<Exception>().filterNot(
+                TapToPayErrorCodes::isRecognised,
+            )
+        assertTrue("the cases hold no unrecognised failure", unrecognised.isNotEmpty())
+        for (failure in unrecognised) {
+            for (registration in EVERY_REGISTRATION) {
+                val raised = TapToPaySessionFailures.raisedFor(failure, registration)
+
+                assertTrue("$raised", raised is TapToPaySessionException.Unexpected)
+                assertEquals(failure.javaClass.name, raised.cause?.message)
+                assertEquals(failure.stackTrace.toList(), raised.cause?.stackTrace?.toList())
             }
         }
     }

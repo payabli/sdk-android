@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.session
 
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.taptopay.TapToPayGuardException
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -124,7 +125,7 @@ class TapToPaySessionManagerTest {
                     manager.advance(TapToPaySessionState.FetchingConfig) { ran = true }
                 }.exceptionOrNull()
 
-            assertTrue("$failure", failure is IllegalStateException)
+            assertTrue("$failure", failure is TapToPayGuardException)
             assertFalse("the work ran under a state that was never published", ran)
             assertEquals(TapToPaySessionState.Ready, manager.state.value)
         }
