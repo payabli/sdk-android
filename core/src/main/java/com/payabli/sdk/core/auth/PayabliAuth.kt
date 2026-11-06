@@ -298,8 +298,7 @@ internal class PayabliAuth(
                 // A provider can raise cancellation of its own, from a nested timeout for instance, while
                 // this coroutine is still active. That is a provider failure, not the caller withdrawing.
                 if (currentCoroutineContext().isActive) {
-                    reportThrown(refresh, startedAt, cancellation)
-                    fail(shared, providerFailure(cancellation))
+                    fail(shared, providerFailure(cancellation)) { reportThrown(refresh, startedAt, cancellation) }
                 }
                 // Waiters were not cancelled, so they get a token failure; a foreign CancellationException
                 // would make their own scope look like it is unwinding.
@@ -310,8 +309,7 @@ internal class PayabliAuth(
                 throw cancellation
             } catch (failure: Exception) {
                 // Exception, not Throwable: an OutOfMemoryError or LinkageError is not a token failure.
-                reportThrown(refresh, startedAt, failure)
-                fail(shared, providerFailure(failure))
+                fail(shared, providerFailure(failure)) { reportThrown(refresh, startedAt, failure) }
             } catch (fatal: Throwable) {
                 // It still reaches the caller unchanged, but the claim cannot outlive it or every later
                 // reader waits on a deferred nobody owns. No cause attached: it would pin whatever died.
@@ -322,26 +320,25 @@ internal class PayabliAuth(
         // Raised inside the try, this is caught below and re-wrapped, so the initiator would see a
         // different reason from the waiters.
         val fresh =
-            minted ?: run {
-                reportFailed(FAILED_TIMED_OUT, startedAt)
-                fail(
-                    shared,
-                    PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_PROVIDER_TIMEOUT),
-                )
-            }
+            minted ?: fail(
+                shared,
+                PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_PROVIDER_TIMEOUT),
+            ) { reportFailed(FAILED_TIMED_OUT, startedAt) }
 
         // A blank token cannot authenticate anything, so it is refused rather than installed. This is the
         // only place the rule holds, since nothing validates a token before it reaches here.
         if (fresh.isBlank()) {
-            reportFailed(FAILED_BLANK_TOKEN, startedAt)
-            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_BLANK_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_BLANK_TOKEN)) {
+                reportFailed(FAILED_BLANK_TOKEN, startedAt)
+            }
         }
 
         // A CR or LF here would be header injection, and the platform would throw an unchecked exception from
         // inside the transport rather than a PayabliException. Refused for the same reason blank is.
         if (!fresh.isHeaderSafe()) {
-            reportFailed(FAILED_UNUSABLE_TOKEN, startedAt)
-            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_UNUSABLE_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_UNUSABLE_TOKEN)) {
+                reportFailed(FAILED_UNUSABLE_TOKEN, startedAt)
+            }
         }
 
         // The same credential the server just refused. Committing it would publish a rotation that did not
@@ -349,8 +346,9 @@ internal class PayabliAuth(
         // would be unchanged, the next rejection starts another provider call instead of taking the
         // already-rotated shortcut: one provider call per 401, for as long as the provider keeps doing it.
         if (fresh == rejectedToken) {
-            reportFailed(FAILED_UNCHANGED_TOKEN, startedAt)
-            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_UNCHANGED_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_UNCHANGED_TOKEN)) {
+                reportFailed(FAILED_UNCHANGED_TOKEN, startedAt)
+            }
         }
 
         // Emitted under the same lock that commits and releases, so a second refresh cannot publish its
@@ -438,16 +436,25 @@ internal class PayabliAuth(
         )
 
     /**
-     * Releases the claim and hands [outcome] to the waiters, then throws it.
+     * Runs [report], then releases the claim and hands [outcome] to the waiters, then throws it. The claim is
+     * released whatever [report] raises: an `Exception` from it is dropped, and anything else is rethrown after.
      *
      * @param shared the claim to release.
      * @param outcome the failure the waiters are handed.
+     * @param report records the failure, before the claim is released.
      */
     private suspend fun fail(
         shared: CompletableDeferred<String>,
         outcome: PayabliGenericException,
+        report: () -> Unit = {},
     ): Nothing {
-        finish(shared, outcome)
+        try {
+            report()
+        } catch (ignored: Exception) {
+            // Telemetry never decides a token outcome.
+        } finally {
+            finish(shared, outcome)
+        }
         logger.error(outcome, LogField.safe("errorCode", outcome.type)) { "token refresh failed" }
         throw outcome
     }

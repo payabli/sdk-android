@@ -6,6 +6,8 @@ import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -14,15 +16,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.IOException
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
@@ -163,5 +168,31 @@ class TokenFailureReportingTest {
             runCatching { auth { throw OutOfMemoryError(SENTINEL) }.invalidateAndRefresh("initial-token") }
 
             assertTrue(recorded.toString(), failures().isEmpty())
+        }
+
+    @Test
+    fun `a recorder that raises an Error releases the claim, so the next refresh mints`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fatal = NoClassDefFoundError(SENTINEL)
+            TelemetryRecorders.install { _, _ -> throw fatal }
+            listOf<suspend () -> String>({ throw SocketTimeoutException(SENTINEL) }, { " " }).forEach { first ->
+                val calls = AtomicInteger()
+                val subject = auth { if (calls.getAndIncrement() == 0) first() else "fresh-token" }
+
+                assertSame(fatal, runCatching { subject.invalidateAndRefresh("initial-token") }.exceptionOrNull())
+
+                assertEquals("fresh-token", withTimeout(1_000) { subject.invalidateAndRefresh("initial-token") })
+            }
+        }
+
+    @Test
+    fun `a recorder that raises an Exception leaves the token failure the caller is handed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            TelemetryRecorders.install { _, _ -> throw IOException(SENTINEL) }
+            val subject = auth { throw SocketTimeoutException(SENTINEL) }
+
+            val thrown = runCatching { subject.invalidateAndRefresh("initial-token") }.exceptionOrNull()
+
+            assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, (thrown as PayabliGenericException).type)
         }
 }
