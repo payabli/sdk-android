@@ -14,7 +14,10 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.network.impl.AuthFailureListener
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.KSerializer
 import org.junit.After
@@ -171,6 +174,48 @@ class SessionInitializeReportingTest {
             // The recorder standing here is the retired session's: the replacement's own channel is created
             // by the install that has not finished yet, which is what made the start land in the wrong one.
             assertEquals(emptyList<String>(), recorded)
+        }
+
+    /**
+     * The converted pair is reported before another install can run, so it goes on the channel that stood
+     * when the install failed. The second install waits on the critical section and runs the moment it is
+     * released; it installs a channel of its own, as a successful install does.
+     */
+    @Test
+    fun aConvertedFailureIsReportedBeforeAnotherInstallCanReplaceTheChannel() =
+        runTest {
+            val late = mutableListOf<String>()
+            val building = CompletableDeferred<Unit>()
+            val fail = CompletableDeferred<Unit>()
+            val failing =
+                launch {
+                    runCatching {
+                        PayabliSession.initializeWith(configFor("an-entry-point")) { _ ->
+                            building.complete(Unit)
+                            fail.await()
+                            throw IllegalStateException("a transport that could not be built")
+                        }
+                    }
+                }
+            building.await()
+            val waiting =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    PayabliSession.initializeWith(configFor("an-entry-point")) { _ ->
+                        TelemetryRecorders.install { event, _ -> late += event }
+                        UnusedTransport
+                    }
+                }
+            assertTrue("the second install did not wait for the first", waiting.isActive)
+
+            fail.complete(Unit)
+            failing.join()
+            waiting.join()
+
+            assertEquals(
+                listOf(TelemetryEvents.SDK_INITIALIZE_STARTED, TelemetryEvents.SDK_INITIALIZE_FAILED),
+                recorded,
+            )
+            assertEquals(emptyList<String>(), late)
         }
 
     private suspend fun install(entryPoint: String): PayabliSession =

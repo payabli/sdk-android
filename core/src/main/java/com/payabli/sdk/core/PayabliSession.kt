@@ -282,88 +282,112 @@ public class PayabliSession private constructor(
         ): PayabliSession {
             val startedAt = System.nanoTime()
 
+            // Converted under the lock, so the pair goes on the channel that stood when this install failed:
+            // released first, a waiting install could replace that channel before the report.
             return lock.withLock {
-                val identity = ConfigIdentity(config)
-                val current = installed
-                // The machine rather than [state], because this is a question about the session install
-                // holds. The published value is process-wide, and reading it here would let one stray write
-                // replace a healthy session, which is the two-sessions state this type exists to prevent.
-                val live = current != null && !current.machine.isFinished
-
-                // A call that changes nothing reports nothing: a start with no outcome after it is a funnel
-                // nobody can close, and an Application and an Activity both initializing is the ordinary way
-                // to produce one.
-                if (live && current!!.identity == identity) {
-                    return@withLock current
+                convertingUnexpectedFailures(startedAt) {
+                    installHeld(config, host, identifierOf, buildAuth, startedAt)
                 }
-
-                if (live) {
-                    // Both halves on the live session's own channel. Recorded anywhere else in this call they
-                    // would split: a replacement reports its start through the retired session's channel,
-                    // carrying that session's id and entry point, and its success through the new one.
-                    TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
-                        mapOf(TelemetryProperty.STATE.key to reportedState())
-                    }
-                    val refusal =
-                        PayabliGenericException(
-                            PayabliErrorType.INVALID_CONFIGURATION,
-                            REASON_ALREADY_INITIALIZED,
-                        )
-                    reportFailure(refusal, startedAt)
-                    throw refusal
-                }
-
-                val machine = SessionStateMachine(sink)
-                // Without host bindings, which is the SDK's own tests, there is no device to read.
-                val device = if (host == null) TelemetryDeviceContext.NONE else DeviceProfileFactory.of(host.appContext)
-                val readDeviceId: () -> String? =
-                    if (host == null) {
-                        { null }
-                    } else {
-                        val context = host.appContext.applicationContext
-                        { identifierOf(context).ifBlank { null } }
-                    }
-                // One reader per fact, so the header, telemetry and the public member report the same device.
-                val client = ClientFacts(PayabliSdkVersion.VALUE, device.osVersion, device.modelName, readDeviceId)
-                // The listener is handed in rather than wired afterwards so no request can complete against a
-                // transport whose failures nothing is listening for.
-                val auth = buildAuth(AuthFailureListener { machine.markReinitializeRequired() }, client)
-                val session =
-                    PayabliSession(
-                        identity = identity,
-                        machine = machine,
-                        readDeviceId = readDeviceId,
-                        renewal = auth.renewRefusedToken,
-                        transport = auth.transport,
-                        // Minted here rather than in the telemetry module, so every capability reporting for
-                        // this session quotes the same lifetime even when they are wired independently.
-                        telemetry =
-                            TelemetrySessionContext(
-                                entryPoint = config.entryPoint,
-                                environment = config.environment,
-                                sessionId = UUID.randomUUID().toString(),
-                                device = device,
-                            ),
-                    )
-                machine.markReady()
-                installed = session
-
-                if (current != null) {
-                    logger.warn(
-                        LogField.safe("event", "session_replaced"),
-                    ) { "replaced a session that required re-initialization" }
-                } else {
-                    logger.info(LogField.safe("event", "session_initialized")) { "session initialized" }
-                }
-
-                // Inside the lock, so a session is never installed with the previous one's channel still
-                // reporting for it. Starting is an enqueue and a launch, which is why it can be here at all.
-                // Whatever the module does is absorbed there: this line runs after the session is published
-                // and marked ready, so anything escaping it would fail an initialize that had succeeded.
-                TelemetryBootstraps.startInstalled(session, host)
-
-                session
             }
+        }
+
+        /**
+         * The install's body, with [lock] held.
+         *
+         * @param config the configuration to install.
+         * @param host the host bindings, or null for none.
+         * @param identifierOf reads the platform identifier.
+         * @param buildAuth builds the session's transport and its renewal.
+         * @param startedAt when the install began, for the duration a refusal reports.
+         * @return the session now installed, or the live one when nothing changed.
+         */
+        private suspend fun installHeld(
+            config: PayabliConfig,
+            host: HostBindings?,
+            identifierOf: (Context) -> String,
+            buildAuth: suspend (AuthFailureListener, ClientFacts) -> SessionAuth,
+            startedAt: Long,
+        ): PayabliSession {
+            val identity = ConfigIdentity(config)
+            val current = installed
+            // The machine rather than [state], because this is a question about the session install
+            // holds. The published value is process-wide, and reading it here would let one stray write
+            // replace a healthy session, which is the two-sessions state this type exists to prevent.
+            val live = current != null && !current.machine.isFinished
+
+            // A call that changes nothing reports nothing: a start with no outcome after it is a funnel
+            // nobody can close, and an Application and an Activity both initializing is the ordinary way
+            // to produce one.
+            if (live && current!!.identity == identity) {
+                return current
+            }
+
+            if (live) {
+                // Both halves on the live session's own channel. Recorded anywhere else in this call they
+                // would split: a replacement reports its start through the retired session's channel,
+                // carrying that session's id and entry point, and its success through the new one.
+                TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
+                    mapOf(TelemetryProperty.STATE.key to reportedState())
+                }
+                val refusal =
+                    PayabliGenericException(
+                        PayabliErrorType.INVALID_CONFIGURATION,
+                        REASON_ALREADY_INITIALIZED,
+                    )
+                reportFailure(refusal, startedAt)
+                throw refusal
+            }
+
+            val machine = SessionStateMachine(sink)
+            // Without host bindings, which is the SDK's own tests, there is no device to read.
+            val device = if (host == null) TelemetryDeviceContext.NONE else DeviceProfileFactory.of(host.appContext)
+            val readDeviceId: () -> String? =
+                if (host == null) {
+                    { null }
+                } else {
+                    val context = host.appContext.applicationContext
+                    { identifierOf(context).ifBlank { null } }
+                }
+            // One reader per fact, so the header, telemetry and the public member report the same device.
+            val client = ClientFacts(PayabliSdkVersion.VALUE, device.osVersion, device.modelName, readDeviceId)
+            // The listener is handed in rather than wired afterwards so no request can complete against a
+            // transport whose failures nothing is listening for.
+            val auth = buildAuth(AuthFailureListener { machine.markReinitializeRequired() }, client)
+            val session =
+                PayabliSession(
+                    identity = identity,
+                    machine = machine,
+                    readDeviceId = readDeviceId,
+                    renewal = auth.renewRefusedToken,
+                    transport = auth.transport,
+                    // Minted here rather than in the telemetry module, so every capability reporting for
+                    // this session quotes the same lifetime even when they are wired independently.
+                    telemetry =
+                        TelemetrySessionContext(
+                            entryPoint = config.entryPoint,
+                            environment = config.environment,
+                            sessionId = UUID.randomUUID().toString(),
+                            device = device,
+                        ),
+                )
+            machine.markReady()
+            installed = session
+
+            if (current != null) {
+                logger.warn(
+                    LogField.safe("event", "session_replaced"),
+                ) { "replaced a session that required re-initialization" }
+            } else {
+                logger.info(LogField.safe("event", "session_initialized")) { "session initialized" }
+            }
+
+            // Inside the lock, so a session is never installed with the previous one's channel still
+            // reporting for it. Starting is an enqueue and a launch, which is why it can be here at all.
+            // Whatever the module does is absorbed there: this line runs after the session is published
+            // and marked ready, so anything escaping it would fail an initialize that had succeeded.
+            TelemetryBootstraps.startInstalled(session, host)
+
+            return session
         }
 
         /**
