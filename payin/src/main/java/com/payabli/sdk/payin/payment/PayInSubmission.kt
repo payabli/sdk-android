@@ -11,6 +11,7 @@ import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
+import com.payabli.sdk.core.model.RedactedFailure
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.network.PayabliSendMark
 import com.payabli.sdk.core.telemetry.TelemetryEvents
@@ -346,7 +347,7 @@ internal class PayInSubmission(
             event,
             outcomeOf(cause),
             cause.type,
-            javaClass.simpleName,
+            failureTypeOf(this),
             startedAt,
             entryPoint,
             fromForm = false,
@@ -447,10 +448,10 @@ internal class PayInSubmission(
                 )
             throw cancellation
         } catch (failure: Exception) {
-            failingType = failure.javaClass.simpleName
+            failingType = failureTypeOf(failure)
             outcome = failure.asFailed(retry, movesMoney, sendMark.mayHaveLeft)
         } catch (failure: LinkageError) {
-            failingType = failure.javaClass.simpleName
+            failingType = failureTypeOf(failure)
             outcome = failure.asFailed(retry, movesMoney, sendMark.mayHaveLeft)
         } finally {
             // Nothing here suspends, so all of it runs on the canceled path as it does on any other. That is
@@ -795,3 +796,16 @@ internal class PayInSubmission(
 /** A new payment reference: a random UUID, lowercase. */
 @OptIn(ExperimentalUuidApi::class)
 internal fun mintedPaymentReference(): String = Uuid.random().toString()
+
+/**
+ * The `failure_type` a report carries for [failure].
+ *
+ * @param failure what the entry point caught.
+ * @return the simple name of the type a redaction stands in for, when [failure] is one or carries one as its
+ *   cause; otherwise [failure]'s own simple name. Never a message.
+ */
+private fun failureTypeOf(failure: Throwable): String {
+    val redaction = failure.takeIf { it is RedactedFailure } ?: failure.cause?.takeIf { it is RedactedFailure }
+    val qualified = redaction?.message?.substringBefore(' ') ?: return failure.javaClass.simpleName
+    return qualified.substringAfterLast('.').substringAfterLast('$')
+}

@@ -2146,6 +2146,33 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a charge that failed on something unclassified reports the type, and a close the error that ended it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val reported = mutableListOf<Pair<String, Map<String, String>>>()
+            TelemetryRecorders.install { event, properties -> reported += event to properties }
+            try {
+                val fixture = readyFixture(updates = 2)
+                fixture.reader.failNextRead(IllegalStateException(SENTINEL))
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+                var closes = 0
+                val runner =
+                    runnerGatedOnClose(readyFixture(updates = 2)) {
+                        if (closes++ == 0) throw NoClassDefFoundError(SENTINEL)
+                    }
+                runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+                val charge = reported.first { it.first == TelemetryEvents.TTP_CHARGE_FAILED }.second
+                val close = reported.single { it.first == TelemetryEvents.TTP_CLOSE_FAILED }.second
+                assertEquals("IllegalStateException", charge[TelemetryProperty.FAILURE_TYPE.key])
+                assertEquals("NoClassDefFoundError", close[TelemetryProperty.FAILURE_TYPE.key])
+                assertTrue(reported.toString(), reported.none { (_, p) -> p.values.any { it.contains(SENTINEL) } })
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
+
+    @Test
     fun `a close retry that failed on something unclassified keeps the original's type and never its message`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = readyFixture(updates = 2)

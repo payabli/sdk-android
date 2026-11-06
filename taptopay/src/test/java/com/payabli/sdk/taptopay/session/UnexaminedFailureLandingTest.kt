@@ -1,6 +1,9 @@
 package com.payabli.sdk.taptopay.session
 
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryProperty
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.TapToPayErrorCodes
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.configBody
@@ -58,6 +61,30 @@ class UnexaminedFailureLandingTest {
             assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.SDK_INTERNAL_ERROR), fixture.state)
             val chain = generateSequence<Throwable>(failure) { it.cause }.toList()
             assertFalse(chain.toString(), chain.any { it.message.orEmpty().contains(SENTINEL) })
+        }
+
+    @Test
+    fun `a configuration that failed on something unclassified reports the type it failed on`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val reported = mutableListOf<Pair<String, Map<String, String>>>()
+            TelemetryRecorders.install { event, properties -> reported += event to properties }
+            try {
+                val fixture =
+                    SessionFixture(
+                        SessionFixture.coldScript(),
+                        unsent = { request ->
+                            if (request.path == RouteScript.CONFIG) IllegalStateException(SENTINEL) else null
+                        },
+                    )
+
+                runCatching { fixture.coordinator.initialize() }
+
+                val properties = reported.single { it.first == TelemetryEvents.TTP_INITIALIZE_FAILED }.second
+                assertEquals("IllegalStateException", properties[TelemetryProperty.FAILURE_TYPE.key])
+                assertEquals("1018", properties[TelemetryProperty.ERROR_NUMBER.key])
+            } finally {
+                TelemetryRecorders.clear()
+            }
         }
 
     private companion object {

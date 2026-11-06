@@ -6,6 +6,7 @@ import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliFieldError
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
+import com.payabli.sdk.core.model.RedactedFailure
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.SessionScopedRecorder
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
@@ -25,6 +26,7 @@ import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.model.RedactedCause
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
@@ -38,6 +40,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.math.BigDecimal
+import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
@@ -225,6 +228,50 @@ class PayInSubmissionTelemetryTest {
             assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
             assertEquals(TelemetryProperties.Outcome.FAILED, properties[TelemetryProperty.OUTCOME.key])
             assertEquals("IllegalStateException", properties[TelemetryProperty.FAILURE_TYPE.key])
+        }
+
+    /**
+     * A token the provider could not supply arrives wrapped and redacted by `:core`, whose stand-in carries the
+     * original's qualified name. The report names that original, never the wrapper.
+     */
+    @Test
+    fun `a token provider failure is reported by the type the provider threw`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission =
+                submissionOver(
+                    FakePayInTransport.failingWith(
+                        PayabliGenericException(
+                            PayabliErrorType.TOKEN_PROVIDER_FAILED,
+                            "token refresh failed",
+                            cause = CoreShapedRedaction(SocketTimeoutException("read timed out")),
+                        ),
+                    ),
+                )
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
+
+            val properties = recorded.single().second
+            assertEquals("SocketTimeoutException", properties[TelemetryProperty.FAILURE_TYPE.key])
+        }
+
+    /** This module's own redaction, whose text appends a note to the name, reads through to the same name. */
+    @Test
+    fun `a failure this module redacted is reported by the type the redaction stands in for`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission =
+                submissionOver(
+                    FakePayInTransport.failingWith(
+                        PayabliGenericException(
+                            PayabliErrorType.DECODING_ERROR,
+                            PayabliErrorType.DECODING_ERROR.message,
+                            cause = RedactedCause(Nested.Failure()),
+                        ),
+                    ),
+                )
+
+            submission.capture(TEST_ENTRY_POINT, cardRequest())
+
+            assertEquals("Failure", recorded.single().second[TelemetryProperty.FAILURE_TYPE.key])
         }
 
     /**
@@ -573,4 +620,15 @@ class PayInSubmissionTelemetryTest {
     private companion object {
         val TEST_TIMEOUT = 5.seconds
     }
+}
+
+/** `:core`'s redaction as a carrier receives it: a marked stand-in whose message is the original's qualified name. */
+private class CoreShapedRedaction(
+    original: Throwable,
+) : Exception(original.javaClass.name),
+    RedactedFailure
+
+/** Gives the redacted type an enclosing class, so the name has more than a package to strip. */
+private object Nested {
+    class Failure : Exception("never reported")
 }

@@ -10,8 +10,10 @@ import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
 import com.payabli.sdk.taptopay.adapters.ReaderFailureKind
+import com.payabli.sdk.taptopay.attestation.device.RedactedCause
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
+import com.payabli.sdk.taptopay.session.TapToPaySessionException
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -107,6 +109,7 @@ class TapToPayReportsTest {
                 TelemetryProperty.DURATION_MS.key,
                 TelemetryProperty.ORIGIN.key,
                 TelemetryProperty.ERROR_NUMBER.key,
+                TelemetryProperty.FAILURE_TYPE.key,
             ),
             properties.keys,
         )
@@ -331,4 +334,24 @@ class TapToPayReportsTest {
         CardReaderException.DeviceDenied(
             CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = code),
         )
+
+    @Test
+    fun `a failure names its own type, and a redaction names the type it stands in for`() {
+        val cases =
+            listOf(
+                IllegalStateException("never reported") to "IllegalStateException",
+                CardReaderException.DeviceDenied(null) to "DeviceDenied",
+                TapToPaySessionException.Unexpected(RedactedCause(IllegalStateException("never reported"))) to
+                    "IllegalStateException",
+                RedactedCause(NoClassDefFoundError("never reported")) to "NoClassDefFoundError",
+            )
+        for ((failure, expected) in cases) {
+            recorded.clear()
+            TapToPayReports.chargeFailed(failure, System.nanoTime())
+
+            val properties = recorded.single().second
+            assertEquals(failure.javaClass.name, expected, properties[TelemetryProperty.FAILURE_TYPE.key])
+            assertTrue(properties.toString(), properties.values.none { it.contains("never reported") })
+        }
+    }
 }

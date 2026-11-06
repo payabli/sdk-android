@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay.telemetry
 
 import com.payabli.sdk.core.model.PayabliDeclineException
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.RedactedFailure
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -35,7 +36,10 @@ internal object TapToPayReports {
     fun initializeFailed(
         failure: Throwable,
         startedAt: Long,
-    ) = failed(TelemetryEvents.TTP_INITIALIZE_FAILED, failure, startedAt)
+    ) = TelemetryRecorders.record(TelemetryEvents.TTP_INITIALIZE_FAILED) {
+        failureProperties(failure, TapToPayErrorCodes.typeFor(failure), startedAt, canBeDeclined = true) +
+            typeOf(failure)
+    }
 
     fun attestationStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_ATTESTATION_STARTED)
 
@@ -71,7 +75,7 @@ internal object TapToPayReports {
         cardWasAsked: Boolean = false,
         type: PayabliErrorType = TapToPayErrorCodes.typeFor(failure),
     ) = TelemetryRecorders.record(TelemetryEvents.TTP_CHARGE_FAILED) {
-        failureProperties(failure, type, startedAt, canBeDeclined = !cardWasAsked)
+        failureProperties(failure, type, startedAt, canBeDeclined = !cardWasAsked) + typeOf(failure)
     }
 
     /** [origin] is [TelemetryProperties.Origin.CHARGE] or [TelemetryProperties.Origin.RETRY]. */
@@ -104,7 +108,7 @@ internal object TapToPayReports {
         origin: String,
     ) = TelemetryRecorders.record(TelemetryEvents.TTP_CLOSE_FAILED) {
         failureProperties(failure, PayabliErrorType.PAYMENT_NOT_CLOSED, startedAt, canBeDeclined = false) +
-            (TelemetryProperty.ORIGIN.key to origin)
+            (TelemetryProperty.ORIGIN.key to origin) + typeOf(failure)
     }
 
     fun nfcStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_NFC_STARTED)
@@ -176,6 +180,23 @@ internal object TapToPayReports {
             codeOf(failure)?.let { put(TelemetryProperty.CODE.key, it) }
             put(TelemetryProperty.ERROR_NUMBER.key, type.code.toString())
         }
+
+    /** The `failure_type` pair, on the events an entry point reports its failure through. */
+    private fun typeOf(failure: Throwable): Pair<String, String> =
+        TelemetryProperty.FAILURE_TYPE.key to failureTypeOf(failure)
+
+    /**
+     * The `failure_type` a report carries for [failure].
+     *
+     * @param failure what the reporting call caught.
+     * @return the simple name of the type a redaction stands in for, when [failure] is one or carries one as its
+     *   cause; otherwise [failure]'s own simple name. Never a message.
+     */
+    private fun failureTypeOf(failure: Throwable): String {
+        val redaction = failure.takeIf { it is RedactedFailure } ?: failure.cause?.takeIf { it is RedactedFailure }
+        val qualified = redaction?.message?.substringBefore(' ') ?: return failure.javaClass.simpleName
+        return qualified.substringAfterLast('.').substringAfterLast('$')
+    }
 
     /**
      * `declined` means what the catalog says it means: **the payment was declined.** Everything else failed.

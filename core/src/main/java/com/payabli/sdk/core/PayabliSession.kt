@@ -31,6 +31,7 @@ import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
+import com.payabli.sdk.core.telemetry.failureTypeOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -480,7 +481,7 @@ public class PayabliSession private constructor(
                     TelemetryProperty.REASON.key to failure.reason,
                     TelemetryProperty.DURATION_MS.key to
                         TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt).toString(),
-                    TelemetryProperty.FAILURE_TYPE.key to original.javaClass.simpleName,
+                    TelemetryProperty.FAILURE_TYPE.key to failureTypeOf(original),
                 )
             }
         }

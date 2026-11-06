@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.attestation.device
 
+import com.payabli.sdk.core.model.RedactedFailure
 import java.net.HttpURLConnection.HTTP_BAD_REQUEST
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
 import java.net.HttpURLConnection.HTTP_INTERNAL_ERROR
@@ -265,7 +266,8 @@ internal sealed class DeviceServiceException(
  */
 internal class RedactedCause(
     original: Throwable,
-) : Exception(original.javaClass.name) {
+) : Exception(original.javaClass.name),
+    RedactedFailure {
     init {
         stackTrace = original.stackTrace
     }
