@@ -183,17 +183,6 @@ package com.payabli.sdk.core.devicetrust.platform {
 
 }
 
-package com.payabli.sdk.core.event {
-
-  @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class EventMulticaster<T> {
-    ctor public EventMulticaster();
-    method public void emit(T event);
-    method @InaccessibleFromKotlin public kotlinx.coroutines.flow.SharedFlow<T> getEvents();
-    property public kotlinx.coroutines.flow.SharedFlow<T> events;
-  }
-
-}
-
 package com.payabli.sdk.core.logging {
 
   @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public enum LogCategory {
