@@ -208,6 +208,7 @@ public class PayabliSession private constructor(
          * @return the installed session.
          */
         @VisibleForTesting
+        @JvmSynthetic
         internal suspend fun initializeAgainst(
             baseUrl: String,
             config: PayabliConfig,
@@ -239,6 +240,7 @@ public class PayabliSession private constructor(
          * session tests fail if either moves, which is the place to read before changing this.
          */
         @VisibleForTesting
+        @JvmSynthetic
         internal suspend fun reset() {
             sink.value = SdkState.Uninitialized
 
@@ -260,6 +262,7 @@ public class PayabliSession private constructor(
          * @return the installed session.
          */
         @VisibleForTesting
+        @JvmSynthetic
         internal suspend fun initializeWith(
             config: PayabliConfig,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
