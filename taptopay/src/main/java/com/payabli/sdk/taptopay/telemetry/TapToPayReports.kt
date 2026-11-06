@@ -98,12 +98,8 @@ internal object TapToPayReports {
     }
 
     /**
-     * A close that was not confirmed.
-     *
-     * **No close can be a decline**, which is why this takes no equivalent of [chargeFailed]'s
-     * `cardWasAsked`. A close exists only once the reader has answered, so it is always on the far side of
-     * the window that flag marks: a refusal here is a failure to record an outcome, never a payment the
-     * issuer turned down.
+     * A close that was not confirmed. It takes no `cardWasAsked`, unlike [chargeFailed]: a close exists only
+     * once the reader has answered, so a refusal here fails to record an outcome and is never a decline.
      *
      * @param failure what the close failed with.
      * @param startedAt when the close was sent.

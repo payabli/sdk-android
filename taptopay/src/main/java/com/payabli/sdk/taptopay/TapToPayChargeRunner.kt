@@ -377,10 +377,9 @@ internal class TapToPayChargeRunner(
         }
 
     /**
-     * Asks for one card for [amount], at the scale the paypoint recorded. Every other exit, cancellation and a
-     * JVM `Error` included, closes [paymentTransId] and rethrows what it caught. A minted-key run's `Exception` or
-     * `LinkageError` gives way to the close's no-record refusal, which settles the key, unless the reader's session
-     * was unusable.
+     * Asks for one card for [amount], at the paypoint's scale. Every other exit, cancellation and a JVM `Error`
+     * included, closes [paymentTransId] and rethrows. A minted-key run's `Exception` or `LinkageError` gives way
+     * to the close's no-record refusal, which settles the key, unless the reader's session was unusable.
      */
     private suspend fun readCard(
         paymentTransId: String,
