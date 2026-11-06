@@ -60,6 +60,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
@@ -2294,13 +2295,41 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a JVM error during the tap keeps its place when the close says the processor has no record`() =
+    fun `a linkage error during the tap gives way to the close saying the processor has no record`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // The vendor loads native code, so a LinkageError from the reader is the reachable shape here. The
-            // close's refusal naming a payment the processor holds no record of is about the charge, but the
-            // error is what ended it: the refusal rides suppressed on it, never in its place.
+            // The vendor loads native code, so a LinkageError from the reader is the reachable shape here. It
+            // converts like any unclassified failure, so the close's no-record refusal answers for the charge:
+            // the payment was not taken, as the key's release and the close's report already say.
             val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
-            val raised = LinkageError("libmc3.so")
+            fixture.reader.failNextRead(LinkageError("libmc3.so"))
+
+            var failure: Throwable? = null
+            val closes =
+                closeFailuresDuring {
+                    failure =
+                        runCatching {
+                            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                        }.exceptionOrNull()
+                }
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorType.PAYMENT_NOT_TAKEN, thrown.type)
+            assertEquals(TapToPayCapture.NOT_CHARGED, thrown.capture)
+            assertEquals(
+                "the close reported a capture the host was not told",
+                listOf(thrown.capture.name.lowercase()),
+                closes.map { it[TelemetryProperty.CAPTURE.key] },
+            )
+            assertTrue("the opened payment was left standing", UPDATE in fixture.routes)
+        }
+
+    @Test
+    fun `an error that is no linkage failure keeps its place when the close says the processor has no record`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Not converted, so the error is what the caller gets; the close's refusal rides suppressed on it.
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            val raised = OutOfMemoryError("the heap is gone")
             fixture.reader.failNextRead(raised)
 
             val failure =
@@ -2308,22 +2337,10 @@ class TapToPayChargeRunnerTest {
                     runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
-            assertTrue(failure.toString(), failure is TapToPayException)
-            assertEquals(
-                "the close's refusal took the error's place",
-                PayabliErrorType.UNKNOWN,
-                (failure as TapToPayException).type,
-            )
-            assertEquals(
-                "the error that ended the charge was lost",
-                LinkageError::class.java.name,
-                failure.cause?.message,
-            )
-            assertEquals(raised.stackTrace.toList(), failure.cause?.stackTrace?.toList())
-            val suppressed = failure.cause?.suppressed.orEmpty()
+            assertSame(raised, failure)
             assertTrue(
-                "the close's refusal was dropped: ${suppressed.toList()}",
-                suppressed.singleOrNull() is PayabliException,
+                "the close's refusal was dropped: ${raised.suppressed.toList()}",
+                raised.suppressed.singleOrNull() is PayabliException,
             )
             assertTrue("the opened payment was left standing", UPDATE in fixture.routes)
         }

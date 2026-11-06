@@ -378,8 +378,9 @@ internal class TapToPayChargeRunner(
 
     /**
      * Asks for one card for [amount], at the scale the paypoint recorded. Every other exit, cancellation and a
-     * JVM `Error` included, closes [paymentTransId] and rethrows what it caught. A minted-key run's `Exception`
-     * gives way to the close's no-record refusal, which settles the key, unless the reader's session was unusable.
+     * JVM `Error` included, closes [paymentTransId] and rethrows what it caught. A minted-key run's `Exception` or
+     * `LinkageError` gives way to the close's no-record refusal, which settles the key, unless the reader's session
+     * was unusable.
      */
     private suspend fun readCard(
         paymentTransId: String,
@@ -421,10 +422,12 @@ internal class TapToPayChargeRunner(
             if (failure is CardReaderException.ContactlessDisabled) {
                 manager.failCharge(TapToPayFailureReason.CONTACTLESS_DISABLED)
             }
-            // A JVM Error is never converted into a payment outcome, and a reader gone before the read keeps the
-            // expiry, whose cause is the session: each keeps its place, the close's refusal suppressed on it, the
-            // way a failed close rides on a refused card.
-            if (noRecord != null && (failure is Error || failure is CardReaderException.SessionUnusable)) {
+            // A JVM Error other than a linkage failure is never converted into a payment outcome, and a reader gone
+            // before the read keeps the expiry, whose cause is the session: each keeps its place, the close's
+            // refusal suppressed on it, the way a failed close rides on a refused card.
+            val keepsItsPlace =
+                (failure is Error && failure !is LinkageError) || failure is CardReaderException.SessionUnusable
+            if (noRecord != null && keepsItsPlace) {
                 failure.addSuppressed(noRecord)
                 throw failure
             }
@@ -676,7 +679,7 @@ internal class TapToPayChargeRunner(
                 )
                 // The processor holding no record of the payment means nothing was captured. A resent key names
                 // an earlier opening, so this answer never settles it.
-                if (!resentKey && failedClose.saysTheProcessorHasNoRecord()) {
+                if (!resentKey && noRecord) {
                     keys.settle(entry, environment, idempotencyKey)
                 }
                 // On a run that minted its key, the refusal naming this payment one the processor holds no
@@ -687,7 +690,7 @@ internal class TapToPayChargeRunner(
                     LogField.safe("phase", "update"),
                     LogField.safe("errorKind", failedClose.javaClass.simpleName),
                 ) { "an opened payment could not be closed after a failed tap" }
-                noRecordRefusal = failedClose.takeIf { !resentKey && it.saysTheProcessorHasNoRecord() }
+                noRecordRefusal = failedClose.takeIf { !resentKey && noRecord }
                 false
             }
         if (closed) TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.CHARGE)
