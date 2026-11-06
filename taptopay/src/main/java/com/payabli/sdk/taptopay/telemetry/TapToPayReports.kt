@@ -212,7 +212,8 @@ internal object TapToPayReports {
     private fun failureTypeOf(failure: Throwable): String {
         val redaction = failure.takeIf { it is RedactedFailure } ?: failure.cause?.takeIf { it is RedactedFailure }
         val qualified = redaction?.message?.substringBefore(' ') ?: return failure.javaClass.simpleName
-        return qualified.substringAfterLast('.').substringAfterLast('$')
+        // The digits a compiler numbers a local or anonymous class with, which the simple name drops.
+        return qualified.substringAfterLast('.').substringAfterLast('$').trimStart(Char::isDigit)
     }
 
     /**

@@ -29,6 +29,25 @@ class FailureTypeTest {
     }
 
     @Test
+    fun `a local or anonymous class names the same type redacted or not`() {
+        val local = localFailure()
+        val anonymous = anonymousFailure()
+
+        assertEquals("Local", failureTypeOf(local))
+        assertEquals("Local", failureTypeOf(RedactedCause(local)))
+        assertEquals(failureTypeOf(anonymous), failureTypeOf(RedactedCause(anonymous)))
+    }
+
+    // Declared in plainly named functions: a backticked test name carries spaces into the binary name,
+    // which no shipped class can have.
+    private fun localFailure(): Exception {
+        class Local : Exception("never reported")
+        return Local()
+    }
+
+    private fun anonymousFailure(): Exception = object : Exception("never reported") {}
+
+    @Test
     fun `a cause that is no redaction does not stand in for the failure`() {
         val wrapped =
             PayabliGenericException(
