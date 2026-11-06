@@ -55,6 +55,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.KSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -2788,19 +2789,18 @@ class TapToPayChargeRunnerTest {
     private fun runnerWhoseKeyHandOnFails(
         fixture: SessionFixture,
         failure: Throwable = IllegalStateException(SENTINEL),
-    ) =
-        TapToPayChargeRunner(
-            entry = ENTRY,
-            environment = PayabliEnvironment.SANDBOX,
-            coordinator = fixture.coordinator,
-            manager = fixture.manager,
-            reader = fixture.reader,
-            contactlessEnabled = { true },
-            client = TTPTransactionClient(fixture.enrollment.transport, fixture.enrollment.logger),
-            store = fixture.enrollment.store,
-            keys = fixture.keys,
-            handOnKey = { _, _ -> throw failure },
-        )
+    ) = TapToPayChargeRunner(
+        entry = ENTRY,
+        environment = PayabliEnvironment.SANDBOX,
+        coordinator = fixture.coordinator,
+        manager = fixture.manager,
+        reader = fixture.reader,
+        contactlessEnabled = { true },
+        client = TTPTransactionClient(fixture.enrollment.transport, fixture.enrollment.logger),
+        store = fixture.enrollment.store,
+        keys = fixture.keys,
+        handOnKey = { _, _ -> throw failure },
+    )
 
     @Test
     fun `a cleanup that fails after an approved charge still returns the charge`() =
@@ -2812,6 +2812,21 @@ class TapToPayChargeRunnerTest {
             assertEquals(TRANS_ID, receipt.paymentTransId)
             // The steps after the failed one ran: the entry point takes its next charge.
             runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+        }
+
+    @Test
+    fun `a cleanup step that raises a JVM Error still releases the entry point, then rethrows it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2, opens = 2)
+
+            val thrown =
+                runCatching {
+                    runnerWhoseKeyHandOnFails(fixture, StackOverflowError())
+                        .charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(thrown.toString(), thrown is StackOverflowError)
+            withTimeout(1_000) { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
         }
 
     @Test

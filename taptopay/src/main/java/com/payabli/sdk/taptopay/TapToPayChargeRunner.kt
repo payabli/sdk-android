@@ -390,7 +390,7 @@ internal class TapToPayChargeRunner(
 
     /**
      * Hands [reserved] on, leaves the region and releases the entry point, each whether or not the step before it
-     * failed.
+     * failed. A JVM `Error` from a step is rethrown unchanged once every step has run.
      *
      * @param reserved the key this charge held, or null when it reserved none.
      * @param arrivedAt when a send of [reserved] may have reached the service, or null.
@@ -405,6 +405,7 @@ internal class TapToPayChargeRunner(
         inRegion: CompletableDeferred<Unit>?,
     ): Throwable? {
         var first: Throwable? = null
+        var fatal: Throwable? = null
 
         suspend fun step(block: suspend () -> Unit) {
             try {
@@ -413,6 +414,8 @@ internal class TapToPayChargeRunner(
                 first?.addSuppressed(failure) ?: run { first = failure }
             } catch (failure: LinkageError) {
                 first?.addSuppressed(failure) ?: run { first = failure }
+            } catch (failure: Throwable) {
+                fatal?.addSuppressed(failure) ?: run { fatal = failure }
             }
         }
         // A key still held names the newest unsettled charge, the only one a retry can claim.
@@ -424,6 +427,7 @@ internal class TapToPayChargeRunner(
                 HOLDERS.releaseCharge(entry)
             }
         }
+        fatal?.let { throw it }
         return first
     }
 
