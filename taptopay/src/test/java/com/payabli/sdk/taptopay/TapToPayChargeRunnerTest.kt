@@ -2785,6 +2785,53 @@ class TapToPayChargeRunnerTest {
             }
         }
 
+    private fun runnerWhoseKeyHandOnFails(fixture: SessionFixture) =
+        TapToPayChargeRunner(
+            entry = ENTRY,
+            environment = PayabliEnvironment.SANDBOX,
+            coordinator = fixture.coordinator,
+            manager = fixture.manager,
+            reader = fixture.reader,
+            contactlessEnabled = { true },
+            client = TTPTransactionClient(fixture.enrollment.transport, fixture.enrollment.logger),
+            store = fixture.enrollment.store,
+            keys = fixture.keys,
+            handOnKey = { _, _ -> throw IllegalStateException("the key store could not be written") },
+        )
+
+    @Test
+    fun `a cleanup that fails after an approved charge still returns the charge`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2, opens = 2)
+
+            val receipt = runnerWhoseKeyHandOnFails(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            assertEquals(TRANS_ID, receipt.paymentTransId)
+            // The steps after the failed one ran: the entry point takes its next charge.
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+        }
+
+    @Test
+    fun `a cleanup that fails after the card was asked keeps the failure the charge was ending with`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "?"))
+
+            val failure =
+                runCatching {
+                    runnerWhoseKeyHandOnFails(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val thrown = failure as TapToPayException
+            assertEquals(TapToPayCapture.UNKNOWN, thrown.capture)
+            assertEquals(TRANS_ID, thrown.paymentTransId)
+            assertTrue(
+                thrown.suppressed.toList().toString(),
+                thrown.suppressed.any { it is IllegalStateException },
+            )
+        }
+
     @Test
     fun `a close that failed reaches the caller and telemetry as the payment not closed`() =
         runTest(timeout = TEST_TIMEOUT) {

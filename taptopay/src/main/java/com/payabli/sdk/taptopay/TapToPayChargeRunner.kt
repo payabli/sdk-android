@@ -117,6 +117,10 @@ internal class TapToPayChargeRunner(
     private val store: AttestedDeviceStore,
     private val keys: ChargeKeyStore,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
+    // The one cleanup step that writes, supplied so a test can make it fail.
+    private val handOnKey: suspend (key: String, arrivedAt: Long?) -> Unit = { key, arrivedAt ->
+        keys.supersede(entry, environment, key, arrivedAt)
+    },
 ) {
     /**
      * What a retained payment belongs to: the entry point, under the environment it was opened against.
@@ -163,6 +167,7 @@ internal class TapToPayChargeRunner(
             var askedForCard = false
             var inRegion: CompletableDeferred<Unit>? = null
             var locked = false
+            var endingWith: Throwable? = null
             try {
                 // Claimed before the lock, so a refused charge never waits on it.
                 val admitted =
@@ -312,6 +317,7 @@ internal class TapToPayChargeRunner(
                 }
                 // Withdrawn before the opening was handed over, a resend wrote nothing, so its key's clock stands.
                 if (!askedForCard && !sendMark.mayHaveLeft) arrivedAt = null
+                endingWith = withdrawn
                 throw withdrawn
             } catch (failure: Throwable) {
                 // A refused key extends no marker an earlier send wrote, and a send that never left writes none.
@@ -357,24 +363,69 @@ internal class TapToPayChargeRunner(
                 // card was not charged, so a retry cannot take the money twice.
                 if (type == PayabliErrorType.PAYMENT_NOT_TAKEN) capture = TapToPayCapture.NOT_CHARGED
                 // A JVM Error that is no linkage failure passes through unwrapped, as the facade promises.
-                throw if (failure is Exception || failure is LinkageError) {
-                    failed(failure, type, openedAs, capture)
-                } else {
-                    failure
-                }
+                val thrown =
+                    if (failure is Exception || failure is LinkageError) {
+                        failed(failure, type, openedAs, capture)
+                    } else {
+                        failure
+                    }
+                endingWith = thrown
+                throw thrown
             } finally {
-                // A key still held names the newest unsettled charge, the only one a retry can claim.
-                try {
-                    reserved?.let { withContext(NonCancellable) { keys.supersede(entry, environment, it, arrivedAt) } }
-                } finally {
-                    if (locked) region.unlock()
-                    inRegion?.let {
-                        it.complete(Unit)
-                        HOLDERS.releaseCharge(entry)
+                // Thrown from here, a cleanup failure would discard the outcome in flight and reach the host as
+                // not charged, naming no payment.
+                endCharge(reserved, arrivedAt, locked, inRegion)?.let { cleanup ->
+                    val ending = endingWith
+                    if (ending != null) {
+                        ending.addSuppressed(cleanup)
+                    } else {
+                        logger.warn(
+                            LogField.safe("event", "ttp_charge_cleanup_failed"),
+                            LogField.safe("errorKind", cleanup.javaClass.simpleName),
+                        ) { "a charge's cleanup failed after it succeeded" }
                     }
                 }
             }
         }
+
+    /**
+     * Hands [reserved] on, leaves the region and releases the entry point, each whether or not the step before it
+     * failed.
+     *
+     * @param reserved the key this charge held, or null when it reserved none.
+     * @param arrivedAt when a send of [reserved] may have reached the service, or null.
+     * @param locked whether this charge holds the region.
+     * @param inRegion the admission to complete, or null when this charge was never admitted.
+     * @return the first step's failure, with any later one suppressed on it, or null when every step succeeded.
+     */
+    private suspend fun endCharge(
+        reserved: String?,
+        arrivedAt: Long?,
+        locked: Boolean,
+        inRegion: CompletableDeferred<Unit>?,
+    ): Throwable? {
+        var first: Throwable? = null
+
+        suspend fun step(block: suspend () -> Unit) {
+            try {
+                block()
+            } catch (failure: Exception) {
+                first?.addSuppressed(failure) ?: run { first = failure }
+            } catch (failure: LinkageError) {
+                first?.addSuppressed(failure) ?: run { first = failure }
+            }
+        }
+        // A key still held names the newest unsettled charge, the only one a retry can claim.
+        step { reserved?.let { withContext(NonCancellable) { handOnKey(it, arrivedAt) } } }
+        step { if (locked) region.unlock() }
+        step {
+            inRegion?.let {
+                it.complete(Unit)
+                HOLDERS.releaseCharge(entry)
+            }
+        }
+        return first
+    }
 
     /**
      * Asks for one card for [amount], at the paypoint's scale. Every other exit, cancellation and a JVM `Error`
