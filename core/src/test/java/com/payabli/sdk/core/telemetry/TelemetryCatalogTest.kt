@@ -363,6 +363,21 @@ class TelemetryCatalogTest {
         assertEquals(listOf(TelemetryEvents.TELEMETRY_OVERFLOW), carriers)
     }
 
+    /**
+     * A token failure waits for its batch: the upload rides the session's own token, so a send forced by the
+     * failure cannot deliver, and a session that never minted would ask the provider again to make it.
+     */
+    @Test
+    fun aTokenFailureWaitsForItsBatch() {
+        assertFalse(TelemetryEvents.AUTH_TOKEN_FAILED in TelemetryCatalog.immediateEvents)
+        assertFalse(
+            TelemetryCatalog.forcesSend(
+                TelemetryEvents.AUTH_TOKEN_FAILED,
+                mapOf(TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.FAILED),
+            ),
+        )
+    }
+
     /** The overflow event waits for its batch: it reports a gap, not a failure that needs sending now. */
     @Test
     fun theOverflowEventWaitsForItsBatch() {
