@@ -301,7 +301,7 @@ internal class TapToPayChargeRunner(
 
                             CardReadOutcome.DECLINED ->
                                 throw TTPTransactionException.CardRefused(result.providerState).apply {
-                                    closeFailure?.let(::addSuppressed)
+                                    closeFailure?.let { addSuppressed(TapToPayErrorCodes.hostCauseOf(it)) }
                                 }
 
                             CardReadOutcome.INDETERMINATE ->

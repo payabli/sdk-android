@@ -2971,6 +2971,27 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a refused card whose close failed on something unclassified carries its type and never its message`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2)
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            var closes = 0
+            val runner = runnerGatedOnClose(fixture) { if (closes++ == 0) throw NoClassDefFoundError(SENTINEL) }
+
+            val refused =
+                runCatching {
+                    runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.CARD_DECLINED, refused.type)
+            assertEquals(TRANS_ID, refused.paymentTransId)
+            assertEquals(listOf(NoClassDefFoundError::class.java.name), refused.cause?.suppressed?.map { it.message })
+            assertNeverCarries(SENTINEL, refused)
+        }
+
+    @Test
     fun `a refused card on a resent key whose close failed keeps the earlier attempt`() =
         runTest(timeout = TEST_TIMEOUT) {
             var closeFails = false
