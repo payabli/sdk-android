@@ -23,7 +23,6 @@
     <string name="payabli_payin_field_account_holder_type">Holder type</string>
     <string name="payabli_payin_field_sec_code">SEC code</string>
     <string name="payabli_payin_field_device_id">Device</string>
-    <string name="payabli_payin_field_method_description">Description</string>
     <string name="payabli_payin_field_first_name">First name</string>
     <string name="payabli_payin_field_last_name">Last name</string>
     <string name="payabli_payin_field_customer_number">Customer number</string>

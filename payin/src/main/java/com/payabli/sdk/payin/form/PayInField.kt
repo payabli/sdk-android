@@ -55,7 +55,6 @@ public enum class PayInField(
     SecCode(PayInFieldInput.Choice),
     DeviceId(PayInFieldInput.Text),
 
-    MethodDescription(PayInFieldInput.Text),
     FirstName(PayInFieldInput.Text, isNarrow = true),
     LastName(PayInFieldInput.Text, isNarrow = true),
     CustomerNumber(PayInFieldInput.Text),

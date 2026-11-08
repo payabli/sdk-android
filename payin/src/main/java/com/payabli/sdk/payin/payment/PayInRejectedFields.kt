@@ -76,6 +76,5 @@ internal object PayInRejectedFields {
             PayInRoutes.FIELD_CUSTOMER_NUMBER to PayInField.CustomerNumber,
             PayInRoutes.FIELD_CUSTOMER_BILLING_EMAIL to PayInField.BillingEmail,
             PayInRoutes.FIELD_CUSTOMER_BILLING_ZIP to PayInField.BillingPostalCode,
-            PayInRoutes.FIELD_METHOD_DESCRIPTION to PayInField.MethodDescription,
         ).mapKeys { it.key.lowercase() }
 }

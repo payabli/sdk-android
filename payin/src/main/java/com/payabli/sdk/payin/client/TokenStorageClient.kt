@@ -65,7 +65,7 @@ internal class TokenStorageClient(
                     entryPoint = entryPoint.trim(),
                     customerData = options.customerData.toBody(entered),
                     vendorData = options.vendorData?.toBody(),
-                    methodDescription = entered.methodDescription ?: options.methodDescription?.trimOrNull(),
+                    methodDescription = options.methodDescription?.trimOrNull(),
                     fallbackAuth = options.fallbackAuth,
                     fallbackAuthAmount = options.fallbackAuthAmount,
                     source = options.source?.trimOrNull(),

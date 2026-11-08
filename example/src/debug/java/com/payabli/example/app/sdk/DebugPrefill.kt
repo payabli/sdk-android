@@ -88,7 +88,6 @@ internal val PayInField.labelResource: Int
             PayInField.AccountHolderType,
             PayInField.SecCode,
             PayInField.DeviceId,
-            PayInField.MethodDescription,
             PayInField.BillingPostalCode,
             PayInField.Amount,
             PayInField.ServiceFee,

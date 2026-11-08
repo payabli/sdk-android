@@ -31,7 +31,6 @@ internal object PayInFieldRules {
             PayInField.Amount,
             PayInField.ServiceFee,
             PayInField.SurchargeFee,
-            PayInField.MethodDescription,
             PayInField.CustomerNumber,
             PayInField.DeviceId,
         )

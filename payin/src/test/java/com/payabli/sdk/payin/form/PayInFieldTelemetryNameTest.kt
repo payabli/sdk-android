@@ -30,7 +30,6 @@ class PayInFieldTelemetryNameTest {
                 "account_holder_type",
                 "sec_code",
                 "device_id",
-                "method_description",
                 "first_name",
                 "last_name",
                 "customer_number",

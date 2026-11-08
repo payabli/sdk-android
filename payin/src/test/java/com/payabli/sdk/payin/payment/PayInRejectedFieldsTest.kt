@@ -42,7 +42,6 @@ class PayInRejectedFieldsTest {
                 "customerData.customerNumber" to PayInField.CustomerNumber,
                 "customerData.billingEmail" to PayInField.BillingEmail,
                 "customerData.billingZip" to PayInField.BillingPostalCode,
-                "methodDescription" to PayInField.MethodDescription,
             )
 
         expected.forEach { (name, field) ->
@@ -73,6 +72,13 @@ class PayInRejectedFieldsTest {
         listOf("entryPoint", "paymentMethod.storedMethodId", "$", "somethingElse").forEach { name ->
             assertTrue(name, PayInRejectedFields.of(validation(name)).isEmpty())
             assertTrue(name, PayInRejectedFields.of(PayInException.InvalidInput(name, "not valid")).isEmpty())
+        }
+    }
+
+    @Test
+    fun `a refusal naming a value the form no longer collects marks nothing`() {
+        listOf("methodDescription").forEach { name ->
+            assertTrue(name, PayInRejectedFields.of(validation(name)).isEmpty())
         }
     }
 

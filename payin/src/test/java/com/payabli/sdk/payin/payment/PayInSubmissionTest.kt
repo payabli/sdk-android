@@ -29,6 +29,7 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
@@ -2134,13 +2135,13 @@ class PayInSubmissionTest {
         }
 
     @Test
-    fun `a stored method carries the customer and the description the payer typed`() =
+    fun `a stored method carries the customer the payer typed and the description the host set`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(stored)
             val submission = submissionOver(transport)
 
-            val values = cardForm().withCustomer(methodDescription = "card on file")
-            assertNotNull(submission.submit(TEST_ENTRY_POINT, PayabliPayInOperation.StoreMethod(), values))
+            val operation = PayabliPayInOperation.StoreMethod(PayInStoreOptions(methodDescription = " card on file "))
+            assertNotNull(submission.submit(TEST_ENTRY_POINT, operation, cardForm().withCustomer()))
 
             val body = transport.bodyText()
             assertTrue(body, body.contains(""""firstName":"Ada""""))
@@ -2161,7 +2162,7 @@ class PayInSubmissionTest {
         }
 
     /** The same card values with the customer section filled in, which is what the demo's form collects. */
-    private fun PayInFormValues.withCustomer(methodDescription: String? = null): PayInFormValues =
+    private fun PayInFormValues.withCustomer(): PayInFormValues =
         PayInFormValues(
             method,
             values +
@@ -2170,7 +2171,6 @@ class PayInSubmissionTest {
                     put(PayInField.LastName, "Lovelace")
                     put(PayInField.BillingEmail, "ada@example.test")
                     put(PayInField.BillingPostalCode, "90001")
-                    methodDescription?.let { put(PayInField.MethodDescription, it) }
                 },
         )
 

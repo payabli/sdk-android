@@ -3,7 +3,6 @@ package com.payabli.sdk.payin.payment
 import com.payabli.sdk.core.model.PayabliAttempt
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.payin.client.PayInRoutes
-import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInPaymentDetails
@@ -131,11 +130,10 @@ internal val PayabliPayInOperation.step: String
  *
  * A host writing its operation inline hands over a new instance on every recomposition, so the narrowed
  * configuration cannot be keyed on the operation itself. Anything a new branch in [offering] reads belongs
- * here in the same edit, or a form keeps a narrowing made for a different operation: storing a method and
- * capturing offer the same instruments, so the instruments alone do not tell them apart.
+ * here in the same edit, or a form keeps a narrowing made for a different operation.
  */
 internal val PayabliPayInOperation.narrowingKey: List<Any>
-    get() = listOf(instruments, this is PayabliPayInOperation.StoreMethod)
+    get() = listOf(instruments)
 
 /**
  * [configuration] with any instrument this operation cannot carry left out. A pairing that
@@ -151,13 +149,6 @@ internal fun PayabliPayInOperation.offering(configuration: PayInFormConfiguratio
         "$this cannot carry ${configuration.methodsOffered.joinToString()}: it takes ${instruments.joinToString()}"
     }
 
-    // Only a stored method has a description. On any other operation the box is filled in and dropped.
-    if (this !is PayabliPayInOperation.StoreMethod) {
-        val described = offered.filter { PayInField.MethodDescription in configuration.inputFieldsFor(it) }
-        require(described.isEmpty()) {
-            "$this cannot carry ${PayInField.MethodDescription}: only storing a method does"
-        }
-    }
     if (offered == configuration.methodsOffered) return configuration
     return configuration.copy(
         allowedMethods = offered,

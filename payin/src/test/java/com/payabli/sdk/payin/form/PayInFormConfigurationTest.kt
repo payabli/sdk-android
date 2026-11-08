@@ -407,12 +407,12 @@ class PayInFormConfigurationTest {
             )
 
         methods += PayInMethodType.BankAccount
-        required += PayInField.MethodDescription
+        required += PayInField.Amount
         hidden.clear()
         sectionFields += PayInField.BillingEmail
 
         assertEquals(listOf(PayInMethodType.Card), configuration.methodsOffered)
-        assertFalse(configuration.isRequired(PayInField.MethodDescription))
+        assertFalse(configuration.isRequired(PayInField.Amount))
         assertFalse(configuration.showsLabelFor(PayInField.CardNumber))
         assertEquals(
             CARD_INSTRUMENT_FIELDS,

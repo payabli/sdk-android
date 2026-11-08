@@ -115,8 +115,8 @@ internal class PayInSubmission(
                     refusal = refusalOf(operation.transactionOptions),
                 ),
         ) { retry ->
-            // The customer and the description the payer typed, which are not part of the instrument. Read
-            // once here, so all three operations carry what the same form collected.
+            // The customer the payer typed, which is not part of the instrument. Read once here, so all three
+            // operations carry what the same form collected.
             val entered = PayInEnteredDetails.of(values)
             when (operation) {
                 is PayabliPayInOperation.StoreMethod ->
