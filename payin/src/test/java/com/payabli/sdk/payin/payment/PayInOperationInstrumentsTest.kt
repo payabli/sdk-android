@@ -4,6 +4,7 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.model.PayInAccountHolderType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -22,6 +23,13 @@ class PayInOperationInstrumentsTest {
             allowedMethods = listOf(PayInMethodType.Card, PayInMethodType.BankAccount),
             defaultMethod = PayInMethodType.BankAccount,
         )
+
+    @Test
+    fun `narrowing keeps the holder type the host configured`() {
+        val configured = bothMethods.copy(accountHolderType = PayInAccountHolderType.Business)
+
+        assertEquals(PayInAccountHolderType.Business, authorize().offering(configured).accountHolderType)
+    }
 
     @Test
     fun `an authorization drops the bank tab`() {

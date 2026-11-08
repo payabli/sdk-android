@@ -24,6 +24,8 @@ import com.payabli.sdk.payin.client.testDetails
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.model.PayInAccountHolderType
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
@@ -142,6 +144,50 @@ class PayInSubmissionTest {
             assertTrue(body, body.contains(""""achHolderType":"business""""))
             assertTrue(body, body.contains(""""achCode":"WEB""""))
         }
+
+    @Test
+    fun `the payer's holder type wins over the configured one while the field is shown`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+
+            val values = bankForm(holderType = "personal")
+            assertNotNull(
+                submissionOver(
+                    transport,
+                ).submit(TEST_ENTRY_POINT, captureOf(), values, PayInAccountHolderType.Business),
+            )
+
+            assertTrue(transport.bodyText(), transport.bodyText().contains(""""achHolderType":"personal""""))
+        }
+
+    @Test
+    fun `the configured holder type is sent when the form doesn't ask`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(stored)
+
+            val operation = PayabliPayInOperation.StoreMethod()
+            assertNotNull(
+                submissionOver(
+                    transport,
+                ).submit(TEST_ENTRY_POINT, operation, bankFormWithoutHolderType(), PayInAccountHolderType.Business),
+            )
+
+            assertTrue(transport.bodyText(), transport.bodyText().contains(""""achHolderType":"business""""))
+        }
+
+    @Test
+    fun `with neither the field nor a configured holder type, none is sent`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+
+            assertNotNull(submissionOver(transport).submit(TEST_ENTRY_POINT, captureOf(), bankFormWithoutHolderType()))
+
+            assertTrue(transport.bodyText(), !transport.bodyText().contains("achHolderType"))
+        }
+
+    /** The bank values as a form that doesn't show the holder type hands them over: no key for it at all. */
+    private fun bankFormWithoutHolderType(): PayInFormValues =
+        PayInFormValues(PayInMethodType.BankAccount, bankForm().values - PayInField.AccountHolderType)
 
     @Test
     fun `a bank account stored through the form is sent as WEB, whatever its holder type`() =

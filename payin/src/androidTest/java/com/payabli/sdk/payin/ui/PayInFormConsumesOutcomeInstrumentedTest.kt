@@ -25,6 +25,7 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.model.PayInAccountHolderType
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.payment.APPROVED_TRANSACTION
 import com.payabli.sdk.payin.payment.GatedPayInTransport
@@ -92,6 +93,24 @@ class PayInFormConsumesOutcomeInstrumentedTest {
 
         rule.waitForIdle()
         assertTrue("a store was not delivered as a method: $delivered", delivered is PayInFormSuccess.Method)
+    }
+
+    @Test
+    fun aHolderTypeTheFormDoesNotAskIsSentFromTheConfiguration() {
+        val transport = FakePayInTransport.answering(STORED_METHOD)
+        var delivered: PayInFormSuccess? = null
+
+        showForm(
+            flowOver(transport),
+            configuration = mutableStateOf(bankForm().copy(accountHolderType = PayInAccountHolderType.Business)),
+            operation = PayabliPayInOperation.StoreMethod(),
+        ) { delivered = it }
+        fillBank()
+        submit(R.string.payabli_payin_submit_store_method)
+
+        rule.waitForIdle()
+        assertTrue("the store did not complete: $delivered", delivered is PayInFormSuccess.Method)
+        assertTrue(transport.bodyText(), transport.bodyText().contains(""""achHolderType":"business""""))
     }
 
     @Test

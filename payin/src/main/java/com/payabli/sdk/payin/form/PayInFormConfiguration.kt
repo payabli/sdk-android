@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.form
 
 import androidx.compose.runtime.Immutable
+import com.payabli.sdk.payin.model.PayInAccountHolderType
 import java.util.Collections
 
 /** Whether a section takes input or reads values back. */
@@ -131,6 +132,7 @@ public data class PayInFormatting(
  * @property cardBrandIconPlacement where the card number field draws the brand icon.
  * @property failureMessagePlacement where the form draws its failure message.
  * @property showsFailureMessage whether the form draws its failure message.
+ * @property accountHolderType the holder type sent when the form doesn't ask, or null to leave it to the paypoint.
  */
 @Immutable
 public class PayInFormConfiguration(
@@ -145,6 +147,7 @@ public class PayInFormConfiguration(
     public val cardBrandIconPlacement: PayInCardBrandIconPlacement = PayInCardBrandIconPlacement.Trailing,
     public val failureMessagePlacement: PayInFailureMessagePlacement = PayInFailureMessagePlacement.AboveSubmitButton,
     public val showsFailureMessage: Boolean = true,
+    public val accountHolderType: PayInAccountHolderType? = null,
 ) {
     public val allowedMethods: List<PayInMethodType> = Collections.unmodifiableList(allowedMethods.toList())
     public val cardSections: List<PayInFormSection> = Collections.unmodifiableList(cardSections.toList())
@@ -300,6 +303,7 @@ public class PayInFormConfiguration(
      * @param cardBrandIconPlacement where the card number field draws the brand icon.
      * @param failureMessagePlacement where the form draws its failure message.
      * @param showsFailureMessage whether the form draws its failure message.
+     * @param accountHolderType the holder type sent when the form doesn't ask.
      * @return the configuration rebuilt from the named parts.
      */
     public fun copy(
@@ -314,6 +318,7 @@ public class PayInFormConfiguration(
         cardBrandIconPlacement: PayInCardBrandIconPlacement = this.cardBrandIconPlacement,
         failureMessagePlacement: PayInFailureMessagePlacement = this.failureMessagePlacement,
         showsFailureMessage: Boolean = this.showsFailureMessage,
+        accountHolderType: PayInAccountHolderType? = this.accountHolderType,
     ): PayInFormConfiguration =
         PayInFormConfiguration(
             allowedMethods,
@@ -327,6 +332,7 @@ public class PayInFormConfiguration(
             cardBrandIconPlacement,
             failureMessagePlacement,
             showsFailureMessage,
+            accountHolderType,
         )
 
     override fun equals(other: Any?): Boolean =
@@ -339,6 +345,7 @@ public class PayInFormConfiguration(
                     cardBrandIconPlacement == other.cardBrandIconPlacement &&
                     failureMessagePlacement == other.failureMessagePlacement &&
                     showsFailureMessage == other.showsFailureMessage &&
+                    accountHolderType == other.accountHolderType &&
                     allowedMethods == other.allowedMethods &&
                     cardSections == other.cardSections &&
                     bankSections == other.bankSections &&
@@ -354,6 +361,7 @@ public class PayInFormConfiguration(
             cardBrandIconPlacement,
             failureMessagePlacement,
             showsFailureMessage,
+            accountHolderType,
             allowedMethods,
             cardSections,
             bankSections,
@@ -366,7 +374,8 @@ public class PayInFormConfiguration(
             "cardSections=$cardSections, bankSections=$bankSections, requiredFields=$requiredFields, " +
             "labelLayout=$labelLayout, hiddenFieldLabels=$hiddenFieldLabels, formatting=$formatting, " +
             "cardBrandIconPlacement=$cardBrandIconPlacement, " +
-            "failureMessagePlacement=$failureMessagePlacement, showsFailureMessage=$showsFailureMessage)"
+            "failureMessagePlacement=$failureMessagePlacement, showsFailureMessage=$showsFailureMessage, " +
+            "accountHolderType=$accountHolderType)"
 
     public companion object {
         /**

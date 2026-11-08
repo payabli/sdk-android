@@ -92,7 +92,7 @@ class PayInSubmissionRetentionInstrumentedTest {
                 before =
                     hostFor(activity).also {
                         watch(it)
-                        it.payments.start(captureOf(), cardForm())
+                        it.payments.start(captureOf(), cardForm(), null)
                     }
             }
             awaitArrival()
@@ -121,7 +121,7 @@ class PayInSubmissionRetentionInstrumentedTest {
         ActivityScenario.launch(ComponentActivity::class.java).use { scenario ->
             var host: FlowHost? = null
             scenario.onActivity { activity ->
-                host = hostFor(activity).also { it.payments.start(captureOf(), cardForm()) }
+                host = hostFor(activity).also { it.payments.start(captureOf(), cardForm(), null) }
             }
             awaitArrival()
 

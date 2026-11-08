@@ -25,6 +25,7 @@ import com.payabli.sdk.payin.client.PayInKeyRefusal
 import com.payabli.sdk.payin.client.PayInRoutes
 import com.payabli.sdk.payin.client.TokenStorageClient
 import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.model.PayInAccountHolderType
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInRequest
@@ -91,6 +92,7 @@ internal class PayInSubmission(
      * @param entryPoint the partner integration point the submission is attributed to.
      * @param operation what the submission does: store the method, capture, or authorize.
      * @param values what the payer entered, and the instrument they entered it for.
+     * @param configuredHolderType the host's holder type, sent when the form doesn't ask.
      * @param onReserved told whether this submission took the single flight.
      * @return the terminal state, or null when a submission was already in flight.
      */
@@ -98,6 +100,7 @@ internal class PayInSubmission(
         entryPoint: String,
         operation: PayabliPayInOperation,
         values: PayInFormValues,
+        configuredHolderType: PayInAccountHolderType? = null,
         onReserved: (Boolean) -> Unit = {},
     ): PayInSubmissionState? {
         val reference = operation.transactionOptions?.let(::referenceOf)
@@ -120,14 +123,14 @@ internal class PayInSubmission(
             val entered = PayInEnteredDetails.of(values)
             when (operation) {
                 is PayabliPayInOperation.StoreMethod ->
-                    PayInFormInstrument.useInstrument(values) { instrument ->
+                    PayInFormInstrument.useInstrument(values, configuredHolderType) { instrument ->
                         PayInSubmissionState.Succeeded.Method(
                             storage.storeMethod(entryPoint, instrument, operation.options, entered),
                         )
                     }
 
                 is PayabliPayInOperation.Capture ->
-                    PayInFormInstrument.usePaymentMethod(values) { method ->
+                    PayInFormInstrument.usePaymentMethod(values, configuredHolderType) { method ->
                         val key = retry.reserve(PayInPaymentDescription.of(method, operation.options))
                         PayInSubmissionState.Succeeded.Payment(
                             moneyIn.capture(entryPoint, PayInRequest(method, operation.options), entered, key),
@@ -135,7 +138,7 @@ internal class PayInSubmission(
                     }
 
                 is PayabliPayInOperation.Authorize ->
-                    PayInFormInstrument.usePaymentMethod(values) { method ->
+                    PayInFormInstrument.usePaymentMethod(values, configuredHolderType) { method ->
                         val key = retry.reserve(PayInPaymentDescription.of(method, operation.options))
                         PayInSubmissionState.Succeeded.Payment(
                             moneyIn.authorize(entryPoint, PayInRequest(method, operation.options), entered, key),

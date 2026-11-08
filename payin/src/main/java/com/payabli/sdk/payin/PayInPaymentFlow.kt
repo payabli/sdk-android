@@ -13,6 +13,7 @@ import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TokenStorageClient
 import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.model.PayInAccountHolderType
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInRequest
@@ -141,12 +142,14 @@ internal class PayInPaymentFlow private constructor(
      *
      * @param operation what the submission does.
      * @param values what the payer entered, and the instrument they entered it for.
+     * @param configuredHolderType the host's holder type, sent when the form doesn't ask.
      * @return true when the submission started; false when one was already in flight, having sent nothing.
      */
     @JvmSynthetic
     internal fun start(
         operation: PayabliPayInOperation,
         values: PayInFormValues,
+        configuredHolderType: PayInAccountHolderType?,
     ): Boolean {
         // What the single flight answered, not what the state said. The state is published while the guard is
         // still held, so a caller reading it can be told a submission was accepted that the guard then refused,
@@ -156,7 +159,7 @@ internal class PayInPaymentFlow private constructor(
         // forms on one flow both read a non-submitting state and both are told they were accepted.
         var reserved = false
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            submission.submit(entryPoint, operation, values) { reserved = it }
+            submission.submit(entryPoint, operation, values, configuredHolderType) { reserved = it }
         }
         return reserved
     }

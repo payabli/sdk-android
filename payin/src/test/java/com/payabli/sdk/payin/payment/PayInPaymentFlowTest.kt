@@ -650,9 +650,9 @@ class PayInPaymentFlowTest {
             val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
             val flow = flowOver(transport)
 
-            assertTrue("the first tap was refused", flow.start(captureOf(), cardForm()))
+            assertTrue("the first tap was refused", flow.start(captureOf(), cardForm(), null))
             transport.arrived.await()
-            assertFalse("the second tap was accepted", flow.start(captureOf(), cardForm()))
+            assertFalse("the second tap was accepted", flow.start(captureOf(), cardForm(), null))
 
             assertEquals(1, transport.sent.size)
             transport.release()
@@ -839,8 +839,8 @@ class PayInPaymentFlowTest {
             val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
             val flow = flowOver(transport)
 
-            val first = flow.start(captureOf(), cardForm())
-            val second = flow.start(captureOf(), cardForm())
+            val first = flow.start(captureOf(), cardForm(), null)
+            val second = flow.start(captureOf(), cardForm(), null)
 
             assertTrue("the first start was refused", first)
             assertFalse("a second submission was accepted", second)
@@ -866,7 +866,7 @@ class PayInPaymentFlowTest {
                 launch(Dispatchers.Unconfined) {
                     flow.submissionState.collect { state ->
                         if (state is PayInSubmissionState.Succeeded && secondTap == null) {
-                            secondTap = flow.start(captureOf(), cardForm())
+                            secondTap = flow.start(captureOf(), cardForm(), null)
                         }
                     }
                 }

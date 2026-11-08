@@ -22,17 +22,19 @@ internal object PayInFormInstrument {
      * The card or bank account the values name, for storing a method.
      *
      * @param values what the payer entered, and the instrument they entered it for.
+     * @param configuredHolderType the host's holder type, sent when the form doesn't ask.
      * @param block what runs with the instrument, which is closed before the call returns.
      * @return what [block] returned.
      */
     suspend fun <T> useInstrument(
         values: PayInFormValues,
+        configuredHolderType: PayInAccountHolderType? = null,
         block: suspend (PayInInstrument) -> T,
     ): T {
         val instrument =
             when (values.method) {
                 PayInMethodType.Card -> PayInInstrument.Card(card(values))
-                PayInMethodType.BankAccount -> PayInInstrument.BankAccount(bankAccount(values))
+                PayInMethodType.BankAccount -> PayInInstrument.BankAccount(bankAccount(values, configuredHolderType))
             }
         try {
             return block(instrument)
@@ -45,17 +47,19 @@ internal object PayInFormInstrument {
      * The same instrument, as a transaction's payment method.
      *
      * @param values what the payer entered, and the instrument they entered it for.
+     * @param configuredHolderType the host's holder type, sent when the form doesn't ask.
      * @param block what runs with the method, which is closed before the call returns.
      * @return what [block] returned.
      */
     suspend fun <T> usePaymentMethod(
         values: PayInFormValues,
+        configuredHolderType: PayInAccountHolderType? = null,
         block: suspend (PayInPaymentMethod) -> T,
     ): T {
         val method =
             when (values.method) {
                 PayInMethodType.Card -> PayInPaymentMethod.Card(card(values))
-                PayInMethodType.BankAccount -> PayInPaymentMethod.BankAccount(bankAccount(values))
+                PayInMethodType.BankAccount -> PayInPaymentMethod.BankAccount(bankAccount(values, configuredHolderType))
             }
         try {
             return block(method)
@@ -83,11 +87,15 @@ internal object PayInFormInstrument {
         )
     }
 
-    private fun bankAccount(values: PayInFormValues): PayInBankAccountData {
+    private fun bankAccount(
+        values: PayInFormValues,
+        configuredHolderType: PayInAccountHolderType?,
+    ): PayInBankAccountData {
         // The two choices first, as the card's expiry is: each can refuse the form, and a refusal before the
         // account number is buffered leaves nothing to clean up. No SEC code, so the body writer sends `WEB`.
         val accountType = accountType(values[PayInField.AccountType])
-        val holderType = holderType(values[PayInField.AccountHolderType])
+        // A shown holder type is required, so the payer's answer is there whenever the field is.
+        val holderType = holderType(values[PayInField.AccountHolderType]) ?: configuredHolderType
         return PayInBankAccountData(
             accountNumber = values[PayInField.AccountNumber],
             routingNumber = values[PayInField.RoutingNumber],
