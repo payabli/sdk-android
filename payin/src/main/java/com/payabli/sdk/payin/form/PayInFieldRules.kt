@@ -59,7 +59,6 @@ internal object PayInFieldRules {
             setOf(
                 PayInField.AccountType,
                 PayInField.AccountHolderType,
-                PayInField.SecCode,
             )
 
     /**

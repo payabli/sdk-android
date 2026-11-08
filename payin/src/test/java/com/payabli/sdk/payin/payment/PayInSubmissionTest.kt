@@ -132,12 +132,28 @@ class PayInSubmissionTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
-            // The three values PayInStrings.choices puts behind those dropdowns.
-            val values = bankForm(accountType = "Savings", holderType = "business", secCode = "web")
+            // The two values PayInStrings.choices puts behind those dropdowns. The SEC code is never asked, and a
+            // business holder type still sends `WEB`.
+            val values = bankForm(accountType = "Savings", holderType = "business")
             assertNotNull(submissionOver(transport).submit(TEST_ENTRY_POINT, captureOf(), values))
 
             val body = transport.bodyText()
             assertTrue(body, body.contains(""""achAccountType":"Savings""""))
+            assertTrue(body, body.contains(""""achHolderType":"business""""))
+            assertTrue(body, body.contains(""""achCode":"WEB""""))
+        }
+
+    @Test
+    fun `a bank account stored through the form is sent as WEB, whatever its holder type`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(stored)
+
+            val values = bankForm(holderType = "business")
+            assertNotNull(
+                submissionOver(transport).submit(TEST_ENTRY_POINT, PayabliPayInOperation.StoreMethod(), values),
+            )
+
+            val body = transport.bodyText()
             assertTrue(body, body.contains(""""achHolderType":"business""""))
             assertTrue(body, body.contains(""""achCode":"WEB""""))
         }
@@ -1772,12 +1788,12 @@ class PayInSubmissionTest {
             val transport = FakePayInTransport.answering(approved)
             val submission = submissionOver(transport)
 
-            submission.submit(TEST_ENTRY_POINT, captureOf(), bankForm(secCode = "iat"))
+            submission.submit(TEST_ENTRY_POINT, captureOf(), bankForm(holderType = "trust"))
 
             assertNull("a request was sent for a form that was refused", transport.request)
             val state = failed(submission.state.value)
             assertTrue("${state.cause}", state.cause is PayInException.InvalidInput)
-            assertEquals(mapOf(PayInField.SecCode to PayInFieldError.NotAccepted), state.fieldErrors)
+            assertEquals(mapOf(PayInField.AccountHolderType to PayInFieldError.NotAccepted), state.fieldErrors)
         }
 
     @Test

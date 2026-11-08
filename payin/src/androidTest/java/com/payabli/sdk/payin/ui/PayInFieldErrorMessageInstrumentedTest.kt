@@ -227,10 +227,6 @@ class PayInFieldErrorMessageInstrumentedTest {
             listOf("personal", "business"),
             choices.getValue(PayInField.AccountHolderType).map { it.first },
         )
-        assertEquals(
-            listOf("web", "ppd", "ccd", "tel"),
-            choices.getValue(PayInField.SecCode).map { it.first },
-        )
         // A field that offers no choices, which is the branch every other field takes.
         assertEquals(emptyList<Pair<String, String>>(), choices.getValue(PayInField.CardNumber))
 

@@ -18,7 +18,6 @@ internal val PayInField.labelResource: Int
             PayInField.AccountNumber -> R.string.payabli_payin_field_account_number
             PayInField.AccountType -> R.string.payabli_payin_field_account_type
             PayInField.AccountHolderType -> R.string.payabli_payin_field_account_holder_type
-            PayInField.SecCode -> R.string.payabli_payin_field_sec_code
             PayInField.FirstName -> R.string.payabli_payin_field_first_name
             PayInField.LastName -> R.string.payabli_payin_field_last_name
             PayInField.CustomerNumber -> R.string.payabli_payin_field_customer_number

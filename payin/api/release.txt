@@ -90,7 +90,6 @@ package com.payabli.sdk.payin.form {
     enum_constant public static final com.payabli.sdk.payin.form.PayInField FirstName;
     enum_constant public static final com.payabli.sdk.payin.form.PayInField LastName;
     enum_constant public static final com.payabli.sdk.payin.form.PayInField RoutingNumber;
-    enum_constant public static final com.payabli.sdk.payin.form.PayInField SecCode;
     enum_constant public static final com.payabli.sdk.payin.form.PayInField ServiceFee;
     enum_constant public static final com.payabli.sdk.payin.form.PayInField SurchargeFee;
   }

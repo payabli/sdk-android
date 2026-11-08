@@ -86,7 +86,6 @@ internal val PayInField.labelResource: Int
             PayInField.CardExpiration,
             PayInField.AccountType,
             PayInField.AccountHolderType,
-            PayInField.SecCode,
             PayInField.BillingPostalCode,
             PayInField.Amount,
             PayInField.ServiceFee,

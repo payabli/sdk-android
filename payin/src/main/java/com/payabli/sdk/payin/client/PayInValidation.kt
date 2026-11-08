@@ -251,6 +251,5 @@ internal object PayInValidation {
     internal val FIELD_ACH_ROUTING: String = inPaymentMethod(PayInRoutes.FIELD_ACH_ROUTING)
     internal val FIELD_ACH_HOLDER: String = inPaymentMethod(PayInRoutes.FIELD_ACH_HOLDER)
     internal val FIELD_ACH_HOLDER_TYPE: String = inPaymentMethod(PayInRoutes.FIELD_ACH_HOLDER_TYPE)
-    internal val FIELD_ACH_SEC_CODE: String = inPaymentMethod(PayInRoutes.FIELD_ACH_SEC_CODE)
     internal val FIELD_DEVICE: String = inPaymentMethod(PayInRoutes.FIELD_DEVICE)
 }

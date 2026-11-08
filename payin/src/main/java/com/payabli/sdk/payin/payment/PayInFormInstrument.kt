@@ -12,7 +12,6 @@ import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
-import com.payabli.sdk.payin.model.PayInSecCode
 
 /**
  * Turns what the payer typed into the typed instrument and closes its buffers however the block ends. Everything
@@ -85,18 +84,16 @@ internal object PayInFormInstrument {
     }
 
     private fun bankAccount(values: PayInFormValues): PayInBankAccountData {
-        // The three choices first, as the card's expiry is: each can refuse the form, and a refusal before the
-        // account number is buffered leaves nothing to clean up.
+        // The two choices first, as the card's expiry is: each can refuse the form, and a refusal before the
+        // account number is buffered leaves nothing to clean up. No SEC code, so the body writer sends `WEB`.
         val accountType = accountType(values[PayInField.AccountType])
         val holderType = holderType(values[PayInField.AccountHolderType])
-        val secCode = secCode(values[PayInField.SecCode])
         return PayInBankAccountData(
             accountNumber = values[PayInField.AccountNumber],
             routingNumber = values[PayInField.RoutingNumber],
             accountType = accountType,
             holderName = values[PayInField.AccountHolder],
             holderType = holderType,
-            secCode = secCode,
         )
     }
 
@@ -129,21 +126,6 @@ internal object PayInFormInstrument {
             wireName = { it.wireName },
             field = PayInValidation.FIELD_ACH_HOLDER_TYPE,
             subject = "A holder type",
-        )
-
-    /**
-     * Absent leaves the body writer to send `WEB`, which is the default for a form-entered debit.
-     *
-     * @param value the authorization code as the form offered it.
-     * @return the authorization code, or null where the form does not ask.
-     */
-    private fun secCode(value: String): PayInSecCode? =
-        chosen(
-            value = value,
-            options = PayInSecCode.entries,
-            wireName = { it.wireName },
-            field = PayInValidation.FIELD_ACH_SEC_CODE,
-            subject = "An authorization code",
         )
 
     /**

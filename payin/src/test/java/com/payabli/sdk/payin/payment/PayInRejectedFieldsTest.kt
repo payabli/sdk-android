@@ -31,7 +31,6 @@ class PayInRejectedFieldsTest {
                 "paymentMethod.achRouting" to PayInField.RoutingNumber,
                 "paymentMethod.achHolder" to PayInField.AccountHolder,
                 "paymentMethod.achHolderType" to PayInField.AccountHolderType,
-                "paymentMethod.achCode" to PayInField.SecCode,
                 "paymentDetails.totalAmount" to PayInField.Amount,
                 "paymentDetails.serviceFee" to PayInField.ServiceFee,
                 "paymentDetails.surchargeFee" to PayInField.SurchargeFee,
@@ -76,7 +75,7 @@ class PayInRejectedFieldsTest {
 
     @Test
     fun `a refusal naming a value the form no longer collects marks nothing`() {
-        listOf("methodDescription", "paymentMethod.device").forEach { name ->
+        listOf("methodDescription", "paymentMethod.device", "paymentMethod.achCode").forEach { name ->
             assertTrue(name, PayInRejectedFields.of(validation(name)).isEmpty())
         }
     }
