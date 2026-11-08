@@ -53,7 +53,6 @@ public enum class PayInField(
     AccountType(PayInFieldInput.Choice),
     AccountHolderType(PayInFieldInput.Choice),
     SecCode(PayInFieldInput.Choice),
-    DeviceId(PayInFieldInput.Text),
 
     FirstName(PayInFieldInput.Text, isNarrow = true),
     LastName(PayInFieldInput.Text, isNarrow = true),

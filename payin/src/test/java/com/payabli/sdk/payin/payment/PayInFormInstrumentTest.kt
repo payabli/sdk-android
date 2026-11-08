@@ -97,7 +97,6 @@ class PayInFormInstrumentTest {
                 assertEquals("Checking", account.accountType.wireName)
                 assertNull("a holder type was invented", account.holderType)
                 assertNull("an authorization code was invented", account.secCode)
-                assertNull("a device was invented", account.deviceId)
             }
         }
 

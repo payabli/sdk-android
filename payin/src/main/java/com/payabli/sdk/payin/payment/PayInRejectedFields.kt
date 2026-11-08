@@ -65,7 +65,6 @@ internal object PayInRejectedFields {
             PayInRoutes.FIELD_ACH_HOLDER to PayInField.AccountHolder,
             PayInRoutes.FIELD_ACH_HOLDER_TYPE to PayInField.AccountHolderType,
             PayInRoutes.FIELD_ACH_SEC_CODE to PayInField.SecCode,
-            PayInRoutes.FIELD_DEVICE to PayInField.DeviceId,
             PayInRoutes.FIELD_TOTAL_AMOUNT to PayInField.Amount,
             PayInRoutes.FIELD_SERVICE_FEE to PayInField.ServiceFee,
             PayInRoutes.FIELD_SURCHARGE_FEE to PayInField.SurchargeFee,

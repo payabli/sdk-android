@@ -19,7 +19,6 @@ class PayInSensitiveFieldsTest {
             PayInField.AccountType,
             PayInField.AccountHolderType,
             PayInField.SecCode,
-            PayInField.DeviceId,
             PayInField.FirstName,
             PayInField.LastName,
             PayInField.CustomerNumber,

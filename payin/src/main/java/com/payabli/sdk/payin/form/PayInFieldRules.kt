@@ -32,7 +32,6 @@ internal object PayInFieldRules {
             PayInField.ServiceFee,
             PayInField.SurchargeFee,
             PayInField.CustomerNumber,
-            PayInField.DeviceId,
         )
 
     private val CARD_INSTRUMENT =
@@ -54,14 +53,13 @@ internal object PayInFieldRules {
     /** Everything a card request carries and a bank one does not. */
     private val CARD_ONLY = CARD_INSTRUMENT
 
-    /** The same for a bank request. Wider than [BANK_INSTRUMENT]: these four are carried but optional. */
+    /** The same for a bank request. Wider than [BANK_INSTRUMENT]: these are carried but optional. */
     private val BANK_ONLY =
         BANK_INSTRUMENT +
             setOf(
                 PayInField.AccountType,
                 PayInField.AccountHolderType,
                 PayInField.SecCode,
-                PayInField.DeviceId,
             )
 
     /**

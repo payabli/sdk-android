@@ -87,7 +87,6 @@ package com.payabli.sdk.payin.form {
     enum_constant public static final com.payabli.sdk.payin.form.PayInField CardSecurityCode;
     enum_constant public static final com.payabli.sdk.payin.form.PayInField CardholderName;
     enum_constant public static final com.payabli.sdk.payin.form.PayInField CustomerNumber;
-    enum_constant public static final com.payabli.sdk.payin.form.PayInField DeviceId;
     enum_constant public static final com.payabli.sdk.payin.form.PayInField FirstName;
     enum_constant public static final com.payabli.sdk.payin.form.PayInField LastName;
     enum_constant public static final com.payabli.sdk.payin.form.PayInField RoutingNumber;
@@ -397,15 +396,13 @@ package com.payabli.sdk.payin.model {
   }
 
   public final class PayInBankAccountData {
-    ctor public PayInBankAccountData(String accountNumber, String routingNumber, com.payabli.sdk.payin.model.PayInAccountType accountType, String holderName, optional com.payabli.sdk.payin.model.PayInAccountHolderType? holderType, optional com.payabli.sdk.payin.model.PayInSecCode? secCode, optional String? deviceId);
+    ctor public PayInBankAccountData(String accountNumber, String routingNumber, com.payabli.sdk.payin.model.PayInAccountType accountType, String holderName, optional com.payabli.sdk.payin.model.PayInAccountHolderType? holderType, optional com.payabli.sdk.payin.model.PayInSecCode? secCode);
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInAccountType getAccountType();
-    method @InaccessibleFromKotlin public String? getDeviceId();
     method @InaccessibleFromKotlin public String getHolderName();
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInAccountHolderType? getHolderType();
     method @InaccessibleFromKotlin public String getRoutingNumber();
     method @InaccessibleFromKotlin public com.payabli.sdk.payin.model.PayInSecCode? getSecCode();
     property public com.payabli.sdk.payin.model.PayInAccountType accountType;
-    property public String? deviceId;
     property public String holderName;
     property public com.payabli.sdk.payin.model.PayInAccountHolderType? holderType;
     property public String routingNumber;

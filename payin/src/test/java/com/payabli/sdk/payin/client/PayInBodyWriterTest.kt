@@ -77,7 +77,6 @@ class PayInBodyWriterTest {
                 holderName = "A Payer",
                 holderType = PayInAccountHolderType.Business,
                 secCode = PayInSecCode.Ppd,
-                deviceId = "device-1",
             )
 
         val parsed = parsed(PayInBodyWriter.instrumentFragment(PayInInstrument.BankAccount(data)))
@@ -86,7 +85,7 @@ class PayInBodyWriterTest {
         // Lower case, unlike the account type. The inconsistency is the service's.
         assertEquals(JsonPrimitive("business"), parsed["achHolderType"])
         assertEquals(JsonPrimitive("PPD"), parsed["achCode"])
-        assertEquals(JsonPrimitive("device-1"), parsed["device"])
+        assertNull(parsed["device"])
     }
 
     /** A stored method sends the method it stands for, its identifier, and a `payor` initiator. */

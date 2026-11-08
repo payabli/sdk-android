@@ -142,10 +142,6 @@ internal object PayInBodyWriter {
             // value the caller chose visible in the request rather than implied by its absence.
             field(PayInRoutes.FIELD_ACH_SEC_CODE, (data.secCode ?: PayInSecCode.Web).wireName)
             data.holderType?.let { field(PayInRoutes.FIELD_ACH_HOLDER_TYPE, it.wireName) }
-            data.deviceId
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
-                ?.let { field(PayInRoutes.FIELD_DEVICE, it) }
         }
 
     /**

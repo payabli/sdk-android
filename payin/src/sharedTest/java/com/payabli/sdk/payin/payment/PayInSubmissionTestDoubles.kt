@@ -114,7 +114,6 @@ internal fun bankForm(
     accountType: String = "",
     holderType: String = "",
     secCode: String = "",
-    deviceId: String = "",
 ): PayInFormValues =
     PayInFormValues(
         PayInMethodType.BankAccount,
@@ -125,7 +124,6 @@ internal fun bankForm(
             PayInField.AccountType to accountType,
             PayInField.AccountHolderType to holderType,
             PayInField.SecCode to secCode,
-            PayInField.DeviceId to deviceId,
         ),
     )
 

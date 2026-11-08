@@ -97,7 +97,6 @@ internal object PayInFormInstrument {
             holderName = values[PayInField.AccountHolder],
             holderType = holderType,
             secCode = secCode,
-            deviceId = values[PayInField.DeviceId].trim().takeIf { it.isNotEmpty() },
         )
     }
 
