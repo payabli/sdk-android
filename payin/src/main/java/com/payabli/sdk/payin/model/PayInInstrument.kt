@@ -145,7 +145,6 @@ public class PayInBankAccountData private constructor(
     public val holderName: String,
     public val holderType: PayInAccountHolderType?,
     public val secCode: PayInSecCode?,
-    public val deviceId: String?,
 ) {
     /**
      * The bank account the payer entered.
@@ -156,7 +155,6 @@ public class PayInBankAccountData private constructor(
      * @param holderName the account holder's name.
      * @param holderType personal or business, or null to leave it to the paypoint.
      * @param secCode the authorization the payer gave, or null for the default.
-     * @param deviceId the device the payer used, or null.
      */
     public constructor(
         accountNumber: String,
@@ -165,7 +163,6 @@ public class PayInBankAccountData private constructor(
         holderName: String,
         holderType: PayInAccountHolderType? = null,
         secCode: PayInSecCode? = null,
-        deviceId: String? = null,
     ) : this(
         SensitiveDigits.ofString(accountNumber),
         routingNumber,
@@ -173,7 +170,6 @@ public class PayInBankAccountData private constructor(
         holderName,
         holderType,
         secCode,
-        deviceId,
     )
 
     @get:JvmSynthetic
@@ -193,7 +189,6 @@ public class PayInBankAccountData private constructor(
             holderName,
             holderType,
             secCode,
-            deviceId,
         )
 
     /** Overwrites the buffer. */

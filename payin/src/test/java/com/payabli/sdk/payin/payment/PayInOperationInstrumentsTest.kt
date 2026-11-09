@@ -4,8 +4,8 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.model.PayInAccountHolderType
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,6 +23,13 @@ class PayInOperationInstrumentsTest {
             allowedMethods = listOf(PayInMethodType.Card, PayInMethodType.BankAccount),
             defaultMethod = PayInMethodType.BankAccount,
         )
+
+    @Test
+    fun `narrowing keeps the holder type the host configured`() {
+        val configured = bothMethods.copy(accountHolderType = PayInAccountHolderType.Business)
+
+        assertEquals(PayInAccountHolderType.Business, authorize().offering(configured).accountHolderType)
+    }
 
     @Test
     fun `an authorization drops the bank tab`() {
@@ -72,36 +79,6 @@ class PayInOperationInstrumentsTest {
             "does not name the instrument: ${refusal?.message}",
             refusal?.message?.contains("BankAccount") == true,
         )
-    }
-
-    @Test
-    fun `only a stored method can ask for a method description`() {
-        // Every other operation sends the typed text nowhere.
-        val described =
-            PayInFormConfiguration(
-                allowedMethods = listOf(PayInMethodType.Card),
-                cardSections =
-                    PayInFormConfiguration.defaultCardSections() +
-                        PayInFormSection(fields = listOf(PayInField.MethodDescription)),
-            )
-
-        assertSame(described, PayabliPayInOperation.StoreMethod().offering(described))
-        listOf(capture(), authorize()).forEach { operation ->
-            val refusal = runCatching { operation.offering(described) }.exceptionOrNull()
-            assertTrue("$operation drew a box it would drop", refusal is IllegalArgumentException)
-        }
-    }
-
-    @Test
-    fun `the narrowing key tells apart two operations offering the same instruments`() {
-        // The form keeps the narrowed configuration under this key. Storing a method and capturing offer both
-        // instruments, so keying on the instruments alone hands a capture the narrowing made for a store, and
-        // the box only a store can carry survives onto it.
-        assertEquals(
-            PayabliPayInOperation.StoreMethod().instruments,
-            capture().instruments,
-        )
-        assertNotEquals(PayabliPayInOperation.StoreMethod().narrowingKey, capture().narrowingKey)
     }
 
     @Test

@@ -97,7 +97,6 @@ class PayInFormInstrumentTest {
                 assertEquals("Checking", account.accountType.wireName)
                 assertNull("a holder type was invented", account.holderType)
                 assertNull("an authorization code was invented", account.secCode)
-                assertNull("a device was invented", account.deviceId)
             }
         }
 
@@ -106,12 +105,12 @@ class PayInFormInstrumentTest {
         runTest(timeout = timeout) {
             val raised =
                 runCatching {
-                    PayInFormInstrument.useInstrument(bankForm(secCode = "iat")) { }
+                    PayInFormInstrument.useInstrument(bankForm(holderType = "trust")) { }
                 }.exceptionOrNull()
 
             val refusal = raised as? PayInException.InvalidInput
             assertTrue("$raised", refusal != null)
-            assertEquals("paymentMethod.achCode", refusal?.field)
+            assertEquals("paymentMethod.achHolderType", refusal?.field)
         }
 
     @Test

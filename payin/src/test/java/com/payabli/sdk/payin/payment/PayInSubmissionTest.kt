@@ -24,11 +24,14 @@ import com.payabli.sdk.payin.client.testDetails
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.model.PayInAccountHolderType
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
@@ -131,12 +134,72 @@ class PayInSubmissionTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
-            // The three values PayInStrings.choices puts behind those dropdowns.
-            val values = bankForm(accountType = "Savings", holderType = "business", secCode = "web")
+            // The two values PayInStrings.choices puts behind those dropdowns. The SEC code is never asked, and a
+            // business holder type still sends `WEB`.
+            val values = bankForm(accountType = "Savings", holderType = "business")
             assertNotNull(submissionOver(transport).submit(TEST_ENTRY_POINT, captureOf(), values))
 
             val body = transport.bodyText()
             assertTrue(body, body.contains(""""achAccountType":"Savings""""))
+            assertTrue(body, body.contains(""""achHolderType":"business""""))
+            assertTrue(body, body.contains(""""achCode":"WEB""""))
+        }
+
+    @Test
+    fun `the payer's holder type wins over the configured one while the field is shown`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+
+            val values = bankForm(holderType = "personal")
+            assertNotNull(
+                submissionOver(
+                    transport,
+                ).submit(TEST_ENTRY_POINT, captureOf(), values, PayInAccountHolderType.Business),
+            )
+
+            assertTrue(transport.bodyText(), transport.bodyText().contains(""""achHolderType":"personal""""))
+        }
+
+    @Test
+    fun `the configured holder type is sent when the form doesn't ask`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(stored)
+
+            val operation = PayabliPayInOperation.StoreMethod()
+            assertNotNull(
+                submissionOver(
+                    transport,
+                ).submit(TEST_ENTRY_POINT, operation, bankFormWithoutHolderType(), PayInAccountHolderType.Business),
+            )
+
+            assertTrue(transport.bodyText(), transport.bodyText().contains(""""achHolderType":"business""""))
+        }
+
+    @Test
+    fun `with neither the field nor a configured holder type, none is sent`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+
+            assertNotNull(submissionOver(transport).submit(TEST_ENTRY_POINT, captureOf(), bankFormWithoutHolderType()))
+
+            assertTrue(transport.bodyText(), !transport.bodyText().contains("achHolderType"))
+        }
+
+    /** The bank values as a form that doesn't show the holder type hands them over: no key for it at all. */
+    private fun bankFormWithoutHolderType(): PayInFormValues =
+        PayInFormValues(PayInMethodType.BankAccount, bankForm().values - PayInField.AccountHolderType)
+
+    @Test
+    fun `a bank account stored through the form is sent as WEB, whatever its holder type`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(stored)
+
+            val values = bankForm(holderType = "business")
+            assertNotNull(
+                submissionOver(transport).submit(TEST_ENTRY_POINT, PayabliPayInOperation.StoreMethod(), values),
+            )
+
+            val body = transport.bodyText()
             assertTrue(body, body.contains(""""achHolderType":"business""""))
             assertTrue(body, body.contains(""""achCode":"WEB""""))
         }
@@ -1771,12 +1834,12 @@ class PayInSubmissionTest {
             val transport = FakePayInTransport.answering(approved)
             val submission = submissionOver(transport)
 
-            submission.submit(TEST_ENTRY_POINT, captureOf(), bankForm(secCode = "iat"))
+            submission.submit(TEST_ENTRY_POINT, captureOf(), bankForm(holderType = "trust"))
 
             assertNull("a request was sent for a form that was refused", transport.request)
             val state = failed(submission.state.value)
             assertTrue("${state.cause}", state.cause is PayInException.InvalidInput)
-            assertEquals(mapOf(PayInField.SecCode to PayInFieldError.NotAccepted), state.fieldErrors)
+            assertEquals(mapOf(PayInField.AccountHolderType to PayInFieldError.NotAccepted), state.fieldErrors)
         }
 
     @Test
@@ -1803,12 +1866,34 @@ class PayInSubmissionTest {
 
             val state = failed(submission.state.value)
             assertEquals(PayabliErrorType.UNKNOWN, state.cause.type)
+            // The send ended with the outcome unknown, so the converted reason travels as the Unsettled detail.
+            assertEquals(PayabliErrorType.UNKNOWN.message, state.cause.detail)
             val carried =
                 state.cause.cause
                     ?.message
                     .orEmpty()
             assertFalse("the cause carried its message: $carried", carried.contains(TEST_PAN))
             assertTrue("the cause lost the type that raised it: $carried", carried.contains("IllegalStateException"))
+        }
+
+    @Test
+    fun `a linkage failure arrives classified, with its own message withheld`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(NoClassDefFoundError("could not load $TEST_PAN"))
+            val submission = submissionOver(transport)
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            val state = failed(submission.state.value)
+            assertEquals(PayabliErrorType.UNKNOWN, state.cause.type)
+            // The send ended with the outcome unknown, so the converted reason travels as the Unsettled detail.
+            assertEquals(PayabliErrorType.UNKNOWN.message, state.cause.detail)
+            val carried =
+                state.cause.cause
+                    ?.message
+                    .orEmpty()
+            assertFalse("the cause carried its message: $carried", carried.contains(TEST_PAN))
+            assertTrue("the cause lost the type that raised it: $carried", carried.contains("NoClassDefFoundError"))
         }
 
     // --- what an unknown outcome says, on each route that can leave one ---
@@ -2112,13 +2197,13 @@ class PayInSubmissionTest {
         }
 
     @Test
-    fun `a stored method carries the customer and the description the payer typed`() =
+    fun `a stored method carries the customer the payer typed and the description the host set`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(stored)
             val submission = submissionOver(transport)
 
-            val values = cardForm().withCustomer(methodDescription = "card on file")
-            assertNotNull(submission.submit(TEST_ENTRY_POINT, PayabliPayInOperation.StoreMethod(), values))
+            val operation = PayabliPayInOperation.StoreMethod(PayInStoreOptions(methodDescription = " card on file "))
+            assertNotNull(submission.submit(TEST_ENTRY_POINT, operation, cardForm().withCustomer()))
 
             val body = transport.bodyText()
             assertTrue(body, body.contains(""""firstName":"Ada""""))
@@ -2139,7 +2224,7 @@ class PayInSubmissionTest {
         }
 
     /** The same card values with the customer section filled in, which is what the demo's form collects. */
-    private fun PayInFormValues.withCustomer(methodDescription: String? = null): PayInFormValues =
+    private fun PayInFormValues.withCustomer(): PayInFormValues =
         PayInFormValues(
             method,
             values +
@@ -2148,7 +2233,6 @@ class PayInSubmissionTest {
                     put(PayInField.LastName, "Lovelace")
                     put(PayInField.BillingEmail, "ada@example.test")
                     put(PayInField.BillingPostalCode, "90001")
-                    methodDescription?.let { put(PayInField.MethodDescription, it) }
                 },
         )
 
@@ -2224,6 +2308,20 @@ class PayInSubmissionTest {
 
             assertFalse("$failure", failure is PayInException.Unsettled)
             assertEquals(PayabliErrorType.SERVER_ERROR, (failure as? PayabliException)?.type)
+        }
+
+    @Test
+    fun `a read that fails with a linkage error arrives classified`() =
+        runTest(timeout = timeout) {
+            val submission =
+                submissionOver(
+                    FakePayInTransport.failingWith(NoClassDefFoundError("a class the reader needs")),
+                )
+
+            val failure = submission.readTransaction(TEST_ENTRY_POINT, "101-abc").exceptionOrNull()
+
+            assertEquals(PayabliErrorType.UNKNOWN, (failure as? PayabliException)?.type)
+            assertEquals(PayabliErrorType.UNKNOWN.message, (failure as? PayabliException)?.reason)
         }
 
     @Test

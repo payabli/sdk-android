@@ -91,6 +91,8 @@ class TelemetryPropertyNamingTest {
                 "error_number",
                 "failure_type",
                 "dropped",
+                "capture",
+                "http_status",
             ),
             declaredKeys(),
         )

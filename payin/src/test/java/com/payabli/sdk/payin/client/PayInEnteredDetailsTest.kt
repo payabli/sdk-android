@@ -29,7 +29,6 @@ class PayInEnteredDetailsTest {
                     PayInField.CustomerNumber to "cust-9",
                     PayInField.BillingEmail to "ada@example.test",
                     PayInField.BillingPostalCode to "90001",
-                    PayInField.MethodDescription to "on file",
                 ),
             )
 
@@ -38,7 +37,6 @@ class PayInEnteredDetailsTest {
         assertEquals("cust-9", entered.customerNumber)
         assertEquals("ada@example.test", entered.billingEmail)
         assertEquals("90001", entered.billingZip)
-        assertEquals("on file", entered.methodDescription)
     }
 
     @Test

@@ -102,10 +102,10 @@ internal fun cardForm(
     )
 
 /**
- * The bank fields, with the three choices empty by default.
+ * The bank fields, with the two choices empty by default.
  *
  * Empty is what a choice field holds until the payer picks from it, and the form's own bank section offers only
- * the account type of the three.
+ * the account type of the two.
  */
 internal fun bankForm(
     account: String = TEST_ACCOUNT,
@@ -113,8 +113,6 @@ internal fun bankForm(
     holderName: String = "Integration Test",
     accountType: String = "",
     holderType: String = "",
-    secCode: String = "",
-    deviceId: String = "",
 ): PayInFormValues =
     PayInFormValues(
         PayInMethodType.BankAccount,
@@ -124,8 +122,6 @@ internal fun bankForm(
             PayInField.AccountNumber to account,
             PayInField.AccountType to accountType,
             PayInField.AccountHolderType to holderType,
-            PayInField.SecCode to secCode,
-            PayInField.DeviceId to deviceId,
         ),
     )
 

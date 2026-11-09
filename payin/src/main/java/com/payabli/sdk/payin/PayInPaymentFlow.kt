@@ -4,12 +4,16 @@ import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.SdkLogger
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TokenStorageClient
 import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.model.PayInAccountHolderType
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInRequest
@@ -19,6 +23,7 @@ import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.model.RedactedCause
 import com.payabli.sdk.payin.payment.PayInSubmission
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
@@ -137,12 +142,14 @@ internal class PayInPaymentFlow private constructor(
      *
      * @param operation what the submission does.
      * @param values what the payer entered, and the instrument they entered it for.
+     * @param configuredHolderType the host's holder type, sent when the form doesn't ask.
      * @return true when the submission started; false when one was already in flight, having sent nothing.
      */
     @JvmSynthetic
     internal fun start(
         operation: PayabliPayInOperation,
         values: PayInFormValues,
+        configuredHolderType: PayInAccountHolderType?,
     ): Boolean {
         // What the single flight answered, not what the state said. The state is published while the guard is
         // still held, so a caller reading it can be told a submission was accepted that the guard then refused,
@@ -152,7 +159,7 @@ internal class PayInPaymentFlow private constructor(
         // forms on one flow both read a non-submitting state and both are told they were accepted.
         var reserved = false
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            submission.submit(entryPoint, operation, values) { reserved = it }
+            submission.submit(entryPoint, operation, values, configuredHolderType) { reserved = it }
         }
         return reserved
     }
@@ -257,9 +264,10 @@ internal class PayInPaymentFlow private constructor(
         private val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
 
         /**
-         * Builds one, and is the only way to: a factory rather than a constructor because `internal` is
-         * a Kotlin boundary and not a JVM one, and a function can be `@JvmSynthetic` where a constructor
-         * cannot, so construction goes through here and the constructors are private.
+         * Builds one, and is the only way to: a factory because `internal` is a Kotlin boundary and not
+         * a JVM one, and `@JvmSynthetic` cannot mark a constructor.
+         *
+         * An unclassified failure converts to the SDK's unknown failure here and reports nothing.
          *
          * @param session an initialized session.
          * @param entryPoint the partner integration point every request is sent to.
@@ -271,12 +279,22 @@ internal class PayInPaymentFlow private constructor(
             session: PayabliSession,
             entryPoint: String,
             scope: CoroutineScope,
-        ): PayInPaymentFlow = PayInPaymentFlow(session, entryPoint, scope)
+        ): PayInPaymentFlow =
+            try {
+                PayInPaymentFlow(session, entryPoint, scope)
+            } catch (failure: PayabliException) {
+                throw failure
+            } catch (original: Exception) {
+                throw unexpectedFailure(original)
+            } catch (original: LinkageError) {
+                throw unexpectedFailure(original)
+            }
 
         /**
-         * The seam a test builds over, which takes a transport rather than a session.
-         * [elapsedRealtimeNanos] defaults to the production clock; a JVM test has to pass one, because
-         * `SystemClock` does not exist there and the default throws rather than measuring anything.
+         * The seam a test builds over, which takes a transport rather than a session. A JVM test has
+         * to pass [elapsedRealtimeNanos], because `SystemClock` does not exist there.
+         *
+         * An unclassified failure converts here as in the session factory above and reports nothing.
          *
          * @param transport the transport every request goes through.
          * @param entryPoint the partner integration point every request is sent to.
@@ -299,15 +317,38 @@ internal class PayInPaymentFlow private constructor(
             telemetry: TelemetrySessionContext? = null,
             environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
         ): PayInPaymentFlow =
-            PayInPaymentFlow(
-                transport,
-                environment,
-                entryPoint,
-                scope,
-                dispatcher,
-                elapsedRealtimeNanos,
-                logger,
-                telemetry,
+            try {
+                PayInPaymentFlow(
+                    transport,
+                    environment,
+                    entryPoint,
+                    scope,
+                    dispatcher,
+                    elapsedRealtimeNanos,
+                    logger,
+                    telemetry,
+                )
+            } catch (failure: PayabliException) {
+                throw failure
+            } catch (original: Exception) {
+                throw unexpectedFailure(original)
+            } catch (original: LinkageError) {
+                throw unexpectedFailure(original)
+            }
+
+        /**
+         * The failure a construction answers an unclassified original with: the SDK's unknown failure,
+         * the original kept as its redacted cause. Construction belongs to no failure event, so the
+         * caller throws this and reports nothing.
+         *
+         * @param original the failure as it was thrown, before conversion.
+         * @return the failure to throw in the original's place.
+         */
+        private fun unexpectedFailure(original: Throwable): PayabliGenericException =
+            PayabliGenericException(
+                PayabliErrorType.UNKNOWN,
+                PayabliErrorType.UNKNOWN.message,
+                cause = RedactedCause(original),
             )
     }
 }

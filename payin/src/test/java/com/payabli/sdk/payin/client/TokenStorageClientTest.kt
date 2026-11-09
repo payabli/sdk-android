@@ -352,6 +352,28 @@ class TokenStorageClientTest {
         }
 
     @Test
+    fun `a stored method's description is sent trimmed, and a blank one not at all`() =
+        runTest(timeout = timeout) {
+            val trimmed = FakePayInTransport.answering(stored)
+            TokenStorageClient(trimmed, RecordingSdkLogger())
+                .storeMethod(
+                    "merchant-entry",
+                    PayInInstrument.Card(testCard()),
+                    PayInStoreOptions(methodDescription = " Main card "),
+                )
+            assertTrue(trimmed.bodyText(), trimmed.bodyText().contains(""""methodDescription":"Main card""""))
+
+            val blank = FakePayInTransport.answering(stored)
+            TokenStorageClient(blank, RecordingSdkLogger())
+                .storeMethod(
+                    "merchant-entry",
+                    PayInInstrument.Card(testCard()),
+                    PayInStoreOptions(methodDescription = "   "),
+                )
+            assertTrue(blank.bodyText(), !blank.bodyText().contains("methodDescription"))
+        }
+
+    @Test
     fun `nothing sensitive reaches a log record`() =
         runTest(timeout = timeout) {
             val logger = RecordingSdkLogger()

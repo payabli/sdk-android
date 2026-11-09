@@ -69,16 +69,24 @@ public object TelemetryCatalog {
                 setOf(TelemetryProperty.REASON.key, TelemetryProperty.FIELD.key),
             TelemetryEvents.TTP_INITIALIZE_STARTED to NONE,
             TelemetryEvents.TTP_INITIALIZE_SUCCEEDED to TIMED,
-            TelemetryEvents.TTP_INITIALIZE_FAILED to FAILED,
+            TelemetryEvents.TTP_INITIALIZE_FAILED to FAILED + TelemetryProperty.FAILURE_TYPE.key,
             TelemetryEvents.TTP_ATTESTATION_STARTED to NONE,
             TelemetryEvents.TTP_ATTESTATION_SUCCEEDED to TIMED,
             TelemetryEvents.TTP_ATTESTATION_FAILED to FAILED,
             TelemetryEvents.TTP_CHARGE_STARTED to NONE,
             TelemetryEvents.TTP_CHARGE_SUCCEEDED to TIMED,
-            TelemetryEvents.TTP_CHARGE_FAILED to FAILED,
+            TelemetryEvents.TTP_CHARGE_FAILED to FAILED + TelemetryProperty.FAILURE_TYPE.key,
             TelemetryEvents.TTP_CLOSE_STARTED to setOf(TelemetryProperty.ORIGIN.key),
             TelemetryEvents.TTP_CLOSE_SUCCEEDED to TIMED + TelemetryProperty.ORIGIN.key,
-            TelemetryEvents.TTP_CLOSE_FAILED to FAILED + TelemetryProperty.ORIGIN.key,
+            TelemetryEvents.TTP_CLOSE_FAILED to
+                FAILED +
+                setOf(
+                    TelemetryProperty.ORIGIN.key,
+                    TelemetryProperty.FAILURE_TYPE.key,
+                    TelemetryProperty.CAPTURE.key,
+                    TelemetryProperty.HTTP_STATUS.key,
+                    TelemetryProperty.REASON.key,
+                ),
             TelemetryEvents.TTP_NFC_STARTED to NONE,
             TelemetryEvents.TTP_NFC_SUCCEEDED to TIMED,
             // Carries both, and the code is the half that earns its place. [TelemetryProperty.REASON] is the
@@ -118,6 +126,7 @@ public object TelemetryCatalog {
                     TelemetryProperty.ERROR_NUMBER.key,
                     TelemetryProperty.REASON.key,
                     TelemetryProperty.DURATION_MS.key,
+                    TelemetryProperty.FAILURE_TYPE.key,
                 ),
             TelemetryEvents.SDK_INITIALIZED to setOf(TelemetryProperty.STATE.key),
             TelemetryEvents.AUTH_TOKEN_ACQUIRED to setOf(TelemetryProperty.DURATION_MS.key),
@@ -126,6 +135,7 @@ public object TelemetryCatalog {
                     TelemetryProperty.OUTCOME.key,
                     TelemetryProperty.REASON.key,
                     TelemetryProperty.DURATION_MS.key,
+                    TelemetryProperty.FAILURE_TYPE.key,
                 ),
             TelemetryEvents.AUTH_TOKEN_REFRESHED to
                 setOf(TelemetryProperty.DURATION_MS.key, TelemetryProperty.ATTEMPT.key),
@@ -148,8 +158,14 @@ public object TelemetryCatalog {
             TelemetryEvents.TTP_NFC_FAILED,
             TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED,
             TelemetryEvents.SDK_INITIALIZE_FAILED,
-            TelemetryEvents.AUTH_TOKEN_FAILED,
         )
+
+    /**
+     * Failures that wait for their batch whatever outcome they carry. The upload goes out on the session's own
+     * token, so a send forced by a token failure cannot deliver, and on a session that never minted it would
+     * call the host's provider again.
+     */
+    private val WAITS: Set<String> = setOf(TelemetryEvents.AUTH_TOKEN_FAILED)
 
     /** Every event this catalog will report. Test-facing; the gate is [scrub]. */
     internal val events: Set<String> get() = ALLOWED.keys
@@ -160,7 +176,8 @@ public object TelemetryCatalog {
     /**
      * Whether [event] should leave now rather than wait for a full batch or the next tick.
      *
-     * A name in [IMMEDIATE], or an outcome that is not successful. Call it on **scrubbed** properties.
+     * A name in [IMMEDIATE], or an outcome that is not successful, unless the name is one that waits whatever
+     * its outcome. Call it on **scrubbed** properties.
      *
      * @param event the catalog name of the event.
      * @param properties the scrubbed properties, whose outcome is read.
@@ -171,6 +188,7 @@ public object TelemetryCatalog {
         properties: Map<String, String>,
     ): Boolean {
         if (event in IMMEDIATE) return true
+        if (event in WAITS) return false
         val outcome = properties[TelemetryProperty.OUTCOME.key] ?: return false
         return outcome !in TelemetryProperties.Outcome.SUCCESSFUL
     }

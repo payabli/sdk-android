@@ -8,6 +8,7 @@ import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
+import com.payabli.sdk.taptopay.attestation.device.RedactedCause
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.network.CustomerDataRefusal
 import com.payabli.sdk.taptopay.network.TTPTransactionException
@@ -23,7 +24,17 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionException
  * host to check before repeating: an unexamined failure is the one whose outcome nobody knows.
  */
 internal object TapToPayErrorCodes {
-    fun typeFor(failure: Throwable): PayabliErrorType =
+    fun typeFor(failure: Throwable): PayabliErrorType = recognised(failure) ?: PayabliErrorType.UNKNOWN
+
+    /**
+     * Whether [failure] is one this SDK raised or classified, rather than one it never examined.
+     *
+     * @param failure what a run or a call failed with.
+     * @return false for a failure [typeFor] reports only because nothing recognised it.
+     */
+    fun isRecognised(failure: Throwable): Boolean = recognised(failure) != null
+
+    private fun recognised(failure: Throwable): PayabliErrorType? =
         when (failure) {
             is PayabliException -> failure.type
             is TapToPayCallException -> callCode(failure)
@@ -38,9 +49,8 @@ internal object TapToPayErrorCodes {
             is TTPTransactionException -> transactionCode(failure)
             is ChargeKeyStoreFullException -> PayabliErrorType.TOO_MANY_OPEN_CHARGES
             is TapToPayArgumentException -> PayabliErrorType.VALIDATION_ERROR
-            // A guard inside this SDK that refused its own sequence, which is a defect rather than a refusal.
-            is IllegalStateException -> PayabliErrorType.SDK_INTERNAL_ERROR
-            else -> PayabliErrorType.UNKNOWN
+            is TapToPayGuardException -> PayabliErrorType.SDK_INTERNAL_ERROR
+            else -> null
         }
 
     /**
@@ -59,7 +69,7 @@ internal object TapToPayErrorCodes {
         return TapToPayException.of(
             type = type,
             reason = (failure as? PayabliException)?.takeIf { it.type == type }?.reason ?: type.message,
-            cause = failure,
+            cause = hostCauseOf(failure),
             detail = serviceTextOf(failure),
             paymentTransId = paymentTransId,
             capture = capture,
@@ -69,6 +79,30 @@ internal object TapToPayErrorCodes {
             rawCode = rawCode,
         )
     }
+
+    /**
+     * [failure] as a host may read it, as a cause or suppressed on one.
+     *
+     * @param failure what the call failed with.
+     * @return [failure] when this SDK recognises it; otherwise a cause keeping its type and stack trace and
+     *   dropping its message. What it suppressed rides along, each one under the same rule.
+     */
+    fun hostCauseOf(failure: Throwable): Throwable =
+        if (isRecognised(failure)) {
+            failure
+        } else {
+            RedactedCause(failure).also { redacted ->
+                failure.suppressed.forEach { redacted.addSuppressed(if (isRecognised(it)) it else RedactedCause(it)) }
+            }
+        }
+
+    /**
+     * The HTTP status that answered the call [failure] ended.
+     *
+     * @param failure what the call failed with.
+     * @return the status on the first link of its chain that carries one, or null when nothing answered.
+     */
+    fun httpStatusOf(failure: Throwable): Int? = answerOf(failure).first
 
     /** The charge's own refusal [failure] carries, or null when it is not one. */
     private fun refusalOf(failure: Throwable): TapToPayChargeRefusal? =
@@ -145,6 +179,7 @@ internal object TapToPayErrorCodes {
             // Nothing was sent for this caller, and this cause has no code of its own.
             is TapToPaySessionException.SetupAbandoned -> PayabliErrorType.UNKNOWN
             is TapToPaySessionException.SetupFailed -> PayabliErrorType.SDK_INTERNAL_ERROR
+            is TapToPaySessionException.Unexpected -> PayabliErrorType.SDK_INTERNAL_ERROR
         }
 
     private fun serviceCode(failure: DeviceServiceException): PayabliErrorType =

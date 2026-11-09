@@ -7,11 +7,14 @@ import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.taptopay.TapToPayCapture
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
 import com.payabli.sdk.taptopay.adapters.ReaderFailureKind
+import com.payabli.sdk.taptopay.attestation.device.RedactedCause
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
+import com.payabli.sdk.taptopay.session.TapToPaySessionException
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -87,6 +90,8 @@ class TapToPayReportsTest {
             PayabliDeclineException(rawCode = "D0329"),
             System.nanoTime(),
             TelemetryProperties.Origin.CHARGE,
+            TapToPayCapture.CHARGED,
+            processorHasNoRecord = false,
         )
 
         val (_, properties) = recorded.single()
@@ -96,7 +101,13 @@ class TapToPayReportsTest {
 
     @Test
     fun `a close that was not confirmed says how long it took and how it ended`() {
-        TapToPayReports.closeFailed(deniedBy("677"), System.nanoTime(), TelemetryProperties.Origin.CHARGE)
+        TapToPayReports.closeFailed(
+            deniedBy("677"),
+            System.nanoTime(),
+            TelemetryProperties.Origin.CHARGE,
+            TapToPayCapture.UNKNOWN,
+            processorHasNoRecord = false,
+        )
 
         val (event, properties) = recorded.single()
         assertEquals(TelemetryEvents.TTP_CLOSE_FAILED, event)
@@ -107,6 +118,8 @@ class TapToPayReportsTest {
                 TelemetryProperty.DURATION_MS.key,
                 TelemetryProperty.ORIGIN.key,
                 TelemetryProperty.ERROR_NUMBER.key,
+                TelemetryProperty.FAILURE_TYPE.key,
+                TelemetryProperty.CAPTURE.key,
             ),
             properties.keys,
         )
@@ -331,4 +344,24 @@ class TapToPayReportsTest {
         CardReaderException.DeviceDenied(
             CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = code),
         )
+
+    @Test
+    fun `a failure names its own type, and a redaction names the type it stands in for`() {
+        val cases =
+            listOf(
+                IllegalStateException("never reported") to "IllegalStateException",
+                CardReaderException.DeviceDenied(null) to "DeviceDenied",
+                TapToPaySessionException.Unexpected(RedactedCause(IllegalStateException("never reported"))) to
+                    "IllegalStateException",
+                RedactedCause(NoClassDefFoundError("never reported")) to "NoClassDefFoundError",
+            )
+        for ((failure, expected) in cases) {
+            recorded.clear()
+            TapToPayReports.chargeFailed(failure, System.nanoTime())
+
+            val properties = recorded.single().second
+            assertEquals(failure.javaClass.name, expected, properties[TelemetryProperty.FAILURE_TYPE.key])
+            assertTrue(properties.toString(), properties.values.none { it.contains("never reported") })
+        }
+    }
 }

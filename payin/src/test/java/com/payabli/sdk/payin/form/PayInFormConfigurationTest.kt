@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.form
 
+import com.payabli.sdk.payin.model.PayInAccountHolderType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -407,12 +408,12 @@ class PayInFormConfigurationTest {
             )
 
         methods += PayInMethodType.BankAccount
-        required += PayInField.MethodDescription
+        required += PayInField.Amount
         hidden.clear()
         sectionFields += PayInField.BillingEmail
 
         assertEquals(listOf(PayInMethodType.Card), configuration.methodsOffered)
-        assertFalse(configuration.isRequired(PayInField.MethodDescription))
+        assertFalse(configuration.isRequired(PayInField.Amount))
         assertFalse(configuration.showsLabelFor(PayInField.CardNumber))
         assertEquals(
             CARD_INSTRUMENT_FIELDS,
@@ -438,12 +439,15 @@ class PayInFormConfigurationTest {
                 cardBrandIconPlacement = PayInCardBrandIconPlacement.Hidden,
                 failureMessagePlacement = PayInFailureMessagePlacement.Top,
                 showsFailureMessage = false,
+                accountHolderType = PayInAccountHolderType.Business,
             )
 
         val kept = configuration.copy(labelLayout = PayInLabelLayout.Placeholder)
         assertEquals(PayInCardBrandIconPlacement.Hidden, kept.cardBrandIconPlacement)
         assertEquals(PayInFailureMessagePlacement.Top, kept.failureMessagePlacement)
         assertFalse(kept.showsFailureMessage)
+        assertEquals(PayInAccountHolderType.Business, kept.accountHolderType)
+        assertNull(configuration.copy(accountHolderType = null).accountHolderType)
 
         assertEquals(
             PayInCardBrandIconPlacement.Leading,
@@ -459,13 +463,14 @@ class PayInFormConfigurationTest {
     }
 
     @Test
-    fun `two configurations differing only in a placement or the opt-out are not equal`() {
+    fun `two configurations differing only in a placement, the opt-out or the holder type are not equal`() {
         val plain = PayInFormConfiguration()
 
         listOf(
             PayInFormConfiguration(cardBrandIconPlacement = PayInCardBrandIconPlacement.Hidden),
             PayInFormConfiguration(failureMessagePlacement = PayInFailureMessagePlacement.Top),
             PayInFormConfiguration(showsFailureMessage = false),
+            PayInFormConfiguration(accountHolderType = PayInAccountHolderType.Personal),
         ).forEach { other ->
             assertNotEquals(plain, other)
             assertNotEquals(plain.hashCode(), other.hashCode())

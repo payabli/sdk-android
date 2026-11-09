@@ -23,6 +23,7 @@ import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
 import com.payabli.sdk.core.network.impl.AuthenticatedTransport
 import com.payabli.sdk.core.network.impl.ClientFacts
+import com.payabli.sdk.core.network.impl.RedactedCause
 import com.payabli.sdk.core.telemetry.TelemetryBootstraps
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
@@ -30,6 +31,8 @@ import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
+import com.payabli.sdk.core.telemetry.failureTypeOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -124,10 +127,19 @@ public class PayabliSession private constructor(
         /**
          * Emits [level] and everything more severe. [LogLevel.NONE] silences the SDK.
          *
+         * A failure the SDK did not classify converts to its unknown failure, as it does at every entry
+         * point, and is reported nowhere: no failure event exists for a log-level change.
+         *
          * @param level the cutoff to emit at and above.
          */
         public fun setLogLevel(level: LogLevel) {
-            LoggerRegistry.setLogLevel(level)
+            try {
+                LoggerRegistry.setLogLevel(level)
+            } catch (original: Exception) {
+                throw unexpectedFailure(original)
+            } catch (original: LinkageError) {
+                throw unexpectedFailure(original)
+            }
         }
 
         /**
@@ -154,6 +166,11 @@ public class PayabliSession private constructor(
          * whether it is called before or after this. Records go to the platform log, never to a callback, and
          * every one is redacted before it is written.
          *
+         * A failure the SDK did not classify converts to [PayabliException] with [PayabliErrorType.UNKNOWN],
+         * the original kept as its redacted cause, so nothing outside the SDK's own failure vocabulary
+         * crosses this boundary. A caller that withdraws unwinds as `CancellationException`, because
+         * withdrawing is not a failure.
+         *
          * @param config the configuration to install; two configurations built separately count as the same one.
          * @param host the host application's bindings, whose context derives the diagnostic log level once.
          * @return the started session, or the one already started under the same configuration.
@@ -162,23 +179,27 @@ public class PayabliSession private constructor(
             config: PayabliConfig,
             host: HostBindings,
         ): PayabliSession {
-            host.appContext.applicationContext.applyHostLogLevel()
+            val startedAt = System.nanoTime()
 
-            return install(config, host) { onAuthFailure, client ->
-                TransportFactory
-                    .authenticated(
-                        config,
-                        IO_DISPATCHER,
-                        client,
-                        TransportAssembly(onAuthFailure = onAuthFailure),
-                    ).let(::SessionAuth)
+            return convertingUnexpectedFailures(startedAt) {
+                host.appContext.applicationContext.applyHostLogLevel()
+
+                install(config, host) { onAuthFailure, client ->
+                    TransportFactory
+                        .authenticated(
+                            config,
+                            IO_DISPATCHER,
+                            client,
+                            TransportAssembly(onAuthFailure = onAuthFailure),
+                        ).let(::SessionAuth)
+                }
             }
         }
 
         /**
-         * Same, against an explicit [baseUrl] and with no host bindings, for `:core`'s own JVM tests, which
-         * skip the host-log-level derivation. `internal` because a member left public in bytecode for
-         * testing is an origin override in a shipped artifact.
+         * Same, against an explicit [baseUrl] and with no host bindings, for `:core`'s own JVM tests. A
+         * failure the SDK did not classify converts here as in [initialize]. `internal`, because a member
+         * left public in bytecode for testing is an origin override in a shipped artifact.
          *
          * @param baseUrl the origin every request goes to.
          * @param config the configuration to install.
@@ -187,22 +208,28 @@ public class PayabliSession private constructor(
          * @return the installed session.
          */
         @VisibleForTesting
+        @JvmSynthetic
         internal suspend fun initializeAgainst(
             baseUrl: String,
             config: PayabliConfig,
             host: HostBindings? = null,
             identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
-        ): PayabliSession =
-            install(config, host, identifierOf) { onAuthFailure, client ->
-                TransportFactory
-                    .authenticatedAgainst(
-                        baseUrl,
-                        config,
-                        IO_DISPATCHER,
-                        TransportAssembly(onAuthFailure = onAuthFailure),
-                        client,
-                    ).let(::SessionAuth)
+        ): PayabliSession {
+            val startedAt = System.nanoTime()
+
+            return convertingUnexpectedFailures(startedAt) {
+                install(config, host, identifierOf) { onAuthFailure, client ->
+                    TransportFactory
+                        .authenticatedAgainst(
+                            baseUrl,
+                            config,
+                            IO_DISPATCHER,
+                            TransportAssembly(onAuthFailure = onAuthFailure),
+                            client,
+                        ).let(::SessionAuth)
+                }
             }
+        }
 
         /**
          * Drops the installed session and puts [state] back, so one test cannot decide the outcome of the
@@ -213,6 +240,7 @@ public class PayabliSession private constructor(
          * session tests fail if either moves, which is the place to read before changing this.
          */
         @VisibleForTesting
+        @JvmSynthetic
         internal suspend fun reset() {
             sink.value = SdkState.Uninitialized
 
@@ -225,18 +253,26 @@ public class PayabliSession private constructor(
         }
 
         /**
-         * Same, with the transport supplied, so a test can hold the critical section open.
+         * Same, with the transport supplied, so a test can hold the critical section open. A failure the
+         * SDK did not classify converts here as in [initialize], which makes a throwing transport the
+         * evidence for that catch.
          *
          * @param config the configuration to install.
          * @param buildTransport builds the transport. The session renews no refused token.
          * @return the installed session.
          */
         @VisibleForTesting
+        @JvmSynthetic
         internal suspend fun initializeWith(
             config: PayabliConfig,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
-        ): PayabliSession =
-            install(config, host = null) { onAuthFailure, _ -> SessionAuth(buildTransport(onAuthFailure)) {} }
+        ): PayabliSession {
+            val startedAt = System.nanoTime()
+
+            return convertingUnexpectedFailures(startedAt) {
+                install(config, host = null) { onAuthFailure, _ -> SessionAuth(buildTransport(onAuthFailure)) {} }
+            }
+        }
 
         private suspend fun install(
             config: PayabliConfig,
@@ -246,88 +282,111 @@ public class PayabliSession private constructor(
         ): PayabliSession {
             val startedAt = System.nanoTime()
 
+            // Converted under the lock, so the pair goes on the channel that stood when this install failed:
+            // released first, a waiting install could replace that channel before the report.
             return lock.withLock {
-                val identity = ConfigIdentity(config)
-                val current = installed
-                // The machine rather than [state], because this is a question about the session install
-                // holds. The published value is process-wide, and reading it here would let one stray write
-                // replace a healthy session, which is the two-sessions state this type exists to prevent.
-                val live = current != null && !current.machine.isFinished
-
-                // A call that changes nothing reports nothing: a start with no outcome after it is a funnel
-                // nobody can close, and an Application and an Activity both initializing is the ordinary way
-                // to produce one.
-                if (live && current!!.identity == identity) {
-                    return@withLock current
+                convertingUnexpectedFailures(startedAt) {
+                    installHeld(config, host, identifierOf, buildAuth, startedAt)
                 }
-
-                if (live) {
-                    // Both halves on the live session's own channel. Recorded anywhere else in this call they
-                    // would split: a replacement reports its start through the retired session's channel,
-                    // carrying that session's id and entry point, and its success through the new one.
-                    TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
-                        mapOf(TelemetryProperty.STATE.key to reportedState())
-                    }
-                    val refusal =
-                        PayabliGenericException(
-                            PayabliErrorType.INVALID_CONFIGURATION,
-                            REASON_ALREADY_INITIALIZED,
-                        )
-                    reportFailure(refusal, startedAt)
-                    throw refusal
-                }
-
-                val machine = SessionStateMachine(sink)
-                // Without host bindings, which is the SDK's own tests, there is no device to read.
-                val device = if (host == null) TelemetryDeviceContext.NONE else DeviceProfileFactory.of(host.appContext)
-                val readDeviceId: () -> String? =
-                    if (host == null) {
-                        { null }
-                    } else {
-                        val context = host.appContext.applicationContext
-                        { identifierOf(context).ifBlank { null } }
-                    }
-                // One reader per fact, so the header, telemetry and the public member report the same device.
-                val client = ClientFacts(PayabliSdkVersion.VALUE, device.osVersion, device.modelName, readDeviceId)
-                // The listener is handed in rather than wired afterwards so no request can complete against a
-                // transport whose failures nothing is listening for.
-                val auth = buildAuth(AuthFailureListener { machine.markReinitializeRequired() }, client)
-                val session =
-                    PayabliSession(
-                        identity = identity,
-                        machine = machine,
-                        readDeviceId = readDeviceId,
-                        renewal = auth.renewRefusedToken,
-                        transport = auth.transport,
-                        // Minted here rather than in the telemetry module, so every capability reporting for
-                        // this session quotes the same lifetime even when they are wired independently.
-                        telemetry =
-                            TelemetrySessionContext(
-                                entryPoint = config.entryPoint,
-                                environment = config.environment,
-                                sessionId = UUID.randomUUID().toString(),
-                                device = device,
-                            ),
-                    )
-                machine.markReady()
-                installed = session
-
-                if (current != null) {
-                    logger.warn(
-                        LogField.safe("event", "session_replaced"),
-                    ) { "replaced a session that required re-initialization" }
-                } else {
-                    logger.info(LogField.safe("event", "session_initialized")) { "session initialized" }
-                }
-
-                // Inside the lock, so a session is never installed with the previous one's channel still
-                // reporting for it. Starting is an enqueue and a launch, which is why it can be here at all.
-                // Whatever the module does is absorbed there: this line runs after the session is published
-                // and marked ready, so anything escaping it would fail an initialize that had succeeded.
-                TelemetryBootstraps.startInstalled(session, host)
-
-                session
             }
+        }
+
+        /**
+         * The install's body, with [lock] held.
+         *
+         * @param config the configuration to install.
+         * @param host the host bindings, or null for none.
+         * @param identifierOf reads the platform identifier.
+         * @param buildAuth builds the session's transport and its renewal.
+         * @param startedAt when the install began, for the duration a refusal reports.
+         * @return the session now installed, or the live one when nothing changed.
+         */
+        private suspend fun installHeld(
+            config: PayabliConfig,
+            host: HostBindings?,
+            identifierOf: (Context) -> String,
+            buildAuth: suspend (AuthFailureListener, ClientFacts) -> SessionAuth,
+            startedAt: Long,
+        ): PayabliSession {
+            val identity = ConfigIdentity(config)
+            val current = installed
+            // The machine rather than [state], because this is a question about the session install
+            // holds. The published value is process-wide, and reading it here would let one stray write
+            // replace a healthy session, which is the two-sessions state this type exists to prevent.
+            val live = current != null && !current.machine.isFinished
+
+            // A call that changes nothing reports nothing: a start with no outcome after it is a funnel
+            // nobody can close, and an Application and an Activity both initializing is the ordinary way
+            // to produce one.
+            if (live && current!!.identity == identity) {
+                return current
+            }
+
+            if (live) {
+                // Both halves on the live session's own channel. Recorded anywhere else in this call they
+                // would split: a replacement reports its start through the retired session's channel,
+                // carrying that session's id and entry point, and its success through the new one.
+                TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
+                    mapOf(TelemetryProperty.STATE.key to reportedState())
+                }
+                val refusal =
+                    PayabliGenericException(
+                        PayabliErrorType.INVALID_CONFIGURATION,
+                        REASON_ALREADY_INITIALIZED,
+                    )
+                reportFailure(refusal, startedAt)
+                throw refusal
+            }
+
+            val machine = SessionStateMachine(sink)
+            // Without host bindings, which is the SDK's own tests, there is no device to read.
+            val device = if (host == null) TelemetryDeviceContext.NONE else DeviceProfileFactory.of(host.appContext)
+            val readDeviceId: () -> String? =
+                if (host == null) {
+                    { null }
+                } else {
+                    val context = host.appContext.applicationContext
+                    { identifierOf(context).ifBlank { null } }
+                }
+            // One reader per fact, so the header, telemetry and the public member report the same device.
+            val client = ClientFacts(PayabliSdkVersion.VALUE, device.osVersion, device.modelName, readDeviceId)
+            // The listener is handed in rather than wired afterwards so no request can complete against a
+            // transport whose failures nothing is listening for.
+            val auth = buildAuth(AuthFailureListener { machine.markReinitializeRequired() }, client)
+            val session =
+                PayabliSession(
+                    identity = identity,
+                    machine = machine,
+                    readDeviceId = readDeviceId,
+                    renewal = auth.renewRefusedToken,
+                    transport = auth.transport,
+                    // Minted here rather than in the telemetry module, so every capability reporting for
+                    // this session quotes the same lifetime even when they are wired independently.
+                    telemetry =
+                        TelemetrySessionContext(
+                            entryPoint = config.entryPoint,
+                            environment = config.environment,
+                            sessionId = UUID.randomUUID().toString(),
+                            device = device,
+                        ),
+                )
+            machine.markReady()
+            installed = session
+
+            if (current != null) {
+                logger.warn(
+                    LogField.safe("event", "session_replaced"),
+                ) { "replaced a session that required re-initialization" }
+            } else {
+                logger.info(LogField.safe("event", "session_initialized")) { "session initialized" }
+            }
+
+            // Inside the lock, so a session is never installed with the previous one's channel still
+            // reporting for it. The module absorbs its own failures: the session is already published and
+            // ready here, so an escape would fail an initialize that had succeeded.
+            TelemetryBootstraps.startInstalled(session, host)
+
+            return session
         }
 
         /**
@@ -362,6 +421,92 @@ public class PayabliSession private constructor(
                     TelemetryProperty.REASON.key to failure.reason,
                     TelemetryProperty.DURATION_MS.key to
                         TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt).toString(),
+                )
+            }
+        }
+
+        /**
+         * Runs an initialize's body, passing the SDK's own failures and a withdrawal through
+         * unchanged and converting everything else.
+         *
+         * @param startedAt when the initialize began, for the duration a converted failure reports.
+         * @param attempt the initialize's body: the log-level derivation and the install, or a test's
+         *   stand-in for them.
+         * @return the session the body installed.
+         */
+        private suspend fun convertingUnexpectedFailures(
+            startedAt: Long,
+            attempt: suspend () -> PayabliSession,
+        ): PayabliSession =
+            try {
+                attempt()
+            } catch (withdrawn: CancellationException) {
+                throw withdrawn
+            } catch (failure: PayabliException) {
+                throw failure
+            } catch (original: Exception) {
+                throw converted(original, startedAt)
+            } catch (original: LinkageError) {
+                throw converted(original, startedAt)
+            }
+
+        /**
+         * Builds the failure every entry point answers an unclassified original with: the SDK's unknown
+         * failure, whose reason is the catalog's own text and whose cause is the original redacted — type
+         * and frames kept, message dropped.
+         *
+         * @param original the failure as it was thrown, before conversion.
+         * @return the failure to throw in the original's place.
+         */
+        private fun unexpectedFailure(original: Throwable): PayabliGenericException =
+            PayabliGenericException(
+                PayabliErrorType.UNKNOWN,
+                PayabliErrorType.UNKNOWN.message,
+                cause = RedactedCause(original),
+            )
+
+        /**
+         * Converts an initialize's unclassified failure, first reporting the pair whose `failure_type` names the
+         * original. The report is best-effort, so a recorder that fails here leaves the conversion standing.
+         *
+         * @param original the failure as it was thrown, before conversion.
+         * @param startedAt when the initialize began, for the duration.
+         * @return the converted failure, for the catch to throw.
+         */
+        private fun converted(
+            original: Throwable,
+            startedAt: Long,
+        ): PayabliGenericException {
+            val failure = unexpectedFailure(original)
+            reportConverted(failure, original, startedAt)
+            return failure
+        }
+
+        /**
+         * Reports an initialize that failed outside the refusals the SDK names: a start and its failure,
+         * so the start is answered, with `outcome=failed` and `failure_type` naming the original.
+         *
+         * @param failure the converted failure the initialize is about to throw.
+         * @param original the failure as it was thrown, whose type the report names.
+         * @param startedAt when the initialize began, for the duration.
+         */
+        private fun reportConverted(
+            failure: PayabliGenericException,
+            original: Throwable,
+            startedAt: Long,
+        ) {
+            TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
+                mapOf(TelemetryProperty.STATE.key to reportedState())
+            }
+            TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_FAILED) {
+                mapOf(
+                    TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.FAILED,
+                    TelemetryProperty.CODE.key to failure.type.wireName,
+                    TelemetryProperty.ERROR_NUMBER.key to failure.code.toString(),
+                    TelemetryProperty.REASON.key to failure.reason,
+                    TelemetryProperty.DURATION_MS.key to
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt).toString(),
+                    TelemetryProperty.FAILURE_TYPE.key to failureTypeOf(original),
                 )
             }
         }

@@ -75,14 +75,8 @@ class TelemetryRecordersTest {
     }
 
     /**
-     * The guarantee that lets a payment path call this on its critical line. Without it, a defect anywhere in
-     * a reporting channel becomes a failed charge.
-     *
-     * **Several unrelated types, because one type proves nothing here.** The catch is written against
-     * `RuntimeException`, and a single `IllegalStateException` left that untested: narrowing the catch to
-     * exactly that type kept this green. These four share no supertype below `RuntimeException`, so any
-     * narrowing turns it red. They are also what the real path can raise — a full queue, a value the wire
-     * models refuse, a state the client is not in, and a dead executor.
+     * Four types sharing no supertype below `RuntimeException`, because a single `IllegalStateException` kept a
+     * catch narrowed to exactly that type green.
      */
     @Test
     fun aRecorderThatThrowsDoesNotReachTheCaller() {
@@ -101,13 +95,27 @@ class TelemetryRecordersTest {
         }
     }
 
-    /**
-     * The other side of that line, and the reason the catch names `RuntimeException` rather than `Throwable`.
-     *
-     * An exhausted heap or a missing class is not a reporting failure to absorb: swallowing it would leave
-     * the process running in a state nothing else can reason about, and hide it behind a warning about
-     * telemetry.
-     */
+    /** A checked failure and a recorder class that failed to load are reporting failures too. */
+    @Test
+    fun aCheckedOrLinkageFailureFromTheRecorderDoesNotReachTheCaller() {
+        listOf(java.io.IOException("the queue file is gone"), NoClassDefFoundError("a recorder class"))
+            .forEach { failure ->
+                TelemetryRecorders.install { _, _ -> throw failure }
+
+                TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZED)
+                TelemetryRecorders.recordFor(aSession(), TelemetryEvents.SDK_INITIALIZED)
+            }
+    }
+
+    /** A capability built against an earlier core calls this signature from the `record` it inlined. */
+    @Test
+    fun theRuntimeFailureSignatureEarlierCapabilitiesInlinedStillResolves() {
+        TelemetryRecorders::class.java
+            .getMethod("refused", RuntimeException::class.java)
+            .invoke(TelemetryRecorders, IllegalStateException("the client is stopped"))
+    }
+
+    /** An exhausted heap is not a reporting failure, and hiding it behind a telemetry warning hides it. */
     @Test(expected = OutOfMemoryError::class)
     fun anErrorIsNotAbsorbed() {
         TelemetryRecorders.install { _, _ -> throw OutOfMemoryError("the heap is gone") }

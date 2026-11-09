@@ -2,16 +2,20 @@ package com.payabli.sdk.taptopay.telemetry
 
 import com.payabli.sdk.core.model.PayabliDeclineException
 import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.RedactedFailure
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.taptopay.TapToPayCapture
 import com.payabli.sdk.taptopay.TapToPayErrorCodes
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import com.payabli.sdk.taptopay.session.diagnosticName
 import java.util.concurrent.TimeUnit
+
+private const val REASON_PROCESSOR_NO_RECORD = "processor_no_record"
 
 /**
  * What card-present reports, in one place.
@@ -35,7 +39,10 @@ internal object TapToPayReports {
     fun initializeFailed(
         failure: Throwable,
         startedAt: Long,
-    ) = failed(TelemetryEvents.TTP_INITIALIZE_FAILED, failure, startedAt)
+    ) = TelemetryRecorders.record(TelemetryEvents.TTP_INITIALIZE_FAILED) {
+        failureProperties(failure, TapToPayErrorCodes.typeFor(failure), startedAt, canBeDeclined = true) +
+            typeOf(failure)
+    }
 
     fun attestationStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_ATTESTATION_STARTED)
 
@@ -71,7 +78,7 @@ internal object TapToPayReports {
         cardWasAsked: Boolean = false,
         type: PayabliErrorType = TapToPayErrorCodes.typeFor(failure),
     ) = TelemetryRecorders.record(TelemetryEvents.TTP_CHARGE_FAILED) {
-        failureProperties(failure, type, startedAt, canBeDeclined = !cardWasAsked)
+        failureProperties(failure, type, startedAt, canBeDeclined = !cardWasAsked) + typeOf(failure)
     }
 
     /** [origin] is [TelemetryProperties.Origin.CHARGE] or [TelemetryProperties.Origin.RETRY]. */
@@ -91,20 +98,30 @@ internal object TapToPayReports {
     }
 
     /**
-     * A close that was not confirmed.
+     * A close that was not confirmed. It takes no `cardWasAsked`, unlike [chargeFailed]: a close exists only
+     * once the reader has answered, so a refusal here fails to record an outcome and is never a decline.
      *
-     * **No close can be a decline**, which is why this takes no equivalent of [chargeFailed]'s
-     * `cardWasAsked`. A close exists only once the reader has answered, so it is always on the far side of
-     * the window that flag marks: a refusal here is a failure to record an outcome, never a payment the
-     * issuer turned down.
+     * @param failure what the close failed with.
+     * @param startedAt when the close was sent.
+     * @param origin [TelemetryProperties.Origin.CHARGE] or [TelemetryProperties.Origin.RETRY].
+     * @param capture what the host's error says about the money.
+     * @param processorHasNoRecord whether the refusal is the service saying the processor holds no record of the payment.
      */
     fun closeFailed(
         failure: Throwable,
         startedAt: Long,
         origin: String,
+        capture: TapToPayCapture,
+        processorHasNoRecord: Boolean,
     ) = TelemetryRecorders.record(TelemetryEvents.TTP_CLOSE_FAILED) {
         failureProperties(failure, PayabliErrorType.PAYMENT_NOT_CLOSED, startedAt, canBeDeclined = false) +
-            (TelemetryProperty.ORIGIN.key to origin)
+            buildMap {
+                put(TelemetryProperty.ORIGIN.key, origin)
+                put(TelemetryProperty.FAILURE_TYPE.key, failureTypeOf(failure))
+                put(TelemetryProperty.CAPTURE.key, capture.name.lowercase())
+                TapToPayErrorCodes.httpStatusOf(failure)?.let { put(TelemetryProperty.HTTP_STATUS.key, it.toString()) }
+                if (processorHasNoRecord) put(TelemetryProperty.REASON.key, REASON_PROCESSOR_NO_RECORD)
+            }
     }
 
     fun nfcStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_NFC_STARTED)
@@ -176,6 +193,24 @@ internal object TapToPayReports {
             codeOf(failure)?.let { put(TelemetryProperty.CODE.key, it) }
             put(TelemetryProperty.ERROR_NUMBER.key, type.code.toString())
         }
+
+    /** The `failure_type` pair, on the events an entry point reports its failure through. */
+    private fun typeOf(failure: Throwable): Pair<String, String> =
+        TelemetryProperty.FAILURE_TYPE.key to failureTypeOf(failure)
+
+    /**
+     * The `failure_type` a report carries for [failure].
+     *
+     * @param failure what the reporting call caught.
+     * @return the simple name of the type a redaction stands in for, when [failure] is one or carries one as its
+     *   cause; otherwise [failure]'s own simple name. Never a message.
+     */
+    private fun failureTypeOf(failure: Throwable): String {
+        val redaction = failure.takeIf { it is RedactedFailure } ?: failure.cause?.takeIf { it is RedactedFailure }
+        val qualified = redaction?.message?.substringBefore(' ') ?: return failure.javaClass.simpleName
+        // The digits a compiler numbers a local or anonymous class with, which the simple name drops.
+        return qualified.substringAfterLast('.').substringAfterLast('$').trimStart(Char::isDigit)
+    }
 
     /**
      * `declined` means what the catalog says it means: **the payment was declined.** Everything else failed.

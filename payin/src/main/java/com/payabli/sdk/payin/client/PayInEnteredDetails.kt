@@ -5,16 +5,10 @@ import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInCustomerData
 
 /**
- * What the payer typed that is not part of the instrument.
+ * The customer the payer typed, which is not part of the instrument and would otherwise be dropped.
  *
- * The form collects a customer, and a description for the method it stores, alongside the card or account
- * details. None of it belongs to `PayInInstrument`, so without this they are typed and then dropped, and a
- * capture that carries no customer can be refused outright.
- *
- * A configured customer and a typed one meet where the body is written. Where the box holds something, that is
- * what is sent; where it is empty, the configured value is, so **a blank box does not delete one**. Only the
- * customer number and the method description can be empty here, because the form refuses to submit the other
- * four.
+ * Merged over the configured customer where the body is written, and **a blank box does not delete a configured
+ * value**.
  */
 internal class PayInEnteredDetails(
     val firstName: String? = null,
@@ -22,14 +16,13 @@ internal class PayInEnteredDetails(
     val customerNumber: String? = null,
     val billingEmail: String? = null,
     val billingZip: String? = null,
-    val methodDescription: String? = null,
 ) {
     internal companion object {
         /** For a call that reads no form, which is a capture of a transaction authorized earlier. */
         val NONE = PayInEnteredDetails()
 
         /**
-         * The six fields a form can collect that are not the instrument, blank read as absent.
+         * The five fields a form can collect that are not the instrument, blank read as absent.
          *
          * @param values what the payer entered, and the instrument they entered it for.
          * @return the entered details, blank fields absent.
@@ -41,7 +34,6 @@ internal class PayInEnteredDetails(
                 customerNumber = values.entered(PayInField.CustomerNumber),
                 billingEmail = values.entered(PayInField.BillingEmail),
                 billingZip = values.entered(PayInField.BillingPostalCode),
-                methodDescription = values.entered(PayInField.MethodDescription),
             )
 
         private fun PayInFormValues.entered(field: PayInField): String? = this[field].trim().takeIf { it.isNotEmpty() }

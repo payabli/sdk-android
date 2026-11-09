@@ -5,12 +5,19 @@ import androidx.annotation.RestrictTo
 import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.devicekey.DeviceKey
+import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.devicekey.platform.DeviceKeyFactory
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.network.impl.RedactedCause
 import com.payabli.sdk.core.storage.PayabliSecureStorage
+import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.core.storage.platform.SecureStorageFactory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 
@@ -67,10 +74,10 @@ public class DeviceTrust private constructor(
 
     public companion object {
         /**
-         * Opens the store and provisions the key, on the dispatcher the session picked.
+         * Opens the store and provisions the key, on the dispatcher the session picked. No dispatcher
+         * parameter, or the calling capability would name a second place the SDK picks one.
          *
-         * No dispatcher parameter, because that would move the choice into the calling capability and there
-         * would then be two places in the SDK that name one.
+         * An unclassified failure converts here and reports nothing.
          *
          * @param context the host context, normalised to the application context and dropped.
          * @return the key and the store, provisioned.
@@ -79,9 +86,10 @@ public class DeviceTrust private constructor(
         public suspend fun open(context: Context): DeviceTrust = openWith(context, PayabliSession.IO_DISPATCHER)
 
         /**
-         * [open] with the dispatcher stated, so a test can hand in one it can recognise. Required and
-         * undefaulted because a default would be invisible at the call site, and a test that substituted a
-         * dispatcher would measure a thread the code never used.
+         * [open] with the dispatcher stated, so a test can hand in one it can recognise. Required,
+         * because a substituted dispatcher would measure a thread the code never used.
+         *
+         * An unclassified failure converts here and reports nothing, as [open] states.
          *
          * @param context the host context, normalised to the application context and dropped.
          * @param dispatcher where the provisioning runs.
@@ -94,17 +102,48 @@ public class DeviceTrust private constructor(
             dispatcher: CoroutineDispatcher,
             logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
         ): DeviceTrust =
-            withContext(dispatcher) {
-                // The store first. Opening it provisions no key material — the cipher's key is created on the
-                // first write — so a directory that cannot be resolved leaves nothing behind. The other order
-                // would create a Keystore key and then throw, orphaning it under an alias nothing names.
-                val store =
-                    SecureStorageFactory.create(
-                        directory = context.applicationContext.noBackupFilesDir,
-                        dispatcher = dispatcher,
-                        logger = logger,
-                    )
-                DeviceTrust(key = DeviceKeyFactory.deviceKey(dispatcher, logger), store = store)
+            try {
+                withContext(dispatcher) {
+                    // The store first. Opening it provisions no key material — the cipher's key is created on the
+                    // first write — so a directory that cannot be resolved leaves nothing behind. The other order
+                    // would create a Keystore key and then throw, orphaning it under an alias nothing names.
+                    val store =
+                        SecureStorageFactory.create(
+                            directory = context.applicationContext.noBackupFilesDir,
+                            dispatcher = dispatcher,
+                            logger = logger,
+                        )
+                    DeviceTrust(key = DeviceKeyFactory.deviceKey(dispatcher, logger), store = store)
+                }
+            } catch (withdrawn: CancellationException) {
+                throw withdrawn
+            } catch (failure: PayabliException) {
+                throw failure
+            } catch (declared: SecureStorageException) {
+                // The two declared failures are this entry point's own words, named in this class's doc,
+                // so each passes through as itself.
+                throw declared
+            } catch (declared: DeviceKeyException) {
+                throw declared
+            } catch (original: Exception) {
+                throw unexpectedFailure(original)
+            } catch (original: LinkageError) {
+                throw unexpectedFailure(original)
             }
+
+        /**
+         * The failure this entry point answers an unclassified original with: the SDK's unknown failure, the
+         * original kept as its redacted cause. Opening the store belongs to no failure event, so the caller
+         * throws this and reports nothing.
+         *
+         * @param original the failure as it was thrown, before conversion.
+         * @return the failure to throw in the original's place.
+         */
+        private fun unexpectedFailure(original: Throwable): PayabliGenericException =
+            PayabliGenericException(
+                PayabliErrorType.UNKNOWN,
+                PayabliErrorType.UNKNOWN.message,
+                cause = RedactedCause(original),
+            )
     }
 }

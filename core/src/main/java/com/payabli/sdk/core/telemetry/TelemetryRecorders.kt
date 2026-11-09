@@ -5,6 +5,9 @@ import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.network.impl.RedactedCause
 
 /**
  * The one installed [TelemetryRecorder], and the call every emitting site actually makes.
@@ -30,21 +33,52 @@ public object TelemetryRecorders {
     private var installed: TelemetryRecorder? = null
 
     /**
-     * Installs [recorder], replacing whatever was there.
+     * Installs [recorder], replacing whatever was there: a session re-initialized after a terminal
+     * failure installs again, and a refusal would leave the new session on the dead one's queue.
      *
-     * Replacing rather than refusing: a session re-initialized after a terminal failure installs again, and
-     * refusing the second install would leave the new session reporting through the dead one's queue.
+     * An unclassified failure converts here and reports nothing.
      *
      * @param recorder the recorder to install, replacing whatever was there.
      */
     public fun install(recorder: TelemetryRecorder) {
-        installed = recorder
+        try {
+            installed = recorder
+        } catch (original: Exception) {
+            throw unexpectedFailure(original)
+        } catch (original: LinkageError) {
+            throw unexpectedFailure(original)
+        }
     }
 
-    /** Removes the installed recorder, so [record] goes back to costing nothing. */
+    /**
+     * Removes the installed recorder, so [record] goes back to costing nothing.
+     *
+     * An unclassified failure converts here and reports nothing.
+     */
     public fun clear() {
-        installed = null
+        try {
+            installed = null
+        } catch (original: Exception) {
+            throw unexpectedFailure(original)
+        } catch (original: LinkageError) {
+            throw unexpectedFailure(original)
+        }
     }
+
+    /**
+     * The failure an install or a removal answers an unclassified original with: the SDK's unknown failure,
+     * the original kept as its redacted cause. Neither belongs to a failure event, so the caller throws
+     * this and reports nothing.
+     *
+     * @param original the failure as it was thrown, before conversion.
+     * @return the failure to throw in the original's place.
+     */
+    private fun unexpectedFailure(original: Throwable): PayabliGenericException =
+        PayabliGenericException(
+            PayabliErrorType.UNKNOWN,
+            PayabliErrorType.UNKNOWN.message,
+            cause = RedactedCause(original),
+        )
 
     /**
      * Records [event] as belonging to [session] rather than to whatever is installed now.
@@ -69,7 +103,9 @@ public object TelemetryRecorders {
             } else {
                 recorder.record(event, properties())
             }
-        } catch (failure: RuntimeException) {
+        } catch (failure: Exception) {
+            refused(failure)
+        } catch (failure: LinkageError) {
             refused(failure)
         }
     }
@@ -91,12 +127,21 @@ public object TelemetryRecorders {
      * @param failure what the recorder threw.
      */
     @PublishedApi
-    internal fun refused(failure: RuntimeException) {
+    internal fun refused(failure: Throwable) {
         logger.warn(
             LogField.safe("event", "telemetry_record_failed"),
             LogField.safe("errorKind", failure.javaClass.simpleName),
         ) { "recorder refused an event" }
     }
+
+    /**
+     * The signature a capability built against an earlier core inlined into its `record`.
+     *
+     * @param failure what the recorder threw.
+     */
+    @PublishedApi
+    @Deprecated("Called only from an earlier capability's inlined record.", level = DeprecationLevel.HIDDEN)
+    internal fun refused(failure: RuntimeException): Unit = refused(failure as Throwable)
 
     /**
      * Hands [event] to the installed recorder, or does nothing.
@@ -107,7 +152,7 @@ public object TelemetryRecorders {
      *
      * **Failure is swallowed here**, which is the guarantee that lets a payment path call this on its
      * critical line. A reporting channel that can fail a charge is worse than no reporting channel.
-     * An `Error` is not caught: an exhausted heap is not this layer's to absorb.
+     * An `Error` other than a linkage failure is not caught: an exhausted heap is not this layer's to absorb.
      *
      * @param event the catalog name of the event.
      * @param properties the declared properties, built only when something is listening.
@@ -119,7 +164,9 @@ public object TelemetryRecorders {
         val recorder = current() ?: return
         try {
             recorder.record(event, properties())
-        } catch (failure: RuntimeException) {
+        } catch (failure: Exception) {
+            refused(failure)
+        } catch (failure: LinkageError) {
             refused(failure)
         }
     }

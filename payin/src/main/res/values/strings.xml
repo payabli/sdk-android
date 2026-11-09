@@ -21,9 +21,6 @@
     <string name="payabli_payin_field_account_number">Account number</string>
     <string name="payabli_payin_field_account_type">Account type</string>
     <string name="payabli_payin_field_account_holder_type">Holder type</string>
-    <string name="payabli_payin_field_sec_code">SEC code</string>
-    <string name="payabli_payin_field_device_id">Device</string>
-    <string name="payabli_payin_field_method_description">Description</string>
     <string name="payabli_payin_field_first_name">First name</string>
     <string name="payabli_payin_field_last_name">Last name</string>
     <string name="payabli_payin_field_customer_number">Customer number</string>
@@ -48,10 +45,6 @@
     <string name="payabli_payin_holder_type_business">Business</string>
 
     <!-- SEC codes. The value sent is the lowercase form; these are what a payer reads. -->
-    <string name="payabli_payin_sec_code_web">WEB</string>
-    <string name="payabli_payin_sec_code_ppd">PPD</string>
-    <string name="payabli_payin_sec_code_ccd">CCD</string>
-    <string name="payabli_payin_sec_code_tel">TEL</string>
 
     <!-- Controls. -->
     <!-- The submit button names the operation, then reads the busy form while it runs. -->
