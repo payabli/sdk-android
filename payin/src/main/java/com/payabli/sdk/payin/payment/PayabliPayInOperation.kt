@@ -126,11 +126,9 @@ internal val PayabliPayInOperation.step: String
         }
 
 /**
- * Everything [offering] reads about an operation, as a `remember` key.
- *
- * A host writing its operation inline hands over a new instance on every recomposition, so the narrowed
- * configuration cannot be keyed on the operation itself. Anything a new branch in [offering] reads belongs
- * here in the same edit, or a form keeps a narrowing made for a different operation.
+ * Everything [offering] reads about an operation, as a `remember` key: an operation written inline is a new
+ * instance on every recomposition. What a new branch in [offering] reads belongs here, or a form keeps a
+ * narrowing made for a different operation.
  */
 internal val PayabliPayInOperation.narrowingKey: List<Any>
     get() = listOf(instruments)

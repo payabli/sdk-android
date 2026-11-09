@@ -5,14 +5,10 @@ import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInCustomerData
 
 /**
- * What the payer typed that is not part of the instrument.
+ * The customer the payer typed, which is not part of the instrument and would otherwise be dropped.
  *
- * The form collects a customer alongside the card or account details. None of it belongs to `PayInInstrument`,
- * so without this it is typed and then dropped, and a capture that carries no customer can be refused outright.
- *
- * A configured customer and a typed one meet where the body is written. Where the box holds something, that is
- * what is sent; where it is empty, the configured value is, so **a blank box does not delete one**. Only the
- * customer number can be empty here, because the form refuses to submit the other four.
+ * Merged over the configured customer where the body is written, and **a blank box does not delete a configured
+ * value**.
  */
 internal class PayInEnteredDetails(
     val firstName: String? = null,

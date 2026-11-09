@@ -466,10 +466,8 @@ public class PayabliSession private constructor(
             )
 
         /**
-         * Converts an initialize's unclassified failure, reporting it first as the pair that answers the
-         * start: `outcome=failed` and `failure_type` naming the original, which is what tells a converted
-         * failure from a refusal the SDK named. The report is best-effort, so a recorder that fails here
-         * leaves the converted failure standing.
+         * Converts an initialize's unclassified failure, first reporting the pair whose `failure_type` names the
+         * original. The report is best-effort, so a recorder that fails here leaves the conversion standing.
          *
          * @param original the failure as it was thrown, before conversion.
          * @param startedAt when the initialize began, for the duration.
