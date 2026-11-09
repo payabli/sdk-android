@@ -376,8 +376,8 @@ internal class PayabliAuth(
     }
 
     /**
-     * Reports a provider call that raised: `reentered` when the provider had asked for the token it was minting,
-     * since that refusal is what it raised on, otherwise `threw` with the type it raised.
+     * Reports a provider call that raised: `reentered` when what it raised is the refusal of its read of the token
+     * it was minting, otherwise `threw` with the type it raised.
      *
      * @param refresh the refresh whose provider call raised.
      * @param startedAt when the provider was called.
@@ -388,7 +388,7 @@ internal class PayabliAuth(
         startedAt: Long,
         failure: Throwable,
     ) {
-        if (refresh.reentered) {
+        if (failure === refresh.reentryRefusal) {
             reportFailed(FAILED_REENTERED, startedAt)
         } else {
             reportFailed(FAILED_THREW, startedAt, failure)
@@ -495,11 +495,13 @@ internal class PayabliAuth(
                 // was called to produce, and joining the claim would be joining itself, so it fails here
                 // rather than waiting for a token only this caller can supply.
                 currentToken ?: run {
-                    live.reentered = true
-                    throw PayabliGenericException(
-                        PayabliErrorType.TOKEN_PROVIDER_FAILED,
-                        REASON_PROVIDER_READ_UNMINTED,
-                    )
+                    val refusal =
+                        PayabliGenericException(
+                            PayabliErrorType.TOKEN_PROVIDER_FAILED,
+                            REASON_PROVIDER_READ_UNMINTED,
+                        )
+                    live.reentryRefusal = refusal
+                    throw refusal
                 }
             }
         }
@@ -549,9 +551,12 @@ internal class PayabliAuth(
         val claim = CompletableDeferred<String>()
         val id: UUID = UUID.randomUUID()
 
-        /** Set when the provider asked for the token this refresh is minting, so its failure is reported as that. */
+        /**
+         * The refusal answering the provider's read of the token this refresh is minting. The provider's failure
+         * is reported as a reentry only when it is this refusal, since a provider can handle it and fail otherwise.
+         */
         @Volatile
-        var reentered = false
+        var reentryRefusal: PayabliException? = null
     }
 
     private sealed interface RefreshPlan {

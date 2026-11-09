@@ -131,6 +131,23 @@ class TokenFailureReportingTest {
         }
 
     @Test
+    fun `a provider that handled its reentry and then failed otherwise threw, naming what it raised`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            lateinit var subject: PayabliAuth
+            subject =
+                auth {
+                    runCatching { subject.accessToken() }
+                    throw java.net.SocketTimeoutException("the token server did not answer")
+                }
+
+            runCatching { subject.accessToken() }
+
+            val properties = onlyFailure()
+            assertEquals("threw", properties[TelemetryProperty.REASON.key])
+            assertEquals("SocketTimeoutException", properties[TelemetryProperty.FAILURE_TYPE.key])
+        }
+
+    @Test
     fun `callers that joined one provider call record one failure between them`() =
         runTest(timeout = TEST_TIMEOUT) {
             val gate = CompletableDeferred<Unit>()
