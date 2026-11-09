@@ -107,6 +107,14 @@ class TelemetryRecordersTest {
             }
     }
 
+    /** A capability built against an earlier core calls this signature from the `record` it inlined. */
+    @Test
+    fun theRuntimeFailureSignatureEarlierCapabilitiesInlinedStillResolves() {
+        TelemetryRecorders::class.java
+            .getMethod("refused", RuntimeException::class.java)
+            .invoke(TelemetryRecorders, IllegalStateException("the client is stopped"))
+    }
+
     /** An exhausted heap is not a reporting failure, and hiding it behind a telemetry warning hides it. */
     @Test(expected = OutOfMemoryError::class)
     fun anErrorIsNotAbsorbed() {

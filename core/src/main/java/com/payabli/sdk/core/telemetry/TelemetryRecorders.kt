@@ -135,6 +135,15 @@ public object TelemetryRecorders {
     }
 
     /**
+     * The signature a capability built against an earlier core inlined into its `record`.
+     *
+     * @param failure what the recorder threw.
+     */
+    @PublishedApi
+    @Deprecated("Called only from an earlier capability's inlined record.", level = DeprecationLevel.HIDDEN)
+    internal fun refused(failure: RuntimeException): Unit = refused(failure as Throwable)
+
+    /**
      * Hands [event] to the installed recorder, or does nothing.
      *
      * **[properties] is only built if something is listening.** A map assembled and then dropped is what an
