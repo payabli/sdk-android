@@ -75,12 +75,8 @@ class TelemetryRecordersTest {
     }
 
     /**
-     * The guarantee that lets a payment path call this on its critical line. Without it, a defect anywhere in
-     * a reporting channel becomes a failed charge.
-     *
-     * **Several unrelated types, because one type proves nothing here.** A single `IllegalStateException`
-     * kept a catch narrowed to exactly that type green. These four share no supertype below
-     * `RuntimeException`, so any narrowing turns it red.
+     * Four types sharing no supertype below `RuntimeException`, because a single `IllegalStateException` kept a
+     * catch narrowed to exactly that type green.
      */
     @Test
     fun aRecorderThatThrowsDoesNotReachTheCaller() {
