@@ -126,6 +126,31 @@ class SessionInitializeReportingTest {
         }
 
     /**
+     * A recorder that fails while the converted pair is reported leaves the conversion standing. A checked
+     * exception and a missing class both get past the recorder seam, which absorbs runtime failures only.
+     */
+    @Test
+    fun aRecorderThatFailsWhileTheConversionReportsLeavesTheConversionStanding() =
+        runTest {
+            class Foreign : RuntimeException("a message the SDK must not carry out")
+
+            listOf(
+                java.io.IOException("the queue file is gone"),
+                NoClassDefFoundError("a recorder class"),
+            ).forEach { unreported ->
+                TelemetryRecorders.install { _, _ -> throw unreported }
+
+                val converted =
+                    runCatching {
+                        PayabliSession.initializeWith(configFor("an-entry-point")) { _ -> throw Foreign() }
+                    }.exceptionOrNull()
+
+                assertTrue("$unreported replaced the conversion: $converted", converted is PayabliGenericException)
+                assertEquals(Foreign::class.java.name, converted?.cause?.message)
+            }
+        }
+
+    /**
      * A withdrawn initialize is not a failure: it passes through as `CancellationException` and reports
      * nothing, because converting it would both hide the withdrawal from the caller that is unwinding
      * and report an outcome for one.

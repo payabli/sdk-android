@@ -468,7 +468,8 @@ public class PayabliSession private constructor(
         /**
          * Converts an initialize's unclassified failure, reporting it first as the pair that answers the
          * start: `outcome=failed` and `failure_type` naming the original, which is what tells a converted
-         * failure from a refusal the SDK named.
+         * failure from a refusal the SDK named. The report is best-effort, so a recorder that fails here
+         * leaves the converted failure standing.
          *
          * @param original the failure as it was thrown, before conversion.
          * @param startedAt when the initialize began, for the duration.
@@ -479,7 +480,13 @@ public class PayabliSession private constructor(
             startedAt: Long,
         ): PayabliGenericException {
             val failure = unexpectedFailure(original)
-            reportConverted(failure, original, startedAt)
+            try {
+                reportConverted(failure, original, startedAt)
+            } catch (_: Exception) {
+                // The report is lost; the failure the caller is owed is not.
+            } catch (_: LinkageError) {
+                // The same, for a recorder class that failed to load.
+            }
             return failure
         }
 
