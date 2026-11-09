@@ -6,6 +6,8 @@ import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.storage.SecureStorageException
+import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
 import com.payabli.sdk.taptopay.enrollment.ENTRY
@@ -179,6 +181,36 @@ class PayabliTapToPayTest {
                     .singleOrNull { it.message == NoClassDefFoundError::class.java.name }
                     ?: throw AssertionError("the original's type is not in the chain")
             assertEquals(original.stackTrace.toList(), redacted.stackTrace.toList())
+        }
+
+    @Test
+    fun `a linkage failure that reaches the facade raw converts there, keeping its type and never its message`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Raised by the recorder before the charge's own handling begins, so nothing below the facade
+            // converts it.
+            val fixture = SessionFixture(script())
+            val terminal = terminalOver(fixture)
+            terminal.initialize()
+            TelemetryRecorders.install { event, _ ->
+                if (event == TelemetryEvents.TTP_CHARGE_STARTED) throw NoClassDefFoundError(SENTINEL)
+            }
+
+            val failure =
+                try {
+                    runCatching {
+                        terminal.charge(
+                            TapToPayPaymentDetails(BigDecimal("12.34")),
+                            PAYER,
+                        )
+                    }.exceptionOrNull()
+                } finally {
+                    TelemetryRecorders.clear()
+                }
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(PayabliErrorType.UNKNOWN, (failure as TapToPayException).type)
+            assertNeverCarries(SENTINEL, failure)
+            assertEquals(NoClassDefFoundError::class.java.name, failure.cause?.message)
         }
 
     @Test
