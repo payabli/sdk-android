@@ -190,7 +190,7 @@ class TokenFailureReportingTest {
     @Test
     fun `a recorder that raises an Error releases the claim, so the next refresh mints`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val fatal = NoClassDefFoundError(SENTINEL)
+            val fatal = InternalError(SENTINEL)
             TelemetryRecorders.install { _, _ -> throw fatal }
             listOf<suspend () -> String>({ throw SocketTimeoutException(SENTINEL) }, { " " }).forEach { first ->
                 val calls = AtomicInteger()

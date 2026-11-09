@@ -2296,6 +2296,31 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a recorder failing while a close retry reports leaves the held payment's answer standing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2)
+            val runner = runnerGatedOnClose(fixture) { throw IllegalStateException(SENTINEL) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            listOf(java.io.IOException("the queue file is gone"), NoClassDefFoundError("a recorder class"))
+                .forEach { unreported ->
+                    TelemetryRecorders.install { event, _ ->
+                        if (event == TelemetryEvents.TTP_CLOSE_FAILED) throw unreported
+                    }
+                    try {
+                        val failure = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
+
+                        assertTrue("$unreported replaced the answer: $failure", failure is TapToPayException)
+                        failure as TapToPayException
+                        assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, failure.type)
+                        assertEquals(TRANS_ID, failure.paymentTransId)
+                    } finally {
+                        TelemetryRecorders.clear()
+                    }
+                }
+        }
+
+    @Test
     fun `a linkage error during the tap gives way to the close saying the processor has no record`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The vendor loads native code, so a LinkageError from the reader is the reachable shape here. It

@@ -478,13 +478,7 @@ public class PayabliSession private constructor(
             startedAt: Long,
         ): PayabliGenericException {
             val failure = unexpectedFailure(original)
-            try {
-                reportConverted(failure, original, startedAt)
-            } catch (_: Exception) {
-                // The report is lost; the failure the caller is owed is not.
-            } catch (_: LinkageError) {
-                // The same, for a recorder class that failed to load.
-            }
+            reportConverted(failure, original, startedAt)
             return failure
         }
 

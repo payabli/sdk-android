@@ -103,7 +103,9 @@ public object TelemetryRecorders {
             } else {
                 recorder.record(event, properties())
             }
-        } catch (failure: RuntimeException) {
+        } catch (failure: Exception) {
+            refused(failure)
+        } catch (failure: LinkageError) {
             refused(failure)
         }
     }
@@ -125,7 +127,7 @@ public object TelemetryRecorders {
      * @param failure what the recorder threw.
      */
     @PublishedApi
-    internal fun refused(failure: RuntimeException) {
+    internal fun refused(failure: Throwable) {
         logger.warn(
             LogField.safe("event", "telemetry_record_failed"),
             LogField.safe("errorKind", failure.javaClass.simpleName),
@@ -141,7 +143,7 @@ public object TelemetryRecorders {
      *
      * **Failure is swallowed here**, which is the guarantee that lets a payment path call this on its
      * critical line. A reporting channel that can fail a charge is worse than no reporting channel.
-     * An `Error` is not caught: an exhausted heap is not this layer's to absorb.
+     * An `Error` other than a linkage failure is not caught: an exhausted heap is not this layer's to absorb.
      *
      * @param event the catalog name of the event.
      * @param properties the declared properties, built only when something is listening.
@@ -153,7 +155,9 @@ public object TelemetryRecorders {
         val recorder = current() ?: return
         try {
             recorder.record(event, properties())
-        } catch (failure: RuntimeException) {
+        } catch (failure: Exception) {
+            refused(failure)
+        } catch (failure: LinkageError) {
             refused(failure)
         }
     }

@@ -125,10 +125,7 @@ class SessionInitializeReportingTest {
             )
         }
 
-    /**
-     * A recorder that fails while the converted pair is reported leaves the conversion standing. A checked
-     * exception and a missing class both get past the recorder seam, which absorbs runtime failures only.
-     */
+    /** A recorder that fails while the converted pair is reported leaves the conversion standing. */
     @Test
     fun aRecorderThatFailsWhileTheConversionReportsLeavesTheConversionStanding() =
         runTest {
