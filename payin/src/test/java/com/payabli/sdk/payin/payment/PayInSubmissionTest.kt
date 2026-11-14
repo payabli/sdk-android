@@ -3,6 +3,7 @@ package com.payabli.sdk.payin.payment
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.model.PayabliAttempt
+import com.payabli.sdk.core.model.PayabliCurrency
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
@@ -1457,7 +1458,6 @@ class PayInSubmissionTest {
                     Triple("service fee", described(), described(fee = "0.50")),
                     Triple("surcharge", described(surcharge = "1"), described(surcharge = "2")),
                     Triple("surcharge dropped", described(surcharge = "1"), described()),
-                    Triple("currency", described(), described(currency = "CAD")),
                     Triple("rail", described(), described(method = PayInPaymentMethod.Check("Ada"))),
                     Triple("order", described(orderId = "order-1"), described(orderId = "order-2")),
                 )
@@ -1513,7 +1513,6 @@ class PayInSubmissionTest {
                     "rounding" to described(total = "10.001"),
                     "absent fee as zero" to described(fee = "0"),
                     "absent surcharge as zero" to described(surcharge = "0"),
-                    "currency spelling" to described(currency = " usd "),
                     "order set only on the retry" to described(orderId = "order-9"),
                     "stored card" to described(method = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "s-1")),
                     "cloud device" to described(method = PayInPaymentMethod.CloudDevice("device-1")),
@@ -2371,7 +2370,7 @@ class PayInSubmissionTest {
         total: String = "10",
         fee: String? = null,
         surcharge: String? = null,
-        currency: String? = "USD",
+        currency: PayabliCurrency? = PayabliCurrency.USD,
         orderId: String? = null,
         method: PayInPaymentMethod = PayInPaymentMethod.Card(testCardData()),
         reference: String? = "order-1",

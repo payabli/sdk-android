@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.payabli.sdk.core.model.PayabliCurrency
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.PayInField
@@ -55,7 +56,7 @@ class PayInSummaryRowsInstrumentedTest {
 
     @Test
     fun eachAmountThatIsNotZeroIsDrawnWithItsFigure() {
-        show(PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("0.10"), currency = "USD"))
+        show(PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("0.10"), currency = PayabliCurrency.USD))
 
         rule.onNodeWithText(figure("12.34", "USD")).assertExists()
         rule.onNodeWithText(figure("0.10", "USD")).assertExists()
@@ -69,7 +70,7 @@ class PayInSummaryRowsInstrumentedTest {
                 BigDecimal("12.34"),
                 serviceFee = BigDecimal("0.10"),
                 surchargeFee = BigDecimal("0.31"),
-                currency = "USD",
+                currency = PayabliCurrency.USD,
             ),
         )
 
@@ -98,7 +99,7 @@ class PayInSummaryRowsInstrumentedTest {
 
     @Test
     fun noAmountRowIsDrawnBesideAServiceFee() {
-        show(PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("0.10"), currency = "USD"))
+        show(PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("0.10"), currency = PayabliCurrency.USD))
 
         rule
             .onNode(
@@ -109,7 +110,9 @@ class PayInSummaryRowsInstrumentedTest {
 
     @Test
     fun noAmountRowIsDrawnBesideASurcharge() {
-        show(PayInPaymentDetails(BigDecimal("10.30"), surchargeFee = BigDecimal("0.30"), currency = "USD"))
+        show(
+            PayInPaymentDetails(BigDecimal("10.30"), surchargeFee = BigDecimal("0.30"), currency = PayabliCurrency.USD),
+        )
 
         rule
             .onNode(
@@ -120,7 +123,7 @@ class PayInSummaryRowsInstrumentedTest {
 
     @Test
     fun aRowIsReadAsItsLabelAndFigureTogether() {
-        show(PayInPaymentDetails(BigDecimal("12.34"), currency = "USD"))
+        show(PayInPaymentDetails(BigDecimal("12.34"), currency = PayabliCurrency.USD))
 
         // One node carries both, which is what a screen reader announces as a row.
         rule
@@ -146,7 +149,7 @@ class PayInSummaryRowsInstrumentedTest {
                         PayInPaymentDetails(
                             BigDecimal("12.34"),
                             serviceFee = BigDecimal("0.10"),
-                            currency = "USD",
+                            currency = PayabliCurrency.USD,
                         ),
                 )
             }
@@ -160,7 +163,7 @@ class PayInSummaryRowsInstrumentedTest {
     @Test
     fun aFormWithNoSummarySectionStillShowsTheCharge() {
         show(
-            PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("0.10"), currency = "USD"),
+            PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("0.10"), currency = PayabliCurrency.USD),
             PayInFormConfiguration(
                 allowedMethods = listOf(PayInMethodType.Card),
                 cardSections = listOf(PayInFormSection(fields = CARD_INSTRUMENT_FIELDS)),
@@ -175,7 +178,7 @@ class PayInSummaryRowsInstrumentedTest {
     @Test
     fun anUntitledInputsSectionDrawsNoHeadingWhileTheSummaryDrawsItsOwn() {
         show(
-            PayInPaymentDetails(BigDecimal("12.34"), currency = "USD"),
+            PayInPaymentDetails(BigDecimal("12.34"), currency = PayabliCurrency.USD),
             PayInFormConfiguration(
                 allowedMethods = listOf(PayInMethodType.Card),
                 cardSections = PayInFormConfiguration.defaultCardSections(),
@@ -196,10 +199,10 @@ class PayInSummaryRowsInstrumentedTest {
 
     @Test
     fun aRepricedOperationRedrawsTheFigure() {
-        val amounts = mutableStateOf(PayInPaymentDetails(BigDecimal("12.34"), currency = "USD"))
+        val amounts = mutableStateOf(PayInPaymentDetails(BigDecimal("12.34"), currency = PayabliCurrency.USD))
         show { amounts.value }
 
-        rule.runOnUiThread { amounts.value = PayInPaymentDetails(BigDecimal("15.00"), currency = "USD") }
+        rule.runOnUiThread { amounts.value = PayInPaymentDetails(BigDecimal("15.00"), currency = PayabliCurrency.USD) }
 
         rule.onNodeWithText(figure("15.00", "USD")).assertExists()
         rule.onNodeWithText(figure("12.34", "USD")).assertDoesNotExist()
@@ -208,7 +211,7 @@ class PayInSummaryRowsInstrumentedTest {
     @Test
     fun theTotalRowDrawsTheHostsLabel() {
         show(
-            PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("0.31"), currency = "USD"),
+            PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("0.31"), currency = PayabliCurrency.USD),
             labels = PayInFormLabels(total = "Due today"),
         )
 
@@ -240,7 +243,7 @@ class PayInSummaryRowsInstrumentedTest {
                             PayInPaymentDetails(
                                 BigDecimal("12.34"),
                                 serviceFee = BigDecimal("0.10"),
-                                currency = "USD",
+                                currency = PayabliCurrency.USD,
                             ),
                     )
                 }
@@ -254,7 +257,7 @@ class PayInSummaryRowsInstrumentedTest {
     @Test
     fun aBlankTotalLabelDrawsTheDefault() {
         show(
-            PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("0.31"), currency = "USD"),
+            PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("0.31"), currency = PayabliCurrency.USD),
             labels = PayInFormLabels(total = " "),
         )
 
@@ -267,7 +270,11 @@ class PayInSummaryRowsInstrumentedTest {
     @Test
     fun aPaymentWithAnAmountThatCannotBeSentDrawsNoSummary() {
         show(
-            PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("1E+40"), currency = "USD"),
+            PayInPaymentDetails(
+                BigDecimal("12.34"),
+                surchargeFee = BigDecimal("1E+40"),
+                currency = PayabliCurrency.USD,
+            ),
         )
 
         rule.onNodeWithText(string(R.string.payabli_payin_summary_total)).assertDoesNotExist()

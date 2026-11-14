@@ -56,10 +56,7 @@ internal class PayInPaymentDescription private constructor(
                 // The service charges an absent fee or surcharge as nothing.
                 serviceFee = (options.paymentDetails.serviceFee ?: BigDecimal.ZERO).asCharged(),
                 surcharge = (options.paymentDetails.surchargeFee ?: BigDecimal.ZERO).asCharged(),
-                currency =
-                    options.paymentDetails.currency
-                        ?.trimOrNull()
-                        ?.uppercase(),
+                currency = options.paymentDetails.currency?.code,
                 rail = method.rail(),
                 orderId = options.orderId?.trimOrNull(),
             )

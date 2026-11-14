@@ -45,11 +45,7 @@ internal class ChargeDescription private constructor(
             ChargeDescription(
                 amount = details.amount.asCharged(),
                 serviceFee = details.serviceFee.asCharged(),
-                currency =
-                    details.currency
-                        ?.trim()
-                        ?.takeIf { it.isNotEmpty() }
-                        ?.uppercase(),
+                currency = details.currency?.code,
                 invoiceNumber = invoice.invoiceNumber?.trim()?.takeIf { it.isNotEmpty() },
             )
 
