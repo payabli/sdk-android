@@ -9,6 +9,7 @@ import com.payabli.sdk.core.network.PercentEncoding
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
+import com.payabli.sdk.taptopay.model.asSent
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
@@ -288,7 +289,7 @@ internal fun TapToPayPaymentDetails.toBody(): InitiatePaymentDetailsBody =
         // The wire keeps the service's own key; the public surface calls it `amount`.
         totalAmount = amount,
         serviceFee = serviceFee,
-        currency = currency?.code,
+        currency = currency.asSent().code,
         paymentDescription = paymentDescription.trimOrNull(),
     )
 

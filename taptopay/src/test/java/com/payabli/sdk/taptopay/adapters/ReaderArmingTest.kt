@@ -75,10 +75,11 @@ class ReaderArmingTest {
     }
 
     @Test
-    fun `an environment named directly is taken as it is`() {
-        for (named in ReaderEnvironment.entries) {
-            assertEquals(named, readerCredentials(environment = named.name).toArming().environment)
-            assertEquals(named, readerCredentials(environment = named.name.lowercase()).toArming().environment)
+    fun `an environment named the reader's own way is refused`() {
+        for (named in listOf("PROD", "CERT", "qa", "DEV", "int", "cat", "perf")) {
+            assertThrows(named, CardReaderException.CredentialsUnusable::class.java) {
+                readerCredentials(environment = named).toArming()
+            }
         }
     }
 
@@ -90,11 +91,12 @@ class ReaderArmingTest {
     }
 
     @Test
-    fun `a currency is read by name and refused when it is not one the reader can authorize in`() {
-        assertEquals(ReaderCurrency.USD, readerCredentials(currencyCode = "usd").toArming().currency)
-        assertEquals(ReaderCurrency.AUD, readerCredentials(currencyCode = " AUD ").toArming().currency)
-        assertThrows(CardReaderException.CredentialsUnusable::class.java) {
-            readerCredentials(currencyCode = "EUR").toArming().currency
+    fun `the reader arms in USD and refuses any other currency`() {
+        assertEquals(ReaderCurrency.USD, readerCredentials(currencyCode = " usd ").toArming().currency)
+        for (named in listOf("AUD", "EUR", "dollars")) {
+            assertThrows(named, CardReaderException.CredentialsUnusable::class.java) {
+                readerCredentials(currencyCode = named).toArming()
+            }
         }
     }
 

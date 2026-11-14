@@ -219,7 +219,7 @@ order.paymentTransId = result.paymentTransId // store it; don't log it
 
 | Parameter | Type | Notes |
 |---|---|---|
-| `paymentDetails` | `TapToPayPaymentDetails` | `amount`, the total charged, is required. `serviceFee` defaults to zero. `serviceFee` is part of `amount`, not added to it: the card is charged `amount`. Leave `currency` out to charge in the paypoint's currency. `paymentDescription` is optional. |
+| `paymentDetails` | `TapToPayPaymentDetails` | `amount`, the total charged, is required. `serviceFee` defaults to zero. `serviceFee` is part of `amount`, not added to it: the card is charged `amount`. `currency` is `PayabliCurrency.USD`, and an omitted one is sent as USD. `paymentDescription` is optional. |
 | `customer` | `TapToPayCustomerData` | Optional, and sent as given, an empty one included. A paypoint that requires customer fields the charge did not carry refuses it before the card is read: `TapToPayException.refusal` is `TapToPayChargeRefusal.CustomerDataRefused`, whose `requiredFields` names every field to set before charging again. |
 | `invoice` | `TapToPayInvoiceData` | Optional. `invoiceNumber`. |
 | `orderDescription` | `String?` | Optional. |

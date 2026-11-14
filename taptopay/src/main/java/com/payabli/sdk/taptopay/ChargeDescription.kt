@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
+import com.payabli.sdk.taptopay.model.asSent
 import com.payabli.sdk.taptopay.network.sendableAmountOrNull
 import java.math.BigDecimal
 
@@ -45,7 +46,7 @@ internal class ChargeDescription private constructor(
             ChargeDescription(
                 amount = details.amount.asCharged(),
                 serviceFee = details.serviceFee.asCharged(),
-                currency = details.currency?.code,
+                currency = details.currency.asSent().code,
                 invoiceNumber = invoice.invoiceNumber?.trim()?.takeIf { it.isNotEmpty() },
             )
 

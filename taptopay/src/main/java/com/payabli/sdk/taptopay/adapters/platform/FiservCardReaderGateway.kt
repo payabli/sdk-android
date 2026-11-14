@@ -102,19 +102,13 @@ internal fun ReaderArming.toVendorConfig(): FiservTTPConfig =
 
 private fun ReaderEnvironment.toVendorEnvironment(): Environment =
     when (this) {
-        ReaderEnvironment.DEV -> Environment.DEV
-        ReaderEnvironment.QA -> Environment.QA
-        ReaderEnvironment.INT -> Environment.INT
-        ReaderEnvironment.CAT -> Environment.CAT
         ReaderEnvironment.CERT -> Environment.CERT
-        ReaderEnvironment.PERF -> Environment.PERF
         ReaderEnvironment.PROD -> Environment.PROD
     }
 
 private fun ReaderCurrency.toVendorCurrency(): Currency =
     when (this) {
         ReaderCurrency.USD -> Currency.USD
-        ReaderCurrency.AUD -> Currency.AUD
     }
 
 /** A list of fields, so the card the same object carries cannot travel with them. */

@@ -184,6 +184,14 @@ class PayInSummaryRowsTest {
     }
 
     @Test
+    fun `an omitted currency is drawn as USD, the currency it is sent in`() {
+        assertEquals(
+            PayInSummaryRows.formattedAmount(BigDecimal("1234.56"), PayabliCurrency.USD),
+            PayInSummaryRows.formattedAmount(BigDecimal("1234.56"), null),
+        )
+    }
+
+    @Test
     fun `formatting uses the default locale`() {
         assertEquals("1.234,56\u00A0$", PayInSummaryRows.formattedAmount(BigDecimal("1234.56"), PayabliCurrency.USD))
         assertEquals(

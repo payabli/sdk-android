@@ -85,8 +85,6 @@ class ChargeKeyStoreTest {
                 listOf(
                     Triple("amount", sale(), sale(amount = "10.01")),
                     Triple("service fee", sale(), sale(fee = "0.50")),
-                    Triple("currency omitted on the retry", sale(), sale(currency = null)),
-                    Triple("currency set only on the retry", sale(currency = null), sale()),
                     Triple("invoice", sale(invoice = "inv-1"), sale(invoice = "inv-2")),
                 )
             for ((field, first, retry) in cases) {
@@ -107,14 +105,16 @@ class ChargeKeyStoreTest {
         runBlocking {
             val cases =
                 listOf(
-                    "rounding" to sale(amount = "10.001"),
-                    "invoice set only on the retry" to sale(invoice = "inv-9"),
+                    Triple("rounding", sale(), sale(amount = "10.001")),
+                    Triple("currency omitted on the retry", sale(), sale(currency = null)),
+                    Triple("currency set only on the retry", sale(currency = null), sale()),
+                    Triple("invoice set only on the retry", sale(), sale(invoice = "inv-9")),
                 )
-            for ((field, retry) in cases) {
+            for ((field, first, retry) in cases) {
                 ChargeKeyStore.forgetHeld()
                 minted.set(0)
                 val keys = store()
-                val held = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, sale())
+                val held = keys.reserve(ENTRY, PayabliEnvironment.SANDBOX, PayabliAttempt.NewPayment, first)
                 keys.supersede(ENTRY, PayabliEnvironment.SANDBOX, held.key)
 
                 assertEquals(field, "key-1", keys.retry(retry))
