@@ -362,6 +362,43 @@ class TTPTransactionClientTest {
         }
 
     @Test
+    fun `the close declares a 401 carrying 9001 as its caller's refusal, and no other 401`() =
+        runTest(timeout = timeout) {
+            val (transport, client) = client(answer(approved("""{"paymentTransId":"$TRANS_ID"}""")))
+            client.update(TRANS_ID, cardRead())
+            val isCallerRefusal = transport.request.isCallerRefusal
+
+            assertTrue(isCallerRefusal(answer("""{"responseCode":9001}""", 401)))
+            assertTrue("a quoted code", isCallerRefusal(answer("""{"responseCode":"9001"}""", 401)))
+            assertFalse("9001 on 400", isCallerRefusal(answer("""{"responseCode":9001}""", 400)))
+            assertFalse("a 401 with no body is the credential's", isCallerRefusal(answer("", 401)))
+            assertFalse("an invalid token", isCallerRefusal(answer("""{"code":"E9001"}""", 401)))
+        }
+
+    @Test
+    fun `a caller refused the close is told so once, carrying the status and code`() =
+        runTest(timeout = timeout) {
+            val (transport, client) = client(answer("""{"responseCode":9001}""", 401))
+
+            val failure = runCatching { client.update(TRANS_ID, cardRead()) }.exceptionOrNull() as PayabliException
+
+            assertEquals(PayabliErrorType.PERMISSION_DENIED, failure.type)
+            assertEquals(401, failure.httpStatus)
+            assertEquals("9001", failure.rawCode)
+            assertEquals(1, transport.requests.size)
+        }
+
+    @Test
+    fun `a 401 that does not refuse the caller stays the credential's`() =
+        runTest(timeout = timeout) {
+            val (_, client) = client(answer("", 401))
+
+            val failure = runCatching { client.update(TRANS_ID, cardRead()) }.exceptionOrNull() as PayabliException
+
+            assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure.type)
+        }
+
+    @Test
     fun `an identifier the service would read as another route is encoded into one segment`() =
         runTest(timeout = timeout) {
             val (transport, client) = client(answer(approved("""{"paymentTransId":"x"}""")))

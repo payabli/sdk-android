@@ -550,6 +550,7 @@ internal class TapToPayChargeRunner(
                     TapToPayCapture.UNKNOWN,
                 )
             }
+            val capture = captureOf(pending.read.outcome, pending.resentKey)
             val startedAt = System.nanoTime()
             TapToPayReports.closeStarted(TelemetryProperties.Origin.RETRY)
             try {
@@ -571,9 +572,9 @@ internal class TapToPayChargeRunner(
                 // rethrow.
                 throw withdrawn
             } catch (failure: Exception) {
-                throw closeRetryFailed(failure, startedAt, pending)
+                throw closeRetryFailed(failure, startedAt, pending.paymentTransId, capture)
             } catch (failure: LinkageError) {
-                throw closeRetryFailed(failure, startedAt, pending)
+                throw closeRetryFailed(failure, startedAt, pending.paymentTransId, capture)
             }
             TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.RETRY)
         }
@@ -581,26 +582,37 @@ internal class TapToPayChargeRunner(
     /**
      * A failed close retry's answer: reported as the close it was, still held so this can be tried again,
      * and the failure converted under the payment's own capture state.
+     *
+     * A caller refused the transaction keeps that type, because waiting and retrying cannot change it.
+     *
+     * @param failure what the close raised.
+     * @param startedAt when the close started, from [System.nanoTime].
+     * @param paymentTransId the payment the close named.
+     * @param capture what is known about the money for that payment.
      */
     private fun closeRetryFailed(
         failure: Throwable,
         startedAt: Long,
-        pending: PendingClose,
+        paymentTransId: String,
+        capture: TapToPayCapture,
     ): Nothing {
         TapToPayReports.closeFailed(
             failure,
             startedAt,
             TelemetryProperties.Origin.RETRY,
-            captureOf(pending.read.outcome, pending.resentKey),
+            capture,
             failure.saysTheProcessorHasNoRecord(),
         )
         throw failed(
             failure,
-            PayabliErrorType.PAYMENT_NOT_CLOSED,
-            pending.paymentTransId,
-            captureOf(pending.read.outcome, pending.resentKey),
+            if (failure.isCallerRefused()) PayabliErrorType.PERMISSION_DENIED else PayabliErrorType.PAYMENT_NOT_CLOSED,
+            paymentTransId,
+            capture,
         )
     }
+
+    private fun Throwable.isCallerRefused(): Boolean =
+        this is PayabliException && type == PayabliErrorType.PERMISSION_DENIED
 
     /**
      * What the reader's answer says about the money, which is not the same as whether it answered.

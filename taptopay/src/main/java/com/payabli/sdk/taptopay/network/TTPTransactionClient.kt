@@ -8,6 +8,7 @@ import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
@@ -180,9 +181,10 @@ internal class TTPTransactionClient(
                         route = TTPRoutes.UPDATE,
                         headers = mapOf(CONTENT_TYPE to APPLICATION_JSON),
                         body = encoded,
+                        isCallerRefusal = ::isNotPermitted,
                     ),
                 )
-            failureFor(TTPRoutes.UPDATE, response)?.let { throw it }
+            failureFor(TTPRoutes.UPDATE, response, notPermittedOrNull(response))?.let { throw it }
             logger.debug(
                 LogField.safe("event", "ttp_transaction_closed"),
                 LogField.safe("route", TTPRoutes.UPDATE),
@@ -268,16 +270,23 @@ internal class TTPTransactionClient(
      *
      * A 404 is classified before the shared table, because it means something on these two routes that it
      * does not mean anywhere else and the shared table has no way to know that.
+     *
+     * @param route the route answered, for the log record.
+     * @param response the answered request.
+     * @param refusal what the route itself reads [response] as, which wins over the shared table.
+     * @return the failure, or null when [response] is a success.
      */
     private fun failureFor(
         route: String,
         response: PayabliResponse,
+        refusal: PayabliException? = null,
     ): Throwable? {
         val failure =
-            if (response.statusCode == HTTP_NOT_FOUND) {
-                TTPTransactionException.NotEnabled(PayabliHttpErrors.from(response)?.rawCode)
-            } else {
-                PayabliHttpErrors.from(response)
+            when {
+                response.statusCode == HTTP_NOT_FOUND ->
+                    TTPTransactionException.NotEnabled(PayabliHttpErrors.from(response)?.rawCode)
+                refusal != null -> refusal
+                else -> PayabliHttpErrors.from(response)
             } ?: return null
         logger.warn(
             LogField.safe("event", "ttp_transaction_call_failed"),
@@ -449,6 +458,39 @@ private fun fraudBlockCode(response: PayabliResponse): String? =
  */
 private fun isFraudBlock(response: PayabliResponse): Boolean =
     response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED && fraudBlockCode(response) != null
+
+/**
+ * Whether a 401 refuses this caller the transaction, which a token refresh cannot fix and a replay would send
+ * again.
+ *
+ * @param response the answered request.
+ * @return true for a 401 whose body carries 9001; false otherwise.
+ */
+private fun isNotPermitted(response: PayabliResponse): Boolean =
+    response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED &&
+        PayabliHttpErrors.from(response)?.rawCode == NOT_PERMITTED_CODE
+
+/**
+ * The refusal of a caller that may not act on the transaction.
+ *
+ * @param response the answered request.
+ * @return the refusal, carrying the response's status and code, or null when [isNotPermitted] is false.
+ */
+private fun notPermittedOrNull(response: PayabliResponse): PayabliGenericException? =
+    if (!isNotPermitted(response)) {
+        null
+    } else {
+        PayabliGenericException(
+            PayabliErrorType.PERMISSION_DENIED,
+            PayabliErrorType.PERMISSION_DENIED.message,
+            null,
+            null,
+            response.statusCode,
+            NOT_PERMITTED_CODE,
+        )
+    }
+
+private const val NOT_PERMITTED_CODE = "9001"
 
 private fun stringField(
     response: PayabliResponse,

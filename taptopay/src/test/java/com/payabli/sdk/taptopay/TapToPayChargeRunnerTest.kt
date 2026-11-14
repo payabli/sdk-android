@@ -3226,6 +3226,50 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a recovery the caller may not send is reported as refused, once, and the payment stays held`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Three for the charge's own close, one refused recovery, one recovery that lands.
+            var mode = "fail"
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to listOf(approved("""{"paymentTransId":"$TRANS_ID"}""")),
+                        UPDATE to listOf("{}", "{}", "{}", """{"responseCode":9001}""", "{}"),
+                        statusFor = { path ->
+                            when {
+                                path != UPDATE -> null
+                                mode == "fail" -> 500
+                                mode == "refuse" -> 401
+                                else -> 200
+                            }
+                        },
+                    ),
+                ).also { it.coordinator.initialize() }
+            val runner = runnerOver(fixture)
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            mode = "refuse"
+            val refused = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.PERMISSION_DENIED, refused.type)
+            assertEquals(TRANS_ID, refused.paymentTransId)
+            assertEquals(TapToPayCapture.CHARGED, refused.capture)
+            assertEquals("the refusal was sent again", 4, fixture.routes.count { it == UPDATE })
+
+            mode = "land"
+            runner.closeCaptured(TRANS_ID)
+            assertEquals(
+                "the refused payment was not kept for another attempt",
+                5,
+                fixture.routes.count { it == UPDATE },
+            )
+        }
+
+    @Test
     fun `a recovery that closed lets the attempt go, so the next charge opens its own`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The close resolves the transaction whenever it lands, so the attempt is over then too. Holding
