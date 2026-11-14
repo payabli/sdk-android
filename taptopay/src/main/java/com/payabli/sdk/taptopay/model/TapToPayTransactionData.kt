@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.model
 
+import com.payabli.sdk.core.model.PayabliCurrency
 import java.math.BigDecimal
 
 /**
@@ -15,13 +16,12 @@ import java.math.BigDecimal
  * [amount] is a [BigDecimal] and never a `Double`: binary floating point cannot hold `0.10`, which is not
  * a property a payment amount can afford.
  *
- * Leaving [currency] unset lets the service authorize in the paypoint's own currency, which is the one the
- * reader was configured with.
+ * [currency] is what the payment is opened in. The reader charges in the currency it was armed with.
  */
 public class TapToPayPaymentDetails(
     public val amount: BigDecimal,
     public val serviceFee: BigDecimal = BigDecimal.ZERO,
-    public val currency: String? = null,
+    public val currency: PayabliCurrency? = null,
     public val paymentDescription: String? = null,
 ) {
     /** Never the amounts: what is being charged is transaction data, and this reaches diagnostics. */

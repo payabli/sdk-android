@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.client
 
+import com.payabli.sdk.core.model.PayabliCurrency
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliSendMark
@@ -145,5 +146,5 @@ internal fun testDetails(
         totalAmount = BigDecimal(total),
         serviceFee = fee?.let(::BigDecimal),
         surchargeFee = surcharge?.let(::BigDecimal),
-        currency = "USD",
+        currency = PayabliCurrency.USD,
     )

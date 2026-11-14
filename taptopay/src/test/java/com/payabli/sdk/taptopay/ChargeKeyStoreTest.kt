@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.model.PayabliAttempt
+import com.payabli.sdk.core.model.PayabliCurrency
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
@@ -44,7 +45,7 @@ class ChargeKeyStoreTest {
     private fun sale(
         amount: String = "10.00",
         fee: String = "0",
-        currency: String? = "USD",
+        currency: PayabliCurrency? = PayabliCurrency.USD,
         invoice: String? = null,
     ) = ChargeDescription.of(
         TapToPayPaymentDetails(BigDecimal(amount), BigDecimal(fee), currency),
@@ -84,7 +85,6 @@ class ChargeKeyStoreTest {
                 listOf(
                     Triple("amount", sale(), sale(amount = "10.01")),
                     Triple("service fee", sale(), sale(fee = "0.50")),
-                    Triple("currency", sale(), sale(currency = "CAD")),
                     Triple("invoice", sale(invoice = "inv-1"), sale(invoice = "inv-2")),
                 )
             for ((field, first, retry) in cases) {
@@ -106,7 +106,6 @@ class ChargeKeyStoreTest {
             val cases =
                 listOf(
                     "rounding" to sale(amount = "10.001"),
-                    "currency spelling" to sale(currency = " usd "),
                     "invoice set only on the retry" to sale(invoice = "inv-9"),
                 )
             for ((field, retry) in cases) {

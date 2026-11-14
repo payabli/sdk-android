@@ -288,7 +288,7 @@ internal fun TapToPayPaymentDetails.toBody(): InitiatePaymentDetailsBody =
         // The wire keeps the service's own key; the public surface calls it `amount`.
         totalAmount = amount,
         serviceFee = serviceFee,
-        currency = currency.trimOrNull()?.uppercase(),
+        currency = currency?.code,
         paymentDescription = paymentDescription.trimOrNull(),
     )
 
