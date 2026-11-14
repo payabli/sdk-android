@@ -541,14 +541,11 @@ internal class TapToPayChargeRunner(
         region.withLock {
             val pending = HELD[scope]
             if (pending == null || pending.paymentTransId != paymentTransId) {
-                // Named rather than left to the facade's default. A caller reaches this by asking to close
-                // a payment whose answer is no longer held, and the default would report it as never
-                // charged, which is the one thing this SDK must not say about a payment it cannot account
-                // for. It carries the identifier it was given, and unknown, because that is what is true.
-                val refused = TapToPayCallException.PaymentNotHeld()
+                // Named rather than left to the facade's default, which would report a payment this SDK
+                // cannot account for as never charged. Unknown is what is true.
                 throw failed(
-                    refused,
-                    TapToPayErrorCodes.typeFor(refused),
+                    IllegalStateException("no captured payment is held under that identifier"),
+                    PayabliErrorType.PAYMENT_NOT_CLOSED,
                     paymentTransId,
                     TapToPayCapture.UNKNOWN,
                 )

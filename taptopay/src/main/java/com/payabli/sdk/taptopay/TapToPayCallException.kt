@@ -14,7 +14,4 @@ internal sealed class TapToPayCallException(
 
     /** The session is ready and the device record it was built on is gone. */
     class NoDeviceToChargeAs : TapToPayCallException("the session is ready with no device to charge as")
-
-    /** A close was asked for a payment whose answer is not held. */
-    class PaymentNotHeld : TapToPayCallException("no captured payment is held under that identifier")
 }

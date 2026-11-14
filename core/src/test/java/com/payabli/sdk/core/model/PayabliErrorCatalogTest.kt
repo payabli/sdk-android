@@ -237,12 +237,6 @@ class PayabliErrorCatalogTest {
                 "Too many charges are waiting to be resolved.",
             ),
             Row(
-                "PAYMENT_NOT_HELD",
-                3031,
-                PayabliErrorCategory.INVALID_REQUEST,
-                "No captured payment is held under that identifier.",
-            ),
-            Row(
                 "DEVICE_IDENTITY_UNAVAILABLE",
                 3033,
                 PayabliErrorCategory.DEVICE,
@@ -311,8 +305,8 @@ class PayabliErrorCatalogTest {
     }
 
     private companion object {
-        /** Numbers no member takes: 3032 is reserved. */
-        val reserved = setOf(3032)
+        /** Numbers no member takes: 3031 and 3032 are reserved. */
+        val reserved = setOf(3031, 3032)
     }
 
     @Test

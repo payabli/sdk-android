@@ -327,7 +327,6 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType NETWORK_ERROR;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_DECLINED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_CLOSED;
-    enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_HELD;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_OPENED;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_NOT_TAKEN;
     enum_constant public static final com.payabli.sdk.core.model.PayabliErrorType PAYMENT_OUTCOME_UNKNOWN;
