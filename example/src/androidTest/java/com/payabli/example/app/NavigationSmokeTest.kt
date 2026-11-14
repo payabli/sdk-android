@@ -16,12 +16,15 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.example.app.demo.ui.nav.PayabliDemoNavHost
 import com.payabli.example.app.demo.ui.nav.TopLevelDestination
 import com.payabli.example.app.demo.ui.theme.PayabliDemoTheme
+import com.payabli.sdk.core.model.PayabliCurrency
+import com.payabli.sdk.payin.form.PayInSummaryRows
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.Closeable
+import java.math.BigDecimal
 import java.net.InetAddress
 import java.net.ServerSocket
 import kotlin.concurrent.thread
@@ -240,12 +243,11 @@ class NavigationSmokeTest {
         const val SIMPLE_CAPTURE_SUBMIT = "Pay"
 
         /**
-         * The summary row, read back from the operation rather than typed, so it also proves the row. The
-         * screen names no currency, so the figure carries no symbol, and the box it was typed into is not
-         * it. The figure is the default amount plus the fee the screen charges the default instrument.
+         * The summary row: the default amount plus the fee the screen charges the default instrument. The screen
+         * names no currency, so the row draws USD, the currency the payment is sent in.
          */
         const val SIMPLE_CAPTURE_LABEL = "Total"
-        const val SIMPLE_CAPTURE_AMOUNT = "12.64"
+        val SIMPLE_CAPTURE_AMOUNT = PayInSummaryRows.formattedAmount(BigDecimal("12.64"), PayabliCurrency.USD)
     }
 }
 
