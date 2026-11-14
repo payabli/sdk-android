@@ -346,14 +346,8 @@ public enum class PayabliErrorType(
         PayabliErrorCategory.INVALID_REQUEST,
         "Too many charges are waiting to be resolved.",
     ),
-    PAYMENT_NOT_HELD(
-        3031,
-        "PAYMENT_NOT_HELD",
-        PayabliErrorCategory.INVALID_REQUEST,
-        "No captured payment is held under that identifier.",
-    ),
 
-    // 3032 is reserved, and no member takes it.
+    // 3031 and 3032 are reserved, and no member takes them.
     DEVICE_IDENTITY_UNAVAILABLE(
         3033,
         "DEVICE_IDENTITY_UNAVAILABLE",

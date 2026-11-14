@@ -167,7 +167,6 @@ internal object TapToPayErrorCodes {
         when (failure) {
             is TapToPayCallException.TerminalNotReady -> PayabliErrorType.TERMINAL_NOT_READY
             is TapToPayCallException.NoDeviceToChargeAs -> PayabliErrorType.DEVICE_SETUP_REQUIRED
-            is TapToPayCallException.PaymentNotHeld -> PayabliErrorType.PAYMENT_NOT_HELD
         }
 
     private fun sessionCode(failure: TapToPaySessionException): PayabliErrorType =
