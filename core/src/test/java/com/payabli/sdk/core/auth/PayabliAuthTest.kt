@@ -20,6 +20,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
@@ -82,14 +83,20 @@ class PayabliAuthTest {
     }
 
     private fun auth(tokenProvider: PayabliTokenProvider = PayabliTokenProvider { "initial-token" }) =
-        PayabliAuth(
-            PayabliConfig(
-                entryPoint = "entry",
-                environment = PayabliEnvironment.SANDBOX,
-                tokenProvider = tokenProvider,
-            ),
-            DefaultSdkLogger(LogCategory.AUTH, sink),
-        )
+        auth(Mutex(), tokenProvider)
+
+    private fun auth(
+        lock: Mutex,
+        tokenProvider: PayabliTokenProvider,
+    ) = PayabliAuth(
+        PayabliConfig(
+            entryPoint = "entry",
+            environment = PayabliEnvironment.SANDBOX,
+            tokenProvider = tokenProvider,
+        ),
+        DefaultSdkLogger(LogCategory.AUTH, sink),
+        mutex = lock,
+    )
 
     /**
      * Bounded so a stranded claim fails with what went wrong, rather than hanging until the test
@@ -874,8 +881,9 @@ class PayabliAuthTest {
         runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val gate = CompletableDeferred<Unit>()
+            val lock = Mutex()
             val subject =
-                auth {
+                auth(lock) {
                     if (calls.incrementAndGet() == 1) {
                         gate.await()
                         "fresh-token"
@@ -887,14 +895,14 @@ class PayabliAuthTest {
             val job = launch { runCatching { subject.invalidateAndRefresh("initial-token") } }
             while (calls.get() == 0) yield()
 
-            subject.mutex.lock()
+            lock.lock()
             gate.complete(Unit)
             // One yield is enough on the test dispatcher: the provider's continuation runs to the
             // refresh's next suspension point, which is the lock the test is holding.
             yield()
 
             job.cancel()
-            subject.mutex.unlock()
+            lock.unlock()
             job.join()
 
             // Rejecting what the commit installed, so this is a genuine second refresh rather than the
@@ -912,8 +920,9 @@ class PayabliAuthTest {
         runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val gate = CompletableDeferred<Unit>()
+            val lock = Mutex()
             val subject =
-                auth {
+                auth(lock) {
                     if (calls.incrementAndGet() == 1) {
                         gate.await()
                         throw IOException("the provider failed")
@@ -925,14 +934,14 @@ class PayabliAuthTest {
             val job = launch { runCatching { subject.invalidateAndRefresh("initial-token") } }
             while (calls.get() == 0) yield()
 
-            subject.mutex.lock()
+            lock.lock()
             gate.complete(Unit)
             // One yield is enough on the test dispatcher: the provider's continuation runs to the
             // refresh's next suspension point, which is the lock the test is holding.
             yield()
 
             job.cancel()
-            subject.mutex.unlock()
+            lock.unlock()
             job.join()
 
             assertEquals(

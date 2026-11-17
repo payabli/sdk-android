@@ -1,6 +1,7 @@
 package com.payabli.sdk.core.network.impl
 
 import androidx.annotation.VisibleForTesting
+import com.payabli.sdk.core.StrippedFromRelease
 import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
@@ -473,6 +474,7 @@ internal class PayabliService private constructor(
          * @return the transport, as the interface, holding the supplied chain.
          */
         @VisibleForTesting
+        @StrippedFromRelease
         internal fun createWithDecorations(
             baseUrl: String,
             decorations: List<PayabliRequestDecoration>,

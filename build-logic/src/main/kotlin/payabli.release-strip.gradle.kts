@@ -1,0 +1,49 @@
+import com.android.build.api.artifact.ScopedArtifact
+import com.android.build.api.artifact.SingleArtifact
+import com.android.build.api.variant.HostTestBuilder
+import com.android.build.api.variant.LibraryAndroidComponentsExtension
+import com.android.build.api.variant.ScopedArtifacts
+import com.payabli.buildlogic.ReleaseStripExtension
+import com.payabli.buildlogic.StripReleaseClasses
+import com.payabli.buildlogic.VerifyReleaseStrip
+
+// Convention plugin: a member annotated `@StrippedFromRelease` is in the debug classes the tests run against
+// and absent from the release AAR, with the lambdas and coroutine classes it encloses. Applied via
+// `id("payabli.release-strip")`. `internal` alone is a public method on the JVM, and `@JvmSynthetic` hides it
+// from Java source but not from reflection.
+
+val releaseStrip = extensions.create<ReleaseStripExtension>("releaseStrip")
+val androidComponents = extensions.getByType(LibraryAndroidComponentsExtension::class.java)
+val release = androidComponents.selector().withBuildType("release")
+
+// The release classes are the stripped ones, so a test calling a stripped member cannot compile against
+// them. The debug unit tests run the same sources.
+androidComponents.beforeVariants(release) { variant ->
+    variant.hostTests[HostTestBuilder.UNIT_TEST_TYPE]?.enable = false
+}
+
+androidComponents.onVariants(release) { variant ->
+    val suffix = variant.name.replaceFirstChar(Char::uppercase)
+    val strip = tasks.register<StripReleaseClasses>("strip${suffix}Classes")
+    variant.artifacts
+        .forScope(ScopedArtifacts.Scope.PROJECT)
+        .use(strip)
+        .toTransform(
+            ScopedArtifact.CLASSES,
+            StripReleaseClasses::jars,
+            StripReleaseClasses::directories,
+            StripReleaseClasses::output,
+        )
+
+    val verify =
+        tasks.register<VerifyReleaseStrip>("verify${suffix}Strip") {
+            group = "verification"
+            description = "Checks the $suffix AAR carries no member marked @StrippedFromRelease."
+            aar.set(variant.artifacts.get(SingleArtifact.AAR))
+            absent.set(releaseStrip.absent)
+        }
+
+    // Every path that hands the AAR to anyone runs the check first.
+    tasks.matching { it.name == "check" || it.name == "assemble$suffix" || it.name.startsWith("publish") }
+        .configureEach { dependsOn(verify) }
+}

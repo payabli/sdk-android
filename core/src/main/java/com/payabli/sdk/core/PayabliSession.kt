@@ -198,8 +198,8 @@ public class PayabliSession private constructor(
 
         /**
          * Same, against an explicit [baseUrl] and with no host bindings, for `:core`'s own JVM tests. A
-         * failure the SDK did not classify converts here as in [initialize]. `internal`, because a member
-         * left public in bytecode for testing is an origin override in a shipped artifact.
+         * failure the SDK did not classify converts here as in [initialize]. Absent from the release AAR,
+         * because shipped it would be an origin override.
          *
          * @param baseUrl the origin every request goes to.
          * @param config the configuration to install.
@@ -209,6 +209,7 @@ public class PayabliSession private constructor(
          */
         @VisibleForTesting
         @JvmSynthetic
+        @StrippedFromRelease
         internal suspend fun initializeAgainst(
             baseUrl: String,
             config: PayabliConfig,
@@ -241,6 +242,7 @@ public class PayabliSession private constructor(
          */
         @VisibleForTesting
         @JvmSynthetic
+        @StrippedFromRelease
         internal suspend fun reset() {
             sink.value = SdkState.Uninitialized
 
@@ -263,6 +265,7 @@ public class PayabliSession private constructor(
          */
         @VisibleForTesting
         @JvmSynthetic
+        @StrippedFromRelease
         internal suspend fun initializeWith(
             config: PayabliConfig,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,

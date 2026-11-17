@@ -7,6 +7,7 @@ plugins {
     id("payabli.publish")
     id("payabli.quality")
     id("payabli.api-surface")
+    id("payabli.release-strip")
 }
 
 // Environments this build adds to the two committed in PayabliEnvironment.kt. The setting appends and can do
@@ -89,6 +90,19 @@ androidComponents {
 
 kotlin {
     explicitApi()
+}
+
+// The test hooks that take an origin or reach into the session, by name, so one that loses its
+// `@StrippedFromRelease` fails `verifyReleaseStrip` rather than shipping.
+releaseStrip {
+    absent.addAll(
+        "com/payabli/sdk/core/PayabliSession\$Companion.initializeAgainst",
+        "com/payabli/sdk/core/PayabliSession\$Companion.initializeWith",
+        "com/payabli/sdk/core/PayabliSession\$Companion.reset",
+        "com/payabli/sdk/core/auth/PayabliAuth.reset",
+        "com/payabli/sdk/core/network/TransportFactory.authenticatedAgainst",
+        "com/payabli/sdk/core/network/impl/PayabliService\$Companion.createWithDecorations",
+    )
 }
 
 dependencies {

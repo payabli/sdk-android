@@ -1,5 +1,6 @@
 package com.payabli.sdk.core.network
 
+import com.payabli.sdk.core.StrippedFromRelease
 import com.payabli.sdk.core.auth.DEFAULT_PROVIDER_TIMEOUT_MILLIS
 import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.config.PayabliConfig
@@ -44,9 +45,9 @@ internal object TransportFactory {
     ): AuthenticatedTransport = authenticated(config.environment.baseUrl, config, dispatcher, client, assembly)
 
     /**
-     * Same, against an explicit [baseUrl], for `:core`'s own tests. Kept narrow: `@VisibleForTesting`
-     * leaves a member public in bytecode, so this would be an origin override — a caller able to send
-     * the session's token to any origin, which [PayabliEnvironment] promises shipped configuration cannot do.
+     * Same, against an explicit [baseUrl], for `:core`'s own tests. Absent from the release AAR: `internal` is
+     * public in bytecode, so shipped it would be an origin override — a caller able to send the session's token
+     * to any origin, which [PayabliEnvironment] promises shipped configuration cannot do.
      *
      * @param baseUrl the origin every request goes to, overriding the environment's.
      * @param config the configuration the holder and the transport are built from.
@@ -55,6 +56,7 @@ internal object TransportFactory {
      * @param client what every request reports about this device. The default reports nothing, the SDK's own tests on a JVM.
      * @return the transport with the bearer and the recovery wrapper already around it.
      */
+    @StrippedFromRelease
     internal fun authenticatedAgainst(
         baseUrl: String,
         config: PayabliConfig,
