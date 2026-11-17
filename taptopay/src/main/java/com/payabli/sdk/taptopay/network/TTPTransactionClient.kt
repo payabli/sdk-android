@@ -169,11 +169,9 @@ internal class TTPTransactionClient(
     suspend fun close(paymentTransId: String) = send(paymentTransId, NO_OUTCOME_BODY)
 
     /**
-     * The shared half of the closes: a `PATCH` carrying [body], retried.
-     *
-     * **Any 2xx is success and the response is not decoded.** The outcome the payer saw was decided at the
-     * reader, so nothing that comes back here changes it. Decoding it would invite a caller to treat a lag
-     * between the two as a different payment.
+     * The closes' shared `PATCH` carrying [body], retried. **Any 2xx is success and the response is not
+     * decoded:** the reader decided the outcome, and decoding it would invite a caller to read a lag as a
+     * different payment.
      */
     private suspend fun send(
         paymentTransId: String,
@@ -351,15 +349,8 @@ internal class TTPTransactionClient(
 }
 
 /**
- * Whether this identifier can address the transaction it names.
- *
- * Blank cannot, and neither can a dot segment: `.` and `..` are unreserved, so percent-encoding leaves them
- * as they are and the resolved path addresses the collection or its parent instead of one transaction.
- *
- * The invariant is this client's: it closes a transaction only over a path that names that transaction, so
- * an identifier it cannot address is refused before a card is taken, and before a close names it.
- *
- * Internal so a test can name a value, which is the half of this that rots.
+ * Whether this identifier can address one transaction: not blank, and not `.` or `..`, which percent-encoding
+ * leaves as they are and which resolve to the collection or its parent.
  */
 internal fun String.isUsableTransId(): Boolean {
     val trimmed = trim()

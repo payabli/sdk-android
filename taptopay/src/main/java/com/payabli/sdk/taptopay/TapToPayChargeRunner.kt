@@ -538,7 +538,7 @@ internal class TapToPayChargeRunner(
         region.withLock {
             val pending = HELD[scope]?.takeIf { it.paymentTransId == paymentTransId }
             if (pending == null) {
-                // Sent, a dot segment would close whatever route it resolves to. Unknown is what is true of it.
+                // Sent, a dot segment would reach another route. Unknown is what is true of it.
                 if (!paymentTransId.isUsableTransId()) {
                     throw failed(
                         IllegalStateException("that identifier cannot name one transaction"),
@@ -552,11 +552,9 @@ internal class TapToPayChargeRunner(
             }
             closeReported(pending.paymentTransId, captureOf(pending.read.outcome, pending.resentKey)) {
                 client.update(pending.paymentTransId, pending.read)
-                // The same rule as the charge's own close, on the same reader answer. A held payment
-                // is kept for every outcome, because the transaction is open at the service whatever
-                // the card did, so a recovery can be closing one whose outcome was never definite.
-                // Settling that would drop the only handle on an attempt that may have taken money.
-                // A resent key is never settled from what this close learns about a later opening.
+                // Kept for every outcome, so a recovery can close one whose outcome was never definite;
+                // settling that would drop the only handle on an attempt that may have taken money. A
+                // resent key is never settled from what this close learns about a later opening.
                 if (!pending.resentKey && pending.read.outcome != CardReadOutcome.INDETERMINATE) {
                     keys.settle(entry, environment, pending.idempotencyKey)
                 }
