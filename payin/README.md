@@ -169,8 +169,16 @@ your own records:
 2. After a relaunch, for a payment whose outcome your app never received, read the payment back from your backend
    by that `orderId` before paying again:
    [`GET /api/Query/transactions/{entry}?orderId(eq)=<orderId>`](https://docs.payabli.com/developers/api-reference/query/get-list-of-transactions-for-an-entrypoint).
-3. When a record is there, show its outcome and send nothing. When none is, start a new payment with
-   `attempt = PayabliAttempt.NewPayment` and a new `paymentReference`.
+3. Read the `TransStatus` of every record returned, and act on the first case that matches:
+   - **Any record is paid**: `1` (captured), or `11` (authorized) after an `authorize`. The payment went through.
+     Show it and send nothing.
+   - **Any record's outcome isn't known yet**: `10`, `11` after a `capture`, `-1`, `0`, or any other value. Query
+     again later, and don't pay.
+   - **No record is paid**: every one is `2` or `3` (declined), `5` (voided) or `-2` (blocked). Nothing was charged.
+     Start a new payment with `attempt = PayabliAttempt.NewPayment`, a new `paymentReference` and the same
+     `orderId`.
+   - **No record**: query again. Start a new payment only when a query made at least 30 seconds after the relaunch
+     finds none. A failed query never means no record.
 
 Don't set `attempt = PayabliAttempt.Retry` across a relaunch. The SDK no longer holds the key, so it sends a new
 one, and the payment can be charged twice if the first attempt went through.
