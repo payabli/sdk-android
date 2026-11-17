@@ -7,10 +7,6 @@ import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 /**
  * What a session reads from the host application, in the release build: always from a host, with the platform
  * identifier.
- *
- * @property device the device the session reports.
- * @property readDeviceId reads the device identifier, or null when the platform gives none.
- * @property host the bindings telemetry registers its background flush on.
  */
 internal class HostFacts private constructor(
     val device: TelemetryDeviceContext,

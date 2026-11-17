@@ -101,8 +101,6 @@ internal class PayabliAuth(
         require(providerTimeoutMillis > 0) { "providerTimeoutMillis must be positive" }
     }
 
-    // Every read and write of this instance's state takes it. A debug build can hand one in, so a test can hold it
-    // and make the commit and the cleanup contend; both run under NonCancellable for that case.
     private val mutex: Mutex = wiring.authLock ?: Mutex()
 
     // Null until the first mint. Nothing is passed in, so the first read is what obtains a token.
@@ -343,7 +341,6 @@ internal class PayabliAuth(
         // NonCancellable for the same reason as the failure path: the token is already minted, and
         // cancellation arriving while this lock is contended would leave the claim set with no owner.
         val rotated = rejectedToken != null
-        // Read here, so the block reads a local and the class carries no accessor that returns its lock.
         val lock = mutex
         withContext(NonCancellable) {
             lock.withLock {

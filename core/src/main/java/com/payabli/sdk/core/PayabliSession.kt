@@ -257,11 +257,8 @@ public class PayabliSession private constructor(
             }
 
             val machine = SessionStateMachine(sink)
-            // One reader per fact, so the header, telemetry and the public member report the same device.
             val client =
                 ClientFacts(PayabliSdkVersion.VALUE, facts.device.osVersion, facts.device.modelName, facts.readDeviceId)
-            // The listener is handed in rather than wired afterwards so no request can complete against a
-            // transport whose failures nothing is listening for.
             val onAuthFailure = AuthFailureListener { machine.markReinitializeRequired() }
             val auth =
                 wiring.transport?.let { build -> SessionAuth(build(onAuthFailure)) {} }
