@@ -64,7 +64,14 @@ public enum class PayabliErrorType(
      */
     PAYMENT_DECLINED(1008, "PAYMENT_DECLINED", PayabliErrorCategory.DECLINED, "The payment was declined."),
 
-    /** HTTP 5xx. Retryable, which is why it is not folded into [UNKNOWN]. */
+    /**
+     * The service could not process the request: a status of 500 or above, or an answer whose own response
+     * code reports a problem rather than a refusal.
+     *
+     * A classification and not a licence to repeat: on a money-moving call the request may already have been
+     * executed, so a repeat without the original key can take the payment again. Whether an operation is safe
+     * to repeat is the operation's to say.
+     */
     SERVER_ERROR(
         1009,
         "SERVER_ERROR",
@@ -73,8 +80,11 @@ public enum class PayabliErrorType(
     ),
 
     /**
-     * HTTP 429. Retryable, and the only status whose correct handling is unreachable without its own code:
-     * folded into [UNKNOWN] it would be un-retryable, because an unclassified status must never be retried.
+     * HTTP 429, and the only status whose correct handling is unreachable without its own code: folded into
+     * [UNKNOWN] it would be un-retryable, because an unclassified status must never be retried.
+     *
+     * Safe to repeat, unlike a server error: the service refused to act rather than failing while acting, so
+     * nothing was executed.
      */
     RATE_LIMITED(1010, "RATE_LIMITED", PayabliErrorCategory.RETRY_LATER, "Too many requests. Try again later."),
 
