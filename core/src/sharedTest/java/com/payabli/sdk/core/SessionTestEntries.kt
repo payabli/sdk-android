@@ -48,9 +48,7 @@ internal suspend fun PayabliSession.Companion.initializeWith(
  * Drops the installed session and puts [PayabliSession.state] back, so one test cannot decide the outcome of
  * the next.
  *
- * The state is restored twice, once outside the lock and once under it, and the clearing itself happens under
- * it. Both halves are load-bearing and the order is not arbitrary: `:core`'s own session tests fail if either
- * moves, which is the place to read before changing this.
+ * The state is restored outside the lock and again under it; the session tests fail if either moves.
  */
 internal suspend fun PayabliSession.Companion.reset() {
     sink.value = SdkState.Uninitialized
