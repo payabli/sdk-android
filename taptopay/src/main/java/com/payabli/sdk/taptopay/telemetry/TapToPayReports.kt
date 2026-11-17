@@ -106,6 +106,7 @@ internal object TapToPayReports {
      * @param origin [TelemetryProperties.Origin.CHARGE] or [TelemetryProperties.Origin.RETRY].
      * @param capture what the host's error says about the money.
      * @param processorHasNoRecord whether the refusal is the service saying the processor holds no record of the payment.
+     * @param type the catalog entry the host's error carries, whose number this reports.
      */
     fun closeFailed(
         failure: Throwable,
@@ -113,8 +114,9 @@ internal object TapToPayReports {
         origin: String,
         capture: TapToPayCapture,
         processorHasNoRecord: Boolean,
+        type: PayabliErrorType,
     ) = TelemetryRecorders.record(TelemetryEvents.TTP_CLOSE_FAILED) {
-        failureProperties(failure, PayabliErrorType.PAYMENT_NOT_CLOSED, startedAt, canBeDeclined = false) +
+        failureProperties(failure, type, startedAt, canBeDeclined = false) +
             buildMap {
                 put(TelemetryProperty.ORIGIN.key, origin)
                 put(TelemetryProperty.FAILURE_TYPE.key, failureTypeOf(failure))

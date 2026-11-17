@@ -8,6 +8,7 @@ import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
@@ -159,11 +160,18 @@ internal class TTPTransactionClient(
     )
 
     /**
-     * The shared half of the two closes: a `PATCH` carrying [body], retried.
+     * Closes a transaction this SDK holds no reader answer for.
      *
-     * **Any 2xx is success and the response is not decoded.** The outcome the payer saw was decided at the
-     * reader, so nothing that comes back here changes it. Decoding it would invite a caller to treat a lag
-     * between the two as a different payment.
+     * The body claims no outcome, because nothing here knows one.
+     *
+     * @param paymentTransId the transaction to close.
+     */
+    suspend fun close(paymentTransId: String) = send(paymentTransId, NO_OUTCOME_BODY)
+
+    /**
+     * The closes' shared `PATCH` carrying [body], retried. **Any 2xx is success and the response is not
+     * decoded:** the reader decided the outcome, and decoding it would invite a caller to read a lag as a
+     * different payment.
      */
     private suspend fun send(
         paymentTransId: String,
@@ -182,7 +190,7 @@ internal class TTPTransactionClient(
                         body = encoded,
                     ),
                 )
-            failureFor(TTPRoutes.UPDATE, response)?.let { throw it }
+            failureFor(TTPRoutes.UPDATE, response, notPermittedOrNull(response))?.let { throw it }
             logger.debug(
                 LogField.safe("event", "ttp_transaction_closed"),
                 LogField.safe("route", TTPRoutes.UPDATE),
@@ -268,16 +276,23 @@ internal class TTPTransactionClient(
      *
      * A 404 is classified before the shared table, because it means something on these two routes that it
      * does not mean anywhere else and the shared table has no way to know that.
+     *
+     * @param route the route answered, for the log record.
+     * @param response the answered request.
+     * @param refusal what the route itself reads [response] as, which wins over the shared table.
+     * @return the failure, or null when [response] is a success.
      */
     private fun failureFor(
         route: String,
         response: PayabliResponse,
+        refusal: PayabliException? = null,
     ): Throwable? {
         val failure =
-            if (response.statusCode == HTTP_NOT_FOUND) {
-                TTPTransactionException.NotEnabled(PayabliHttpErrors.from(response)?.rawCode)
-            } else {
-                PayabliHttpErrors.from(response)
+            when {
+                response.statusCode == HTTP_NOT_FOUND ->
+                    TTPTransactionException.NotEnabled(PayabliHttpErrors.from(response)?.rawCode)
+                refusal != null -> refusal
+                else -> PayabliHttpErrors.from(response)
             } ?: return null
         logger.warn(
             LogField.safe("event", "ttp_transaction_call_failed"),
@@ -333,15 +348,8 @@ internal class TTPTransactionClient(
 }
 
 /**
- * Whether this identifier can address the transaction it names.
- *
- * Blank cannot, and neither can a dot segment: `.` and `..` are unreserved, so percent-encoding leaves them
- * as they are and the resolved path addresses the collection or its parent instead of one transaction.
- *
- * The invariant is this client's: it closes a transaction only over a path that names that transaction, so
- * an identifier it cannot address is refused before a card is taken rather than after.
- *
- * Internal so a test can name a value, which is the half of this that rots.
+ * Whether this identifier can address one transaction: not blank, and not `.` or `..`, which percent-encoding
+ * leaves as they are and which resolve to the collection or its parent.
  */
 internal fun String.isUsableTransId(): Boolean {
     val trimmed = trim()
@@ -449,6 +457,33 @@ private fun fraudBlockCode(response: PayabliResponse): String? =
  */
 private fun isFraudBlock(response: PayabliResponse): Boolean =
     response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED && fraudBlockCode(response) != null
+
+/**
+ * The refusal of a caller that may not act on the transaction, which a token refresh cannot fix.
+ *
+ * @param response the answered request.
+ * @return the refusal, carrying the response's status and code, for a 400 whose body carries `E9001`; null
+ *   otherwise.
+ */
+private fun notPermittedOrNull(response: PayabliResponse): PayabliGenericException? =
+    if (response.statusCode != HttpURLConnection.HTTP_BAD_REQUEST ||
+        PayabliHttpErrors.from(response)?.rawCode != NOT_PERMITTED_CODE
+    ) {
+        null
+    } else {
+        PayabliGenericException(
+            PayabliErrorType.PERMISSION_DENIED,
+            PayabliErrorType.PERMISSION_DENIED.message,
+            null,
+            null,
+            response.statusCode,
+            NOT_PERMITTED_CODE,
+        )
+    }
+
+private const val NOT_PERMITTED_CODE = "E9001"
+
+private const val NO_OUTCOME_BODY = "{}"
 
 private fun stringField(
     response: PayabliResponse,

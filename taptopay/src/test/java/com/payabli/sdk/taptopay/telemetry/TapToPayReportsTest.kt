@@ -92,6 +92,7 @@ class TapToPayReportsTest {
             TelemetryProperties.Origin.CHARGE,
             TapToPayCapture.CHARGED,
             processorHasNoRecord = false,
+            type = PayabliErrorType.PAYMENT_NOT_CLOSED,
         )
 
         val (_, properties) = recorded.single()
@@ -107,6 +108,7 @@ class TapToPayReportsTest {
             TelemetryProperties.Origin.CHARGE,
             TapToPayCapture.UNKNOWN,
             processorHasNoRecord = false,
+            type = PayabliErrorType.PAYMENT_NOT_CLOSED,
         )
 
         val (event, properties) = recorded.single()

@@ -23,6 +23,7 @@ import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.ChargeKeyRefusal
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
+import com.payabli.sdk.taptopay.network.isUsableTransId
 import com.payabli.sdk.taptopay.network.sendableAmountOrNull
 import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
@@ -260,6 +261,7 @@ internal class TapToPayChargeRunner(
                                         TelemetryProperties.Origin.CHARGE,
                                         captureOf(result.outcome, resentKey),
                                         failure.saysTheProcessorHasNoRecord(),
+                                        PayabliErrorType.PAYMENT_NOT_CLOSED,
                                     )
                                     // A declined card settles whatever its close was refused with. An indeterminate
                                     // read's authorisation may still be handling at the processor, so no answer
@@ -511,96 +513,117 @@ internal class TapToPayChargeRunner(
     }
 
     /**
-     * Retries the unconfirmed close of a retained payment.
+     * Closes the payment named by [paymentTransId], whether or not this process holds it.
      *
-     * Takes no second tap: the reader already answered and its answer was kept, whatever that answer was.
-     * Refuses anything but the payment currently held, so a mistyped identifier cannot close a payment this
-     * SDK has no answer for.
-     *
-     * Whether the first close reached the service is not known here and does not need to be. Sending one
-     * that already applied costs nothing, and a response that never arrived may have followed a close that
-     * did apply, so an unconfirmed close is what this retries rather than a failed one.
+     * A held payment is closed with the reader's answer it kept, and is then let go. Any other identifier is
+     * closed with no answer, and nothing held is touched: a payment held under another identifier stays held.
+     * A failure carries the held payment's capture state, or [TapToPayCapture.UNKNOWN] for one not held.
      *
      * Holds the entry point from the call, so a charge arriving while this runs or waits is refused; this
      * itself waits for a charge already under way.
      *
-     * @param paymentTransId the payment to close, which has to be the one held for this entry point and environment.
+     * @param paymentTransId the payment to close.
      */
     suspend fun closeCaptured(paymentTransId: String) {
         val admitted = HOLDERS.admitClose(entry)
         try {
             // A charge admitted before this close goes first, even one not yet holding the region.
             admitted?.await()
-            closeHeld(paymentTransId)
+            closeNamed(paymentTransId)
         } finally {
             HOLDERS.releaseClose(entry)
         }
     }
 
-    private suspend fun closeHeld(paymentTransId: String): Unit =
+    private suspend fun closeNamed(paymentTransId: String): Unit =
         region.withLock {
-            val pending = HELD[scope]
-            if (pending == null || pending.paymentTransId != paymentTransId) {
-                // Named rather than left to the facade's default, which would report a payment this SDK
-                // cannot account for as never charged. Unknown is what is true.
-                throw failed(
-                    IllegalStateException("no captured payment is held under that identifier"),
-                    PayabliErrorType.PAYMENT_NOT_CLOSED,
-                    paymentTransId,
-                    TapToPayCapture.UNKNOWN,
-                )
-            }
-            val startedAt = System.nanoTime()
-            TapToPayReports.closeStarted(TelemetryProperties.Origin.RETRY)
-            try {
-                withContext(NonCancellable) {
-                    client.update(pending.paymentTransId, pending.read)
-                    // The same rule as the charge's own close, on the same reader answer. A held payment
-                    // is kept for every outcome, because the transaction is open at the service whatever
-                    // the card did, so a recovery can be closing one whose outcome was never definite.
-                    // Settling that would drop the only handle on an attempt that may have taken money.
-                    // A resent key is never settled from what this close learns about a later opening.
-                    if (!pending.resentKey && pending.read.outcome != CardReadOutcome.INDETERMINATE) {
-                        keys.settle(entry, environment, pending.idempotencyKey)
-                    }
-                    // The close landed either way, so nothing is left to recover.
-                    HELD.remove(scope)
+            val pending = HELD[scope]?.takeIf { it.paymentTransId == paymentTransId }
+            if (pending == null) {
+                // Sent, a dot segment would reach another route. Unknown is what is true of it.
+                if (!paymentTransId.isUsableTransId()) {
+                    throw failed(
+                        IllegalStateException("that identifier cannot name one transaction"),
+                        PayabliErrorType.PAYMENT_NOT_CLOSED,
+                        paymentTransId,
+                        TapToPayCapture.UNKNOWN,
+                    )
                 }
-            } catch (withdrawn: CancellationException) {
-                // Converting it would hide it from the facade, which reads the type to decide what to
-                // rethrow.
-                throw withdrawn
-            } catch (failure: Exception) {
-                throw closeRetryFailed(failure, startedAt, pending)
-            } catch (failure: LinkageError) {
-                throw closeRetryFailed(failure, startedAt, pending)
+                closeReported(paymentTransId, TapToPayCapture.UNKNOWN) { client.close(paymentTransId) }
+                return@withLock
             }
-            TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.RETRY)
+            closeReported(pending.paymentTransId, captureOf(pending.read.outcome, pending.resentKey)) {
+                client.update(pending.paymentTransId, pending.read)
+                // Kept for every outcome, so a recovery can close one whose outcome was never definite;
+                // settling that would drop the only handle on an attempt that may have taken money. A
+                // resent key is never settled from what this close learns about a later opening.
+                if (!pending.resentKey && pending.read.outcome != CardReadOutcome.INDETERMINATE) {
+                    keys.settle(entry, environment, pending.idempotencyKey)
+                }
+                // The close landed either way, so nothing is left to recover.
+                HELD.remove(scope)
+            }
         }
 
     /**
-     * A failed close retry's answer: reported as the close it was, still held so this can be tried again,
-     * and the failure converted under the payment's own capture state.
+     * Runs [close] to completion whatever happens to the caller, and reports it as a retry.
+     *
+     * @param paymentTransId the payment [close] names.
+     * @param capture what is known about the money for that payment.
+     * @param close sends the close, and does whatever a confirmed close allows.
+     */
+    private suspend fun closeReported(
+        paymentTransId: String,
+        capture: TapToPayCapture,
+        close: suspend () -> Unit,
+    ) {
+        val startedAt = System.nanoTime()
+        TapToPayReports.closeStarted(TelemetryProperties.Origin.RETRY)
+        try {
+            withContext(NonCancellable) { close() }
+        } catch (withdrawn: CancellationException) {
+            // Converting it would hide it from the facade, which reads the type to decide what to
+            // rethrow.
+            throw withdrawn
+        } catch (failure: Exception) {
+            throw closeRetryFailed(failure, startedAt, paymentTransId, capture)
+        } catch (failure: LinkageError) {
+            throw closeRetryFailed(failure, startedAt, paymentTransId, capture)
+        }
+        TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.RETRY)
+    }
+
+    /**
+     * A failed close retry's answer: reported as the close it was, anything held still held so this can be
+     * tried again, and the failure converted under the payment's own capture state.
+     *
+     * A caller refused the transaction keeps that type, because waiting and retrying cannot change it.
+     *
+     * @param failure what the close raised.
+     * @param startedAt when the close started, from [System.nanoTime].
+     * @param paymentTransId the payment the close named.
+     * @param capture what is known about the money for that payment.
      */
     private fun closeRetryFailed(
         failure: Throwable,
         startedAt: Long,
-        pending: PendingClose,
+        paymentTransId: String,
+        capture: TapToPayCapture,
     ): Nothing {
+        val type =
+            if (failure.isCallerRefused()) PayabliErrorType.PERMISSION_DENIED else PayabliErrorType.PAYMENT_NOT_CLOSED
         TapToPayReports.closeFailed(
             failure,
             startedAt,
             TelemetryProperties.Origin.RETRY,
-            captureOf(pending.read.outcome, pending.resentKey),
+            capture,
             failure.saysTheProcessorHasNoRecord(),
+            type,
         )
-        throw failed(
-            failure,
-            PayabliErrorType.PAYMENT_NOT_CLOSED,
-            pending.paymentTransId,
-            captureOf(pending.read.outcome, pending.resentKey),
-        )
+        throw failed(failure, type, paymentTransId, capture)
     }
+
+    private fun Throwable.isCallerRefused(): Boolean =
+        this is PayabliException && type == PayabliErrorType.PERMISSION_DENIED
 
     /**
      * What the reader's answer says about the money, which is not the same as whether it answered.
@@ -727,6 +750,7 @@ internal class TapToPayChargeRunner(
                     // A minted key's charge the processor has no record of is reported not charged.
                     if (!resentKey && noRecord) TapToPayCapture.NOT_CHARGED else capture,
                     noRecord,
+                    PayabliErrorType.PAYMENT_NOT_CLOSED,
                 )
                 // The processor holding no record of the payment means nothing was captured. A resent key names
                 // an earlier opening, so this answer never settles it.

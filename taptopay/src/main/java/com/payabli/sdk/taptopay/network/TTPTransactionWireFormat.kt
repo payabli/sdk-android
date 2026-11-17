@@ -47,15 +47,8 @@ internal object TTPRoutes {
     const val UPDATE: String = "/api/v2/MoneyIn/update/{transId}"
 
     /**
-     * The resolved path for [UPDATE], built from that template rather than beside it.
-     *
-     * The identifier is encoded as one path segment, so a `?`, `#` or `/` in it stays part of the
-     * identifier instead of becoming a query, a fragment or another route.
-     *
-     * **Encoded rather than refused, unlike the entry point on the device routes.** That value comes from
-     * the caller, where a shape this SDK did not expect is a caller defect worth naming. This one is read
-     * back from a response, so its shape is not this SDK's to assume, and refusing it would fail a charge
-     * over a format nobody here controls.
+     * The resolved path for [UPDATE]. The identifier is encoded as one segment, so a `?`, `#` or `/` stays part
+     * of it, and only one that cannot address a transaction is refused, before it reaches here.
      */
     fun update(paymentTransId: String): String =
         PercentEncoding.pathFrom(UPDATE, PercentEncoding.segment(paymentTransId))

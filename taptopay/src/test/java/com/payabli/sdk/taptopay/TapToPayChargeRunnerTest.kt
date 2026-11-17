@@ -79,6 +79,17 @@ private val PAYER = TapToPayCustomerData(firstName = "Ada", lastName = "Payer", 
 
 private const val UPDATE = "/api/v2/MoneyIn/update/$TRANS_ID"
 
+/** A payment no test opens, so no terminal holds it whatever ran before. */
+private const val NOT_HELD = "12-not-held"
+private const val NOT_HELD_UPDATE = "/api/v2/MoneyIn/update/$NOT_HELD"
+
+/** The close of a payment held for no reader answer, which claims no outcome. */
+private const val NO_OUTCOME = "{}"
+
+/** The close's refusal of a token that may not act on the transaction, as QA answered it. */
+private const val NOT_PERMITTED =
+    """{"title":"Bad Request","status":400,"detail":"Invalid Authorization Token","code":"E9001"}"""
+
 /** The service's wording when a close names a transaction the processor has no record of. */
 private const val NOT_AT_PROCESSOR = "Unable to locate the transaction with the payment processor"
 
@@ -115,6 +126,25 @@ private fun script(
  * through. A failing close is answered 500, which is the status the close retries, so it costs three of
  * [closes].
  */
+private fun scriptWithUnheldCloses(
+    closes: Int = 1,
+    answer: String = "{}",
+    status: () -> Int = { 200 },
+) = RouteScript(
+    RouteScript.CHALLENGE to listOf(challengeBody()),
+    RouteScript.REGISTER to listOf(registerBody(status = "active")),
+    RouteScript.ATTEST to listOf(attestBody()),
+    RouteScript.CONFIG to listOf(configBody()),
+    INITIATE to listOf(approved("""{"paymentTransId":"$TRANS_ID"}""")),
+    UPDATE to listOf("{}"),
+    NOT_HELD_UPDATE to List(closes) { answer },
+    statusFor = { path -> if (path == NOT_HELD_UPDATE) status() else null },
+)
+
+/** What each close sent to [path], as text. */
+private fun SessionFixture.closesSentTo(path: String = UPDATE): List<String?> =
+    requestsTo(path).map { it.body?.decodeToString() }
+
 private fun scriptWithCloseControl(
     opens: Int = 1,
     closes: Int,
@@ -3190,11 +3220,10 @@ class TapToPayChargeRunnerTest {
                 fixture.routes.count { it.startsWith("/api/v2/MoneyIn/update") } > closesBefore,
             )
             // And the payment is no longer held, which is the half a cancellation would otherwise skip:
-            // asking again is refused rather than closing a payment that already closed.
+            // asking again sends no reader answer for a payment that already closed.
             cancelOnClose = false
-            val again = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
-            assertTrue(again.toString(), again is TapToPayException)
-            assertEquals(TapToPayCapture.UNKNOWN, (again as TapToPayException).capture)
+            runner.closeCaptured(TRANS_ID)
+            assertEquals(NO_OUTCOME, fixture.closesSentTo().last())
         }
 
     @Test
@@ -3223,6 +3252,51 @@ class TapToPayChargeRunnerTest {
 
             assertEquals("the card was read again", 1, fixture.enrollment.trace.count { it == READ })
             assertEquals("a second payment was opened", 1, fixture.routes.count { it == INITIATE })
+        }
+
+    @Test
+    fun `a recovery the caller may not send is reported as refused, once, and the payment stays held`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Three for the charge's own close, one refused recovery, one recovery that lands.
+            var mode = "fail"
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to listOf(approved("""{"paymentTransId":"$TRANS_ID"}""")),
+                        UPDATE to listOf("{}", "{}", "{}", NOT_PERMITTED, "{}"),
+                        statusFor = { path ->
+                            when {
+                                path != UPDATE -> null
+                                mode == "fail" -> 500
+                                mode == "refuse" -> 400
+                                else -> 200
+                            }
+                        },
+                    ),
+                ).also { it.coordinator.initialize() }
+            val runner = runnerOver(fixture)
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            mode = "refuse"
+            val refused = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.PERMISSION_DENIED, refused.type)
+            assertEquals(TRANS_ID, refused.paymentTransId)
+            assertEquals(TapToPayCapture.CHARGED, refused.capture)
+            assertEquals("the refusal was sent again", 4, fixture.routes.count { it == UPDATE })
+
+            mode = "land"
+            runner.closeCaptured(TRANS_ID)
+            assertEquals(5, fixture.routes.count { it == UPDATE })
+            assertNotEquals(
+                "the refused payment was not kept for another attempt",
+                NO_OUTCOME,
+                fixture.closesSentTo().last(),
+            )
         }
 
     @Test
@@ -3329,20 +3403,139 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `closing a payment this terminal does not hold says unknown, never not-charged`() =
+    fun `closing a payment this terminal does not hold sends the close, claiming no outcome`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = SessionFixture(scriptWithUnheldCloses()).also { it.coordinator.initialize() }
+
+            runnerOver(fixture).closeCaptured(NOT_HELD)
+
+            assertEquals(listOf(NO_OUTCOME), fixture.closesSentTo(NOT_HELD_UPDATE))
+            assertEquals(
+                "application/json",
+                fixture.requestsTo(NOT_HELD_UPDATE).single().headers["Content-Type"],
+            )
+        }
+
+    @Test
+    fun `an unheld close that fails says unknown, never not-charged, and is reported so`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The state a host reaches after a restart, holding an identifier it persisted. Reporting it as
             // never charged would tell that host a second charge is safe for a payment that took money.
+            val fixture =
+                SessionFixture(scriptWithUnheldCloses(closes = 3) { 500 }).also { it.coordinator.initialize() }
+            var ended: Throwable? = null
+
+            val reported =
+                closeFailuresDuring {
+                    ended =
+                        runCatching { runnerOver(fixture).closeCaptured(NOT_HELD) }.exceptionOrNull()
+                }
+
+            val refusal = ended
+            assertTrue(refusal.toString(), refusal is TapToPayException)
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, (refusal as TapToPayException).type)
+            assertEquals(NOT_HELD, refusal.paymentTransId)
+            assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
+            assertEquals(TelemetryProperties.Origin.RETRY, reported.single()[TelemetryProperty.ORIGIN.key])
+            assertEquals("unknown", reported.single()[TelemetryProperty.CAPTURE.key])
+        }
+
+    @Test
+    fun `an identifier that cannot address one transaction is never sent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A dot segment resolves to the collection or its parent, so the close would reach another route.
             val fixture = readyFixture()
             val runner = runnerOver(fixture)
 
-            val refusal =
-                runCatching { runner.closeCaptured("12-not-held") }.exceptionOrNull()
+            for (unaddressable in listOf(".", "..", " ")) {
+                val refusal = runCatching { runner.closeCaptured(unaddressable) }.exceptionOrNull()
 
-            assertTrue(refusal.toString(), refusal is TapToPayException)
-            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, (refusal as TapToPayException).type)
-            assertEquals("12-not-held", refusal.paymentTransId)
-            assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
+                assertTrue("$unaddressable: $refusal", refusal is TapToPayException)
+                assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, (refusal as TapToPayException).type)
+                assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
+            }
+            assertTrue(
+                "a close was sent: ${fixture.routes}",
+                fixture.routes.none { it.startsWith("/api/v2/MoneyIn/") && it != INITIATE },
+            )
+        }
+
+    @Test
+    fun `an unheld close the caller may not send is reported as refused, once`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(scriptWithUnheldCloses(answer = NOT_PERMITTED) { 400 })
+                    .also { it.coordinator.initialize() }
+
+            var refused: TapToPayException? = null
+            val reported =
+                closeFailuresDuring {
+                    refused =
+                        runCatching { runnerOver(fixture).closeCaptured(NOT_HELD) }.exceptionOrNull()
+                            as TapToPayException
+                }
+
+            assertEquals(PayabliErrorType.PERMISSION_DENIED, refused!!.type)
+            assertEquals(NOT_HELD, refused!!.paymentTransId)
+            assertEquals(TapToPayCapture.UNKNOWN, refused!!.capture)
+            assertEquals("the refusal was sent again", 1, fixture.requestsTo(NOT_HELD_UPDATE).size)
+            assertEquals(
+                PayabliErrorType.PERMISSION_DENIED.code.toString(),
+                reported.single()[TelemetryProperty.ERROR_NUMBER.key],
+            )
+        }
+
+    @Test
+    fun `a payment whose charge failed before the reader answered closes again`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2)
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+            val runner = runnerOver(fixture)
+            val failure =
+                runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                    .exceptionOrNull() as TapToPayException
+
+            runner.closeCaptured(failure.paymentTransId!!)
+
+            assertEquals(NO_OUTCOME, fixture.closesSentTo().last())
+            assertEquals(2, fixture.closesSentTo().size)
+        }
+
+    @Test
+    fun `a process that holds nothing closes a payment by its identifier alone`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A restart leaves nothing held, and a terminal built afterwards has only the identifier the host kept.
+            val fixture = SessionFixture(scriptWithUnheldCloses()).also { it.coordinator.initialize() }
+
+            runnerOver(fixture, entry = "an-entry-point-after-a-restart").closeCaptured(NOT_HELD)
+
+            assertEquals(listOf(NO_OUTCOME), fixture.closesSentTo(NOT_HELD_UPDATE))
+        }
+
+    @Test
+    fun `a close of a payment not held waits for a running charge, then sends`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture =
+                SessionFixture(scriptWithUnheldCloses(), readGate = { held.await() })
+                    .also { it.coordinator.initialize() }
+            val charge = chargeParkedInTheRead(fixture, held)
+
+            val close =
+                async(UnconfinedTestDispatcher(testScheduler)) {
+                    runCatching { runnerOver(fixture).closeCaptured(NOT_HELD) }
+                }
+            assertFalse("the close did not wait for the charge", close.isCompleted)
+            assertTrue("the close was sent during the charge", fixture.requestsTo(NOT_HELD_UPDATE).isEmpty())
+            held.complete(Unit)
+
+            completing("the charge") { charge.await() }.getOrThrow()
+            completing("the close") { close.await() }.getOrThrow()
+            assertEquals(
+                "the close went before the charge's own",
+                listOf(UPDATE, NOT_HELD_UPDATE),
+                fixture.routes.filter { it == UPDATE || it == NOT_HELD_UPDATE },
+            )
         }
 
     /**
@@ -3626,7 +3819,8 @@ class TapToPayChargeRunnerTest {
             // A close on another paypoint of the same stripe holds the lock, so this charge is claimed but not locked.
             val stripe = { entry: String -> (entry.hashCode().toLong() and 0x7fffffffL).toInt() % 16 }
             assertEquals("the entry points share a lock stripe", stripe(ENTRY), stripe(STRIPE_SHARING_ENTRY))
-            val other = readyFixture()
+            // One close for the close that waits, one for the charge that follows it.
+            val other = readyFixture(updates = 2)
             val device = checkNotNull(other.enrollment.store.read(ENTRY))
             other.enrollment.store.write(AttestedDevice(STRIPE_SHARING_ENTRY, device.deviceId, device.keyId))
             var closeFails = true
@@ -3954,7 +4148,7 @@ class TapToPayChargeRunnerTest {
             // one. Whichever settles the attempt first leaves the other to mint a fresh key and charge again.
             var closeFails = true
             val fixture =
-                SessionFixture(scriptWithCloseControl(opens = 2, closes = 4) { closeFails })
+                SessionFixture(scriptWithCloseControl(opens = 2, closes = 5) { closeFails })
                     .also { it.coordinator.initialize() }
             val first = runnerOver(fixture)
             val second = runnerOver(fixture)
@@ -3964,10 +4158,9 @@ class TapToPayChargeRunnerTest {
             second.charge(details(), PAYER, TapToPayInvoiceData(), null)
 
             // The second terminal opened a payment, which drops what any terminal was holding for this
-            // paypoint, so the first has nothing left to close.
-            val refusal = runCatching { first.closeCaptured(TRANS_ID) }.exceptionOrNull()
-            assertTrue(refusal.toString(), refusal is TapToPayException)
-            assertEquals(TapToPayCapture.UNKNOWN, (refusal as TapToPayException).capture)
+            // paypoint, so the first holds no reader answer to send.
+            first.closeCaptured(TRANS_ID)
+            assertEquals(NO_OUTCOME, fixture.closesSentTo().last())
         }
 
     @Test
@@ -3975,14 +4168,42 @@ class TapToPayChargeRunnerTest {
         runTest(timeout = TEST_TIMEOUT) {
             // Nothing is kept once the close lands, so the processor metadata the recovery held is
             // released with it.
-            val fixture = readyFixture()
+            val fixture = readyFixture(updates = 2)
             val runner = runnerOver(fixture)
             val receipt = runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
 
-            val refusal = runCatching { runner.closeCaptured(receipt.paymentTransId) }.exceptionOrNull()
+            runner.closeCaptured(receipt.paymentTransId)
 
-            assertTrue(refusal.toString(), refusal is TapToPayException)
-            assertEquals(TapToPayCapture.UNKNOWN, (refusal as TapToPayException).capture)
+            assertEquals("the second close was not sent", 2, fixture.closesSentTo().size)
+            assertEquals(NO_OUTCOME, fixture.closesSentTo().last())
+        }
+
+    @Test
+    fun `closing another payment leaves the held one held`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Three for the charge's close that gives up, one for the held payment's close.
+            var closeFails = true
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to listOf(approved("""{"paymentTransId":"$TRANS_ID"}""")),
+                        UPDATE to List(4) { "{}" },
+                        NOT_HELD_UPDATE to listOf("{}"),
+                        statusFor = { path -> if (path == UPDATE && closeFails) 500 else null },
+                    ),
+                ).also { it.coordinator.initialize() }
+            val runner = runnerOver(fixture)
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            closeFails = false
+
+            runner.closeCaptured(NOT_HELD)
+            runner.closeCaptured(TRANS_ID)
+
+            assertNotEquals("the held payment was let go", NO_OUTCOME, fixture.closesSentTo().last())
         }
 
     @Test
@@ -3994,19 +4215,17 @@ class TapToPayChargeRunnerTest {
             // service never opened.
             var closeFails = true
             val fixture =
-                SessionFixture(scriptWithCloseControl(opens = 1, closes = 3) { closeFails })
+                SessionFixture(scriptWithCloseControl(opens = 1, closes = 5) { closeFails })
                     .also { it.coordinator.initialize() }
-            runCatching {
-                runnerOver(fixture, PayabliEnvironment.SANDBOX)
-                    .charge(details(), PAYER, TapToPayInvoiceData(), null)
-            }
+            val sandbox = runnerOver(fixture, PayabliEnvironment.SANDBOX)
+            runCatching { sandbox.charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             closeFails = false
-            val elsewhere = runnerOver(fixture, PayabliEnvironment.PRODUCTION)
-            val refusal = runCatching { elsewhere.closeCaptured(TRANS_ID) }.exceptionOrNull()
+            runnerOver(fixture, PayabliEnvironment.PRODUCTION).closeCaptured(TRANS_ID)
+            assertEquals("the reader's answer reached another environment", NO_OUTCOME, fixture.closesSentTo()[3])
 
-            assertTrue(refusal.toString(), refusal is TapToPayException)
-            assertEquals(TapToPayCapture.UNKNOWN, (refusal as TapToPayException).capture)
+            sandbox.closeCaptured(TRANS_ID)
+            assertNotEquals("the sandbox payment was let go", NO_OUTCOME, fixture.closesSentTo()[4])
         }
 
     @Test
@@ -4015,7 +4234,7 @@ class TapToPayChargeRunnerTest {
             // Three for the close that gives up, one for the second payment's close after its tap failed.
             var closeFails = true
             val fixture =
-                SessionFixture(scriptWithCloseControl(opens = 2, closes = 4) { closeFails })
+                SessionFixture(scriptWithCloseControl(opens = 2, closes = 5) { closeFails })
                     .also { it.coordinator.initialize() }
             val runner = runnerOver(fixture)
             runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
@@ -4024,9 +4243,8 @@ class TapToPayChargeRunnerTest {
             fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
             runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
-            val refusal = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
-            assertTrue(refusal.toString(), refusal is TapToPayException)
-            assertEquals(TapToPayCapture.UNKNOWN, (refusal as TapToPayException).capture)
+            runner.closeCaptured(TRANS_ID)
+            assertEquals("the first payment's answer was still sent", NO_OUTCOME, fixture.closesSentTo().last())
         }
 
     @Test
