@@ -39,6 +39,7 @@ import com.payabli.sdk.payin.model.PayInTransactionStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
@@ -55,6 +56,9 @@ import java.math.BigDecimal
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 /**
  * Every flow this module supports, against a real environment.
@@ -253,8 +257,9 @@ class PayInLiveFlowsInstrumentedTest {
             val transId = captured.transaction?.paymentTransId
             assertNotNull("an approval with no transaction to read: $captured", transId)
             assertTrue(flow.consume())
+            waitUntilSaved(transId!!, flow)
 
-            val read = flow.readTransaction(transId!!).orFail("reading a capture back")
+            val read = flow.readTransaction(transId).orFail("reading a capture back")
 
             assertEquals(PayInTransactionStatus.Captured, read.status)
         }
@@ -361,10 +366,33 @@ class PayInLiveFlowsInstrumentedTest {
             repeated,
         )
         assertTrue(flow.consume())
+        waitUntilSaved(original!!, flow)
         assertEquals(
             PayInTransactionStatus.Captured,
-            flow.readTransaction(original!!).orFail("reading the original payment back").status,
+            flow.readTransaction(original).orFail("reading the original payment back").status,
         )
+    }
+
+    /**
+     * Reads [transId] until the service finds it, every 10 seconds for at most 5 minutes.
+     *
+     * A paypoint can save a payment after answering it; until then a read is not found. Past the ceiling the
+     * caller's own read fails and names the identifier.
+     *
+     * @param transId the payment's identifier, as the charge returned it.
+     * @param flow the flow to read it through.
+     */
+    private suspend fun waitUntilSaved(
+        transId: String,
+        flow: PayInPaymentFlow,
+    ) {
+        val deadline = TimeSource.Monotonic.markNow() + 5.minutes
+        while (deadline.hasNotPassedNow()) {
+            val failure = flow.readTransaction(transId).exceptionOrNull() as? PayabliException
+            if (failure?.type != PayabliErrorType.TRANSACTION_NOT_FOUND) return
+            Log.i("PayInLiveFlows", "not saved yet: transaction=$transId")
+            delay(10.seconds)
+        }
     }
 
     private fun PayInTransactionOptions.asRetry(reference: String?) =
