@@ -2,6 +2,7 @@
 
 package com.payabli.sdk.core.auth
 
+import com.payabli.sdk.core.SessionWiring
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
@@ -27,7 +28,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -89,6 +89,21 @@ class PayabliAuthTest {
         assertEquals(emptyList<String>(), returningTheLock.map { it.name })
     }
 
+    @Test
+    fun `a holder takes the lock its wiring hands in`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val lock = Mutex()
+            val subject = auth(lock) { "initial-token" }
+            lock.lock()
+
+            val read = async { subject.accessToken() }
+            yield()
+            assertFalse("the read went through a lock the test holds", read.isCompleted)
+
+            lock.unlock()
+            assertEquals("initial-token", read.await())
+        }
+
     private fun auth(tokenProvider: PayabliTokenProvider = PayabliTokenProvider { "initial-token" }) =
         auth(Mutex(), tokenProvider)
 
@@ -96,13 +111,13 @@ class PayabliAuthTest {
         lock: Mutex,
         tokenProvider: PayabliTokenProvider,
     ) = PayabliAuth(
-        lock,
         PayabliConfig(
             entryPoint = "entry",
             environment = PayabliEnvironment.SANDBOX,
             tokenProvider = tokenProvider,
         ),
         DefaultSdkLogger(LogCategory.AUTH, sink),
+        wiring = SessionWiring(authLock = lock),
     )
 
     /**
@@ -1071,23 +1086,6 @@ class PayabliAuthTest {
                 assertEquals(TERMINAL_REASON, (it.exceptionOrNull() as PayabliException).reason)
             }
             assertEquals("no caller reached the provider", 0, calls.get())
-        }
-
-    @Test
-    fun `reset revives a finished instance, so one test cannot poison the next`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            val subject = holding("initial-token") { "refreshed-token" }
-            assertTrue(subject.finishIfSettledOn("initial-token", terminal()))
-            assertNotNull(subject.terminalFailure)
-
-            subject.reset()
-
-            assertNull("reset must clear the terminal failure", subject.terminalFailure)
-            assertEquals(
-                "a revived instance refreshes normally",
-                "refreshed-token",
-                completing("the refresh after reset") { subject.invalidateAndRefresh("initial-token") },
-            )
         }
 
     @Test

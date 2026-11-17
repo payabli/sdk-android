@@ -1,7 +1,6 @@
 package com.payabli.sdk.core.auth
 
-import androidx.annotation.VisibleForTesting
-import com.payabli.sdk.core.StrippedFromRelease
+import com.payabli.sdk.core.SessionWiring
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.isHeaderSafe
 import com.payabli.sdk.core.logging.LogCategory
@@ -90,46 +89,21 @@ internal const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 30_000L
  * Concurrent refreshes share one provider call and one outcome, so a rejected token cannot fan out into
  * one provider call per in-flight request.
  */
-internal class PayabliAuth private constructor(
+internal class PayabliAuth(
     private val config: PayabliConfig,
-    private val logger: SdkLogger,
-    private val providerTimeoutMillis: Long,
-    private val mutex: Mutex,
+    private val logger: SdkLogger = LoggerRegistry.of(LogCategory.AUTH),
+    private val providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
+    wiring: SessionWiring = SessionWiring.PRODUCTION,
 ) {
-    /**
-     * Builds an instance that holds its own lock.
-     *
-     * @param config the session configuration, whose provider mints every token.
-     * @param logger where refresh outcomes are logged.
-     * @param providerTimeoutMillis the ceiling on one provider call.
-     */
-    constructor(
-        config: PayabliConfig,
-        logger: SdkLogger = LoggerRegistry.of(LogCategory.AUTH),
-        providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
-    ) : this(config, logger, providerTimeoutMillis, Mutex())
-
-    /**
-     * Takes a lock the test holds, so the commit and the cleanup contend. Both run under [NonCancellable]
-     * for that case, and an uncontended lock cannot reach it.
-     *
-     * @param mutex the lock every read and write of this instance takes.
-     * @param config the session configuration, whose provider mints every token.
-     * @param logger where refresh outcomes are logged.
-     */
-    @VisibleForTesting
-    @StrippedFromRelease
-    constructor(
-        mutex: Mutex,
-        config: PayabliConfig,
-        logger: SdkLogger,
-    ) : this(config, logger, DEFAULT_PROVIDER_TIMEOUT_MILLIS, mutex)
-
     init {
         // RetryPolicy validates its timings the same way. Zero or negative would time out before the
         // provider was ever called and report that as a token failure.
         require(providerTimeoutMillis > 0) { "providerTimeoutMillis must be positive" }
     }
+
+    // Every read and write of this instance's state takes it. A debug build can hand one in, so a test can hold it
+    // and make the commit and the cleanup contend; both run under NonCancellable for that case.
+    private val mutex: Mutex = wiring.authLock ?: Mutex()
 
     // Null until the first mint. Nothing is passed in, so the first read is what obtains a token.
     private var currentToken: String? = null
@@ -279,20 +253,6 @@ internal class PayabliAuth private constructor(
         val refused = mutex.withLock { pinnedRefusal } ?: return
         invalidateAndRefresh(refused)
         mutex.withLock { if (pinnedRefusal == refused) pinnedRefusal = null }
-    }
-
-    /** Drops the held token and any in-flight claim, and revives a finished instance. */
-    @VisibleForTesting
-    @StrippedFromRelease
-    internal suspend fun reset() {
-        mutex.withLock {
-            currentToken = null
-            inFlight = null
-            pinnedRefusal = null
-            // Without this a test that finishes the instance leaves it dead for every later one, and the
-            // failure lands somewhere unrelated.
-            finished = null
-        }
     }
 
     /**

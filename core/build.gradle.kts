@@ -1,3 +1,4 @@
+import com.android.build.api.variant.HostTestBuilder
 import com.payabli.buildlogic.GenerateExtraEnvironments
 import com.payabli.buildlogic.extraEnvironmentsSetting
 
@@ -7,7 +8,6 @@ plugins {
     id("payabli.publish")
     id("payabli.quality")
     id("payabli.api-surface")
-    id("payabli.release-strip")
 }
 
 // Environments this build adds to the two committed in PayabliEnvironment.kt. The setting appends and can do
@@ -46,9 +46,14 @@ android {
             "\"${providers.gradleProperty("payabli.version").get()}\"",
         )
 
-        // A digest input to DeviceIdentifierFactory, naming the SDK as a whole rather than this module.
-        // **Changing it changes the identifier every device reports**, so every registered device registers
-        // again as a stranger and owes a fresh activation code.
+        // Read by DeviceIdentifierFactory, as one of the three digest inputs. A fixed literal, so no
+        // escaping applies, and deliberately not this module's namespace: the value identifies the SDK as a
+        // whole rather than the module that happens to hold the code.
+        //
+        // **Changing this changes the identifier every device reports**, so every registered device
+        // registers again as a stranger and owes a fresh activation code. It moved once, on 2026-08-25, when
+        // the derivation was lifted out of the card-present module; card-present had not shipped, so the cost
+        // was every already-registered device re-registering. It should not move again.
         buildConfigField("String", "SDK_IDENTIFIER", "\"com.payabli.sdk\"")
     }
 
@@ -75,6 +80,11 @@ android {
 // The variant API rather than an `android.sourceSets` srcDir, because that one takes a directory and leaves
 // the compile task free to run before the generator has written into it. This carries the task dependency.
 androidComponents {
+    // The tests build a SessionWiring that only the debug copy can construct, so they cannot compile against
+    // release. The debug unit tests run the same main sources.
+    beforeVariants(selector().withBuildType("release")) { variant ->
+        variant.hostTests[HostTestBuilder.UNIT_TEST_TYPE]?.enable = false
+    }
     onVariants { variant ->
         variant.sources.kotlin?.addGeneratedSourceDirectory(
             generateExtraEnvironments,
@@ -85,21 +95,6 @@ androidComponents {
 
 kotlin {
     explicitApi()
-}
-
-// The test hooks that take an origin or reach into the session, by name, so one that loses its
-// `@StrippedFromRelease` fails `verifyReleaseStrip` rather than shipping.
-releaseStrip {
-    absent.addAll(
-        "com/payabli/sdk/core/PayabliSession\$Companion.initializeAgainst",
-        "com/payabli/sdk/core/PayabliSession\$Companion.initializeWith",
-        "com/payabli/sdk/core/PayabliSession\$Companion.reset",
-        "com/payabli/sdk/core/auth/PayabliAuth.reset",
-        "com/payabli/sdk/core/auth/PayabliAuth.<init>(Lkotlinx/coroutines/sync/Mutex;" +
-            "Lcom/payabli/sdk/core/config/PayabliConfig;Lcom/payabli/sdk/core/logging/SdkLogger;)V",
-        "com/payabli/sdk/core/network/TransportFactory.authenticatedAgainst",
-        "com/payabli/sdk/core/network/impl/PayabliService\$Companion.createWithDecorations",
-    )
 }
 
 dependencies {

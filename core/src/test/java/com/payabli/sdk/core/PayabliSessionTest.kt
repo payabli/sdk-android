@@ -11,6 +11,7 @@ import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportFactory
+import com.payabli.sdk.core.network.authenticatedAgainst
 import com.payabli.sdk.core.network.impl.AuthFailureListener
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.CompletableDeferred
