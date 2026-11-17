@@ -90,8 +90,8 @@ public class PayabliTTP private constructor(
      * why this does not turn on whether an earlier close reached the service. It cannot: a response that
      * never arrived may have followed a close that applied.
      *
-     * **Any identifier this entry point produced can be closed**, including one kept from before the process
-     * restarted, one taken under another environment, and one whose charge failed before the reader answered.
+     * **Any identifier this entry point produced under this environment can be closed**, including one kept
+     * from before the process restarted and one whose charge failed before the reader answered.
      * The payment this SDK still holds for this entry point and environment is closed with the reader's
      * answer it kept, and the failure this raises carries the capture state that answer supports. Any other
      * identifier is closed without one, and its failure carries [TapToPayCapture.UNKNOWN]. A close the caller

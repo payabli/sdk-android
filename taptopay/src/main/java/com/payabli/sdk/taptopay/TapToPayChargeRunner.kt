@@ -23,6 +23,7 @@ import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.ChargeKeyRefusal
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
+import com.payabli.sdk.taptopay.network.isUsableTransId
 import com.payabli.sdk.taptopay.network.sendableAmountOrNull
 import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
@@ -537,6 +538,15 @@ internal class TapToPayChargeRunner(
         region.withLock {
             val pending = HELD[scope]?.takeIf { it.paymentTransId == paymentTransId }
             if (pending == null) {
+                // Sent, a dot segment would close whatever route it resolves to. Unknown is what is true of it.
+                if (!paymentTransId.isUsableTransId()) {
+                    throw failed(
+                        IllegalStateException("that identifier cannot name one transaction"),
+                        PayabliErrorType.PAYMENT_NOT_CLOSED,
+                        paymentTransId,
+                        TapToPayCapture.UNKNOWN,
+                    )
+                }
                 closeReported(paymentTransId, TapToPayCapture.UNKNOWN) { client.close(paymentTransId) }
                 return@withLock
             }

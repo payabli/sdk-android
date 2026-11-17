@@ -272,8 +272,8 @@ It also carries `capture` and `paymentTransId`:
 | `UNKNOWN` | The outcome isn't known. | Look up `paymentTransId` with [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction) before charging again. When there's no ID, find the transaction in the Payabli portal. To charge for the same sale again, pass `attempt = PayabliAttempt.Retry` to `charge` with the same amount, service fee, currency and invoice number, so it's sent as a repeat of that sale rather than a second one. |
 | `CHARGED` | The card was charged, but the step that confirms it didn't complete. | Don't charge again. Call `closeCapturedCharge(paymentTransId)`, which confirms it without reading the card again. |
 
-`closeCapturedCharge` takes any `paymentTransId` this entry point produced, including one kept from before the
-app restarted. The payment the SDK still holds is closed with the reader's answer; any other is closed
+`closeCapturedCharge` takes any `paymentTransId` this entry point produced in the same environment, including one
+kept from before the app restarted. The payment the SDK still holds is closed with the reader's answer; any other is closed
 without one, and a failure carries `capture` `UNKNOWN`. A close that already succeeded can be sent again.
 
 One charge runs at a time across every `PayabliTTP` in the process. A charge made while another runs is refused

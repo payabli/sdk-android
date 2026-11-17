@@ -357,7 +357,7 @@ internal class TTPTransactionClient(
  * as they are and the resolved path addresses the collection or its parent instead of one transaction.
  *
  * The invariant is this client's: it closes a transaction only over a path that names that transaction, so
- * an identifier it cannot address is refused before a card is taken rather than after.
+ * an identifier it cannot address is refused before a card is taken, and before a close names it.
  *
  * Internal so a test can name a value, which is the half of this that rots.
  */

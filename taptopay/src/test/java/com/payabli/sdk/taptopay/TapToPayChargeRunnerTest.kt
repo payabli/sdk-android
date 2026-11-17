@@ -3287,10 +3287,11 @@ class TapToPayChargeRunnerTest {
 
             mode = "land"
             runner.closeCaptured(TRANS_ID)
-            assertEquals(
+            assertEquals(5, fixture.routes.count { it == UPDATE })
+            assertNotEquals(
                 "the refused payment was not kept for another attempt",
-                5,
-                fixture.routes.count { it == UPDATE },
+                NO_OUTCOME,
+                fixture.closesSentTo().last(),
             )
         }
 
@@ -3433,6 +3434,26 @@ class TapToPayChargeRunnerTest {
             assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
             assertEquals(TelemetryProperties.Origin.RETRY, reported.single()[TelemetryProperty.ORIGIN.key])
             assertEquals("unknown", reported.single()[TelemetryProperty.CAPTURE.key])
+        }
+
+    @Test
+    fun `an identifier that cannot address one transaction is never sent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A dot segment resolves to the collection or its parent, so the close would reach another route.
+            val fixture = readyFixture()
+            val runner = runnerOver(fixture)
+
+            for (unaddressable in listOf(".", "..", " ")) {
+                val refusal = runCatching { runner.closeCaptured(unaddressable) }.exceptionOrNull()
+
+                assertTrue("$unaddressable: $refusal", refusal is TapToPayException)
+                assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, (refusal as TapToPayException).type)
+                assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
+            }
+            assertTrue(
+                "a close was sent: ${fixture.routes}",
+                fixture.routes.none { it.startsWith("/api/v2/MoneyIn/") && it != INITIATE },
+            )
         }
 
     @Test
