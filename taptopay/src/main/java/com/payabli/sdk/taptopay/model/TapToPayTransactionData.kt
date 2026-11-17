@@ -16,7 +16,8 @@ import java.math.BigDecimal
  * [amount] is a [BigDecimal] and never a `Double`: binary floating point cannot hold `0.10`, which is not
  * a property a payment amount can afford.
  *
- * [currency] is what the payment is opened in. The reader charges in the currency it was armed with.
+ * [currency] is what the payment is opened in, and an omitted one is sent as USD. The reader charges in the
+ * currency it was armed with, which is always USD.
  */
 public class TapToPayPaymentDetails(
     public val amount: BigDecimal,
@@ -27,6 +28,13 @@ public class TapToPayPaymentDetails(
     /** Never the amounts: what is being charged is transaction data, and this reaches diagnostics. */
     override fun toString(): String = "TapToPayPaymentDetails"
 }
+
+/**
+ * The currency a payment is sent in: the one named, or USD when none is.
+ *
+ * @return the currency the payment is opened in.
+ */
+internal fun PayabliCurrency?.asSent(): PayabliCurrency = this ?: PayabliCurrency.USD
 
 /**
  * Who is paying.

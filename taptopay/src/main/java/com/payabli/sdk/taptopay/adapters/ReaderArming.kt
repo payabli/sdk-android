@@ -18,25 +18,18 @@ internal class ReaderArming(
 
 /** The environments the reader can be pointed at, by the vendor's own names. */
 internal enum class ReaderEnvironment {
-    DEV,
-    QA,
-    INT,
-    CAT,
     CERT,
-    PERF,
     PROD,
 }
 
 /** The currencies the reader can authorize in. */
 internal enum class ReaderCurrency {
     USD,
-    AUD,
 }
 
 /**
- * The credentials, read into something a reader can be built from.
- *
- * Nothing is defaulted. A blank field, an unknown environment and an unknown currency are all refused with
+ * The credentials, read into something a reader can be built from. Nothing is defaulted: a blank field, an
+ * environment other than `production` or `sandbox` and a currency other than `USD` are refused with
  * [CardReaderException.CredentialsUnusable], naming the field and never its value.
  */
 internal fun ReaderCredentials.toArming(): ReaderArming =
@@ -56,16 +49,13 @@ private fun required(
     value: String,
 ): String = value.trim().ifBlank { throw CardReaderException.CredentialsUnusable("$field is blank") }
 
-/** Either vocabulary: one of the reader's own names, or the deployment tier the credentials name. */
-private fun readEnvironment(value: String): ReaderEnvironment {
-    val named = value.trim().uppercase()
-    ReaderEnvironment.entries.firstOrNull { it.name == named }?.let { return it }
-    return when (named) {
+/** The deployment tier the credentials name. The reader's own names are refused. */
+private fun readEnvironment(value: String): ReaderEnvironment =
+    when (value.trim().uppercase()) {
         "PRODUCTION" -> ReaderEnvironment.PROD
         "SANDBOX" -> ReaderEnvironment.CERT
         else -> throw CardReaderException.CredentialsUnusable("environment is not one this reader knows")
     }
-}
 
 private fun readCurrency(value: String): ReaderCurrency {
     val named = value.trim().uppercase()

@@ -4,6 +4,7 @@ import com.payabli.sdk.payin.client.trimOrNull
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.model.asSent
 import com.payabli.sdk.payin.util.extensions.sendableOrNull
 import java.math.BigDecimal
 
@@ -56,7 +57,10 @@ internal class PayInPaymentDescription private constructor(
                 // The service charges an absent fee or surcharge as nothing.
                 serviceFee = (options.paymentDetails.serviceFee ?: BigDecimal.ZERO).asCharged(),
                 surcharge = (options.paymentDetails.surchargeFee ?: BigDecimal.ZERO).asCharged(),
-                currency = options.paymentDetails.currency?.code,
+                currency =
+                    options.paymentDetails.currency
+                        .asSent()
+                        .code,
                 rail = method.rail(),
                 orderId = options.orderId?.trimOrNull(),
             )

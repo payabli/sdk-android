@@ -131,6 +131,13 @@ class TTPTransactionWireFormatTest {
     }
 
     @Test
+    fun `an omitted currency is sent as USD`() {
+        val omitted = encode(body(TapToPayPaymentDetails(BigDecimal("1"))))
+
+        assertTrue(omitted, omitted.contains(""""currency":"USD""""))
+    }
+
+    @Test
     fun `the processor's response travels verbatim under the vendor-named key`() {
         val response = """{"gatewayResponse":{"transactionState":"CAPTURED"},"source":{"card":{"last4":"1111"}}}"""
 

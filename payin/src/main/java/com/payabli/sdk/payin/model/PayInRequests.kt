@@ -11,6 +11,8 @@ import java.math.BigDecimal
  * reaches the wire as an unquoted number with two decimal places.
  *
  * [serviceFee] absent and [serviceFee] zero are different statements, and both are sendable.
+ *
+ * An omitted [currency] is sent as USD.
  */
 public class PayInPaymentDetails(
     public val totalAmount: BigDecimal,
@@ -27,6 +29,13 @@ public class PayInPaymentDetails(
      */
     override fun toString(): String = "PayInPaymentDetails(hasServiceFee=${serviceFee != null})"
 }
+
+/**
+ * The currency a payment is sent in: the one named, or USD when none is.
+ *
+ * @return the currency the payment is made in.
+ */
+internal fun PayabliCurrency?.asSent(): PayabliCurrency = this ?: PayabliCurrency.USD
 
 /**
  * Who is paying, as far as the transaction should record it.

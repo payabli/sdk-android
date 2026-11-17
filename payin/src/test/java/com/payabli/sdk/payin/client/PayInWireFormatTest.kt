@@ -1,8 +1,10 @@
 package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.network.PayabliJson
+import com.payabli.sdk.payin.model.PayInPaymentDetails
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
 
@@ -59,6 +61,17 @@ class PayInWireFormatTest {
 
         assertNull(decoded.feeAmount)
         assertNull(decoded.surchargeFee)
+    }
+
+    @Test
+    fun `an omitted currency is sent as USD`() {
+        val body =
+            PayabliJson.format.encodeToString(
+                PaymentDetailsBody.serializer(),
+                PayInPaymentDetails(totalAmount = BigDecimal("10.00")).toBody(),
+            )
+
+        assertTrue(body, body.contains(""""currency":"USD""""))
     }
 
     @Test

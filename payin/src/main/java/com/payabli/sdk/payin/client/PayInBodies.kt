@@ -4,6 +4,7 @@ import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInVendorData
+import com.payabli.sdk.payin.model.asSent
 
 /**
  * Model to wire, for the parts both clients send, blank strings absent throughout: a field the payer
@@ -17,7 +18,7 @@ internal fun PayInPaymentDetails.toBody(): PaymentDetailsBody =
         totalAmount = totalAmount,
         serviceFee = serviceFee,
         surchargeFee = surchargeFee,
-        currency = currency?.code,
+        currency = currency.asSent().code,
         checkNumber = checkNumber?.trimOrNull(),
         checkUniqueId = checkUniqueId?.trimOrNull(),
     )

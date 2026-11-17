@@ -7,9 +7,9 @@ import java.util.Currency
 import java.util.Locale
 
 /**
- * [amount] in [locale]'s grouping and decimal separator, with [currency]'s symbol. A currency that is
- * absent or not an ISO 4217 code draws the number with no symbol: the charge is then made in a
- * currency the request does not name. A value too extreme to round is written as its [BigDecimal.toString].
+ * [amount] in [locale]'s grouping and decimal separator, with [currency]'s symbol. A code that is absent or
+ * not ISO 4217 draws the number with no symbol. A value too extreme to round is written as its
+ * [BigDecimal.toString].
  *
  * @param amount the figure on the row.
  * @param currency the currency's ISO 4217 code, or null for none.

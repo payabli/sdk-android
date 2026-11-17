@@ -1458,8 +1458,6 @@ class PayInSubmissionTest {
                     Triple("service fee", described(), described(fee = "0.50")),
                     Triple("surcharge", described(surcharge = "1"), described(surcharge = "2")),
                     Triple("surcharge dropped", described(surcharge = "1"), described()),
-                    Triple("currency omitted on the retry", described(), described(currency = null)),
-                    Triple("currency set only on the retry", described(currency = null), described()),
                     Triple("rail", described(), described(method = PayInPaymentMethod.Check("Ada"))),
                     Triple("order", described(orderId = "order-1"), described(orderId = "order-2")),
                 )
@@ -1512,19 +1510,25 @@ class PayInSubmissionTest {
         runTest(timeout = timeout) {
             val cases =
                 listOf(
-                    "rounding" to described(total = "10.001"),
-                    "absent fee as zero" to described(fee = "0"),
-                    "absent surcharge as zero" to described(surcharge = "0"),
-                    "order set only on the retry" to described(orderId = "order-9"),
-                    "stored card" to described(method = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "s-1")),
-                    "cloud device" to described(method = PayInPaymentMethod.CloudDevice("device-1")),
+                    Triple("rounding", described(), described(total = "10.001")),
+                    Triple("currency omitted on the retry", described(), described(currency = null)),
+                    Triple("currency set only on the retry", described(currency = null), described()),
+                    Triple("absent fee as zero", described(), described(fee = "0")),
+                    Triple("absent surcharge as zero", described(), described(surcharge = "0")),
+                    Triple("order set only on the retry", described(), described(orderId = "order-9")),
+                    Triple(
+                        "stored card",
+                        described(),
+                        described(method = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "s-1")),
+                    ),
+                    Triple("cloud device", described(), described(method = PayInPaymentMethod.CloudDevice("device-1"))),
                 )
-            for ((field, retry) in cases) {
+            for ((field, first, retry) in cases) {
                 minted.set(0)
                 PayInKeyStore.forgetHeld()
                 val transport = FakePayInTransport.failingWith(dropped())
                 val submission = submissionOver(transport)
-                submission.capture(TEST_ENTRY_POINT, described().asNewPayment())
+                submission.capture(TEST_ENTRY_POINT, first.asNewPayment())
 
                 assertSentUnderTheHeldKey(field, submission, transport, retry)
             }

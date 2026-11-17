@@ -4,6 +4,7 @@ import android.content.Context
 import com.payabli.sdk.core.model.PayabliCurrency
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.model.PayInPaymentDetails
+import com.payabli.sdk.payin.model.asSent
 import com.payabli.sdk.payin.util.extensions.formatAmount
 import com.payabli.sdk.payin.util.extensions.sendableOrNull
 import java.math.BigDecimal
@@ -74,13 +75,13 @@ public object PayInSummaryRows {
      * [amount] as the form writes it: the default locale's separators, [currency]'s symbol, two places.
      *
      * @param amount the figure on the row.
-     * @param currency the payment's currency, or null for none.
+     * @param currency the payment's currency. Null is drawn as USD, the currency an omitted one is sent in.
      * @return [amount] as the form writes it.
      */
     public fun formattedAmount(
         amount: BigDecimal,
         currency: PayabliCurrency?,
-    ): String = formatAmount(amount, currency?.code, Locale.getDefault())
+    ): String = formatAmount(amount, currency.asSent().code, Locale.getDefault())
 }
 
 /**
