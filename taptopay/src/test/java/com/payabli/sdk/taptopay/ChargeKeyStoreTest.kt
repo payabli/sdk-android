@@ -85,6 +85,8 @@ class ChargeKeyStoreTest {
                 listOf(
                     Triple("amount", sale(), sale(amount = "10.01")),
                     Triple("service fee", sale(), sale(fee = "0.50")),
+                    Triple("currency omitted on the retry", sale(), sale(currency = null)),
+                    Triple("currency set only on the retry", sale(currency = null), sale()),
                     Triple("invoice", sale(invoice = "inv-1"), sale(invoice = "inv-2")),
                 )
             for ((field, first, retry) in cases) {
