@@ -90,14 +90,41 @@ internal const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 30_000L
  * Concurrent refreshes share one provider call and one outcome, so a rejected token cannot fan out into
  * one provider call per in-flight request.
  */
-internal class PayabliAuth(
+internal class PayabliAuth private constructor(
     private val config: PayabliConfig,
-    private val logger: SdkLogger = LoggerRegistry.of(LogCategory.AUTH),
-    private val providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
-    // A test passes its own and holds it, so the commit and the cleanup contend. Both run under
-    // NonCancellable for that case, and an uncontended lock cannot reach it.
-    private val mutex: Mutex = Mutex(),
+    private val logger: SdkLogger,
+    private val providerTimeoutMillis: Long,
+    private val mutex: Mutex,
 ) {
+    /**
+     * Builds an instance that holds its own lock.
+     *
+     * @param config the session configuration, whose provider mints every token.
+     * @param logger where refresh outcomes are logged.
+     * @param providerTimeoutMillis the ceiling on one provider call.
+     */
+    constructor(
+        config: PayabliConfig,
+        logger: SdkLogger = LoggerRegistry.of(LogCategory.AUTH),
+        providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
+    ) : this(config, logger, providerTimeoutMillis, Mutex())
+
+    /**
+     * Takes a lock the test holds, so the commit and the cleanup contend. Both run under [NonCancellable]
+     * for that case, and an uncontended lock cannot reach it.
+     *
+     * @param mutex the lock every read and write of this instance takes.
+     * @param config the session configuration, whose provider mints every token.
+     * @param logger where refresh outcomes are logged.
+     */
+    @VisibleForTesting
+    @StrippedFromRelease
+    constructor(
+        mutex: Mutex,
+        config: PayabliConfig,
+        logger: SdkLogger,
+    ) : this(config, logger, DEFAULT_PROVIDER_TIMEOUT_MILLIS, mutex)
+
     init {
         // RetryPolicy validates its timings the same way. Zero or negative would time out before the
         // provider was ever called and report that as a token failure.
@@ -356,8 +383,10 @@ internal class PayabliAuth(
         // NonCancellable for the same reason as the failure path: the token is already minted, and
         // cancellation arriving while this lock is contended would leave the claim set with no owner.
         val rotated = rejectedToken != null
+        // Read here, so the block reads a local and the class carries no accessor that returns its lock.
+        val lock = mutex
         withContext(NonCancellable) {
-            mutex.withLock {
+            lock.withLock {
                 currentToken = fresh
                 // A first mint replaces nothing, so it is not a rotation and [tokenChanges] does not carry
                 // it. Emitting it would report every session's first request as a refresh, to a collector
@@ -471,9 +500,12 @@ internal class PayabliAuth(
     private suspend fun finish(
         shared: CompletableDeferred<String>,
         outcome: PayabliGenericException,
-    ) = withContext(NonCancellable) {
-        mutex.withLock { inFlight = null }
-        shared.completeExceptionally(outcome)
+    ): Boolean {
+        val lock = mutex
+        return withContext(NonCancellable) {
+            lock.withLock { inFlight = null }
+            shared.completeExceptionally(outcome)
+        }
     }
 
     /**

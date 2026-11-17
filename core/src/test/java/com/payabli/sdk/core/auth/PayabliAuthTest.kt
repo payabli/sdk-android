@@ -82,6 +82,13 @@ class PayabliAuthTest {
             .also { it.accessToken() }
     }
 
+    @Test
+    fun `no method hands out the lock`() {
+        val returningTheLock = PayabliAuth::class.java.declaredMethods.filter { it.returnType == Mutex::class.java }
+
+        assertEquals(emptyList<String>(), returningTheLock.map { it.name })
+    }
+
     private fun auth(tokenProvider: PayabliTokenProvider = PayabliTokenProvider { "initial-token" }) =
         auth(Mutex(), tokenProvider)
 
@@ -89,13 +96,13 @@ class PayabliAuthTest {
         lock: Mutex,
         tokenProvider: PayabliTokenProvider,
     ) = PayabliAuth(
+        lock,
         PayabliConfig(
             entryPoint = "entry",
             environment = PayabliEnvironment.SANDBOX,
             tokenProvider = tokenProvider,
         ),
         DefaultSdkLogger(LogCategory.AUTH, sink),
-        mutex = lock,
     )
 
     /**

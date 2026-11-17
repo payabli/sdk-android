@@ -102,6 +102,22 @@ class ReleaseStripTest {
         assertEquals(listOf("still present: $subject.kept"), findPresent(all.map { stripClass(it, plan) }, absent))
     }
 
+    @Test
+    fun `a member named with its descriptor matches that overload only`() {
+        val shipped =
+            listOf(
+                type(subject) {
+                    method("<init>")
+                    method("<init>", "(Lp/Lock;)V")
+                },
+            )
+
+        assertEquals(
+            listOf("still present: $subject.<init>(Lp/Lock;)V"),
+            findPresent(shipped, listOf("$subject.<init>(Lp/Lock;)V", "$subject.<init>(I)V")),
+        )
+    }
+
     /** The subject, a lambda its hook encloses, a class that lambda encloses. */
     private fun fixture(): List<ByteArray> =
         listOf(

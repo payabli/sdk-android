@@ -95,6 +95,8 @@ releaseStrip {
         "com/payabli/sdk/core/PayabliSession\$Companion.initializeWith",
         "com/payabli/sdk/core/PayabliSession\$Companion.reset",
         "com/payabli/sdk/core/auth/PayabliAuth.reset",
+        "com/payabli/sdk/core/auth/PayabliAuth.<init>(Lkotlinx/coroutines/sync/Mutex;" +
+            "Lcom/payabli/sdk/core/config/PayabliConfig;Lcom/payabli/sdk/core/logging/SdkLogger;)V",
         "com/payabli/sdk/core/network/TransportFactory.authenticatedAgainst",
         "com/payabli/sdk/core/network/impl/PayabliService\$Companion.createWithDecorations",
     )

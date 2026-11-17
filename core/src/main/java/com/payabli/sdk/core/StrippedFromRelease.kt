@@ -5,6 +5,6 @@ package com.payabli.sdk.core
  * `payabli.release-strip` build convention removes it, with the lambdas and coroutine classes it encloses, from
  * the release classes.
  */
-@Target(AnnotationTarget.FUNCTION)
+@Target(AnnotationTarget.FUNCTION, AnnotationTarget.CONSTRUCTOR)
 @Retention(AnnotationRetention.BINARY)
 internal annotation class StrippedFromRelease

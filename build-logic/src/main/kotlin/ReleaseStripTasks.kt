@@ -104,16 +104,20 @@ abstract class VerifyReleaseStrip : DefaultTask() {
  * instead of shipping.
  */
 abstract class ReleaseStripExtension {
-    /** Each as `binary/class/Name.member`, the member's source name without the JVM's suffixes. */
+    /**
+     * Each as `binary/class/Name.member`, the member's source name without the JVM's suffixes, or with the
+     * JVM descriptor appended to name one overload, which is how a constructor is named.
+     */
     abstract val absent: ListProperty<String>
 }
 
 /**
  * Lists each of [absent] that [classes] still declare. A member matches by its source name, so the JVM's
- * `$core` and value-class suffixes and a `$default` bridge all count.
+ * `$core` and value-class suffixes and a `$default` bridge all count; an entry with a descriptor matches that
+ * overload exactly.
  *
  * @param classes every class file in the artifact.
- * @param absent the members, as `binary/class/Name.member`.
+ * @param absent the members, as `binary/class/Name.member` or `binary/class/Name.member(descriptor)`.
  * @return one line per member still present.
  */
 internal fun findPresent(
@@ -122,7 +126,9 @@ internal fun findPresent(
 ): List<String> {
     val declared =
         classes.map(::readFacts).flatMap { fact ->
-            fact.methods.map { "${it.owner}.${it.name.split('$', '-').first()}" }
+            fact.methods.flatMap {
+                listOf("${it.owner}.${it.name.split('$', '-').first()}", "${it.owner}.${it.name}${it.descriptor}")
+            }
         }.toSet()
     return absent.filter { it in declared }.map { "still present: $it" }
 }
