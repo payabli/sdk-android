@@ -144,7 +144,8 @@ the service would no longer recognize it, the retry goes out under a new key. Ca
 retry is a new payment, and naming a reference whose outcome is still unknown fails with `PAYMENT_REFERENCE_OPEN`
 and isn't sent. So does the same call on a payment another `PayabliPayIn` is still sending, a declared retry
 included, and a capture or void of a transaction another one is still capturing or voiding. The held key lives in
-memory only, so after a restart read the transaction back.
+memory only, so after a restart a retry sends a new key and can charge twice. Settle the payment as
+[After your app restarts mid-payment](#after-your-app-restarts-mid-payment) describes.
 
 If the service refuses a declared retry, it arrives as `PayInException.Unsettled` with type `RETRY_REFUSED`: the
 earlier attempt reached the service, and its outcome is still unknown. Check that payment before trying again.
@@ -156,6 +157,30 @@ and the same `orderId` when the first attempt set one. A retry that describes a 
 On the form, while a payment's outcome is unknown, pass only that attempt's method in `allowedMethods`. The form
 then draws no method selector and keeps what the payer typed, so the total you show can't move to another method's
 fee. Pass the full list again once the outcome is settled.
+
+### After your app restarts mid-payment
+
+The SDK holds a payment's key in memory only. When your app is closed before a capture or authorization returns,
+the relaunched app holds no key for that payment, and the SDK doesn't look the payment up for you. Settle it from
+your own records:
+
+1. Set your own `orderId` on every capture and authorization, one for each payment and at most 255 characters,
+   and store it before you call the SDK. The SDK sends it without spaces at either end, so store it that way too.
+2. After a relaunch, for a payment whose outcome your app never received, read the payment back from your backend
+   by that `orderId` before paying again:
+   [`GET /api/Query/transactions/{entry}?orderId(eq)=<orderId>`](https://docs.payabli.com/developers/api-reference/query/get-list-of-transactions-for-an-entrypoint).
+3. Read the `TransStatus` of every record returned, and act on the first case that matches:
+   - **Any record is paid**: `1` (captured), or `11` (authorized) after an `authorize`. The payment went through.
+     Show it and send nothing.
+   - **Any record's outcome isn't known yet**: `10`, `11` after a `capture`, `-1`, `0`, or any other value. Query
+     again later, and don't pay.
+   - **No record is paid, or there is no record**: every one is `2` or `3` (declined), `5` (voided) or `-2`
+     (blocked), or the query returned none. Start a new payment with `attempt = PayabliAttempt.NewPayment`, a new
+     `paymentReference` and the same `orderId`.
+   - **The query failed**: query again. A failed query never means no record.
+
+Don't set `attempt = PayabliAttempt.Retry` across a relaunch. The SDK no longer holds the key, so it sends a new
+one, and the payment can be charged twice if the first attempt went through.
 
 ## Outcomes and errors
 
@@ -185,7 +210,7 @@ have gone through.
 | `Result.success` | Charged | Store the transaction ID |
 | `PayInException.Refused`, for example a decline | Not charged | You can retry |
 | `PayInException.InvalidInput` | Not charged; the request was refused before it was sent | Fix the named field |
-| `PayInException.Unsettled`, or a cancellation of `capture`, `authorize`, `captureAuthorizedTransaction` or `voidTransaction` after it was called | Unknown | Read the transaction back with `readTransaction` before charging again: by `Unsettled.paymentTransId` when there is one, otherwise find it in the Payabli portal by the `orderId` you set on the request, so set and keep one on each request. After `captureAuthorizedTransaction` or `voidTransaction`, read back the transaction ID you passed. |
+| `PayInException.Unsettled`, or a cancellation of `capture`, `authorize`, `captureAuthorizedTransaction` or `voidTransaction` after it was called | Unknown | Read the transaction back with `readTransaction` before charging again: by `Unsettled.paymentTransId` when there is one, otherwise, after `capture` or `authorize`, read it back from your backend by your `orderId`, as [After your app restarts mid-payment](#after-your-app-restarts-mid-payment) describes. After `captureAuthorizedTransaction` or `voidTransaction`, read back the transaction ID you passed. |
 | `PayInException.AlreadySubmitting` | Not charged; a submission is already running | Wait for it |
 | `PayInException.ServiceError`, `PayInException.Undecodable`, on `storeMethod` | The service answered with an error, or its answer couldn't be read | Read the stored methods back before storing again. On a charge, these arrive as `Unsettled` |
 | A core `PayabliException`, such as a refused credential, a rate limit or `TOKEN_PROVIDER_FAILED` | On a charge, not charged: an unknown outcome arrives as `Unsettled` instead. On `storeMethod`, a network failure may have saved the method | Branch on its `type`, or its `category` for the remedy. After a network failure on `storeMethod`, read the stored methods back before storing again |

@@ -379,8 +379,11 @@ When the outcome is unknown, look the transaction up before you charge again. On
 `readTransaction(transId)` and check its `status`. From your backend, use
 [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction).
 `PayInException.Unsettled` and `TapToPayException` carry the `paymentTransId` to
-look up when there is one. When there isn't, find the transaction in the Payabli portal before you charge
-again. On card-not-present, setting `orderId` on each request lets you find it by your own reference.
+look up when there is one. When there isn't one, on card-not-present, read the transaction back from your backend
+by the `orderId` you set on the request, with
+[`GET /api/Query/transactions/{entry}?orderId(eq)=<orderId>`](https://docs.payabli.com/developers/api-reference/query/get-list-of-transactions-for-an-entrypoint); on Tap
+to Pay, find it in the Payabli portal. Do this before you charge again, and after your app restarts mid-payment
+too: the SDK holds no key across a relaunch, so a retry there can charge twice.
 Store the transaction ID with your order every time you get one.
 
 If you then try the same payment again, say so: pass `attempt = PayabliAttempt.Retry`, in
