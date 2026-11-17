@@ -259,6 +259,12 @@ package com.payabli.sdk.core.model {
     enum_constant public static final com.payabli.sdk.core.model.PayabliAttempt Retry;
   }
 
+  public enum PayabliCurrency {
+    method @InaccessibleFromKotlin public String getCode();
+    property public String code;
+    enum_constant public static final com.payabli.sdk.core.model.PayabliCurrency USD;
+  }
+
   public final class PayabliDeclineException extends com.payabli.sdk.core.model.PayabliException {
     ctor public PayabliDeclineException();
     ctor public PayabliDeclineException(optional String? rawCode, optional String reason, optional String? explanation, optional String? action);
