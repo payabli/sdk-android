@@ -174,11 +174,10 @@ your own records:
      Show it and send nothing.
    - **Any record's outcome isn't known yet**: `10`, `11` after a `capture`, `-1`, `0`, or any other value. Query
      again later, and don't pay.
-   - **No record is paid**: every one is `2` or `3` (declined), `5` (voided) or `-2` (blocked). Nothing was charged.
-     Start a new payment with `attempt = PayabliAttempt.NewPayment`, a new `paymentReference` and the same
-     `orderId`.
-   - **No record**: query again. Start a new payment only when a query made at least 30 seconds after the relaunch
-     finds none. A failed query never means no record.
+   - **No record is paid, or there is no record**: every one is `2` or `3` (declined), `5` (voided) or `-2`
+     (blocked), or the query returned none. Start a new payment with `attempt = PayabliAttempt.NewPayment`, a new
+     `paymentReference` and the same `orderId`.
+   - **The query failed**: query again. A failed query never means no record.
 
 Don't set `attempt = PayabliAttempt.Retry` across a relaunch. The SDK no longer holds the key, so it sends a new
 one, and the payment can be charged twice if the first attempt went through.
