@@ -2,8 +2,6 @@ package com.payabli.sdk.core
 
 import androidx.annotation.RestrictTo
 import com.payabli.sdk.core.config.PayabliConfig
-import com.payabli.sdk.core.device.platform.DeviceIdentifierFactory
-import com.payabli.sdk.core.device.platform.DeviceProfileFactory
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LogLevel
@@ -23,7 +21,6 @@ import com.payabli.sdk.core.network.impl.AuthenticatedTransport
 import com.payabli.sdk.core.network.impl.ClientFacts
 import com.payabli.sdk.core.network.impl.RedactedCause
 import com.payabli.sdk.core.telemetry.TelemetryBootstraps
-import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -184,7 +181,7 @@ public class PayabliSession private constructor(
             return convertingUnexpectedFailures(startedAt) {
                 host.appContext.applicationContext.applyHostLogLevel()
 
-                install(config, host)
+                install(config, HostFacts.of(host))
             }
         }
 
@@ -193,14 +190,14 @@ public class PayabliSession private constructor(
          * the SDK did not classify converts here as in [initialize].
          *
          * @param config the configuration to install.
-         * @param host the host bindings, or null for none, which only the SDK's own tests on a JVM pass.
+         * @param facts what the session reads from the host application.
          * @param wiring how the session is built; only a debug build can replace any of it.
          * @return the installed session.
          */
         @JvmSynthetic
         internal suspend fun install(
             config: PayabliConfig,
-            host: HostBindings?,
+            facts: HostFacts,
             wiring: SessionWiring = SessionWiring.PRODUCTION,
         ): PayabliSession {
             val startedAt = System.nanoTime()
@@ -209,7 +206,7 @@ public class PayabliSession private constructor(
             // released first, a waiting install could replace that channel before the report.
             return lock.withLock {
                 convertingUnexpectedFailures(startedAt) {
-                    installHeld(config, host, wiring, startedAt)
+                    installHeld(config, facts, wiring, startedAt)
                 }
             }
         }
@@ -218,14 +215,14 @@ public class PayabliSession private constructor(
          * The install's body, with [lock] held.
          *
          * @param config the configuration to install.
-         * @param host the host bindings, or null for none.
+         * @param facts what the session reads from the host application.
          * @param wiring how the session is built.
          * @param startedAt when the install began, for the duration a refusal reports.
          * @return the session now installed, or the live one when nothing changed.
          */
         private suspend fun installHeld(
             config: PayabliConfig,
-            host: HostBindings?,
+            facts: HostFacts,
             wiring: SessionWiring,
             startedAt: Long,
         ): PayabliSession {
@@ -260,18 +257,9 @@ public class PayabliSession private constructor(
             }
 
             val machine = SessionStateMachine(sink)
-            // Without host bindings, which is the SDK's own tests, there is no device to read.
-            val device = if (host == null) TelemetryDeviceContext.NONE else DeviceProfileFactory.of(host.appContext)
-            val readDeviceId: () -> String? =
-                if (host == null) {
-                    { null }
-                } else {
-                    val context = host.appContext.applicationContext
-                    val identifierOf = wiring.identifierOf ?: DeviceIdentifierFactory::of
-                    { identifierOf(context).ifBlank { null } }
-                }
             // One reader per fact, so the header, telemetry and the public member report the same device.
-            val client = ClientFacts(PayabliSdkVersion.VALUE, device.osVersion, device.modelName, readDeviceId)
+            val client =
+                ClientFacts(PayabliSdkVersion.VALUE, facts.device.osVersion, facts.device.modelName, facts.readDeviceId)
             // The listener is handed in rather than wired afterwards so no request can complete against a
             // transport whose failures nothing is listening for.
             val onAuthFailure = AuthFailureListener { machine.markReinitializeRequired() }
@@ -289,7 +277,7 @@ public class PayabliSession private constructor(
                 PayabliSession(
                     identity = identity,
                     machine = machine,
-                    readDeviceId = readDeviceId,
+                    readDeviceId = facts.readDeviceId,
                     renewal = auth.renewRefusedToken,
                     transport = auth.transport,
                     // Minted here rather than in the telemetry module, so every capability reporting for
@@ -299,7 +287,7 @@ public class PayabliSession private constructor(
                             entryPoint = config.entryPoint,
                             environment = config.environment,
                             sessionId = UUID.randomUUID().toString(),
-                            device = device,
+                            device = facts.device,
                         ),
                 )
             machine.markReady()
@@ -316,7 +304,7 @@ public class PayabliSession private constructor(
             // Inside the lock, so a session is never installed with the previous one's channel still
             // reporting for it. The module absorbs its own failures: the session is already published and
             // ready here, so an escape would fail an initialize that had succeeded.
-            TelemetryBootstraps.startInstalled(session, host)
+            TelemetryBootstraps.startInstalled(session, facts.host)
 
             return session
         }

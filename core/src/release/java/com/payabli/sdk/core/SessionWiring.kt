@@ -6,7 +6,6 @@ package com.payabli.sdk.core
  */
 internal class SessionWiring private constructor() {
     val baseUrl: Nothing? get() = null
-    val identifierOf: Nothing? get() = null
     val transport: Nothing? get() = null
     val decorations: Nothing? get() = null
     val authLock: Nothing? get() = null

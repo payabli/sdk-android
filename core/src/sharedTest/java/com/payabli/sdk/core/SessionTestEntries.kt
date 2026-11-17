@@ -23,7 +23,12 @@ internal suspend fun PayabliSession.Companion.initializeAgainst(
     config: PayabliConfig,
     host: HostBindings? = null,
     identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
-): PayabliSession = install(config, host, SessionWiring(baseUrl = baseUrl, identifierOf = identifierOf))
+): PayabliSession =
+    install(
+        config,
+        host?.let { HostFacts.of(it, identifierOf) } ?: HostFacts.NONE,
+        SessionWiring(baseUrl = baseUrl),
+    )
 
 /**
  * Installs a session whose transport [buildTransport] builds, so a test can hold the critical section open. A
@@ -37,7 +42,7 @@ internal suspend fun PayabliSession.Companion.initializeAgainst(
 internal suspend fun PayabliSession.Companion.initializeWith(
     config: PayabliConfig,
     buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
-): PayabliSession = install(config, host = null, SessionWiring(transport = buildTransport))
+): PayabliSession = install(config, HostFacts.NONE, SessionWiring(transport = buildTransport))
 
 /**
  * Drops the installed session and puts [PayabliSession.state] back, so one test cannot decide the outcome of
