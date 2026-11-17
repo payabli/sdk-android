@@ -329,7 +329,7 @@ package com.payabli.sdk.payin.form {
   }
 
   public final class PayInSummaryRows {
-    method public String formattedAmount(java.math.BigDecimal amount, String? currency);
+    method public String formattedAmount(java.math.BigDecimal amount, com.payabli.sdk.core.model.PayabliCurrency? currency);
     method public String labelText(com.payabli.sdk.payin.form.PayInField field, com.payabli.sdk.payin.form.PayInFormLabels labels, android.content.Context context);
     method public java.math.BigDecimal? rowAmount(com.payabli.sdk.payin.form.PayInField field, com.payabli.sdk.payin.model.PayInPaymentDetails? paymentDetails);
     method public String totalLabelText(com.payabli.sdk.payin.form.PayInFormLabels labels, android.content.Context context);
@@ -552,16 +552,16 @@ package com.payabli.sdk.payin.model {
   }
 
   public final class PayInPaymentDetails {
-    ctor public PayInPaymentDetails(java.math.BigDecimal totalAmount, optional java.math.BigDecimal? serviceFee, optional java.math.BigDecimal? surchargeFee, optional String? currency, optional String? checkNumber, optional String? checkUniqueId);
+    ctor public PayInPaymentDetails(java.math.BigDecimal totalAmount, optional java.math.BigDecimal? serviceFee, optional java.math.BigDecimal? surchargeFee, optional com.payabli.sdk.core.model.PayabliCurrency? currency, optional String? checkNumber, optional String? checkUniqueId);
     method @InaccessibleFromKotlin public String? getCheckNumber();
     method @InaccessibleFromKotlin public String? getCheckUniqueId();
-    method @InaccessibleFromKotlin public String? getCurrency();
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.model.PayabliCurrency? getCurrency();
     method @InaccessibleFromKotlin public java.math.BigDecimal? getServiceFee();
     method @InaccessibleFromKotlin public java.math.BigDecimal? getSurchargeFee();
     method @InaccessibleFromKotlin public java.math.BigDecimal getTotalAmount();
     property public String? checkNumber;
     property public String? checkUniqueId;
-    property public String? currency;
+    property public com.payabli.sdk.core.model.PayabliCurrency? currency;
     property public java.math.BigDecimal? serviceFee;
     property public java.math.BigDecimal? surchargeFee;
     property public java.math.BigDecimal totalAmount;

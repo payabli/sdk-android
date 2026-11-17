@@ -118,13 +118,13 @@ package com.payabli.sdk.taptopay.model {
   }
 
   public final class TapToPayPaymentDetails {
-    ctor public TapToPayPaymentDetails(java.math.BigDecimal amount, optional java.math.BigDecimal serviceFee, optional String? currency, optional String? paymentDescription);
+    ctor public TapToPayPaymentDetails(java.math.BigDecimal amount, optional java.math.BigDecimal serviceFee, optional com.payabli.sdk.core.model.PayabliCurrency? currency, optional String? paymentDescription);
     method @InaccessibleFromKotlin public java.math.BigDecimal getAmount();
-    method @InaccessibleFromKotlin public String? getCurrency();
+    method @InaccessibleFromKotlin public com.payabli.sdk.core.model.PayabliCurrency? getCurrency();
     method @InaccessibleFromKotlin public String? getPaymentDescription();
     method @InaccessibleFromKotlin public java.math.BigDecimal getServiceFee();
     property public java.math.BigDecimal amount;
-    property public String? currency;
+    property public com.payabli.sdk.core.model.PayabliCurrency? currency;
     property public String? paymentDescription;
     property public java.math.BigDecimal serviceFee;
   }

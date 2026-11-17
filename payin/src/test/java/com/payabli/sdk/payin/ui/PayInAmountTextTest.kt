@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.ui
 
+import com.payabli.sdk.core.model.PayabliCurrency
 import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
@@ -22,7 +23,7 @@ class PayInAmountTextTest {
             totalAmount = BigDecimal("12.34"),
             serviceFee = BigDecimal("0.10"),
             surchargeFee = BigDecimal("0.31"),
-            currency = "USD",
+            currency = PayabliCurrency.USD,
         )
 
     @Test

@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.model
 
 import com.payabli.sdk.core.model.PayabliAttempt
+import com.payabli.sdk.core.model.PayabliCurrency
 import java.math.BigDecimal
 
 /**
@@ -15,7 +16,7 @@ public class PayInPaymentDetails(
     public val totalAmount: BigDecimal,
     public val serviceFee: BigDecimal? = null,
     public val surchargeFee: BigDecimal? = null,
-    public val currency: String? = null,
+    public val currency: PayabliCurrency? = null,
     public val checkNumber: String? = null,
     public val checkUniqueId: String? = null,
 ) {

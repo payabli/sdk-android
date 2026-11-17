@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.form
 
+import com.payabli.sdk.core.model.PayabliCurrency
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.util.extensions.formatAmount
 import org.junit.After
@@ -17,7 +18,7 @@ class PayInSummaryRowsTest {
             totalAmount = BigDecimal("12.34"),
             serviceFee = BigDecimal("0.10"),
             surchargeFee = BigDecimal("0.31"),
-            currency = "USD",
+            currency = PayabliCurrency.USD,
         )
 
     private lateinit var savedLocale: Locale
@@ -178,16 +179,16 @@ class PayInSummaryRowsTest {
     fun `an amount too extreme to round is written as its digits rather than raising`() {
         // setScale raises ArithmeticException at both extremes of the exponent.
         listOf("1E+2147483647", "1E-2147483647", "1E+1001").forEach { extreme ->
-            assertEquals(extreme, PayInSummaryRows.formattedAmount(BigDecimal(extreme), "USD"))
+            assertEquals(extreme, PayInSummaryRows.formattedAmount(BigDecimal(extreme), PayabliCurrency.USD))
         }
     }
 
     @Test
     fun `formatting uses the default locale`() {
-        assertEquals("1.234,56\u00A0€", PayInSummaryRows.formattedAmount(BigDecimal("1234.56"), "EUR"))
+        assertEquals("1.234,56\u00A0$", PayInSummaryRows.formattedAmount(BigDecimal("1234.56"), PayabliCurrency.USD))
         assertEquals(
             formatAmount(BigDecimal("1234.56"), "USD", Locale.getDefault()),
-            PayInSummaryRows.formattedAmount(BigDecimal("1234.56"), "USD"),
+            PayInSummaryRows.formattedAmount(BigDecimal("1234.56"), PayabliCurrency.USD),
         )
     }
 }

@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.network
 
+import com.payabli.sdk.core.model.PayabliCurrency
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
@@ -123,12 +124,10 @@ class TTPTransactionWireFormatTest {
     }
 
     @Test
-    fun `a currency is upper-cased and a blank one is omitted`() {
-        val named = encode(body(TapToPayPaymentDetails(BigDecimal("1"), currency = "usd")))
-        assertTrue(named, named.contains(""""currency":"USD""""))
+    fun `a currency is sent as its code`() {
+        val named = encode(body(TapToPayPaymentDetails(BigDecimal("1"), currency = PayabliCurrency.USD)))
 
-        val blank = encode(body(TapToPayPaymentDetails(BigDecimal("1"), currency = "   ")))
-        assertFalse(blank, blank.contains("currency"))
+        assertTrue(named, named.contains(""""currency":"USD""""))
     }
 
     @Test
@@ -208,7 +207,7 @@ class TTPTransactionWireFormatTest {
     @Test
     fun `nothing that identifies a payer or a payment survives a toString`() {
         val customer = TapToPayCustomerData(firstName = "Ada", billingEmail = "ada@example.com")
-        val details = TapToPayPaymentDetails(BigDecimal("10"), currency = "USD")
+        val details = TapToPayPaymentDetails(BigDecimal("10"), currency = PayabliCurrency.USD)
         val read = cardRead(cardNetwork = "Visa", providerResponse = """{"source":{"card":{"last4":"1111"}}}""")
 
         listOf(
