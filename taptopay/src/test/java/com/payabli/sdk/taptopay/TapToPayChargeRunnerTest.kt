@@ -3340,7 +3340,8 @@ class TapToPayChargeRunnerTest {
                 runCatching { runner.closeCaptured("12-not-held") }.exceptionOrNull()
 
             assertTrue(refusal.toString(), refusal is TapToPayException)
-            assertEquals("12-not-held", (refusal as TapToPayException).paymentTransId)
+            assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, (refusal as TapToPayException).type)
+            assertEquals("12-not-held", refusal.paymentTransId)
             assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
         }
 
