@@ -84,27 +84,25 @@ public class PayabliTTP private constructor(
     ): TapToPayResult = wrapping { runner.charge(paymentDetails, customer, invoice, orderDescription, attempt) }
 
     /**
-     * Retries the unconfirmed close of the payment named by [paymentTransId].
+     * Closes the payment named by [paymentTransId], with no second tap and no second payment.
      *
-     * The card is not read again, so the person who paid does not tap twice, and no second payment is
-     * opened. A close that already applied costs nothing to send again, which is what makes retrying safe,
-     * and is why this does not turn on whether the first one reached the service. It cannot: a response
-     * that never arrived may have followed a close that applied.
+     * A close that already applied costs nothing to send again, which is what makes retrying safe, and is
+     * why this does not turn on whether an earlier close reached the service. It cannot: a response that
+     * never arrived may have followed a close that applied.
      *
-     * **A payment is retained whatever the reader answered** — an approval, a refusal, and an outcome that
-     * was never definite. The failure this raises carries the capture state that answer supports rather
-     * than assuming the money moved.
+     * **Any identifier this entry point produced can be closed**, including one kept from before the process
+     * restarted, one taken under another environment, and one whose charge failed before the reader answered.
+     * The payment this SDK still holds for this entry point and environment is closed with the reader's
+     * answer it kept, and the failure this raises carries the capture state that answer supports. Any other
+     * identifier is closed without one, and its failure carries [TapToPayCapture.UNKNOWN]. A close the caller
+     * may not send fails with [com.payabli.sdk.core.model.PayabliErrorType.PERMISSION_DENIED], which a retry
+     * does not change.
      *
-     * **A failure raised before the reader answered is not retained, and carries
-     * [TapToPayCapture.UNKNOWN] as well.** The charge sent its own close on the way out and kept nothing.
-     * So the capture state does not say whether this call can help, and no member does. Calling it anyway
-     * is safe: a payment this SDK is not holding is refused with [TapToPayCapture.UNKNOWN] and nothing is
-     * sent. Reconcile that one against Payabli instead.
+     * What is held is the payment last taken for this entry point under this environment, by whichever
+     * terminal took it, and only until a close is confirmed or a later payment is opened. A call made while a
+     * charge on this entry point runs waits for that charge.
      *
-     * What is retained is the payment last taken for this entry point under this environment, by whichever
-     * terminal took it. The record is shared across every terminal built for that pair, which is what lets a
-     * screen that has been rebuilt finish a close the screen before it started. Nothing is kept once a
-     * close is confirmed, once a later payment is opened, or across process death.
+     * @param paymentTransId the payment to close.
      */
     public suspend fun closeCapturedCharge(paymentTransId: String): Unit =
         wrapping { runner.closeCaptured(paymentTransId) }

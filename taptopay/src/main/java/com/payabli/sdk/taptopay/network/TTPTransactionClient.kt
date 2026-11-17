@@ -160,7 +160,16 @@ internal class TTPTransactionClient(
     )
 
     /**
-     * The shared half of the two closes: a `PATCH` carrying [body], retried.
+     * Closes a transaction this SDK holds no reader answer for.
+     *
+     * The body claims no outcome, because nothing here knows one.
+     *
+     * @param paymentTransId the transaction to close.
+     */
+    suspend fun close(paymentTransId: String) = send(paymentTransId, NO_OUTCOME_BODY)
+
+    /**
+     * The shared half of the closes: a `PATCH` carrying [body], retried.
      *
      * **Any 2xx is success and the response is not decoded.** The outcome the payer saw was decided at the
      * reader, so nothing that comes back here changes it. Decoding it would invite a caller to treat a lag
@@ -491,6 +500,8 @@ private fun notPermittedOrNull(response: PayabliResponse): PayabliGenericExcepti
     }
 
 private const val NOT_PERMITTED_CODE = "9001"
+
+private const val NO_OUTCOME_BODY = "{}"
 
 private fun stringField(
     response: PayabliResponse,
