@@ -1,10 +1,7 @@
 package com.payabli.sdk.core.model
 
 /**
- * HTTP 5xx. The body is the same problem-details shape as a 400, without the `errors` map.
- *
- * Classified as [PayabliErrorType.SERVER_ERROR] rather than a catch-all, because the retry policy needs
- * to tell a server fault apart from an unclassifiable one.
+ * A status of 500 or above. The body is the same problem-details shape as a 400, without the `errors` map.
  */
 public class PayabliServerException(
     override val httpStatus: Int,
