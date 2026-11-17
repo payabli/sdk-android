@@ -46,14 +46,9 @@ android {
             "\"${providers.gradleProperty("payabli.version").get()}\"",
         )
 
-        // Read by DeviceIdentifierFactory, as one of the three digest inputs. A fixed literal, so no
-        // escaping applies, and deliberately not this module's namespace: the value identifies the SDK as a
-        // whole rather than the module that happens to hold the code.
-        //
-        // **Changing this changes the identifier every device reports**, so every registered device
-        // registers again as a stranger and owes a fresh activation code. It moved once, on 2026-08-25, when
-        // the derivation was lifted out of the card-present module; card-present had not shipped, so the cost
-        // was every already-registered device re-registering. It should not move again.
+        // A digest input to DeviceIdentifierFactory, naming the SDK as a whole rather than this module.
+        // **Changing it changes the identifier every device reports**, so every registered device registers
+        // again as a stranger and owes a fresh activation code.
         buildConfigField("String", "SDK_IDENTIFIER", "\"com.payabli.sdk\"")
     }
 

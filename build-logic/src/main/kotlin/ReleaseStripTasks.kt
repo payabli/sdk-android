@@ -29,17 +29,14 @@ import java.util.zip.ZipInputStream
  * they enclose. Every other entry is copied byte for byte.
  */
 abstract class StripReleaseClasses : DefaultTask() {
-    /** The variant's class jars. */
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val jars: ListProperty<RegularFile>
 
-    /** The variant's class directories. */
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val directories: ListProperty<Directory>
 
-    /** The one jar the variant packages instead. */
     @get:OutputFile
     abstract val output: RegularFileProperty
 
@@ -83,7 +80,6 @@ abstract class StripReleaseClasses : DefaultTask() {
  * `NoSuchMethodError` in an integrator's app.
  */
 abstract class VerifyReleaseStrip : DefaultTask() {
-    /** The release AAR. */
     @get:InputFile
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val aar: RegularFileProperty

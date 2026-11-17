@@ -7,10 +7,9 @@ import com.payabli.buildlogic.ReleaseStripExtension
 import com.payabli.buildlogic.StripReleaseClasses
 import com.payabli.buildlogic.VerifyReleaseStrip
 
-// Convention plugin: a member annotated `@StrippedFromRelease` is in the debug classes the tests run against
-// and absent from the release AAR, with the lambdas and coroutine classes it encloses. Applied via
-// `id("payabli.release-strip")`. `internal` alone is a public method on the JVM, and `@JvmSynthetic` hides it
-// from Java source but not from reflection.
+// A member annotated `@StrippedFromRelease` is in the debug classes the tests run against and absent, with the
+// lambdas and coroutine classes it encloses, from the release AAR. `internal` is public on the JVM, and
+// `@JvmSynthetic` hides a member from Java source but not from reflection.
 
 val releaseStrip = extensions.create<ReleaseStripExtension>("releaseStrip")
 val androidComponents = extensions.getByType(LibraryAndroidComponentsExtension::class.java)
