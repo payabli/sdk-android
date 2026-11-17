@@ -3463,13 +3463,22 @@ class TapToPayChargeRunnerTest {
                 SessionFixture(scriptWithUnheldCloses(answer = """{"responseCode":9001}""") { 401 })
                     .also { it.coordinator.initialize() }
 
-            val refused =
-                runCatching { runnerOver(fixture).closeCaptured(NOT_HELD) }.exceptionOrNull() as TapToPayException
+            var refused: TapToPayException? = null
+            val reported =
+                closeFailuresDuring {
+                    refused =
+                        runCatching { runnerOver(fixture).closeCaptured(NOT_HELD) }.exceptionOrNull()
+                            as TapToPayException
+                }
 
-            assertEquals(PayabliErrorType.PERMISSION_DENIED, refused.type)
-            assertEquals(NOT_HELD, refused.paymentTransId)
-            assertEquals(TapToPayCapture.UNKNOWN, refused.capture)
+            assertEquals(PayabliErrorType.PERMISSION_DENIED, refused!!.type)
+            assertEquals(NOT_HELD, refused!!.paymentTransId)
+            assertEquals(TapToPayCapture.UNKNOWN, refused!!.capture)
             assertEquals("the refusal was sent again", 1, fixture.requestsTo(NOT_HELD_UPDATE).size)
+            assertEquals(
+                PayabliErrorType.PERMISSION_DENIED.code.toString(),
+                reported.single()[TelemetryProperty.ERROR_NUMBER.key],
+            )
         }
 
     @Test

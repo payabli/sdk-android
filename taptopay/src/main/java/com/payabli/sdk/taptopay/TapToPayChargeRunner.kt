@@ -261,6 +261,7 @@ internal class TapToPayChargeRunner(
                                         TelemetryProperties.Origin.CHARGE,
                                         captureOf(result.outcome, resentKey),
                                         failure.saysTheProcessorHasNoRecord(),
+                                        PayabliErrorType.PAYMENT_NOT_CLOSED,
                                     )
                                     // A declined card settles whatever its close was refused with. An indeterminate
                                     // read's authorisation may still be handling at the processor, so no answer
@@ -608,19 +609,17 @@ internal class TapToPayChargeRunner(
         paymentTransId: String,
         capture: TapToPayCapture,
     ): Nothing {
+        val type =
+            if (failure.isCallerRefused()) PayabliErrorType.PERMISSION_DENIED else PayabliErrorType.PAYMENT_NOT_CLOSED
         TapToPayReports.closeFailed(
             failure,
             startedAt,
             TelemetryProperties.Origin.RETRY,
             capture,
             failure.saysTheProcessorHasNoRecord(),
+            type,
         )
-        throw failed(
-            failure,
-            if (failure.isCallerRefused()) PayabliErrorType.PERMISSION_DENIED else PayabliErrorType.PAYMENT_NOT_CLOSED,
-            paymentTransId,
-            capture,
-        )
+        throw failed(failure, type, paymentTransId, capture)
     }
 
     private fun Throwable.isCallerRefused(): Boolean =
@@ -751,6 +750,7 @@ internal class TapToPayChargeRunner(
                     // A minted key's charge the processor has no record of is reported not charged.
                     if (!resentKey && noRecord) TapToPayCapture.NOT_CHARGED else capture,
                     noRecord,
+                    PayabliErrorType.PAYMENT_NOT_CLOSED,
                 )
                 // The processor holding no record of the payment means nothing was captured. A resent key names
                 // an earlier opening, so this answer never settles it.
