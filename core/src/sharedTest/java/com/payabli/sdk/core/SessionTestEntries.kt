@@ -9,8 +9,7 @@ import com.payabli.sdk.core.telemetry.TelemetryBootstraps
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Installs a session against an explicit [baseUrl] and with no host bindings by default. A failure the SDK did
- * not classify converts here as in [PayabliSession.initialize].
+ * Installs a session against an explicit [baseUrl] and with no host bindings by default.
  *
  * @param baseUrl the origin every request goes to.
  * @param config the configuration to install.
