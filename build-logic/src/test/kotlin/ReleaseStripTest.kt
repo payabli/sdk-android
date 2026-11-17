@@ -59,6 +59,32 @@ class ReleaseStripTest {
     }
 
     @Test
+    fun `the check refuses a reference to a class the strip removed`() {
+        val all = fixture()
+        val plan = planStrip(all.map(::readFacts))
+        val stripped = all.filter { readFacts(it).name !in plan.classes }.map { stripClass(it, plan) }
+        val constructs =
+            type("p/Caller") {
+                visitMethod(Opcodes.ACC_PUBLIC, "run", "()V", null, null).apply {
+                    visitCode()
+                    visitTypeInsn(Opcodes.NEW, lambda)
+                    visitInsn(Opcodes.RETURN)
+                    visitMaxs(1, 1)
+                    visitEnd()
+                }
+            }
+
+        assertEquals(
+            listOf("p/Caller.run names $lambda, which is not in the artifact"),
+            findStripProblems(stripped + constructs),
+        )
+        assertEquals(
+            listOf("p/Caller.run calls $lambda.invoke()V, which is not in the artifact"),
+            findStripProblems(stripped + caller(owner = lambda, name = "invoke")),
+        )
+    }
+
+    @Test
     fun `a method the class inherits from Object is not a missing member`() {
         val shipped = listOf(type(subject) {}, caller(owner = subject, name = "hashCode", descriptor = "()I"))
 

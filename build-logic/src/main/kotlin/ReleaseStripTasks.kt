@@ -156,8 +156,9 @@ private val objectMethods: Set<String> =
         "<init>()V"
 
 /**
- * Lists what keeps [classes] from being a stripped release: a marked member still present, and a call to a
- * method of a class in the set that neither that class nor any of its supertypes in the set declares.
+ * Lists what keeps [classes] from being a stripped release: a marked member still present, a reference to a
+ * class nested in one of the set and missing from it, and a call to a method of a class in the set that
+ * neither that class nor any of its supertypes in the set declares.
  *
  * @param classes every class file in the artifact.
  * @return one line per problem, empty when there is none.
@@ -169,6 +170,9 @@ internal fun findStripProblems(classes: List<ByteArray>): List<String> {
 
     facts.values.flatMap { it.marked }.forEach { problems += "still marked: ${it.owner}.${it.name}${it.descriptor}" }
 
+    // A nested class ships with its outermost one, so a missing one beside it is a class the strip removed.
+    fun removed(owner: String): Boolean = owner !in facts && owner.substringBefore('$') in facts
+
     fun declares(
         owner: String,
         name: String,
@@ -176,7 +180,7 @@ internal fun findStripProblems(classes: List<ByteArray>): List<String> {
     ): Boolean {
         if (owner == OBJECT) return "$name$descriptor" in objectMethods
         // Any other supertype outside the artifact may declare it, and this check cannot read that class.
-        val fact = facts[owner] ?: return true
+        val fact = facts[owner] ?: return !removed(owner)
         if (fact.methods.any { it.name == name && it.descriptor == descriptor }) return true
         return supertypes[owner].orEmpty().any { declares(it, name, descriptor) }
     }
@@ -194,6 +198,29 @@ internal fun findStripProblems(classes: List<ByteArray>): List<String> {
                 ): MethodVisitor {
                     val caller = "${reader.className}.$name"
                     return object : MethodVisitor(Opcodes.ASM9) {
+                        private fun named(type: Type) {
+                            val element = if (type.sort == Type.ARRAY) type.elementType else type
+                            if (element.sort == Type.OBJECT && removed(element.internalName)) {
+                                problems += "$caller names ${element.internalName}, which is not in the artifact"
+                            }
+                        }
+
+                        override fun visitTypeInsn(
+                            opcode: Int,
+                            type: String,
+                        ) = named(Type.getObjectType(type))
+
+                        override fun visitFieldInsn(
+                            opcode: Int,
+                            owner: String,
+                            fieldName: String,
+                            fieldDescriptor: String,
+                        ) = named(Type.getObjectType(owner))
+
+                        override fun visitLdcInsn(value: Any?) {
+                            if (value is Type) named(value)
+                        }
+
                         override fun visitMethodInsn(
                             opcode: Int,
                             owner: String,

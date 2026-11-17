@@ -42,7 +42,8 @@ androidComponents.onVariants(release) { variant ->
             absent.set(releaseStrip.absent)
         }
 
-    // Every path that hands the AAR to anyone runs the check first.
+    // Every task that hands the AAR on waits for the check, and the task that writes it is followed by it.
     tasks.matching { it.name == "check" || it.name == "assemble$suffix" || it.name.startsWith("publish") }
         .configureEach { dependsOn(verify) }
+    tasks.matching { it.name == "bundle${suffix}Aar" }.configureEach { finalizedBy(verify) }
 }
