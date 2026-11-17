@@ -13,6 +13,7 @@ import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,6 +25,13 @@ private const val DEVICE = "poi-1"
 private const val TRANS_ID = "12-abc"
 
 private const val KEY = "an-attempt-key"
+
+/** The close's refusal of a token that may not act on the transaction, as QA answered it. */
+private val NOT_PERMITTED =
+    """{"type":"https://docs.payabli.com/developers/references/pay-in-unified-response-codes",""" +
+        """"title":"Bad Request","status":400,"detail":"Invalid Authorization Token",""" +
+        """"instance":"/api/v2/MoneyIn/update/$TRANS_ID","code":"E9001","errors":{"transId":[{"message":""" +
+        """"The token does not have access to entity in scope"}]},"token":null}"""
 
 /**
  * Field names a card-present transaction may be recorded under. Anything else is a leak waiting to happen.
@@ -362,30 +370,28 @@ class TTPTransactionClientTest {
         }
 
     @Test
-    fun `the close declares a 401 carrying 9001 as its caller's refusal, and no other 401`() =
-        runTest(timeout = timeout) {
-            val (transport, client) = client(answer(approved("""{"paymentTransId":"$TRANS_ID"}""")))
-            client.update(TRANS_ID, cardRead())
-            val isCallerRefusal = transport.request.isCallerRefusal
-
-            assertTrue(isCallerRefusal(answer("""{"responseCode":9001}""", 401)))
-            assertTrue("a quoted code", isCallerRefusal(answer("""{"responseCode":"9001"}""", 401)))
-            assertFalse("9001 on 400", isCallerRefusal(answer("""{"responseCode":9001}""", 400)))
-            assertFalse("a 401 with no body is the credential's", isCallerRefusal(answer("", 401)))
-            assertFalse("an invalid token", isCallerRefusal(answer("""{"code":"E9001"}""", 401)))
-        }
-
-    @Test
     fun `a caller refused the close is told so once, carrying the status and code`() =
         runTest(timeout = timeout) {
-            val (transport, client) = client(answer("""{"responseCode":9001}""", 401))
+            val (transport, client) = client(answer(NOT_PERMITTED, 400))
 
             val failure = runCatching { client.update(TRANS_ID, cardRead()) }.exceptionOrNull() as PayabliException
 
             assertEquals(PayabliErrorType.PERMISSION_DENIED, failure.type)
-            assertEquals(401, failure.httpStatus)
-            assertEquals("9001", failure.rawCode)
+            assertEquals(400, failure.httpStatus)
+            assertEquals("E9001", failure.rawCode)
             assertEquals(1, transport.requests.size)
+        }
+
+    @Test
+    fun `only a 400 carrying E9001 refuses the caller the close`() =
+        runTest(timeout = timeout) {
+            for ((status, body) in listOf(400 to """{"code":"E9002"}""", 401 to NOT_PERMITTED)) {
+                val (_, client) = client(answer(body, status))
+
+                val failure = runCatching { client.update(TRANS_ID, cardRead()) }.exceptionOrNull() as PayabliException
+
+                assertNotEquals("$status $body", PayabliErrorType.PERMISSION_DENIED, failure.type)
+            }
         }
 
     @Test

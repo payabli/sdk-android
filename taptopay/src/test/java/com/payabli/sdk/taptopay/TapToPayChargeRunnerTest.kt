@@ -86,6 +86,10 @@ private const val NOT_HELD_UPDATE = "/api/v2/MoneyIn/update/$NOT_HELD"
 /** The close of a payment held for no reader answer, which claims no outcome. */
 private const val NO_OUTCOME = "{}"
 
+/** The close's refusal of a token that may not act on the transaction, as QA answered it. */
+private const val NOT_PERMITTED =
+    """{"title":"Bad Request","status":400,"detail":"Invalid Authorization Token","code":"E9001"}"""
+
 /** The service's wording when a close names a transaction the processor has no record of. */
 private const val NOT_AT_PROCESSOR = "Unable to locate the transaction with the payment processor"
 
@@ -3263,12 +3267,12 @@ class TapToPayChargeRunnerTest {
                         RouteScript.ATTEST to listOf(attestBody()),
                         RouteScript.CONFIG to listOf(configBody()),
                         INITIATE to listOf(approved("""{"paymentTransId":"$TRANS_ID"}""")),
-                        UPDATE to listOf("{}", "{}", "{}", """{"responseCode":9001}""", "{}"),
+                        UPDATE to listOf("{}", "{}", "{}", NOT_PERMITTED, "{}"),
                         statusFor = { path ->
                             when {
                                 path != UPDATE -> null
                                 mode == "fail" -> 500
-                                mode == "refuse" -> 401
+                                mode == "refuse" -> 400
                                 else -> 200
                             }
                         },
@@ -3460,7 +3464,7 @@ class TapToPayChargeRunnerTest {
     fun `an unheld close the caller may not send is reported as refused, once`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture =
-                SessionFixture(scriptWithUnheldCloses(answer = """{"responseCode":9001}""") { 401 })
+                SessionFixture(scriptWithUnheldCloses(answer = NOT_PERMITTED) { 400 })
                     .also { it.coordinator.initialize() }
 
             var refused: TapToPayException? = null

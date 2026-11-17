@@ -188,7 +188,6 @@ internal class TTPTransactionClient(
                         route = TTPRoutes.UPDATE,
                         headers = mapOf(CONTENT_TYPE to APPLICATION_JSON),
                         body = encoded,
-                        isCallerRefusal = ::isNotPermitted,
                     ),
                 )
             failureFor(TTPRoutes.UPDATE, response, notPermittedOrNull(response))?.let { throw it }
@@ -460,24 +459,16 @@ private fun isFraudBlock(response: PayabliResponse): Boolean =
     response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED && fraudBlockCode(response) != null
 
 /**
- * Whether a 401 refuses this caller the transaction, which a token refresh cannot fix and a replay would send
- * again.
+ * The refusal of a caller that may not act on the transaction, which a token refresh cannot fix.
  *
  * @param response the answered request.
- * @return true for a 401 whose body carries 9001; false otherwise.
- */
-private fun isNotPermitted(response: PayabliResponse): Boolean =
-    response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED &&
-        PayabliHttpErrors.from(response)?.rawCode == NOT_PERMITTED_CODE
-
-/**
- * The refusal of a caller that may not act on the transaction.
- *
- * @param response the answered request.
- * @return the refusal, carrying the response's status and code, or null when [isNotPermitted] is false.
+ * @return the refusal, carrying the response's status and code, for a 400 whose body carries `E9001`; null
+ *   otherwise.
  */
 private fun notPermittedOrNull(response: PayabliResponse): PayabliGenericException? =
-    if (!isNotPermitted(response)) {
+    if (response.statusCode != HttpURLConnection.HTTP_BAD_REQUEST ||
+        PayabliHttpErrors.from(response)?.rawCode != NOT_PERMITTED_CODE
+    ) {
         null
     } else {
         PayabliGenericException(
@@ -490,7 +481,7 @@ private fun notPermittedOrNull(response: PayabliResponse): PayabliGenericExcepti
         )
     }
 
-private const val NOT_PERMITTED_CODE = "9001"
+private const val NOT_PERMITTED_CODE = "E9001"
 
 private const val NO_OUTCOME_BODY = "{}"
 
