@@ -1,11 +1,7 @@
 package com.payabli.sdk.core
 
-import android.content.Context
 import androidx.annotation.RestrictTo
-import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.config.PayabliConfig
-import com.payabli.sdk.core.device.platform.DeviceIdentifierFactory
-import com.payabli.sdk.core.device.platform.DeviceProfileFactory
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LogLevel
@@ -25,7 +21,6 @@ import com.payabli.sdk.core.network.impl.AuthenticatedTransport
 import com.payabli.sdk.core.network.impl.ClientFacts
 import com.payabli.sdk.core.network.impl.RedactedCause
 import com.payabli.sdk.core.telemetry.TelemetryBootstraps
-import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -68,7 +63,7 @@ private const val REASON_ALREADY_INITIALIZED = "a session is already initialized
  */
 public class PayabliSession private constructor(
     private val identity: ConfigIdentity,
-    private val machine: SessionStateMachine,
+    @get:JvmSynthetic internal val machine: SessionStateMachine,
     private val readDeviceId: () -> String?,
     private val renewal: suspend () -> Unit,
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
@@ -103,13 +98,15 @@ public class PayabliSession private constructor(
 
     public companion object {
         /** Serializes [initialize] so two callers racing at startup install one session rather than two. */
-        private val lock = Mutex()
+        @get:JvmSynthetic internal val lock = Mutex()
 
         @Volatile
-        private var installed: PayabliSession? = null
+        @get:JvmSynthetic
+        @set:JvmSynthetic
+        internal var installed: PayabliSession? = null
 
         /** Written only by the [SessionStateMachine] of whichever session is current. See [state]. */
-        private val sink = MutableStateFlow<SdkState>(SdkState.Uninitialized)
+        @get:JvmSynthetic internal val sink = MutableStateFlow<SdkState>(SdkState.Uninitialized)
 
         private val logger: SdkLogger get() = LoggerRegistry.of(LogCategory.CORE)
 
@@ -184,101 +181,24 @@ public class PayabliSession private constructor(
             return convertingUnexpectedFailures(startedAt) {
                 host.appContext.applicationContext.applyHostLogLevel()
 
-                install(config, host) { onAuthFailure, client ->
-                    TransportFactory
-                        .authenticated(
-                            config,
-                            IO_DISPATCHER,
-                            client,
-                            TransportAssembly(onAuthFailure = onAuthFailure),
-                        ).let(::SessionAuth)
-                }
+                install(config, { HostFacts.of(host) })
             }
         }
 
         /**
-         * Same, against an explicit [baseUrl] and with no host bindings, for `:core`'s own JVM tests. A
-         * failure the SDK did not classify converts here as in [initialize]. `internal`, because a member
-         * left public in bytecode for testing is an origin override in a shipped artifact.
-         *
-         * @param baseUrl the origin every request goes to.
-         * @param config the configuration to install.
-         * @param host the host bindings, or null for none.
-         * @param identifierOf stands in for the platform identifier, so a test can give a real device none.
-         * @return the installed session.
-         */
-        @VisibleForTesting
-        @JvmSynthetic
-        internal suspend fun initializeAgainst(
-            baseUrl: String,
-            config: PayabliConfig,
-            host: HostBindings? = null,
-            identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
-        ): PayabliSession {
-            val startedAt = System.nanoTime()
-
-            return convertingUnexpectedFailures(startedAt) {
-                install(config, host, identifierOf) { onAuthFailure, client ->
-                    TransportFactory
-                        .authenticatedAgainst(
-                            baseUrl,
-                            config,
-                            IO_DISPATCHER,
-                            TransportAssembly(onAuthFailure = onAuthFailure),
-                            client,
-                        ).let(::SessionAuth)
-                }
-            }
-        }
-
-        /**
-         * Drops the installed session and puts [state] back, so one test cannot decide the outcome of the
-         * next.
-         *
-         * Test-only. The state is restored twice, once outside the lock and once under it, and the clearing
-         * itself happens under it. Both halves are load-bearing and the order is not arbitrary: `:core`'s own
-         * session tests fail if either moves, which is the place to read before changing this.
-         */
-        @VisibleForTesting
-        @JvmSynthetic
-        internal suspend fun reset() {
-            sink.value = SdkState.Uninitialized
-
-            lock.withLock {
-                TelemetryBootstraps.stopInstalled()
-                installed?.machine?.finish()
-                installed = null
-                sink.value = SdkState.Uninitialized
-            }
-        }
-
-        /**
-         * Same, with the transport supplied, so a test can hold the critical section open. A failure the
-         * SDK did not classify converts here as in [initialize], which makes a throwing transport the
-         * evidence for that catch.
+         * Installs a session for [config] under [lock], or returns the live one when nothing changed. A failure
+         * the SDK did not classify converts here as in [initialize].
          *
          * @param config the configuration to install.
-         * @param buildTransport builds the transport. The session renews no refused token.
+         * @param readFacts reads what the session needs from the host application, only when a session is installed.
+         * @param wiring how the session is built; only a debug build can replace any of it.
          * @return the installed session.
          */
-        @VisibleForTesting
         @JvmSynthetic
-        internal suspend fun initializeWith(
+        internal suspend fun install(
             config: PayabliConfig,
-            buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
-        ): PayabliSession {
-            val startedAt = System.nanoTime()
-
-            return convertingUnexpectedFailures(startedAt) {
-                install(config, host = null) { onAuthFailure, _ -> SessionAuth(buildTransport(onAuthFailure)) {} }
-            }
-        }
-
-        private suspend fun install(
-            config: PayabliConfig,
-            host: HostBindings?,
-            identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
-            buildAuth: suspend (AuthFailureListener, ClientFacts) -> SessionAuth,
+            readFacts: () -> HostFacts,
+            wiring: SessionWiring = SessionWiring.PRODUCTION,
         ): PayabliSession {
             val startedAt = System.nanoTime()
 
@@ -286,7 +206,7 @@ public class PayabliSession private constructor(
             // released first, a waiting install could replace that channel before the report.
             return lock.withLock {
                 convertingUnexpectedFailures(startedAt) {
-                    installHeld(config, host, identifierOf, buildAuth, startedAt)
+                    installHeld(config, readFacts, wiring, startedAt)
                 }
             }
         }
@@ -295,17 +215,15 @@ public class PayabliSession private constructor(
          * The install's body, with [lock] held.
          *
          * @param config the configuration to install.
-         * @param host the host bindings, or null for none.
-         * @param identifierOf reads the platform identifier.
-         * @param buildAuth builds the session's transport and its renewal.
+         * @param readFacts reads what the session needs from the host application.
+         * @param wiring how the session is built.
          * @param startedAt when the install began, for the duration a refusal reports.
          * @return the session now installed, or the live one when nothing changed.
          */
         private suspend fun installHeld(
             config: PayabliConfig,
-            host: HostBindings?,
-            identifierOf: (Context) -> String,
-            buildAuth: suspend (AuthFailureListener, ClientFacts) -> SessionAuth,
+            readFacts: () -> HostFacts,
+            wiring: SessionWiring,
             startedAt: Long,
         ): PayabliSession {
             val identity = ConfigIdentity(config)
@@ -339,25 +257,25 @@ public class PayabliSession private constructor(
             }
 
             val machine = SessionStateMachine(sink)
-            // Without host bindings, which is the SDK's own tests, there is no device to read.
-            val device = if (host == null) TelemetryDeviceContext.NONE else DeviceProfileFactory.of(host.appContext)
-            val readDeviceId: () -> String? =
-                if (host == null) {
-                    { null }
-                } else {
-                    val context = host.appContext.applicationContext
-                    { identifierOf(context).ifBlank { null } }
-                }
-            // One reader per fact, so the header, telemetry and the public member report the same device.
-            val client = ClientFacts(PayabliSdkVersion.VALUE, device.osVersion, device.modelName, readDeviceId)
-            // The listener is handed in rather than wired afterwards so no request can complete against a
-            // transport whose failures nothing is listening for.
-            val auth = buildAuth(AuthFailureListener { machine.markReinitializeRequired() }, client)
+            val facts = readFacts()
+            val client =
+                ClientFacts(PayabliSdkVersion.VALUE, facts.device.osVersion, facts.device.modelName, facts.readDeviceId)
+            val onAuthFailure = AuthFailureListener { machine.markReinitializeRequired() }
+            val auth =
+                wiring.transport?.let { build -> SessionAuth(build(onAuthFailure)) {} }
+                    ?: TransportFactory
+                        .authenticated(
+                            config,
+                            IO_DISPATCHER,
+                            client,
+                            TransportAssembly(onAuthFailure = onAuthFailure),
+                            wiring,
+                        ).let(::SessionAuth)
             val session =
                 PayabliSession(
                     identity = identity,
                     machine = machine,
-                    readDeviceId = readDeviceId,
+                    readDeviceId = facts.readDeviceId,
                     renewal = auth.renewRefusedToken,
                     transport = auth.transport,
                     // Minted here rather than in the telemetry module, so every capability reporting for
@@ -367,7 +285,7 @@ public class PayabliSession private constructor(
                             entryPoint = config.entryPoint,
                             environment = config.environment,
                             sessionId = UUID.randomUUID().toString(),
-                            device = device,
+                            device = facts.device,
                         ),
                 )
             machine.markReady()
@@ -384,7 +302,7 @@ public class PayabliSession private constructor(
             // Inside the lock, so a session is never installed with the previous one's channel still
             // reporting for it. The module absorbs its own failures: the session is already published and
             // ready here, so an escape would fail an initialize that had succeeded.
-            TelemetryBootstraps.startInstalled(session, host)
+            TelemetryBootstraps.startInstalled(session, facts.host)
 
             return session
         }

@@ -4,6 +4,8 @@ import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
+import com.payabli.sdk.core.initializeAgainst
+import com.payabli.sdk.core.reset
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After

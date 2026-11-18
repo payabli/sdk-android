@@ -1,9 +1,9 @@
 package com.payabli.sdk.core.network
 
+import com.payabli.sdk.core.SessionWiring
 import com.payabli.sdk.core.auth.DEFAULT_PROVIDER_TIMEOUT_MILLIS
 import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.config.PayabliConfig
-import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
@@ -34,6 +34,7 @@ internal object TransportFactory {
      * @param dispatcher where the transport's blocking work runs, no default: `PayabliSession` is the one place that picks one.
      * @param client what every request reports about this device; no default, since only the session can read it.
      * @param assembly the rest, whose default is the shipped behaviour. Nothing outside `:core` can set it.
+     * @param wiring how the session is built; only a debug build can replace the origin, chain or lock through it.
      * @return the transport with the bearer and the recovery wrapper already around it.
      */
     internal fun authenticated(
@@ -41,47 +42,21 @@ internal object TransportFactory {
         dispatcher: CoroutineDispatcher,
         client: ClientFacts,
         assembly: TransportAssembly = TransportAssembly(),
-    ): AuthenticatedTransport = authenticated(config.environment.baseUrl, config, dispatcher, client, assembly)
-
-    /**
-     * Same, against an explicit [baseUrl], for `:core`'s own tests. Kept narrow: `@VisibleForTesting`
-     * leaves a member public in bytecode, so this would be an origin override — a caller able to send
-     * the session's token to any origin, which [PayabliEnvironment] promises shipped configuration cannot do.
-     *
-     * @param baseUrl the origin every request goes to, overriding the environment's.
-     * @param config the configuration the holder and the transport are built from.
-     * @param dispatcher where the transport's blocking work runs; no default, for the reason [authenticated] gives.
-     * @param assembly the rest, whose default is the shipped behaviour.
-     * @param client what every request reports about this device. The default reports nothing, the SDK's own tests on a JVM.
-     * @return the transport with the bearer and the recovery wrapper already around it.
-     */
-    internal fun authenticatedAgainst(
-        baseUrl: String,
-        config: PayabliConfig,
-        dispatcher: CoroutineDispatcher,
-        assembly: TransportAssembly = TransportAssembly(),
-        client: ClientFacts = ClientFacts.NONE,
-    ): AuthenticatedTransport = authenticated(baseUrl, config, dispatcher, client, assembly)
-
-    private fun authenticated(
-        baseUrl: String,
-        config: PayabliConfig,
-        dispatcher: CoroutineDispatcher,
-        client: ClientFacts,
-        assembly: TransportAssembly,
+        wiring: SessionWiring = SessionWiring.PRODUCTION,
     ): AuthenticatedTransport {
         // One holder for both the chain that reads the token and the wrapper that refreshes it, which is what
         // makes a replay carry the token the refresh minted. Its own category, so a refresh is filterable as
         // auth rather than buried under network.
-        val auth = PayabliAuth(config, assembly.authLogger, assembly.providerTimeoutMillis)
+        val auth = PayabliAuth(config, assembly.authLogger, assembly.providerTimeoutMillis, wiring)
         return AuthenticatedTransport(
             base =
                 PayabliService.create(
-                    baseUrl = baseUrl,
+                    baseUrl = wiring.baseUrl ?: config.environment.baseUrl,
                     auth = auth,
                     dispatcher = dispatcher,
                     logger = assembly.logger,
                     client = client,
+                    wiring = wiring,
                 ),
             auth = auth,
             recovery = assembly.recovery,

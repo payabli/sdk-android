@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.network.impl
 
-import androidx.annotation.VisibleForTesting
+import com.payabli.sdk.core.SessionWiring
 import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
@@ -437,6 +437,7 @@ internal class PayabliService private constructor(
          * @param callTimeout the budget for one whole call.
          * @param maxResponseBytes the ceiling on a response body.
          * @param client what every request reports about this device.
+         * @param wiring how the session is built; only a debug build can replace the chain through it.
          * @return the transport, as the interface, with the chain applied.
          */
         internal fun create(
@@ -447,43 +448,11 @@ internal class PayabliService private constructor(
             callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
             client: ClientFacts,
+            wiring: SessionWiring = SessionWiring.PRODUCTION,
         ): PayabliTransport =
             PayabliService(
                 baseUrl,
-                RequestDecorationFactory.chainFor(auth, client),
-                logger,
-                DEFAULT_CONNECT_TIMEOUT_MILLIS,
-                DEFAULT_READ_TIMEOUT_MILLIS,
-                callTimeout,
-                dispatcher,
-                maxResponseBytes,
-            )
-
-        /**
-         * Builds a transport with a caller-supplied chain, so a test can prove [execute] applies whatever
-         * chain it holds without a decoration having to exist in production. A named, narrow hole: it
-         * widens what a `:core` test can construct, not what production can. Do not call it from `src/main`.
-         *
-         * @param baseUrl the origin every request goes to.
-         * @param decorations the chain to apply, supplied by the test.
-         * @param dispatcher where the blocking exchange runs.
-         * @param logger where each request and response is logged.
-         * @param callTimeout the budget for one whole call.
-         * @param maxResponseBytes the ceiling on a response body.
-         * @return the transport, as the interface, holding the supplied chain.
-         */
-        @VisibleForTesting
-        internal fun createWithDecorations(
-            baseUrl: String,
-            decorations: List<PayabliRequestDecoration>,
-            dispatcher: CoroutineDispatcher,
-            logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
-            callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
-            maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
-        ): PayabliTransport =
-            PayabliService(
-                baseUrl,
-                decorations,
+                wiring.decorations ?: RequestDecorationFactory.chainFor(auth, client),
                 logger,
                 DEFAULT_CONNECT_TIMEOUT_MILLIS,
                 DEFAULT_READ_TIMEOUT_MILLIS,

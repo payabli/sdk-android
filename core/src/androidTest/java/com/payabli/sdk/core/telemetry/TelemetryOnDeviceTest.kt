@@ -6,6 +6,8 @@ import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.device.platform.DeviceProfileFactory
+import com.payabli.sdk.core.initializeAgainst
+import com.payabli.sdk.core.reset
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.runBlocking
 import org.junit.After

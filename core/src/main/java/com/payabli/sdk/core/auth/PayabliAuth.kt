@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.auth
 
-import androidx.annotation.VisibleForTesting
+import com.payabli.sdk.core.SessionWiring
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.isHeaderSafe
 import com.payabli.sdk.core.logging.LogCategory
@@ -93,6 +93,7 @@ internal class PayabliAuth(
     private val config: PayabliConfig,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.AUTH),
     private val providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
+    wiring: SessionWiring = SessionWiring.PRODUCTION,
 ) {
     init {
         // RetryPolicy validates its timings the same way. Zero or negative would time out before the
@@ -100,10 +101,7 @@ internal class PayabliAuth(
         require(providerTimeoutMillis > 0) { "providerTimeoutMillis must be positive" }
     }
 
-    // Not private so a test can hold it and force the cleanup and commit paths to contend. Both run under
-    // NonCancellable precisely for that case, and an uncontended lock cannot demonstrate it.
-    @VisibleForTesting
-    internal val mutex = Mutex()
+    private val mutex: Mutex = wiring.authLock ?: Mutex()
 
     // Null until the first mint. Nothing is passed in, so the first read is what obtains a token.
     private var currentToken: String? = null
@@ -255,19 +253,6 @@ internal class PayabliAuth(
         mutex.withLock { if (pinnedRefusal == refused) pinnedRefusal = null }
     }
 
-    /** Drops the held token and any in-flight claim, and revives a finished instance. */
-    @VisibleForTesting
-    internal suspend fun reset() {
-        mutex.withLock {
-            currentToken = null
-            inFlight = null
-            pinnedRefusal = null
-            // Without this a test that finishes the instance leaves it dead for every later one, and the
-            // failure lands somewhere unrelated.
-            finished = null
-        }
-    }
-
     /**
      * [rejectedToken] is null for a first mint, which has nothing to have been refused.
      *
@@ -356,8 +341,9 @@ internal class PayabliAuth(
         // NonCancellable for the same reason as the failure path: the token is already minted, and
         // cancellation arriving while this lock is contended would leave the claim set with no owner.
         val rotated = rejectedToken != null
+        val lock = mutex
         withContext(NonCancellable) {
-            mutex.withLock {
+            lock.withLock {
                 currentToken = fresh
                 // A first mint replaces nothing, so it is not a rotation and [tokenChanges] does not carry
                 // it. Emitting it would report every session's first request as a refresh, to a collector
@@ -471,9 +457,12 @@ internal class PayabliAuth(
     private suspend fun finish(
         shared: CompletableDeferred<String>,
         outcome: PayabliGenericException,
-    ) = withContext(NonCancellable) {
-        mutex.withLock { inFlight = null }
-        shared.completeExceptionally(outcome)
+    ): Boolean {
+        val lock = mutex
+        return withContext(NonCancellable) {
+            lock.withLock { inFlight = null }
+            shared.completeExceptionally(outcome)
+        }
     }
 
     /**

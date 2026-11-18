@@ -1,3 +1,4 @@
+import com.android.build.api.variant.HostTestBuilder
 import com.payabli.buildlogic.GenerateExtraEnvironments
 import com.payabli.buildlogic.extraEnvironmentsSetting
 
@@ -79,6 +80,11 @@ android {
 // The variant API rather than an `android.sourceSets` srcDir, because that one takes a directory and leaves
 // the compile task free to run before the generator has written into it. This carries the task dependency.
 androidComponents {
+    // The tests build a SessionWiring that only the debug copy can construct, so they cannot compile against
+    // release. The debug unit tests run the same main sources.
+    beforeVariants(selector().withBuildType("release")) { variant ->
+        variant.hostTests[HostTestBuilder.UNIT_TEST_TYPE]?.enable = false
+    }
     onVariants { variant ->
         variant.sources.kotlin?.addGeneratedSourceDirectory(
             generateExtraEnvironments,

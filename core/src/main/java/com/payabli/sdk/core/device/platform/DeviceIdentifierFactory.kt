@@ -43,6 +43,7 @@ public object DeviceIdentifierFactory {
     @SuppressLint("HardwareIds")
     public fun of(context: Context): String = identifier.get { derive(context) }
 
+    @SuppressLint("HardwareIds")
     private fun derive(context: Context): String {
         val application = context.applicationContext
         val installationId =
