@@ -181,7 +181,7 @@ public class PayabliSession private constructor(
             return convertingUnexpectedFailures(startedAt) {
                 host.appContext.applicationContext.applyHostLogLevel()
 
-                install(config, HostFacts.of(host))
+                install(config, { HostFacts.of(host) })
             }
         }
 
@@ -190,14 +190,14 @@ public class PayabliSession private constructor(
          * the SDK did not classify converts here as in [initialize].
          *
          * @param config the configuration to install.
-         * @param facts what the session reads from the host application.
+         * @param readFacts reads what the session needs from the host application, only when a session is installed.
          * @param wiring how the session is built; only a debug build can replace any of it.
          * @return the installed session.
          */
         @JvmSynthetic
         internal suspend fun install(
             config: PayabliConfig,
-            facts: HostFacts,
+            readFacts: () -> HostFacts,
             wiring: SessionWiring = SessionWiring.PRODUCTION,
         ): PayabliSession {
             val startedAt = System.nanoTime()
@@ -206,7 +206,7 @@ public class PayabliSession private constructor(
             // released first, a waiting install could replace that channel before the report.
             return lock.withLock {
                 convertingUnexpectedFailures(startedAt) {
-                    installHeld(config, facts, wiring, startedAt)
+                    installHeld(config, readFacts, wiring, startedAt)
                 }
             }
         }
@@ -215,14 +215,14 @@ public class PayabliSession private constructor(
          * The install's body, with [lock] held.
          *
          * @param config the configuration to install.
-         * @param facts what the session reads from the host application.
+         * @param readFacts reads what the session needs from the host application.
          * @param wiring how the session is built.
          * @param startedAt when the install began, for the duration a refusal reports.
          * @return the session now installed, or the live one when nothing changed.
          */
         private suspend fun installHeld(
             config: PayabliConfig,
-            facts: HostFacts,
+            readFacts: () -> HostFacts,
             wiring: SessionWiring,
             startedAt: Long,
         ): PayabliSession {
@@ -257,6 +257,7 @@ public class PayabliSession private constructor(
             }
 
             val machine = SessionStateMachine(sink)
+            val facts = readFacts()
             val client =
                 ClientFacts(PayabliSdkVersion.VALUE, facts.device.osVersion, facts.device.modelName, facts.readDeviceId)
             val onAuthFailure = AuthFailureListener { machine.markReinitializeRequired() }

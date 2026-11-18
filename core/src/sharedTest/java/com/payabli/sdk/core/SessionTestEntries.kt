@@ -25,7 +25,7 @@ internal suspend fun PayabliSession.Companion.initializeAgainst(
 ): PayabliSession =
     install(
         config,
-        host?.let { HostFacts.of(it, identifierOf) } ?: HostFacts.NONE,
+        { host?.let { HostFacts.of(it, identifierOf) } ?: HostFacts.NONE },
         SessionWiring(baseUrl = baseUrl),
     )
 
@@ -41,7 +41,7 @@ internal suspend fun PayabliSession.Companion.initializeAgainst(
 internal suspend fun PayabliSession.Companion.initializeWith(
     config: PayabliConfig,
     buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
-): PayabliSession = install(config, HostFacts.NONE, SessionWiring(transport = buildTransport))
+): PayabliSession = install(config, { HostFacts.NONE }, SessionWiring(transport = buildTransport))
 
 /**
  * Drops the installed session and puts [PayabliSession.state] back, so one test cannot decide the outcome of
