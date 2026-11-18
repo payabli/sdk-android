@@ -3,6 +3,8 @@
 package com.payabli.sdk.telemetry
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
@@ -734,6 +736,30 @@ class TelemetryClientTest {
 
                 advanceTimeBy(2.seconds)
                 assertEquals("the next flush did not send the returned batch", 3, transport.sent.size)
+            }
+        }
+
+    @Test
+    fun aFlushWithNoCredentialHeldKeepsTheBatchForTheNextFlush() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var held = false
+            val transport =
+                FakeTransport {
+                    if (!held) throw PayabliGenericException(PayabliErrorType.MISSING_TOKEN, "no token held")
+                    FakeTransport.accepted()
+                }
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 100) { client ->
+                client.start()
+                repeat(3) { record(client) }
+                client.flushAsync()
+                assertEquals("the first flush did not try", 1, transport.sent.size)
+
+                held = true
+                advanceTimeBy(FLUSH_INTERVAL + 1.seconds)
+
+                assertEquals("the next flush did not send the kept batch", 2, transport.sent.size)
+                assertEquals("the kept batch lost events", 3, eventsIn(transport.bodyAsText(1)))
             }
         }
 

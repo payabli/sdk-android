@@ -533,12 +533,13 @@ package com.payabli.sdk.core.network {
   }
 
   @RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP) public final class PayabliRequest {
-    ctor public PayabliRequest(com.payabli.sdk.core.network.HttpMethod method, String path, optional String? route, optional java.util.List<kotlin.Pair<java.lang.String,java.lang.String>> query, optional java.util.Map<java.lang.String,java.lang.String> headers, optional byte[]? body, optional boolean isCredentialPinned, optional kotlin.jvm.functions.Function1<? super com.payabli.sdk.core.network.PayabliResponse,java.lang.Boolean> isCallerRefusal);
+    ctor public PayabliRequest(com.payabli.sdk.core.network.HttpMethod method, String path, optional String? route, optional java.util.List<kotlin.Pair<java.lang.String,java.lang.String>> query, optional java.util.Map<java.lang.String,java.lang.String> headers, optional byte[]? body, optional boolean isCredentialPinned, optional kotlin.jvm.functions.Function1<? super com.payabli.sdk.core.network.PayabliResponse,java.lang.Boolean> isCallerRefusal, optional boolean requiresHeldCredential);
     method @InaccessibleFromKotlin public byte[]? getBody();
     method @InaccessibleFromKotlin public java.util.Map<java.lang.String,java.lang.String> getHeaders();
     method @InaccessibleFromKotlin public com.payabli.sdk.core.network.HttpMethod getMethod();
     method @InaccessibleFromKotlin public String getPath();
     method @InaccessibleFromKotlin public java.util.List<kotlin.Pair<java.lang.String,java.lang.String>> getQuery();
+    method @InaccessibleFromKotlin public boolean getRequiresHeldCredential();
     method @InaccessibleFromKotlin public String? getRoute();
     method @InaccessibleFromKotlin public kotlin.jvm.functions.Function1<com.payabli.sdk.core.network.PayabliResponse,java.lang.Boolean> isCallerRefusal();
     method @InaccessibleFromKotlin public boolean isCredentialPinned();
@@ -549,6 +550,7 @@ package com.payabli.sdk.core.network {
     property public com.payabli.sdk.core.network.HttpMethod method;
     property public String path;
     property public java.util.List<kotlin.Pair<java.lang.String,java.lang.String>> query;
+    property public boolean requiresHeldCredential;
     property public String? route;
     field public static final String APPLICATION_JSON = "application/json";
     field public static final String CONTENT_TYPE_HEADER = "Content-Type";
@@ -557,7 +559,7 @@ package com.payabli.sdk.core.network {
   }
 
   public static final class PayabliRequest.Companion {
-    method public <T> com.payabli.sdk.core.network.PayabliRequest json(com.payabli.sdk.core.network.HttpMethod method, String path, T body, kotlinx.serialization.KSerializer<T> bodySerializer, optional String? route, optional java.util.Map<java.lang.String,java.lang.String> headers, optional boolean isCredentialPinned, optional kotlin.jvm.functions.Function1<? super com.payabli.sdk.core.network.PayabliResponse,java.lang.Boolean> isCallerRefusal);
+    method public <T> com.payabli.sdk.core.network.PayabliRequest json(com.payabli.sdk.core.network.HttpMethod method, String path, T body, kotlinx.serialization.KSerializer<T> bodySerializer, optional String? route, optional java.util.Map<java.lang.String,java.lang.String> headers, optional boolean isCredentialPinned, optional kotlin.jvm.functions.Function1<? super com.payabli.sdk.core.network.PayabliResponse,java.lang.Boolean> isCallerRefusal, optional boolean requiresHeldCredential);
     property public static String APPLICATION_JSON;
     property public static String CONTENT_TYPE_HEADER;
     property public static String IDEMPOTENCY_KEY_HEADER;

@@ -2,6 +2,9 @@ package com.payabli.sdk.telemetry
 
 import com.payabli.sdk.core.PayabliSdkVersion
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.logging.LogLevel
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
@@ -252,6 +255,30 @@ class TelemetryUploaderTest {
 
             assertEquals(SendOutcome.KEEP, outcome)
             assertEquals(1, transport.sent.size)
+        }
+
+    @Test
+    fun aBatchSendsOnTheHeldCredentialOnly() =
+        runTest {
+            val transport = FakeTransport()
+
+            TelemetryUploader(transport, context, logger).send(listOf(anEvent()))
+
+            assertTrue(transport.sent.single().requiresHeldCredential)
+        }
+
+    @Test
+    fun aBatchWithNoCredentialHeldAnswersKeepAndLogsBelowWarn() =
+        runTest {
+            val transport =
+                FakeTransport { throw PayabliGenericException(PayabliErrorType.MISSING_TOKEN, "no token held") }
+
+            val outcome = TelemetryUploader(transport, context, logger).send(listOf(anEvent()))
+
+            assertEquals(SendOutcome.KEEP, outcome)
+            val record = logger.records.single()
+            assertEquals(LogLevel.DEBUG, record.level)
+            assertTrue(record.message, record.message.startsWith("no token held"))
         }
 
     @Test

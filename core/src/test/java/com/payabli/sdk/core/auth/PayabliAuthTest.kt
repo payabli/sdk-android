@@ -83,6 +83,51 @@ class PayabliAuthTest {
     }
 
     @Test
+    fun `the held token is nothing before a mint, and reading it calls no provider`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val calls = AtomicInteger()
+            val subject = auth { "minted".also { calls.incrementAndGet() } }
+
+            assertNull(subject.heldToken())
+            assertEquals(0, calls.get())
+        }
+
+    @Test
+    fun `the held token is the one minted`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val subject = holding("held-token") { "refreshed-token" }
+
+            assertEquals("held-token", subject.heldToken())
+        }
+
+    @Test
+    fun `the held token is nothing while a refresh replaces it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gate = CompletableDeferred<Unit>()
+            val subject =
+                holding("held-token") {
+                    gate.await()
+                    "refreshed-token"
+                }
+            val refresh = async { subject.invalidateAndRefresh("held-token") }
+            repeat(3) { yield() }
+
+            assertNull("the token under refresh is not offered", subject.heldToken())
+            gate.complete(Unit)
+            refresh.await()
+            assertEquals("refreshed-token", subject.heldToken())
+        }
+
+    @Test
+    fun `the held token is nothing once the holder is finished`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val subject = holding("held-token") { "refreshed-token" }
+            subject.finish(terminal())
+
+            assertNull(subject.heldToken())
+        }
+
+    @Test
     fun `no method hands out the lock`() {
         val returningTheLock = PayabliAuth::class.java.declaredMethods.filter { it.returnType == Mutex::class.java }
 
@@ -1136,10 +1181,11 @@ class PayabliAuthTest {
         // to resolve a synthetic method, which is what makes the annotation the enforcement.
         val carrying =
             PayabliAuth::class.java.declaredMethods.filter {
-                it.name.substringBefore('$') in setOf("accessToken", "invalidateAndRefresh", "getTokenChanges")
+                it.name.substringBefore('$') in
+                    setOf("accessToken", "heldToken", "invalidateAndRefresh", "getTokenChanges")
             }
 
-        assertEquals(3, carrying.size)
+        assertEquals(4, carrying.size)
         carrying.forEach { assertTrue("${it.name} is reachable from Java", it.isSynthetic) }
     }
 }
