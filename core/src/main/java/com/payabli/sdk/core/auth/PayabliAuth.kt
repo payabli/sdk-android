@@ -195,8 +195,7 @@ internal class PayabliAuth(
     }
 
     /**
-     * The token held now, without calling the provider. A token under refresh is not offered, and a finished
-     * instance offers none.
+     * The token held now, without calling the provider.
      *
      * @return the token held, or null when none is held, a mint or refresh is in flight, or this instance is finished.
      */

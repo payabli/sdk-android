@@ -86,7 +86,7 @@ internal class TelemetryUploader(
             throw cancellation
         } catch (failure: PayabliException) {
             if (failure.type == PayabliErrorType.MISSING_TOKEN) {
-                // Debug, not warn: until the host's own work obtains a token, every flush lands here.
+                // Every flush lands here until the host's own work obtains a token, so this is logged at debug.
                 logger.debug(
                     LogField.safe("event", "telemetry_batch_waiting"),
                     LogField.safe("route", ROUTE),
