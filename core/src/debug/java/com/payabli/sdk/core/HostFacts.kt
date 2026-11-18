@@ -33,7 +33,7 @@ internal class HostFacts private constructor(
             val context = host.appContext.applicationContext
             return HostFacts(
                 device = DeviceProfileFactory.of(host.appContext),
-                readDeviceId = { identifierOf(context).ifBlank { null } },
+                readDeviceId = { sessionDeviceId(identifierOf(context)) },
                 host = host,
             )
         }
