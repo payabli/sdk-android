@@ -217,7 +217,7 @@ class DeviceServiceConfigTest {
         }
 
     @Test
-    fun `the sibling platform's credentials do not decode as this platform's`() =
+    fun `credentials for another platform do not decode as this platform's`() =
         runTest(timeout = TEST_TIMEOUT) {
             // No ppId and no hostPort, which is what makes the platform discriminator self-enforcing.
             val (client, _) =

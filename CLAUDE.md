@@ -1,5 +1,11 @@
 # CLAUDE.md
 
+Guidance for LLM-based coding agents working in this repository.
+
+The public surface (types, the state model, the error taxonomy, storage and wire behaviour) is a published
+contract. A change to it is decided and recorded before it is written, outside this repository, and lands in
+a pull request of its own. A pull request here does not restate how that decision was coordinated.
+
 ## Commands
 
 - `./gradlew assembleDebug` - Build all modules
@@ -22,7 +28,6 @@
 - `./gradlew ktlintFormat --no-configuration-cache` - Fix formatting (the flag is required)
 - `./gradlew lint` - Android Lint
 - `./gradlew createDebugUnitTestCoverageReport` - Coverage, `build/reports/coverage/test/debug/report.xml`
-- Static analysis is `sonar.yml`, the standalone scanner over `sonar-project.properties` and the reports CI uploads; it runs from main on `workflow_run`, so a branch cannot change it
 - `./gradlew publishToMavenLocal` - Exercise the publish convention
 
 **Setup**: three things a fresh clone lacks, in the order they break. `ANDROID_HOME`, or `sdk.dir` in the gitignored `local.properties`. Then `payabli.maven.user` and `payabli.maven.password` in `~/.gradle/gradle.properties` (never in this repo) for the card reader repository that `:taptopay` resolves from; a maintainer supplies the pair, and the one to ask for is the release identity, which is what every build reads `/maven` with. Only `:taptopay` needs it, and the build says so if it is missing. Then, for the attestation tests that make a real Play Integrity request, `payabli.cloudProjectNumber` in the same file: a Google Cloud project number with the Play Integrity API enabled, which a maintainer can supply. It is **not a secret** — every app shipping Play Integrity carries its project number in the binary — but it is environment-scoped and it is the shared daily quota target, so it is configured rather than hard-coded; `taptopay/build.gradle.kts` carries the full reasoning. Without it, `PlayIntegrityRealProjectTest` is filtered out of the run and everything else is unaffected.
@@ -52,6 +57,17 @@ unsafe — so each invocation pays its own configuration cost and fewer, larger 
 ones.
 
 **Work tracking**: Linear, Platform team, project `Android SDK`, `Android -` title prefix.
+
+## Code quality
+
+- **Format**: `./gradlew ktlintCheck`, and `./gradlew ktlintFormat --no-configuration-cache` to fix it.
+- ktlint style rules live in `.editorconfig`. `kotlin.code.style=official`; configuration cache is on, so avoid build logic that reads mutable state at execution time.
+- **Lint**: `./gradlew lint`, Android Lint, once before a push (see **When to run which** above).
+- Static analysis is `sonar.yml`, the standalone scanner over `sonar-project.properties` and the reports CI uploads; it runs from main on `workflow_run`, so a branch cannot change it
+- Never log a PAN, token, CVV, expiry, cardholder name or account number. Sensitive input uses a zeroizable buffer overwritten after encryption, never an immutable `String`.
+- **A `toString()` is a second route out for anything the logger redacts.** A `data class` synthesizes one over every property, and it reaches assertion failures, exception messages and crash reports without passing through the logger. A type holding an instrument value, an account number or an identifier declares its own. `copy()` is the same hole, since it hands out a second reference to a buffer the original still intends to overwrite.
+- **`internal` is a public, name-mangled method on the JVM.** A Java consumer can call an internal accessor that the public Kotlin surface does not offer, so an accessor returning sensitive digits needs `@JvmSynthetic` and not only `internal`.
+- **A decoder exception quotes what it rejected.** `SerializationException.message` carries an excerpt of the input, so attaching it as the `cause` of a redacted exception puts that excerpt in every crash report that walks the chain. Keep the code and drop the cause.
 
 ## Architecture
 
@@ -87,11 +103,6 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 - Platform-native only: `HttpURLConnection`, Keystore and `javax.crypto`, `kotlinx.serialization`, `kotlinx.coroutines`, Compose. No third-party HTTP client, crypto engine, DI framework, reflection-based JSON mapper or logging framework.
 - Convention plugins in `build-logic` carry shared config: `payabli.publish` for publishing, `payabli.quality` for formatting and coverage. Prefer extending those over per-module blocks.
 - Dependencies come from `gradle/libs.versions.toml` only. Plugin versions used by `build-logic` are declared there too and pinned again in `build-logic/build.gradle.kts`; keep the two in sync.
-- ktlint style rules live in `.editorconfig`. `kotlin.code.style=official`; configuration cache is on, so avoid build logic that reads mutable state at execution time.
-- Never log a PAN, token, CVV, expiry, cardholder name or account number. Sensitive input uses a zeroizable buffer overwritten after encryption, never an immutable `String`.
-- **A `toString()` is a second route out for anything the logger redacts.** A `data class` synthesizes one over every property, and it reaches assertion failures, exception messages and crash reports without passing through the logger. A type holding an instrument value, an account number or an identifier declares its own. `copy()` is the same hole, since it hands out a second reference to a buffer the original still intends to overwrite.
-- **`internal` is a public, name-mangled method on the JVM.** A Java consumer can call an internal accessor that the public Kotlin surface does not offer, so an accessor returning sensitive digits needs `@JvmSynthetic` and not only `internal`.
-- **A decoder exception quotes what it rejected.** `SerializationException.message` carries an excerpt of the input, so attaching it as the `cause` of a redacted exception puts that excerpt in every crash report that walks the chain. Keep the code and drop the cause.
 - **Catch the narrowest type the surrounding layer already catches.** `runCatching` catches `Throwable`, so a linkage error or a programming mistake becomes whatever recoverable state the failure branch returns; there is no `catch` clause for a static analyzer to flag either. Catching `IllegalArgumentException` where `SerializationException` is meant turns an unrelated argument error into a store reset. And a platform failure outside the supertype being caught escapes the taxonomy entirely: `KeyGenerator.generateKey()` raises `ProviderException`, which is not a `GeneralSecurityException`.
 - **A lock is keyed by what it protects, not by the object holding it.** A `Mutex` held as a property serializes callers that share that instance, and a factory can hand out several instances over one backing file, so two of them read the old map and each writes its own. Key it by the resolved path. Separately, `get` under a lock followed by `set` under the same lock is two critical sections and another caller runs between them: a read whose value must still hold when the write lands is one critical section, and a delete carries the value it expects so a stale caller cannot remove a newer record.
 - **Cancellation must not leave shared state wedged.** `Mutex.withLock` honours an already-cancelled job, so a cancellation arriving while suspended behind the lock throws before the state is committed or the deferred completed, and every later reader awaits a claim with no owner. Commit and complete under `NonCancellable`. Release the claim for anything thrown, not only for `Exception`: an `Error` on a path that only releases for `Exception` leaves the deferred permanently incomplete.
@@ -100,124 +111,6 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 - **A value written by hand in two places drifts.** Prefer one definition the other sites read. Where a mirror is unavoidable, the commit that changes the source changes every mirror, and something fails when they disagree. Match a mirrored enum by name or an explicit map, never by indexing on the raw value, so an unknown value is a handled case instead of a read past the end.
 - **Compose:** `@Immutable` on a type holding a caller-supplied `List`, `Set` or `Map` is a promise Compose acts on, and it may skip the update entirely when the caller mutates the collection it passed in. A button disabled through state is not a single-flight guard, because a second tap lands before the recomposition; guard the submit synchronously. A `clickable` row sized to its text is below the 48dp touch target at normal font scale. `AnimatedVisibility` removes its content from the semantics tree while hidden, which takes a result message and its action away from a screen reader. A label that is a sibling of its control is announced as an unlabelled control; put it in the control's semantics. **In a test, `hasText` searches `InputText` as well as `EditableText`, and `InputText` is the raw input, which bypasses the visual transformation**: an assertion that a masked field now shows its digits matches one still drawn as bullets, and passes with the reveal control replaced by an empty lambda. Match `EditableText`, and assert both sides of the change, since only the pair separates a transformation that lifted from one that was never applied. **A composition body runs more than once**, so appending to a collection from inside `setContent` grows it on every recomposition and fails a count on something other than its subject; assign by key, which is idempotent however often the body runs.
 - **A money-moving request needs an idempotency key that outlives the process.** Rotate it only on a definitive accepted or refused response. A timeout, a decode failure or a cancellation after the request left may mean the charge landed, so reusing the key is what makes the retry safe. A key generated in state that is rebuilt after process death is a new key for the same attempt, and the retry charges again.
-
-## CI
-
-`.github/workflows/ci.yml`, on push and pull request to `main`, `release/**` and `hotfix/**`. The jobs that matter here:
-
-- **build** - the modules that need no credentials. Runs for everyone, forks included.
-- **card-present** - `:taptopay`. It reads the card reader credential from an environment: `ci-pull-request` on a pull request and `ci-protected` on a push. Skipped on pull requests from forks and from Dependabot.
-- **sonar** is not here: `sonar.yml` runs on `workflow_run` from main's copy, in the `ci-protected` environment, and reads the reports and classes `build`, `card-present` and `instrumented` upload.
-
-`.github/workflows/nightly.yml`, on schedule and manual dispatch only, never on a pull request and not a
-required check. Four jobs, and the split is a security boundary rather than organisation: the third-party
-emulator action runs only in a job that holds no secret and takes nothing from a job that does.
-
-- **nightly** - every unit test that needs no credential, plus `:core`'s and `:payin`'s instrumented tests on
-  an emulator. Runs the one third-party action in the repository and holds no secret. Packs its results into
-  an artifact.
-- **card-present** - `:taptopay`'s and `:example`'s unit tests, holding the card reader credential on one
-  step. Runs no third-party action, and every action in it is pinned to a commit. Packs its results too.
-- **verdict** - `needs` both, unpacks their results, runs `.github/scripts/nightly_report.py` with the full
-  git history, uploads the facts and the `nightly-reports` artifact, and fails the run if a suite failed. So
-  the run result never depends on the reporting job.
-- **report** - `needs: verdict`, holds the bot token, runs nothing third-party. Posts a summary to
-  `#mobile-sdk-nightly-build` and the failure detail in that message's thread. `if: ${{ !cancelled() }}`
-  rather than `always()`, so a test job that timed out is still announced while a run superseded by
-  `cancel-in-progress` stays quiet.
-
-`verdict` and `report` talk through a `nightly-facts` artifact: `nightly_report.py` parses the JUnit XML and
-writes the facts, the verdict and the stack traces (to the job summary, which is what Slack links; a trace
-over 4000 characters is trimmed in the middle and the unabridged JUnit XML stays in the `nightly-reports`
-artifact); `.github/scripts/nightly_slack.py` renders and posts them. The verdict is decided in the job that
-gates on it, so the run and the notification cannot disagree. Each test job's results cross as one archive
-built by `.github/scripts/pack_results.sh`, because a glob upload roots the paths at whatever the matched
-files share.
-
-`verify.py`'s W12 holds the security half by structure: the emulator job never mentions the secrets context,
-needs no job that does and downloads no artifact, and every job that mentions it pins every action. It used
-to scan expressions for ways of reaching a secret, and review kept finding another; the job graph is the part
-that can be checked completely.
-
-**Both scripts are covered by `.github/scripts/tests/`, which needs only `python3` and `git`.** `verify.py`
-drives the collector as a subprocess inside a synthetic git repository, which is what
-`git` is for, and the poster in-process against a fake Slack on loopback; `sabotage.py` breaks each claimed
-behaviour in turn and confirms a check goes red, rewriting copies in a scratch directory rather than the
-files in the tree, so it is safe to interrupt. No third-party Python package is involved.
-`.github/workflows/scripts.yml` runs both, and only when `.github/scripts/**` or that workflow itself
-changes, so an ordinary pull request pays nothing for it. An edit that moves a sabotage anchor turns that
-workflow red until the anchor is re-pointed in the same change; that is the safeguard working, not a flake.
-Read the README there before adding a check, because each of the four disciplines it lists exists because
-its absence produced a false pass. It is also the cheap place to check a change to either script: a
-scheduled run never fires from a feature branch, and while `nightly.yml` can be dispatched at one, that runs
-the whole emulator suite and posts to the channel.
-
-**The live flows post only on failure too, and each environment arms its own alarm.** They used to post on
-green, and those two daily messages were their liveness signal; going quiet needed the switch to replace it.
-The marker is `live-liveness:<platform>:<environment>`, which shares no substring with the nightly's
-`nightly-liveness:<platform>` — the sweep matches markers as substrings, so one containing another would let
-a run delete an alarm that is not its own. qa and sandbox arm separately on purpose: sandbox stopping while
-qa keeps running still raises something. `verify.py` L9 to L14 cover the reporter, including that a reset which did
-not take falls back to posting and that a refused post leaves the previous alarm standing, and W8 covers the
-workflow naming an owner.
-
-**A green nightly posts nothing, and that is safe only because of the liveness switch.** Do not "fix" the
-missing green message. Six of seven messages used to say `Nightly green`, which is what teaches people to
-stop reading a channel. Silence would be ambiguous on its own, because "green" and "the workflow stopped
-firing" look identical, so the scheduled run on the default branch arms a Slack scheduled message about 26
-hours out and cancels the one the previous scheduled run armed. If that nightly stops for any reason, nobody
-cancels it and Slack posts the alarm on its own clock.
-
-**Only that run owns the alarm, and that restriction is load-bearing.** A manual dispatch or a probe branch
-reports as normal and leaves the alarm alone; a non-owner going quiet is the design rather than a broken path.
-Letting any run reset it would measure "somebody ran the nightly at some point", which a dead schedule could
-satisfy indefinitely through the occasional dispatch, and that is the exact failure the switch exists to catch.
-The marker is also scoped per platform, so a sibling platform reporting into the same channel cannot cancel
-this one's alarm. The clock has to live outside GitHub: a watcher hosted on the thing it watches dies with it,
-which is why this is not a scheduled digest job.
-
-The window is 26 hours rather than 25 for one reason only: scheduled runs here fire 42 to 53 minutes after
-the cron, which is GitHub's documented load delay, so 24 plus 2 leaves headroom without hiding a genuinely
-missed night. Widen it only against a measurement.
-
-What the switch is *for* is a separate question, and two documented behaviours answer it rather than setting
-the window. This repository is public, so "scheduled workflows are automatically disabled when no repository
-activity has occurred in 60 days" applies, and GitHub announces nothing when it happens. And queued
-scheduled jobs can be dropped outright under load. Neither produces an error for anything to report, which
-is why the absence has to be watched from outside.
-
-The reset runs through the same Slack API as the report, deliberately. If Slack is unreachable the reset
-fails too, the switch stays armed and it fires, which is correct: the switch asserts that the channel heard
-from the nightly, and if nothing could reach the channel then it did not.
-
-Configuration, all optional, and every one of them absent means warn and skip rather than fail:
-`SLACK_BOT_TOKEN` (secret, needs `chat:write`), `SLACK_CHANNEL_ID` (variable, not a secret), and
-`SLACK_MENTION_CULPRITS` (variable). The last turns the probable-culprit author into an `@`-mention and
-additionally needs `users:read.email`; it is off by default because the culprit is a labelled heuristic
-that has been wrong before, and pinging its author at 3am is a team-norm decision. **Enabling it also widens
-the blast radius of a tampered facts artifact**, which is written in the job that runs the third-party
-emulator action: the author email is looked up as given, so a compromised action could make the bot ping
-anyone. Off, nothing is looked up and no mention is emitted. Weigh that alongside the norm, not after it.
-
-**The per-file culprit only names a commit that landed since the last green nightly.** `git log -1 -- <file>`
-answers who touched a file last, which for an untouched file is a commit that has already passed every
-nightly since, so the report used to blame week-old work for a test that had merely turned flaky. Where the
-suspect range says the files have not changed, the thread reply says so and names nobody, and no author is
-looked up. Where the range is unknown or its commit list came back truncated, it falls back to naming the
-commit: a partial range cannot show that anything is outside it.
-
-**A comparison that came out empty is not a comparison that could not be made**, and the two answers are
-carried separately for that reason. A re-run of the very commit that went green, and a run of a commit older
-than the green baseline, both prove that every culprit was already in the tree when the suite last passed, so
-both clear everyone; the summary still renders no range for them, because a span from a commit to itself over
-a count of zero says nothing. Rewritten history is the unknown case and falls back. Conflating the two is
-what the first version of this did, and it put the blame back on precisely the runs that are flakes by
-definition.
-
-**Leave token rotation disabled on the Slack app.** The poster sends a static bearer token and implements no
-refresh, so enabling rotation would make the stored secret expire on Slack's schedule and the nightly would
-start warning and skipping. Nothing would go red, which is what makes it worth writing down: the failure is
-a channel that quietly stops reporting. Enabling rotation means teaching the poster to refresh first.
 
 ## Testing
 
@@ -409,3 +302,121 @@ reaches the branch under test.
   hardware.** Building `:taptopay` resolves the card reader from a credentialed repository, so running
   its instrumented tests in the nightly would hand that credential to the third-party emulator action, which is
   the exposure the job split exists to prevent.
+
+## CI
+
+`.github/workflows/ci.yml`, on push and pull request to `main`, `release/**` and `hotfix/**`. The jobs that matter here:
+
+- **build** - the modules that need no credentials. Runs for everyone, forks included.
+- **card-present** - `:taptopay`. It reads the card reader credential from an environment: `ci-pull-request` on a pull request and `ci-protected` on a push. Skipped on pull requests from forks and from Dependabot.
+- **sonar** is not here: `sonar.yml` runs on `workflow_run` from main's copy, in the `ci-protected` environment, and reads the reports and classes `build`, `card-present` and `instrumented` upload.
+
+`.github/workflows/nightly.yml`, on schedule and manual dispatch only, never on a pull request and not a
+required check. Four jobs, and the split is a security boundary rather than organisation: the third-party
+emulator action runs only in a job that holds no secret and takes nothing from a job that does.
+
+- **nightly** - every unit test that needs no credential, plus `:core`'s and `:payin`'s instrumented tests on
+  an emulator. Runs the one third-party action in the repository and holds no secret. Packs its results into
+  an artifact.
+- **card-present** - `:taptopay`'s and `:example`'s unit tests, holding the card reader credential on one
+  step. Runs no third-party action, and every action in it is pinned to a commit. Packs its results too.
+- **verdict** - `needs` both, unpacks their results, runs `.github/scripts/nightly_report.py` with the full
+  git history, uploads the facts and the `nightly-reports` artifact, and fails the run if a suite failed. So
+  the run result never depends on the reporting job.
+- **report** - `needs: verdict`, holds the bot token, runs nothing third-party. Posts a summary to
+  `#mobile-sdk-nightly-build` and the failure detail in that message's thread. `if: ${{ !cancelled() }}`
+  rather than `always()`, so a test job that timed out is still announced while a run superseded by
+  `cancel-in-progress` stays quiet.
+
+`verdict` and `report` talk through a `nightly-facts` artifact: `nightly_report.py` parses the JUnit XML and
+writes the facts, the verdict and the stack traces (to the job summary, which is what Slack links; a trace
+over 4000 characters is trimmed in the middle and the unabridged JUnit XML stays in the `nightly-reports`
+artifact); `.github/scripts/nightly_slack.py` renders and posts them. The verdict is decided in the job that
+gates on it, so the run and the notification cannot disagree. Each test job's results cross as one archive
+built by `.github/scripts/pack_results.sh`, because a glob upload roots the paths at whatever the matched
+files share.
+
+`verify.py`'s W12 holds the security half by structure: the emulator job never mentions the secrets context,
+needs no job that does and downloads no artifact, and every job that mentions it pins every action. It used
+to scan expressions for ways of reaching a secret, and review kept finding another; the job graph is the part
+that can be checked completely.
+
+**Both scripts are covered by `.github/scripts/tests/`, which needs only `python3` and `git`.** `verify.py`
+drives the collector as a subprocess inside a synthetic git repository, which is what
+`git` is for, and the poster in-process against a fake Slack on loopback; `sabotage.py` breaks each claimed
+behaviour in turn and confirms a check goes red, rewriting copies in a scratch directory rather than the
+files in the tree, so it is safe to interrupt. No third-party Python package is involved.
+`.github/workflows/scripts.yml` runs both, and only when `.github/scripts/**` or that workflow itself
+changes, so an ordinary pull request pays nothing for it. An edit that moves a sabotage anchor turns that
+workflow red until the anchor is re-pointed in the same change; that is the safeguard working, not a flake.
+Read the README there before adding a check, because each of the four disciplines it lists exists because
+its absence produced a false pass. It is also the cheap place to check a change to either script: a
+scheduled run never fires from a feature branch, and while `nightly.yml` can be dispatched at one, that runs
+the whole emulator suite and posts to the channel.
+
+**The live flows post only on failure too, and each environment arms its own alarm.** They used to post on
+green, and those two daily messages were their liveness signal; going quiet needed the switch to replace it.
+The marker is `live-liveness:<platform>:<environment>`, which shares no substring with the nightly's
+`nightly-liveness:<platform>` — the sweep matches markers as substrings, so one containing another would let
+a run delete an alarm that is not its own. qa and sandbox arm separately on purpose: sandbox stopping while
+qa keeps running still raises something. `verify.py` L9 to L14 cover the reporter, including that a reset which did
+not take falls back to posting and that a refused post leaves the previous alarm standing, and W8 covers the
+workflow naming an owner.
+
+**A green nightly posts nothing, and that is safe only because of the liveness switch.** Do not "fix" the
+missing green message. Six of seven messages used to say `Nightly green`, which is what teaches people to
+stop reading a channel. Silence would be ambiguous on its own, because "green" and "the workflow stopped
+firing" look identical, so the scheduled run on the default branch arms a Slack scheduled message about 26
+hours out and cancels the one the previous scheduled run armed. If that nightly stops for any reason, nobody
+cancels it and Slack posts the alarm on its own clock.
+
+**Only that run owns the alarm, and that restriction is load-bearing.** A manual dispatch or a probe branch
+reports as normal and leaves the alarm alone; a non-owner going quiet is the design rather than a broken path.
+Letting any run reset it would measure "somebody ran the nightly at some point", which a dead schedule could
+satisfy indefinitely through the occasional dispatch, and that is the exact failure the switch exists to catch.
+The marker is also scoped per platform, so another platform's report in the same channel cannot cancel
+this one's alarm. The clock has to live outside GitHub: a watcher hosted on the thing it watches dies with it,
+which is why this is not a scheduled digest job.
+
+The window is 26 hours rather than 25 for one reason only: scheduled runs here fire 42 to 53 minutes after
+the cron, which is GitHub's documented load delay, so 24 plus 2 leaves headroom without hiding a genuinely
+missed night. Widen it only against a measurement.
+
+What the switch is *for* is a separate question, and two documented behaviours answer it rather than setting
+the window. This repository is public, so "scheduled workflows are automatically disabled when no repository
+activity has occurred in 60 days" applies, and GitHub announces nothing when it happens. And queued
+scheduled jobs can be dropped outright under load. Neither produces an error for anything to report, which
+is why the absence has to be watched from outside.
+
+The reset runs through the same Slack API as the report, deliberately. If Slack is unreachable the reset
+fails too, the switch stays armed and it fires, which is correct: the switch asserts that the channel heard
+from the nightly, and if nothing could reach the channel then it did not.
+
+Configuration, all optional, and every one of them absent means warn and skip rather than fail:
+`SLACK_BOT_TOKEN` (secret, needs `chat:write`), `SLACK_CHANNEL_ID` (variable, not a secret), and
+`SLACK_MENTION_CULPRITS` (variable). The last turns the probable-culprit author into an `@`-mention and
+additionally needs `users:read.email`; it is off by default because the culprit is a labelled heuristic
+that has been wrong before, and pinging its author at 3am is a team-norm decision. **Enabling it also widens
+the blast radius of a tampered facts artifact**, which is written in the job that runs the third-party
+emulator action: the author email is looked up as given, so a compromised action could make the bot ping
+anyone. Off, nothing is looked up and no mention is emitted. Weigh that alongside the norm, not after it.
+
+**The per-file culprit only names a commit that landed since the last green nightly.** `git log -1 -- <file>`
+answers who touched a file last, which for an untouched file is a commit that has already passed every
+nightly since, so the report used to blame week-old work for a test that had merely turned flaky. Where the
+suspect range says the files have not changed, the thread reply says so and names nobody, and no author is
+looked up. Where the range is unknown or its commit list came back truncated, it falls back to naming the
+commit: a partial range cannot show that anything is outside it.
+
+**A comparison that came out empty is not a comparison that could not be made**, and the two answers are
+carried separately for that reason. A re-run of the very commit that went green, and a run of a commit older
+than the green baseline, both prove that every culprit was already in the tree when the suite last passed, so
+both clear everyone; the summary still renders no range for them, because a span from a commit to itself over
+a count of zero says nothing. Rewritten history is the unknown case and falls back. Conflating the two is
+what the first version of this did, and it put the blame back on precisely the runs that are flakes by
+definition.
+
+**Leave token rotation disabled on the Slack app.** The poster sends a static bearer token and implements no
+refresh, so enabling rotation would make the stored secret expire on Slack's schedule and the nightly would
+start warning and skipping. Nothing would go red, which is what makes it worth writing down: the failure is
+a channel that quietly stops reporting. Enabling rotation means teaching the poster to refresh first.

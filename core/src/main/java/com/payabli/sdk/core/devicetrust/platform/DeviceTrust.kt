@@ -40,8 +40,8 @@ import kotlinx.coroutines.withContext
  * file's canonical path, so the old blobs read as invalidated and the device re-registers silently.
  *
  * **The directory is not a parameter, and neither is the file name.** Both form the store's permanent
- * identity. This is the Android counterpart of a single keychain service: a second consumer adds entries
- * under its own reverse-DNS key names. A file that moves is a new file, with a new key and no way back.
+ * identity, and it is one store for the app: a second consumer adds entries under its own reverse-DNS key
+ * names. A file that moves is a new file, with a new key and no way back.
  *
  * **Safe to call more than once.** No singleton or cache is needed: the storage layer takes its lock from
  * process-wide state keyed on the store's identity, so two instances over one path share one lock, and the

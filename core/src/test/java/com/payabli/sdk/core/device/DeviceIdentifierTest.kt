@@ -57,7 +57,7 @@ class DeviceIdentifierTest {
      * A blank in, a blank out — never a substitute.
      *
      * An identifier invented where the platform offered none registers a new device on every call and
-     * correlates nothing. The sibling SDK does exactly that today, which is why it re-registers.
+     * correlates nothing.
      */
     @Test
     fun nothingFromThePlatformYieldsNothingRatherThanAnInvention() {

@@ -1746,8 +1746,7 @@ def test_poster(mod):
         check(f"P39 LIVENESS_OWNER={value!r} owns the switch only if it means true",
               armed == (value.lower() == "true"), f"armed={armed}")
 
-    # P40 the marker is scoped per platform, because nightly.yml states both platform SDKs can report into one
-    # channel. An unscoped marker would let each platform's nightly cancel the other's alarm, so each would
+    # P40 the marker is scoped per platform, because both platform SDKs can report into one channel. An unscoped marker would let each platform's nightly cancel the other's alarm, so each would
     # mask the other's death, which is worse than no switch because it looks like one is present.
     code, out, calls = run_poster(mod, green_f, PLATFORM="Android")
     android_text = of(calls, "chat.scheduleMessage")[0]["payload"]["text"]
@@ -1755,11 +1754,11 @@ def test_poster(mod):
 
     FakeSlack.behaviour = {"chat.postMessage": ok_parent,
                            "chat.scheduledMessages.list": {"ok": True, "scheduled_messages": [
-                               {"id": "Q0IOS", "post_at": 1, "text": "[nightly-liveness:iOS] the sibling"},
+                               {"id": "Q0IOS", "post_at": 1, "text": "[nightly-liveness:iOS] another platform"},
                                {"id": "Q0MINE", "post_at": 2, "text": "[nightly-liveness:Android] ours"}]}}
     code, out, calls = run_poster(mod, green_f, PLATFORM="Android")
     deleted = {d["payload"]["scheduled_message_id"] for d in of(calls, "chat.deleteScheduledMessage")}
-    check("P40 the sibling platform's alarm is never cancelled", "Q0IOS" not in deleted, str(deleted))
+    check("P40 the other platform's alarm is never cancelled", "Q0IOS" not in deleted, str(deleted))
     check("P40 our own older alarm still is", "Q0MINE" in deleted, str(deleted))
 
     # P13 two attributions on the same commit collapse to one line

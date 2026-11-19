@@ -13,11 +13,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The machine on its own: what it publishes, what it refuses, and which of those two it throws for.
- *
- * The rule under test is that no mutator hands back a value a caller can drop. The sibling SDK returns a
- * boolean from its transition and discards it at every call site, and the cost was a repair that ran every
- * phase and moved the state nowhere.
+ * The machine on its own: what it publishes, what it refuses, and which of those it throws for. No mutator
+ * hands back a value a caller can drop: a discarded transition result is a repair that runs every phase and
+ * moves the state nowhere.
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TapToPaySessionManagerTest {

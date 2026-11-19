@@ -14,22 +14,9 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.R as PayInR
 
 /**
- * Fills the payment form's boxes, debug builds only.
- *
- * The SDK owns the form's field state and offers no way to seed it, so each box is found in the composition
- * this app hosts and fed through its own text-setting action, as if typed: the value goes through the field's
- * filter and formatter exactly as a keystroke does. The form is asked for nothing and told nothing.
- *
- * [view] is the composition to fill, read as `LocalView.current` where the button is drawn. The sheet is a
- * composition of its own, which is what lets a button inside it reach the form it draws.
- *
- * Boxes are matched the way this repository's instrumented tests match them: on the merged node, which is
- * where the field's label and its text-setting action meet. Whichever way the label is drawn, floating or on
- * its own line, one of the two properties read below carries it.
- *
- * **Two controls are not filled: the card expiry and the account type.** Both are pickers rather than text
- * boxes, and a picker publishes no text-setting action, so there is nothing to feed. They are chosen by hand
- * after the tap, as the expiry is on iOS.
+ * Fills the payment form's boxes in debug builds, feeding each through its own text-setting action as if typed,
+ * because the SDK offers no way to seed field state. [view] is the composition to fill. The card expiry and the
+ * account type are pickers with no text action, so they are chosen by hand after the tap.
  */
 fun fillTestData(
     view: View,
@@ -62,8 +49,8 @@ private fun SemanticsNode.isNamed(label: String): Boolean {
 /**
  * The resource carrying the label this form draws for a field.
  *
- * This app's own table, as `PayInPrefillField` is iOS's: the SDK's equivalent is internal to it. Whatever this
- * names has to be what is on screen, which holds while the demo passes no field labels of its own.
+ * This app's own table: the SDK's equivalent is internal to it. Whatever this names has to be what is on
+ * screen, which holds while the demo passes no field labels of its own.
  */
 @get:StringRes
 internal val PayInField.labelResource: Int
