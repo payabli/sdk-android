@@ -114,6 +114,8 @@ dependencies {
     implementation(project(":telemetry"))
     // ComponentActivity and registerForActivityResult, for the SDK-owned Activity that receives a contract's result.
     implementation(libs.androidx.activity)
+    // The form's record of the flow it last drew, which outlives the form's composition as the screen does.
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     // api: the public composables take a Modifier and carry @Composable in their signatures.
     // :payabli-android depends on this module, so the umbrella carries Compose.
@@ -137,9 +139,6 @@ dependencies {
     // ComponentActivity, which the retention tests launch and recreate. ui-test-manifest declares it
     // in the test APK's manifest; this is what puts the class on the compile classpath.
     androidTestImplementation(libs.androidx.activity.compose)
-    // The retention tests hold the flow in a ViewModel, which is how the KDoc tells a host to hold it.
-    // Nothing in main needs it: the flow takes the host's scope, so no lifecycle type reaches the AAR.
-    androidTestImplementation(libs.androidx.lifecycle.viewmodel)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
     // Compose's idle waiting calls Espresso.onIdle, and the version ui-test-junit4 asks for throws on a

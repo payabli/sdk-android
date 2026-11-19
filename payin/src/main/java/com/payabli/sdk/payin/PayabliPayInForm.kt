@@ -2,6 +2,7 @@ package com.payabli.sdk.payin
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -18,6 +19,7 @@ import com.payabli.sdk.payin.payment.paymentDetails
 import com.payabli.sdk.payin.payment.step
 import com.payabli.sdk.payin.ui.PayInFormContent
 import com.payabli.sdk.payin.ui.PayInSubmitText
+import com.payabli.sdk.payin.ui.rememberPayInFormShownDraft
 
 /**
  * The Payabli payment form.
@@ -54,7 +56,8 @@ import com.payabli.sdk.payin.ui.PayInSubmitText
  *
  * **One form per [payIn].** The typed values are its own, so two forms given the same one draw the same
  * boxes, and two given the same one with different configurations refill each other on every frame. A second
- * form on a screen takes a second one.
+ * form on a screen takes a second one, and forms drawn in a list each take a `key`. Handing a form another [payIn]
+ * empties what was typed for the one before, so the previous one handed back opens empty.
  *
  * @param payIn where a submission runs, and whose state this renders.
  * @param operation what the tap does: store the method, capture, or authorize.
@@ -87,6 +90,9 @@ public fun PayabliPayInForm(
         when (payIn) {
             is PayInPaymentFlow -> payIn
         }
+    val shown = rememberPayInFormShownDraft()
+    // After the composition is applied, so a discarded one empties nothing.
+    SideEffect { shown.show(impl.draft) }
     val submission by impl.submissionState.collectAsState()
 
     // An authorization takes entered card data only, so a bank tab beside it is a form no request can be

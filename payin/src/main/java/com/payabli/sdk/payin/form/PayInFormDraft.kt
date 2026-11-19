@@ -144,11 +144,19 @@ internal class PayInFormDraft {
      *
      */
     fun clear() {
+        clearEntries()
+        submissionPending = false
+    }
+
+    /**
+     * Everything the payer entered goes, as with [clear], and a submission in flight still delivers its outcome
+     * when this draft is drawn again.
+     */
+    fun clearEntries() {
         seededFrom.set(null)
         entered.clear()
         rejectedFields = emptyMap()
         failureNotice = null
-        submissionPending = false
     }
 }
 
