@@ -23,18 +23,9 @@ internal fun cardRead(
     )
 
 /**
- * The one test double for [TapToPayProvider].
- *
- * One rather than several: a second implementation of a four-method interface is a second set of answers to
- * the same questions, and the two drift on which of them throws.
- *
- * [lastReadRequest] is what the charge asked the reader for, which is the only way to assert that the
- * identifier Payabli minted is the one the reader was given.
- *
- * [trace] and [gate] belong to the serialization tests. The gate holds a run inside the reader long enough
- * for a second to try to enter it, and [sawOverlap] is raised from in there — which is the assertion worth
- * making, because checking the state afterwards can be satisfied by luck and a flag raised from inside the
- * shared resource cannot.
+ * The one test double for [TapToPayProvider]. [lastReadRequest] is what the charge asked the reader for.
+ * [gate] holds a run inside the reader so a second can try to enter, and [sawOverlap] is raised from in there,
+ * which luck cannot satisfy the way a state check made afterwards can.
  */
 internal class FakeTapToPayProvider(
     private val trace: MutableList<String> = mutableListOf(),

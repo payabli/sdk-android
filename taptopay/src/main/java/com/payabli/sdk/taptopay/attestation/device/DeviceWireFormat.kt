@@ -22,26 +22,9 @@ internal const val STATUS_PENDING: String = "pending"
 internal const val STATUS_ACTIVE: String = "active"
 
 /**
- * The request and response shapes of the device routes.
- *
- * **Every key on this wire is lower-camelCase, and none of these types needs a `@SerialName`.** Each property
- * name is the key the service uses, so a `@SerialName` here could only restate it or rename it.
- *
- * **No request property carries a Kotlin default.** [com.payabli.sdk.core.network.PayabliJson] encodes with
- * `encodeDefaults = false`, so a defaulted property is silently dropped from the body. That is not a style
- * preference: `platform` on `/attest` must be physically present, and a body that omits the key is refused
- * before any of its other fields are read. A nullable property with no default still disappears when it is
- * null, which is the wanted behaviour and comes from `explicitNulls = false`.
- *
- * Decoding reads the same two settings in the other direction: a **nullable** property with no default
- * decodes to null when its key is absent, while a **non-nullable** one raises `MissingFieldException`. So
- * nullability here is a deliberate statement about which fields this SDK cannot proceed without, and the
- * missing-field throw is caught one layer up and reported as [DeviceServiceException.Undecodable].
- *
- * These are plain classes rather than data classes, and each writes its own `toString`, because a generated
- * one would print every field it holds: `activationCode` is a live secret, and `attestation`,
- * `publicKey`, `keyId`, `hardwareId` and `deviceId` are device identity. `toString` reaches exception
- * messages and diagnostics, which the logger cannot redact.
+ * The device routes' request and response shapes. No request property has a default, because
+ * `encodeDefaults = false` drops it from the body and `platform` on `/attest` must be present. Each class writes
+ * its own `toString`, because a generated one would print the activation code and the device's identity.
  */
 @Serializable
 internal class ChallengeRequest(
@@ -106,11 +89,8 @@ internal class RegisterRequest(
 }
 
 /**
- * `{ deviceId, status, outcome }`.
- *
- * [deviceId] is required: it is the handle every later call is made against, so a response without one is
- * unusable rather than partially usable. [status] is optional because nothing here should fail on a
- * field it only reads to answer one question.
+ * `{ deviceId, status, outcome }`. [deviceId] is required because every later call is made against it;
+ * [status] is optional because nothing here should fail on a field it only reads.
  */
 @Serializable
 internal class RegisterResponse(

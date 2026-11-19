@@ -6,22 +6,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * A [PayabliSecureStorage] that keeps values in a map, for testing a consumer without a Keystore.
- *
- * Copies on the way in and out, so the map never aliases a caller's array: a consumer that wipes what it
- * passed to [set], as it should, would otherwise blank the stored value too. The map was briefly a constructor
- * parameter, which defeated exactly that: a caller seeding the fixture kept references to the stored arrays and
- * could wipe them afterwards. Nothing seeded it, so the parameter went rather than gaining a copy.
- *
- * **Not encrypted, and that is the point.** Never construct one outside a test.
- *
- * It enforces the same key rule as the shipping store, through the shared [requireRepresentableKey]. A fixture
- * that accepts what production rejects lets a consumer's test pass here and fail in production, which is the one
- * thing a fixture must not do.
- *
- * Just the three contract methods. A text `snapshot()` accessor does not belong among them: decoding stored
- * bytes as UTF-8 puts back the text assumption the contract drops, and mangles any value that is not valid
- * UTF-8. Anything else a consumer needs it can add against a real call site.
+ * A [PayabliSecureStorage] that keeps values unencrypted in a map, for tests only. It copies arrays in and out,
+ * so a consumer wiping what it passed to [set] cannot blank the stored value, and it enforces the shipping
+ * store's key rule through [requireRepresentableKey], so a test cannot pass on a key production rejects.
  */
 public class InMemorySecureStorage(
     /**

@@ -7,18 +7,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Fetches a fresh access token from the partner-backend stand-in on the development machine.
- *
- * The demo token server in `example-server`: port 8787, path `/payabli/access-token`. It performs the
- * client-credentials exchange that a partner's own backend would, so no client secret is ever in the app.
- *
- * **Reached over `adb reverse`, not the machine's hostname.** Run
- * `adb -s <serial> reverse tcp:8787 tcp:8787` before the live tier, and the device's own loopback forwards
- * to the Mac. It needs no mDNS, and the device need not share a network with the machine.
- *
- * A token from here is short-lived. The live tier fetches one at start and hands this same call to the SDK
- * as its refresh provider, so a run outliving its token recovers instead of failing at whatever call it had
- * reached.
+ * Fetches an access token from the demo token server in `example-server`, which holds the client secret so the
+ * app never does. It is reached over `adb reverse tcp:8787 tcp:8787`, and the live tier also hands this call to
+ * the SDK as its refresh provider, so a run that outlives its token recovers.
  */
 internal object LocalTokenServer {
     private val FORMAT = Json { ignoreUnknownKeys = true }
