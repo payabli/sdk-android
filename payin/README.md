@@ -255,7 +255,7 @@ error's `category`, and log its `code`.
 
 | Parameter | Sets |
 |---|---|
-| `allowedMethods`, `defaultMethod` | Card, bank account, or both, and which opens first |
+| `allowedMethods`, `defaultMethod` | Card, bank account, or both, and which opens first. Pass one method to hide the method switch. For a card-only form, pass `listOf(PayInMethodType.Card)`. |
 | `cardSections`, `bankSections` | The fields in each section, and their order |
 | `requiredFields` | Fields the payer must fill |
 | `labelLayout`, `hiddenFieldLabels` | Where labels sit, and which are hidden |
