@@ -229,7 +229,7 @@ class DeviceServiceClientTest {
 
             assertEquals(DEVICE_ID, response.deviceId)
             // The value is a bare literal in the server's response rather than a serialized enum, so nothing on
-            // either side pins its case. The sibling client lowercases before comparing for the same reason.
+            // either side pins its case.
             assertTrue(response.isPending)
         }
 
@@ -287,9 +287,8 @@ class DeviceServiceClientTest {
             val attesting = FakeDeviceTransport.answering("""{"responseText":"Success","isSuccess":true}""")
             val activating = FakeDeviceTransport.answering("""{"responseText":"Success","isSuccess":true}""")
 
-            // The shipping sibling client discards both of these bodies, so a service answering with nothing
-            // but `isSuccess: true` is a shape a client has already accepted in production. Reaching the
-            // response at all is the success signal; there is nothing in it to act on.
+            // A body holding nothing but `isSuccess: true` is a success: reaching the response at all is the
+            // signal, and there is nothing in it to act on.
             val attested =
                 clientFor(attesting).attest(ENTRY, CHALLENGE_ID, identity(), APP_ID, AttestationToken(TOKEN))
             val activated = clientFor(activating).activate(ENTRY, DEVICE_ID, "123456", assertion())

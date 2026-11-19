@@ -19,7 +19,7 @@ class DeviceDescriptionInstrumentedTest {
 
     @Test
     fun theHardwareIdentifierIsTheSameOnEveryRead() {
-        // The property the sibling SDK loses on one branch, which registers a new device per call.
+        // An identifier that changes between reads registers a new device on every call.
         assertEquals(
             DeviceDescriptionFactory.create(context).hardwareId,
             DeviceDescriptionFactory.create(context).hardwareId,

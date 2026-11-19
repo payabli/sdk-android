@@ -45,8 +45,8 @@ class PayabliConfigTest {
 
     @Test
     fun `every environment is an https Payabli origin with no path`() {
-        // Guards the shape the transport depends on, and keeps a non-Payabli origin out of shipped
-        // configuration: the sibling platform still carries a debug-only tunnel host.
+        // Guards the shape the transport depends on, and keeps a non-Payabli origin, such as a debug-only
+        // tunnel host, out of shipped configuration.
         for (environment in PayabliEnvironment.entries) {
             val uri = URI(environment.baseUrl)
             assertEquals("$environment must be https", "https", uri.scheme)

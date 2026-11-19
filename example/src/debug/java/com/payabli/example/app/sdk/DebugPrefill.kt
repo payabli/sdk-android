@@ -29,7 +29,7 @@ import com.payabli.sdk.payin.R as PayInR
  *
  * **Two controls are not filled: the card expiry and the account type.** Both are pickers rather than text
  * boxes, and a picker publishes no text-setting action, so there is nothing to feed. They are chosen by hand
- * after the tap, as the expiry is on iOS.
+ * after the tap.
  */
 fun fillTestData(
     view: View,
@@ -62,8 +62,8 @@ private fun SemanticsNode.isNamed(label: String): Boolean {
 /**
  * The resource carrying the label this form draws for a field.
  *
- * This app's own table, as `PayInPrefillField` is iOS's: the SDK's equivalent is internal to it. Whatever this
- * names has to be what is on screen, which holds while the demo passes no field labels of its own.
+ * This app's own table: the SDK's equivalent is internal to it. Whatever this names has to be what is on
+ * screen, which holds while the demo passes no field labels of its own.
  */
 @get:StringRes
 internal val PayInField.labelResource: Int

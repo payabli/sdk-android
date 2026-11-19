@@ -201,8 +201,8 @@ class DeviceEnrollmentTest {
 
             val outcome = fixture.enrollment.enroll()
 
-            // Nothing was asked, so there is nothing to report. The sibling SDK answers this from a live
-            // call for the same reason: a remembered activation state is one nobody re-checks.
+            // Nothing was asked, so there is nothing to report: a remembered activation state is one nobody
+            // re-checks.
             assertEquals(EnrollmentOutcome.AlreadyAttested, outcome)
             assertTrue(fixture.transport.requests.isEmpty())
         }

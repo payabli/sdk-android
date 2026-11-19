@@ -29,8 +29,7 @@ internal fun cardRead(
  * the same questions, and the two drift on which of them throws.
  *
  * [lastReadRequest] is what the charge asked the reader for, which is the only way to assert that the
- * identifier Payabli minted is the one the reader was given. The shipping sibling's double records nothing
- * here, so that property is unassertable there.
+ * identifier Payabli minted is the one the reader was given.
  *
  * [trace] and [gate] belong to the serialization tests. The gate holds a run inside the reader long enough
  * for a second to try to enter it, and [sawOverlap] is raised from in there — which is the assertion worth

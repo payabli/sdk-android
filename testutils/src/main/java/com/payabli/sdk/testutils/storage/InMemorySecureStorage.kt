@@ -8,8 +8,6 @@ import kotlinx.coroutines.sync.withLock
 /**
  * A [PayabliSecureStorage] that keeps values in a map, for testing a consumer without a Keystore.
  *
- * The counterpart of iOS's `InMemorySecureStorage`.
- *
  * Copies on the way in and out, so the map never aliases a caller's array: a consumer that wipes what it
  * passed to [set], as it should, would otherwise blank the stored value too. The map was briefly a constructor
  * parameter, which defeated exactly that: a caller seeding the fixture kept references to the stored arrays and

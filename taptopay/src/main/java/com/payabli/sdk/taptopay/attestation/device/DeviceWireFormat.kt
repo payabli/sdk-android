@@ -24,9 +24,8 @@ internal const val STATUS_ACTIVE: String = "active"
 /**
  * The request and response shapes of the device routes.
  *
- * **Every key on this wire is lower-camelCase, and none of these types needs a `@SerialName`.** The shipping
- * iOS client decodes the same routes with `.useDefaultKeys` and no `CodingKeys`, on the same keys. Adding a
- * `@SerialName` here would be inventing a disagreement.
+ * **Every key on this wire is lower-camelCase, and none of these types needs a `@SerialName`.** Each property
+ * name is the key the service uses, so a `@SerialName` here could only restate it or rename it.
  *
  * **No request property carries a Kotlin default.** [com.payabli.sdk.core.network.PayabliJson] encodes with
  * `encodeDefaults = false`, so a defaulted property is silently dropped from the body. That is not a style
@@ -48,8 +47,7 @@ internal const val STATUS_ACTIVE: String = "active"
 internal class ChallengeRequest(
     val entry: String,
     /**
-     * The calling platform. Required on the wire for Android so the service returns
-     * [ChallengeResponse.cloudProjectNumber]; omitted by iOS callers that send only `entry`.
+     * The calling platform. Required on the wire so the service returns [ChallengeResponse.cloudProjectNumber].
      */
     val platform: String,
 ) {
@@ -110,8 +108,8 @@ internal class RegisterRequest(
  * `{ deviceId, status, outcome }`.
  *
  * [deviceId] is required: it is the handle every later call is made against, so a response without one is
- * unusable rather than partially usable. [status] is optional because iOS declares it so, and because
- * nothing here should fail on a field it only reads to answer one question.
+ * unusable rather than partially usable. [status] is optional because nothing here should fail on a
+ * field it only reads to answer one question.
  */
 @Serializable
 internal class RegisterResponse(
@@ -131,8 +129,8 @@ internal class RegisterResponse(
     /**
      * Whether the device is awaiting activation.
      *
-     * The comparison is case-insensitive for the reason iOS lowercases before comparing: the value arrives as
-     * a bare string rather than a serialized enum, so nothing on either side pins its case.
+     * The comparison is case-insensitive because the value arrives as a bare string rather than a serialized
+     * enum, so nothing pins its case.
      */
     val isPending: Boolean get() = status?.equals(STATUS_PENDING, ignoreCase = true) == true
 
@@ -182,9 +180,8 @@ internal class AttestRequest(
 /**
  * `{ registered, isSandbox }`.
  *
- * Every field optional, and **nothing should branch on them.** The shipping iOS client discards this body
- * entirely, so neither field has ever been exercised by a client in production. They are decoded so a reader
- * can see them in a diagnostic, not so a caller can act on them.
+ * Every field optional, and **nothing should branch on them.** They are decoded so a reader can see them in a
+ * diagnostic, not so a caller can act on them.
  */
 @Serializable
 internal class AttestResponse(

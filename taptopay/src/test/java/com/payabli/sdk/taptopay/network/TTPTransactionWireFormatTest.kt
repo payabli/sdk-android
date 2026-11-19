@@ -19,8 +19,7 @@ import java.math.BigDecimal
  * What the two MoneyIn routes are sent, field by field.
  *
  * Encoding only, with no transport in it. What a body looks like on the wire is a separate question from
- * how a call is classified, and the sibling SDK keeps the same split for the same reason: these are the
- * assertions that catch a field quietly changing shape.
+ * how a call is classified: these are the assertions that catch a field quietly changing shape.
  */
 class TTPTransactionWireFormatTest {
     private fun encode(body: InitiateBody): String = PayabliJson.format.encodeToString(InitiateBody.serializer(), body)

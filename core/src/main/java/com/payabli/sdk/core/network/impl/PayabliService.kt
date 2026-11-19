@@ -419,9 +419,8 @@ internal class PayabliService private constructor(
         internal const val DEFAULT_READ_TIMEOUT_MILLIS: Int = 10_000
 
         /**
-         * Three times the per-read budget, landing on the same 10s and 30s pair iOS sets as
-         * `timeoutIntervalForRequest` and `timeoutIntervalForResource`. Room for a few slow reads, not for an
-         * indefinite dribble.
+         * Three times the per-read budget, so 30s for the call against 10s for a read. Room for a few slow
+         * reads, not for an indefinite dribble.
          */
         internal val DEFAULT_CALL_TIMEOUT: Duration = (3 * DEFAULT_READ_TIMEOUT_MILLIS).milliseconds
 
