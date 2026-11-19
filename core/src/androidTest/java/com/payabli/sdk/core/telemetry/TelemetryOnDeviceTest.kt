@@ -7,6 +7,8 @@ import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.device.platform.DeviceProfileFactory
 import com.payabli.sdk.core.initializeAgainst
+import com.payabli.sdk.core.network.HttpMethod
+import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.reset
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.runBlocking
@@ -62,6 +64,9 @@ class TelemetryOnDeviceTest {
                     )
             }
 
+        // A flush sends only on a token the session already holds, so the host's own work obtains one first.
+        runBlocking { session.transport.execute(PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping")) }
+
         // Nothing called a start method. `sdk.initialized` is already queued by the module if it was found,
         // so this tops the batch up to the flush threshold.
         repeat(BATCH_SIZE) {
@@ -73,10 +78,10 @@ class TelemetryOnDeviceTest {
             }
         }
 
-        val request = server.awaitOnlyRequestOrNull()
+        val request = awaitRequestTo(TELEMETRY_PATH)
 
         assertNotNull("the SDK sent nothing from the device", request)
-        assertEquals("/api/v2/telemetry/sdk", request!!.path)
+        assertEquals(TELEMETRY_PATH, request!!.path)
         assertEquals("Bearer a-device-token", request.header("Authorization"))
 
         val body = request.body
@@ -111,8 +116,27 @@ class TelemetryOnDeviceTest {
         assertEquals("", device.type)
     }
 
+    /**
+     * Waits for the first request to [path].
+     *
+     * @param path the request path to wait for.
+     * @return that request, or null when none arrived within [REQUEST_WAIT_MILLIS].
+     */
+    private fun awaitRequestTo(path: String): LoopbackServer.Recorded? {
+        val startedAt = System.nanoTime()
+        while (System.nanoTime() - startedAt < REQUEST_WAIT_MILLIS * NANOS_PER_MILLI) {
+            server.recorded.firstOrNull { it.path == path }?.let { return it }
+            Thread.sleep(POLL_MILLIS)
+        }
+        return server.recorded.firstOrNull { it.path == path }
+    }
+
     private companion object {
         const val ENTRY = "a-device-entrypoint"
         const val BATCH_SIZE = 20
+        const val TELEMETRY_PATH = "/api/v2/telemetry/sdk"
+        const val REQUEST_WAIT_MILLIS = 5_000L
+        const val POLL_MILLIS = 20L
+        const val NANOS_PER_MILLI = 1_000_000L
     }
 }
