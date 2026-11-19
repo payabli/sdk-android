@@ -96,7 +96,7 @@ MAX_SWITCH_PAGES = 10
 # Marks the bot's own armed message so a future reader knows what it is, and so the cancel can tell its own
 # alarms from anything else scheduled in the channel.
 #
-# Scoped by platform, because nightly.yml states that both platform SDKs can report into this one channel. An
+# Scoped by platform, because both platform SDKs can report into this one channel. An
 # unscoped marker would make the two platforms' alarms indistinguishable, so each would cancel the
 # other's and each would mask the other's death. That is worse than having no switch, because it looks like
 # one is present.

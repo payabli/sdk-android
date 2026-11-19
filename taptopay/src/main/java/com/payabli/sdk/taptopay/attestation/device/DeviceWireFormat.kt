@@ -47,7 +47,8 @@ internal const val STATUS_ACTIVE: String = "active"
 internal class ChallengeRequest(
     val entry: String,
     /**
-     * The calling platform. Required on the wire so the service returns [ChallengeResponse.cloudProjectNumber].
+     * The calling platform, always sent: without it the response carries no
+     * [ChallengeResponse.cloudProjectNumber].
      */
     val platform: String,
 ) {

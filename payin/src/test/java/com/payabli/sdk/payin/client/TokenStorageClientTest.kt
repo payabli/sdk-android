@@ -19,8 +19,7 @@ import org.junit.Test
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Storing a method: the older envelope, and the one shape here with field names of its own (`cardnumber`,
- * `cardHolder`).
+ * Storing a method, on the older envelope.
  */
 class TokenStorageClientTest {
     private val timeout = 5.seconds
