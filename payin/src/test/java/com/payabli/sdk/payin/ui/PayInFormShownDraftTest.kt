@@ -23,7 +23,8 @@ class PayInFormShownDraftTest {
             defaultMethod = PayInMethodType.Card,
         )
 
-    private val shown = PayInFormShownDraft()
+    private val holder = PayInFormShownDraft()
+    private val shown = holder.lease()
 
     @Test
     fun theFirstDraftShownKeepsWhatWasTyped() {
@@ -75,6 +76,31 @@ class PayInFormShownDraftTest {
         shown.show(second)
 
         assertEquals(TEST_NUMBER, second.typed[PayInField.CardNumber])
+    }
+
+    @Test
+    fun twoFormsHeldAtOnceDoNotEmptyEachOther() {
+        val first = filled()
+        val second = filled()
+        val other = holder.lease()
+
+        shown.show(first)
+        other.show(second)
+        shown.show(first)
+
+        assertEquals(TEST_NUMBER, first.typed[PayInField.CardNumber])
+        assertEquals(TEST_NUMBER, second.typed[PayInField.CardNumber])
+    }
+
+    @Test
+    fun aFormThatReturnsTakesTheSlotItLeft() {
+        val first = filled()
+        shown.show(first)
+        shown.held = false
+
+        holder.lease().show(PayInFormDraft())
+
+        assertTrue("the draft left behind stayed", first.typed.isEmpty())
     }
 
     private fun filled(): PayInFormDraft =

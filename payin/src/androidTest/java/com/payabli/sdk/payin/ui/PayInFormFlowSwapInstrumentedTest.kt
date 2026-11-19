@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
@@ -232,6 +233,32 @@ class PayInFormFlowSwapInstrumentedTest {
         rule.runOnIdle { firstLabel.value = "first" }
         rule.waitForIdle()
         rule.runOnIdle { secondLabel.value = "second" }
+        rule.waitForIdle()
+
+        assertEquals(HOLDER, first.draft.typed[PayInField.AccountHolder])
+        assertEquals(OTHER_HOLDER, second.draft.typed[PayInField.AccountHolder])
+    }
+
+    @Test
+    fun formsInAKeyedListWhoseKeysShareAHashKeepTheirOwnEntries() {
+        // "Aa" and "BB" have the same hashCode.
+        val labels = mapOf("Aa" to mutableStateOf(""), "BB" to mutableStateOf(""))
+        val flows = mapOf("Aa" to first, "BB" to second)
+        rule.setContent {
+            MaterialTheme {
+                Column {
+                    flows.forEach { (name, flow) -> key(name) { LabelledBankForm(flow, labels.getValue(name).value) } }
+                }
+            }
+        }
+        rule.runOnIdle {
+            first.draft.enter(PayInField.AccountHolder, HOLDER)
+            second.draft.enter(PayInField.AccountHolder, OTHER_HOLDER)
+        }
+
+        rule.runOnIdle { labels.getValue("Aa").value = "first" }
+        rule.waitForIdle()
+        rule.runOnIdle { labels.getValue("BB").value = "second" }
         rule.waitForIdle()
 
         assertEquals(HOLDER, first.draft.typed[PayInField.AccountHolder])
