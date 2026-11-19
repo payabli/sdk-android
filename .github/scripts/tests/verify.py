@@ -1759,7 +1759,7 @@ def test_poster(mod):
                                {"id": "Q0MINE", "post_at": 2, "text": "[nightly-liveness:Android] ours"}]}}
     code, out, calls = run_poster(mod, green_f, PLATFORM="Android")
     deleted = {d["payload"]["scheduled_message_id"] for d in of(calls, "chat.deleteScheduledMessage")}
-    check("P40 the sibling platform's alarm is never cancelled", "Q0IOS" not in deleted, str(deleted))
+    check("P40 the other platform's alarm is never cancelled", "Q0IOS" not in deleted, str(deleted))
     check("P40 our own older alarm still is", "Q0MINE" in deleted, str(deleted))
 
     # P13 two attributions on the same commit collapse to one line
