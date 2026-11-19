@@ -56,8 +56,9 @@ import com.payabli.sdk.payin.ui.rememberPayInFormShownDraft
  *
  * **One form per [payIn].** The typed values are its own, so two forms given the same one draw the same
  * boxes, and two given the same one with different configurations refill each other on every frame. A second
- * form on a screen takes a second one, and forms drawn in a list each take a `key`. Handing a form another [payIn]
- * empties what was typed for the one before, so the previous one handed back opens empty.
+ * form on a screen takes a second one. Forms drawn in a list each take a `key`, and forms in separate `ComposeView`s
+ * each take a view id. Handing a form another [payIn] empties what was typed for the one before, so the previous one
+ * handed back opens empty.
  *
  * @param payIn where a submission runs, and whose state this renders.
  * @param operation what the tap does: store the method, capture, or authorize.

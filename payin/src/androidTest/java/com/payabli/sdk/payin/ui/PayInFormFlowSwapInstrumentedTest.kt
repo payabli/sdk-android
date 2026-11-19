@@ -1,12 +1,16 @@
 package com.payabli.sdk.payin.ui
 
+import android.view.View
+import android.widget.LinearLayout
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -24,7 +28,9 @@ import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.TEST_ACCOUNT
 import com.payabli.sdk.payin.client.TEST_ROUTING
 import com.payabli.sdk.payin.form.BANK_INSTRUMENT_FIELDS
+import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -202,6 +208,59 @@ class PayInFormFlowSwapInstrumentedTest {
 
         assertNotNull("the refusal of the flow handed back was never delivered", failed)
         assertTrue("the flow handed back kept what was typed", refused.draft.typed.isEmpty())
+    }
+
+    @Test
+    fun twoComposeViewsSharingAnOwnerKeepTheirOwnEntries() {
+        val firstLabel = mutableStateOf("")
+        val secondLabel = mutableStateOf("")
+        rule.runOnUiThread {
+            val activity = rule.activity
+            val column = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+            // One function draws both, so the two compositions reach the form by the same path.
+            column.addView(formView(first, firstLabel))
+            column.addView(formView(second, secondLabel))
+            activity.setContentView(column)
+        }
+        rule.waitForIdle()
+        rule.runOnIdle {
+            first.draft.enter(PayInField.AccountHolder, HOLDER)
+            second.draft.enter(PayInField.AccountHolder, OTHER_HOLDER)
+        }
+
+        // A new label recomposes the form itself, which is where it records the draft it draws.
+        rule.runOnIdle { firstLabel.value = "first" }
+        rule.waitForIdle()
+        rule.runOnIdle { secondLabel.value = "second" }
+        rule.waitForIdle()
+
+        assertEquals(HOLDER, first.draft.typed[PayInField.AccountHolder])
+        assertEquals(OTHER_HOLDER, second.draft.typed[PayInField.AccountHolder])
+    }
+
+    private fun formView(
+        flow: PayInPaymentFlow,
+        label: MutableState<String>,
+    ): ComposeView =
+        ComposeView(rule.activity).apply {
+            id = View.generateViewId()
+            setContent { MaterialTheme { LabelledBankForm(flow, label.value) } }
+        }
+
+    @Composable
+    private fun LabelledBankForm(
+        flow: PayInPaymentFlow,
+        submitLabel: String,
+    ) {
+        PayabliPayInForm(
+            payIn = flow,
+            operation = PayabliPayInOperation.Capture(testOptions()),
+            configuration = bankForm,
+            labels = PayInFormLabels(title = submitLabel),
+            onCompleted = {},
+            onFailed = {},
+            onMethodChanged = {},
+        )
     }
 
     @Composable

@@ -1,8 +1,10 @@
 package com.payabli.sdk.payin.ui
 
+import android.view.View
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.currentCompositeKeyHashCode
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -36,8 +38,11 @@ internal class PayInFormShownDraft : ViewModel() {
  */
 @Composable
 internal fun rememberPayInFormShownDraft(): PayInFormShownDraft {
-    // Keyed on the position, so two forms on one screen do not empty each other's drafts.
-    val key = "payabli.payin.form:" + currentCompositeKeyHashCode
+    // Keyed on the position, so two forms on one screen do not empty each other's drafts. A position repeats in
+    // every composition root, so the root's view id is in the key too, which is the id Compose saves state under.
+    val view = LocalView.current
+    val root = (view.parent as? View)?.id ?: view.id
+    val key = "payabli.payin.form:$root:$currentCompositeKeyHashCode"
     val owner = LocalViewModelStoreOwner.current ?: return remember { PayInFormShownDraft() }
     return viewModel(owner, key = key) { PayInFormShownDraft() }
 }
