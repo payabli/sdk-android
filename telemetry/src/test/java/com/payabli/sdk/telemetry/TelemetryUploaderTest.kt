@@ -264,7 +264,7 @@ class TelemetryUploaderTest {
 
             TelemetryUploader(transport, context, logger).send(listOf(anEvent()))
 
-            assertTrue(transport.sent.single().requiresHeldCredential)
+            assertTrue(transport.sent.single().sendsOnHeldCredentialOnly)
         }
 
     @Test

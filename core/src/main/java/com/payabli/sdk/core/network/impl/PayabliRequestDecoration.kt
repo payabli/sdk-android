@@ -71,5 +71,5 @@ private fun PayabliRequest.copyWith(
         body = body,
         isCredentialPinned = isCredentialPinned,
         isCallerRefusal = isCallerRefusal,
-        requiresHeldCredential = requiresHeldCredential,
+        sendsOnHeldCredentialOnly = sendsOnHeldCredentialOnly,
     )

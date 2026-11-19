@@ -20,7 +20,7 @@ internal class BearerDecoration(
 ) : PayabliRequestDecoration {
     override suspend fun decorate(request: PayabliRequest): PayabliRequest {
         val token =
-            if (request.requiresHeldCredential) {
+            if (request.sendsOnHeldCredentialOnly) {
                 auth.heldToken() ?: throw PayabliGenericException(PayabliErrorType.MISSING_TOKEN, REASON_NOT_READY)
             } else {
                 auth.accessToken()

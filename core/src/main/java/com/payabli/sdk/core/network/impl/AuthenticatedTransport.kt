@@ -42,7 +42,7 @@ internal class AuthenticatedTransport(
         // the guard: [PayabliAuth] refuses a refresh claim on its own, so a request that slips past this
         // line still cannot reach the host's broker.
         auth.terminalFailure?.let {
-            if (request.requiresHeldCredential) {
+            if (request.sendsOnHeldCredentialOnly) {
                 throw PayabliGenericException(PayabliErrorType.MISSING_TOKEN, REASON_NOT_READY)
             }
             throw PayabliGenericException(it.type, it.reason)
@@ -78,7 +78,7 @@ internal class AuthenticatedTransport(
         }
 
         // A refresh calls the host's provider, which this request never does.
-        if (request.requiresHeldCredential) {
+        if (request.sendsOnHeldCredentialOnly) {
             logger.warn(
                 LogField.safe("method", request.method.wireName),
                 LogField.safe("statusCode", first.statusCode),

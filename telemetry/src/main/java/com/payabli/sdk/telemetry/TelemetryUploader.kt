@@ -56,7 +56,7 @@ internal class TelemetryUploader(
                     bodySerializer = TelemetryBatchBody.serializer(),
                     route = ROUTE,
                     isCallerRefusal = ::isUnauthorized,
-                    requiresHeldCredential = true,
+                    sendsOnHeldCredentialOnly = true,
                 )
 
             val response = transport.execute(request)

@@ -125,7 +125,7 @@ class PayabliRequestDecorationTest {
                     query = listOf("a" to "1"),
                     isCredentialPinned = true,
                     isCallerRefusal = { true },
-                    requiresHeldCredential = true,
+                    sendsOnHeldCredentialOnly = true,
                 )
 
             val decorated = listOf(stamping("X-Added", "1")).applyTo(original)
@@ -143,7 +143,7 @@ class PayabliRequestDecorationTest {
                 decorated.isCallerRefusal(PayabliResponse(statusCode = 401, headers = emptyMap(), body = ByteArray(0))),
             )
             // The bearer step reads this one inside the chain, so a step copied before it must keep it.
-            assertTrue("the held-credential declaration was dropped by the copy", decorated.requiresHeldCredential)
+            assertTrue("the held-credential declaration was dropped by the copy", decorated.sendsOnHeldCredentialOnly)
         }
 
     @Test

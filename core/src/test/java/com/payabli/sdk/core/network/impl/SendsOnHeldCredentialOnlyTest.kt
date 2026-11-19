@@ -42,7 +42,7 @@ private const val OK = 200
 private const val UNAUTHORIZED = 401
 
 /** A request that sends on the held credential only: it never calls the host's provider, whatever is held. */
-class RequiresHeldCredentialTest {
+class SendsOnHeldCredentialOnlyTest {
     private val recorded = mutableListOf<String>()
     private val sink = RecordingLogSink()
 
@@ -76,7 +76,7 @@ class RequiresHeldCredentialTest {
         )
 
     private fun heldOnly() =
-        PayabliRequest(HttpMethod.POST, "/api/report", route = "/api/report", requiresHeldCredential = true)
+        PayabliRequest(HttpMethod.POST, "/api/report", route = "/api/report", sendsOnHeldCredentialOnly = true)
 
     private fun ordinary() = PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping")
 
