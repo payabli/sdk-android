@@ -19,6 +19,9 @@ import kotlinx.serialization.KSerializer
  *   rejection becomes one the day that changes.
  * @property isCallerRefusal whether a response refuses this caller, which a new credential cannot change. Such a
  *   rejection reaches the caller as it arrived and never ends the session.
+ * @property sendsOnHeldCredentialOnly whether this request is sent only on a credential already held. It never
+ *   starts a call to the host's token provider: with nothing held, a refresh in flight or the session finished, it
+ *   is refused with `MISSING_TOKEN` and nothing is sent.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class PayabliRequest(
@@ -30,6 +33,7 @@ public class PayabliRequest(
     public val body: ByteArray? = null,
     public val isCredentialPinned: Boolean = false,
     public val isCallerRefusal: (PayabliResponse) -> Boolean = { false },
+    public val sendsOnHeldCredentialOnly: Boolean = false,
 ) {
     /**
      * Never includes headers, body, or the resolved [path] — a path may embed an identifier, which is why
@@ -73,6 +77,8 @@ public class PayabliRequest(
          *   credential recovery on a refusal.
          * @param isCallerRefusal whether a response refuses this caller, which a new credential cannot
          *   change, so such a rejection is returned as it arrived rather than recovered from.
+         * @param sendsOnHeldCredentialOnly whether the request is sent only on a credential already held, never
+         *   starting a call to the host's token provider.
          * @return the request carrying [body] encoded as JSON, with the content type set.
          */
         @SuppressWarnings("kotlin:S107")
@@ -85,6 +91,7 @@ public class PayabliRequest(
             headers: Map<String, String> = emptyMap(),
             isCredentialPinned: Boolean = false,
             isCallerRefusal: (PayabliResponse) -> Boolean = { false },
+            sendsOnHeldCredentialOnly: Boolean = false,
         ): PayabliRequest =
             PayabliRequest(
                 method = method,
@@ -94,6 +101,7 @@ public class PayabliRequest(
                 body = PayabliJson.format.encodeToString(bodySerializer, body).toByteArray(Charsets.UTF_8),
                 isCredentialPinned = isCredentialPinned,
                 isCallerRefusal = isCallerRefusal,
+                sendsOnHeldCredentialOnly = sendsOnHeldCredentialOnly,
             )
     }
 }

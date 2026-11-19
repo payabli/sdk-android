@@ -195,6 +195,15 @@ internal class PayabliAuth(
     }
 
     /**
+     * The token held now, without calling the provider.
+     *
+     * @return the token held, or null when none is held, a mint or refresh is in flight, or this instance is finished.
+     */
+    @JvmSynthetic
+    internal suspend fun heldToken(): String? =
+        mutex.withLock { currentToken.takeIf { inFlight == null && finished == null } }
+
+    /**
      * Reports [rejectedToken] as refused and returns the token to use instead: finished refuses,
      * already rotated answers, a refresh in flight is joined, otherwise this caller runs the
      * provider. The claim is created here alone, so once [finished] is set no caller reaches it.
