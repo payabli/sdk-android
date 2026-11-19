@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.AuthRecoveryPolicy
@@ -40,7 +41,12 @@ internal class AuthenticatedTransport(
         // Fail without a round trip on an instance already known to be finished. This is a convenience, not
         // the guard: [PayabliAuth] refuses a refresh claim on its own, so a request that slips past this
         // line still cannot reach the host's broker.
-        auth.terminalFailure?.let { throw PayabliGenericException(it.type, it.reason) }
+        auth.terminalFailure?.let {
+            if (request.requiresHeldCredential) {
+                throw PayabliGenericException(PayabliErrorType.MISSING_TOKEN, REASON_NONE_HELD)
+            }
+            throw PayabliGenericException(it.type, it.reason)
+        }
 
         val stamped = SentToken()
         val first = withContext(stamped) { base.execute(request) }
@@ -68,6 +74,16 @@ internal class AuthenticatedTransport(
                 LogField.safe("statusCode", first.statusCode),
                 routeField(request),
             ) { "recovery declined: the route refused this caller rather than its credential" }
+            return first
+        }
+
+        // A refresh calls the host's provider, which this request never does.
+        if (request.requiresHeldCredential) {
+            logger.warn(
+                LogField.safe("method", request.method.wireName),
+                LogField.safe("statusCode", first.statusCode),
+                routeField(request),
+            ) { "recovery declined: the route sends on the held credential only" }
             return first
         }
 

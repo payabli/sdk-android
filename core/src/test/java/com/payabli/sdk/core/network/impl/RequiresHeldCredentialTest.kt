@@ -39,6 +39,7 @@ private val NO_WAIT = 1.seconds
 private const val MINTED = "minted-token"
 private const val AUTHORIZATION = "Authorization"
 private const val OK = 200
+private const val UNAUTHORIZED = 401
 
 /** A request that sends on the held credential only: it never calls the host's provider, whatever is held. */
 class RequiresHeldCredentialTest {
@@ -163,11 +164,29 @@ class RequiresHeldCredentialTest {
                 val subject = auth(counting(calls))
                 subject.finish(PayabliGenericException(PayabliErrorType.SESSION_BURNED, "finished"))
 
-                failureFrom { stack(server, subject).execute(heldOnly()) }
+                val failure = failureFrom { stack(server, subject).execute(heldOnly()) }
 
+                assertEquals(PayabliErrorType.MISSING_TOKEN, failure.type)
                 assertEquals("no provider call", 0, calls.get())
                 assertTrue("nothing reaches the service", server.recorded.isEmpty())
                 assertTrue("no token failure is reported", TelemetryEvents.AUTH_TOKEN_FAILED !in recorded)
+            }
+        }
+
+    @Test
+    fun `a 401 to it refreshes nothing and replays nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(OK to "", UNAUTHORIZED to "")
+                val calls = AtomicInteger()
+                val transport = stack(server, auth(counting(calls)))
+                transport.execute(ordinary())
+
+                val response = transport.execute(heldOnly())
+
+                assertEquals(UNAUTHORIZED, response.statusCode)
+                assertEquals("only the host's own call minted", 1, calls.get())
+                assertEquals("the held-only request is sent once", 2, server.recorded.size)
             }
         }
 
