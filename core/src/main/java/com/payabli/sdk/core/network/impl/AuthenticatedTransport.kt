@@ -43,7 +43,7 @@ internal class AuthenticatedTransport(
         // line still cannot reach the host's broker.
         auth.terminalFailure?.let {
             if (request.requiresHeldCredential) {
-                throw PayabliGenericException(PayabliErrorType.MISSING_TOKEN, REASON_NONE_HELD)
+                throw PayabliGenericException(PayabliErrorType.MISSING_TOKEN, REASON_NOT_READY)
             }
             throw PayabliGenericException(it.type, it.reason)
         }
