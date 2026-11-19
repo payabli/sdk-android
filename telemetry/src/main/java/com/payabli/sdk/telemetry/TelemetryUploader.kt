@@ -86,11 +86,11 @@ internal class TelemetryUploader(
             throw cancellation
         } catch (failure: PayabliException) {
             if (failure.type == PayabliErrorType.MISSING_TOKEN) {
-                // Every flush lands here until the host's own work obtains a token, so this is logged at debug.
+                // Every flush lands here while no token is ready to send, so this is logged at debug.
                 logger.debug(
                     LogField.safe("event", "telemetry_batch_waiting"),
                     LogField.safe("route", ROUTE),
-                ) { "no token held; the batch waits for the next flush" }
+                ) { "no token ready; the batch waits for the next flush" }
                 return SendOutcome.KEEP
             }
             logger.warn(

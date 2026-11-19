@@ -138,8 +138,8 @@ class RequiresHeldCredentialTest {
                 val minting = async(Dispatchers.Default) { subject.accessToken() }
                 started.await()
 
-                // Real time: under virtual time, waiting on the lock the minting thread holds
-                // can advance the clock past NO_WAIT.
+                // Real time: the send runs on Dispatchers.IO, and while the test scheduler idles on it,
+                // virtual time can run past NO_WAIT.
                 val failure =
                     failureFrom {
                         withContext(Dispatchers.Default) {

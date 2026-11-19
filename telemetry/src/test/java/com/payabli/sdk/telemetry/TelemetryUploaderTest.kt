@@ -278,7 +278,7 @@ class TelemetryUploaderTest {
             assertEquals(SendOutcome.KEEP, outcome)
             val record = logger.records.single()
             assertEquals(LogLevel.DEBUG, record.level)
-            assertTrue(record.message, record.message.startsWith("no token held"))
+            assertTrue(record.message, record.message.startsWith("no token ready"))
         }
 
     @Test

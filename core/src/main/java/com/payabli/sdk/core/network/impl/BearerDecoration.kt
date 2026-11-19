@@ -8,7 +8,7 @@ import kotlinx.coroutines.currentCoroutineContext
 
 private const val AUTHORIZATION_HEADER = "Authorization"
 private const val BEARER_PREFIX = "Bearer "
-internal const val REASON_NONE_HELD = "no access token is held, and this request does not obtain one"
+internal const val REASON_NONE_HELD = "no access token is ready to send, and this request does not obtain one"
 
 /**
  * Stamps `Authorization: Bearer <token>`, read per request so a replay after a refresh carries the new one.
