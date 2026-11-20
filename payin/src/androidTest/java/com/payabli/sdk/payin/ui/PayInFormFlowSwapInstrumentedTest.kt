@@ -10,6 +10,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.test.hasClickAction
@@ -22,6 +23,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.PayInFormSuccess
 import com.payabli.sdk.payin.PayInPaymentFlow
@@ -209,6 +212,128 @@ class PayInFormFlowSwapInstrumentedTest {
 
         assertEquals("the approval reached the host ${completed.size} times", 1, completed.size)
         assertTrue("the approved flow still waits for its outcome", !approved.draft.submissionPending)
+    }
+
+    @Test
+    fun aFlowHandedBackMidFlightStillDeliversItsOutcome() {
+        val transport = GatedPayInTransport.answering(DECLINED_TRANSACTION)
+        val refused = flowOver(transport)
+        payIn = refused
+        val failed = mutableListOf<PayabliException>()
+
+        rule.setContent { Form(onFailed = { failed += it }) }
+        fillBank()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+        runBlocking { transport.arrived.await() }
+
+        rule.runOnIdle { payIn = second }
+        rule.waitForIdle()
+        rule.runOnIdle { payIn = refused }
+        rule.waitForIdle()
+        transport.release()
+        rule.waitForIdle()
+        // Away and back again, so a delivery left waiting for the flow would run now.
+        rule.runOnIdle { payIn = second }
+        rule.waitForIdle()
+
+        assertEquals("the refusal reached the host ${failed.size} times", 1, failed.size)
+    }
+
+    @Test
+    fun anotherFormsSubmissionIsNotDeliveredToAFormThatOnceSubmittedTheFlow() {
+        // The first submission is answered at once; the second waits for the gate.
+        val gated = GatedPayInTransport.answering(DECLINED_TRANSACTION)
+        val shared = flowOver(FirstAnsweredThenGated(FakePayInTransport.answering(APPROVED_TRANSACTION), gated))
+        var firstFlow by mutableStateOf(shared)
+        var secondShown by mutableStateOf(false)
+        val firstTold = mutableListOf<Any>()
+        val secondTold = mutableListOf<Any>()
+
+        rule.setContent {
+            MaterialTheme {
+                Column {
+                    if (onScreen) BankForm(firstFlow, onCompleted = { firstTold += it }, onFailed = { firstTold += it })
+                    if (secondShown) {
+                        BankForm(
+                            shared,
+                            onCompleted = { secondTold += it },
+                            onFailed = { secondTold += it },
+                        )
+                    }
+                }
+            }
+        }
+        // The first form submits the flow and is told its outcome, then leaves the screen.
+        fillBank()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+        rule.waitForIdle()
+        assertEquals("the first form's own outcome", 1, firstTold.size)
+        firstTold.clear()
+        rule.runOnIdle { onScreen = false }
+        rule.waitForIdle()
+
+        // A second form submits that flow, and the first comes back drawing another before the outcome lands.
+        rule.runOnIdle { secondShown = true }
+        rule.waitForIdle()
+        fillBank()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+        runBlocking { gated.arrived.await() }
+        rule.runOnIdle {
+            firstFlow = second
+            onScreen = true
+        }
+        rule.waitForIdle()
+        gated.release()
+        rule.waitForIdle()
+
+        assertTrue("the first form was told of the second form's submission: $firstTold", firstTold.isEmpty())
+        assertEquals("the second form was told ${secondTold.size} times", 1, secondTold.size)
+    }
+
+    /** Answers the first request from [first] and every later one from [rest]. */
+    private class FirstAnsweredThenGated(
+        private val first: PayabliTransport,
+        private val rest: PayabliTransport,
+    ) : PayabliTransport by rest {
+        private var answered = false
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse =
+            if (answered) {
+                rest.execute(request)
+            } else {
+                answered = true
+                first.execute(request)
+            }
+    }
+
+    @Test
+    fun anOutcomeLandingAfterASwapReachesTheCallbackTheHostPassedLast() {
+        val transport = GatedPayInTransport.answering(DECLINED_TRANSACTION)
+        val refused = flowOver(transport)
+        payIn = refused
+        val before = mutableListOf<PayabliException>()
+        val after = mutableListOf<PayabliException>()
+        // Referential, since both lists start empty and would compare equal.
+        var current by mutableStateOf(before, referentialEqualityPolicy())
+
+        rule.setContent {
+            // A new lambda each time the host changes where outcomes go.
+            val target = current
+            Form(onFailed = { target += it })
+        }
+        fillBank()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+        runBlocking { transport.arrived.await() }
+        rule.runOnIdle { payIn = second }
+        rule.waitForIdle()
+
+        rule.runOnIdle { current = after }
+        rule.waitForIdle()
+        transport.release()
+        rule.waitForIdle()
+
+        assertTrue("the outcome reached the callback the host had replaced", before.isEmpty())
+        assertEquals(1, after.size)
     }
 
     @Test

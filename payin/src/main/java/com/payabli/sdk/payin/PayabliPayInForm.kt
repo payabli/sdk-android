@@ -67,7 +67,7 @@ import kotlinx.coroutines.flow.first
  * takes a second one. Forms drawn in a list each take a `key`, and forms in separate `ComposeView`s
  * each take a view id. Handing a form another [payIn] empties what was typed for the one before, so the previous one
  * handed back opens empty. A submission still in flight when that happens reaches [onCompleted] or [onFailed] once
- * it lands, and marks nothing on the form now drawn.
+ * it lands while the form is drawn, and marks nothing on the form now drawn.
  *
  * @param payIn where a submission runs, and whose state this renders.
  * @param operation what the tap does: store the method, capture, or authorize.
@@ -169,7 +169,7 @@ private fun LeasedPayInForm(
     shown.awaited.filter { it !== impl }.forEach { submitted ->
         key(submitted) {
             LaunchedEffect(submitted) {
-                submitted.deliverWhenItLands(completed, failed)
+                submitted.deliverWhenItLands({ completed(it) }, { failed(it) })
                 shown.awaited.remove(submitted)
             }
         }
@@ -197,6 +197,7 @@ private fun LeasedPayInForm(
             try {
                 onCompleted(outcome)
             } finally {
+                shown.awaited.remove(impl)
                 impl.consume()
             }
         },
@@ -204,6 +205,7 @@ private fun LeasedPayInForm(
             try {
                 onFailed(outcome)
             } finally {
+                shown.awaited.remove(impl)
                 impl.consume()
             }
         },
