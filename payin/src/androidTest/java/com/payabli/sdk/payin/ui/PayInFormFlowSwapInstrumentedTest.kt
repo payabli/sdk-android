@@ -343,6 +343,48 @@ class PayInFormFlowSwapInstrumentedTest {
         assertEquals("the second form was told ${secondTold.size} times", 1, secondTold.size)
     }
 
+    @Test
+    fun aFormThatCannotBeToldApartFromTheOneThatSubmittedIsNotHandedItsOutcome() {
+        // "Aa" and "BB" have the same hashCode. "Aa" submits, both leave, and "BB" returns drawing another flow.
+        val gate = GatedPayInTransport.answering(DECLINED_TRANSACTION)
+        val submitted = flowOver(gate)
+        val third = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
+        var forms by mutableStateOf(listOf("Aa" to submitted))
+        val told = mapOf("Aa" to mutableListOf<Any>(), "BB" to mutableListOf<Any>())
+        rule.setContent {
+            MaterialTheme {
+                Column {
+                    forms.forEach { (name, flow) ->
+                        key(name) {
+                            val list = told.getValue(name)
+                            BankForm(flow, onCompleted = { list += it }, onFailed = { list += it })
+                        }
+                    }
+                }
+            }
+        }
+        fillBank()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+        runBlocking { gate.arrived.await() }
+        rule.runOnIdle { forms = listOf("Aa" to submitted, "BB" to second) }
+        rule.waitForIdle()
+        rule.runOnIdle { forms = emptyList() }
+        rule.waitForIdle()
+        rule.runOnIdle { forms = listOf("BB" to third) }
+        rule.waitForIdle()
+        gate.release()
+        rule.waitForIdle()
+
+        val returning = told.getValue("BB")
+        assertTrue("the returning form was told of a submission it did not make: $returning", returning.isEmpty())
+
+        // The form that draws the submitted flow next hands its outcome over.
+        rule.runOnIdle { forms = listOf("BB" to third, "Aa" to submitted) }
+        rule.waitForIdle()
+        val drawing = told.getValue("Aa")
+        assertEquals("the form drawing the submitted flow was told $drawing", 1, drawing.size)
+    }
+
     /** Answers each request from the next of [transports]. */
     private class InTurn(
         private vararg val transports: PayabliTransport,

@@ -26,7 +26,7 @@ internal class PayInFormShownDraft : ViewModel() {
     /**
      * The free slot that last drew [draft], else a free one, else a new one. Forms that left one position cannot be
      * told apart, so when none drew [draft] and several are free, every draft they drew that no form on screen draws
-     * is emptied rather than one kept by a guess.
+     * is emptied, and the slot is handed none of their outcomes, rather than one kept by a guess.
      *
      * @param draft the draft of the flow the form enters with.
      * @return the slot, now held.
@@ -37,7 +37,10 @@ internal class PayInFormShownDraft : ViewModel() {
         val slot =
             free.firstOrNull { it.drawn === draft }
                 ?: (free.firstOrNull() ?: Slot().also { slots += it }).apply {
-                    if (free.size > 1) unclaimed = free.mapNotNull { it.shown }
+                    if (free.size > 1) {
+                        unclaimed = free.mapNotNull { it.shown }
+                        guessed = true
+                    }
                 }
         slot.held = true
         return slot
@@ -60,11 +63,15 @@ internal class PayInFormShownDraft : ViewModel() {
         /** Drafts left by forms this slot cannot be told apart from, emptied at the next [show]. */
         internal var unclaimed: List<Drawn> = emptyList()
 
+        /** Whether the slot was taken among forms that cannot be told apart, so it gives up its submissions at [show]. */
+        internal var guessed = false
+
         /** Gives the slot back, with nothing left to empty. */
         @JvmSynthetic
         fun release() {
             held = false
             unclaimed = emptyList()
+            guessed = false
         }
 
         internal val drawn: PayInFormDraft? get() = shown?.draft
@@ -77,7 +84,8 @@ internal class PayInFormShownDraft : ViewModel() {
 
         /**
          * Records that the form now draws [draft], and empties the draft it drew before, and any [unclaimed], that no
-         * form draws, at this position or any other.
+         * form draws, at this position or any other. A [guessed] slot also gives up the submissions it made, whose
+         * outcome then goes to the form that draws their flow.
          *
          * @param draft the draft of the flow the form was handed.
          * @param lease the lease of that flow.
@@ -91,6 +99,11 @@ internal class PayInFormShownDraft : ViewModel() {
             unclaimed = emptyList()
             shown = Drawn(draft, lease)
             left.filter { it.lease.holder == null }.forEach { it.draft.clearEntries() }
+            if (guessed) {
+                guessed = false
+                awaited.forEach { if (it.draft.submitter === this) it.draft.submitter = null }
+                awaited.clear()
+            }
         }
     }
 }
