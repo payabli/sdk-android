@@ -71,7 +71,11 @@ internal class PayInFormDraft {
     ) {
         method.open(configuration)
         val previous = seededFrom.getAndSet(configuration)
-        if (previous == configuration) return
+        if (previous == configuration) {
+            // A form that comes back on another method, as one with nowhere to keep it does, drops what it hides.
+            keepOnlyWhatHasABox(configuration, method.current)
+            return
+        }
 
         if (previous != null) {
             keepOnlyWhatHasABox(configuration, method.current)

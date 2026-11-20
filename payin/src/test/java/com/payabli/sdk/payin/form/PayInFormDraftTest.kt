@@ -59,6 +59,19 @@ class PayInFormDraftTest {
     }
 
     @Test
+    fun aFormReopeningOnAnotherMethodKeepsNothingOutOfSight() {
+        // A form with nowhere to keep its method returns on the starting one, over the same draft and configuration.
+        draft.seed(configuration, method)
+        draft.switchTo(PayInMethodType.BankAccount, configuration, method)
+        draft.enter(PayInField.RoutingNumber, "021000021")
+        draft.enter(PayInField.AccountHolder, "Ada Lovelace")
+
+        draft.seed(configuration, PayInFormMethod())
+
+        assertNull("a bank value stayed behind the card form", draft.typed[PayInField.RoutingNumber])
+    }
+
+    @Test
     fun anEqualConfigurationRebuiltByTheCallerIsNotANewOne() {
         // A host that builds its configuration inline hands over a different instance on every composition.
         draft.seed(configuration, method)
