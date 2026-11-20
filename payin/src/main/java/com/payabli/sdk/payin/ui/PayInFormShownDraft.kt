@@ -49,21 +49,27 @@ internal class PayInFormShownDraft : ViewModel() {
         /** Drafts left by forms this slot cannot be told apart from, emptied at the next [show]. */
         internal var unclaimed: List<PayInFormDraft> = emptyList()
 
+        /** Gives the slot back, with nothing left to empty. */
+        @JvmSynthetic
+        fun release() {
+            held = false
+            unclaimed = emptyList()
+        }
+
         internal val drawn: PayInFormDraft? get() = shown
 
         /**
-         * Records that the form now draws [draft], and empties the draft it drew before when that is another.
+         * Records that the form now draws [draft], and empties the draft it drew before, and any [unclaimed], that no
+         * form on screen draws.
          *
          * @param draft the draft of the flow the form was handed.
          */
         @JvmSynthetic
         fun show(draft: PayInFormDraft) {
-            val left = unclaimed
+            val left = unclaimed + listOfNotNull(shown)
             unclaimed = emptyList()
-            left.filter { it !== draft && !drawnOnScreen(it) }.forEach { it.clearEntries() }
-            val previous = shown
-            if (previous != null && previous !== draft) previous.clearEntries()
             shown = draft
+            left.filter { !drawnOnScreen(it) }.forEach { it.clearEntries() }
         }
     }
 }
@@ -77,13 +83,9 @@ private class SlotLease(
 
     override fun onRemembered() = Unit
 
-    override fun onForgotten() {
-        slot.held = false
-    }
+    override fun onForgotten() = slot.release()
 
-    override fun onAbandoned() {
-        slot.held = false
-    }
+    override fun onAbandoned() = slot.release()
 }
 
 /**
