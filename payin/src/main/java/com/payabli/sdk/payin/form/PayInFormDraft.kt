@@ -51,6 +51,18 @@ internal class PayInFormDraft {
      */
     var submissionPending: Boolean by mutableStateOf(false)
 
+    /** The form the pending submission was made from, or null once its outcome has been handed over. */
+    var submitter: PayInFormSubmitter? = null
+
+    /**
+     * Whether [form], drawing this draft, hands over the pending outcome. The form that submitted it does, and does
+     * so while it is drawn over another flow too, so another form takes it only once that one is gone.
+     *
+     * @param form the form drawing this draft.
+     * @return true when [form] hands it over; false when the form that submitted it will.
+     */
+    fun outcomeIsFor(form: PayInFormSubmitter?): Boolean = submitter.let { it == null || it === form || !it.onScreen }
+
     /**
      * True when the last submission sent saved a payment method. Taken at the tap, because a host can change the
      * operation before the answer arrives, and the notice describes the submission that was sent.
@@ -135,6 +147,7 @@ internal class PayInFormDraft {
     fun clear() {
         clearEntries()
         submissionPending = false
+        submitter = null
     }
 
     /**

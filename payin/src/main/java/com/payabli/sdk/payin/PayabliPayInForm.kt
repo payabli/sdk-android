@@ -14,6 +14,7 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
+import com.payabli.sdk.payin.form.PayInFormSubmitter
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
@@ -169,7 +170,7 @@ private fun LeasedPayInForm(
     shown.awaited.filter { it !== impl }.forEach { submitted ->
         key(submitted) {
             LaunchedEffect(submitted) {
-                submitted.deliverWhenItLands({ completed(it) }, { failed(it) })
+                submitted.deliverWhenItLands(shown, { completed(it) }, { failed(it) })
                 shown.awaited.remove(submitted)
             }
         }
@@ -211,26 +212,32 @@ private fun LeasedPayInForm(
         },
         onMethodChanged = onMethodChanged,
         formMethod = shown.method,
+        submitter = shown,
     )
 }
 
 /**
  * Waits for the outcome of a submission to this flow made by a form that now draws another, and hands it to the
- * caller, marking no field and showing no message. Nothing is handed over when a form drawing this flow already did.
+ * caller, marking no field and showing no message. Nothing is handed over when a form drawing this flow already did,
+ * or when the submission pending is another form's.
  *
+ * @param form the form that submitted.
  * @param onCompleted the service accepted it.
  * @param onFailed it did not complete.
  */
 private suspend fun PayInPaymentFlow.deliverWhenItLands(
+    form: PayInFormSubmitter,
     onCompleted: (PayInFormSuccess) -> Unit,
     onFailed: (PayabliException) -> Unit,
 ) {
+    if (draft.submitter !== form) return
     val outcome = submissionState.first { it != PayInSubmissionState.Submitting }
-    if (!draft.submissionPending) return
+    if (!draft.submissionPending || draft.submitter !== form) return
     reports.refusedFields((outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty())
     try {
         draft.submissionPending =
             outcome.deliver({ if (sent(outcome)) draft.clearInstrument() }, onCompleted, onFailed)
+        if (!draft.submissionPending) draft.submitter = null
     } finally {
         consume()
     }

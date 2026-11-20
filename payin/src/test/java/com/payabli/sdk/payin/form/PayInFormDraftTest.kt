@@ -235,6 +235,26 @@ class PayInFormDraftTest {
             }
         }
 
+    @Test
+    fun theFormThatSubmittedIsHandedItsOutcomeWhileItIsDrawnElsewhere() {
+        val submitted = Form(onScreen = true)
+        val draft = PayInFormDraft().apply { submitter = submitted }
+
+        assertTrue(draft.outcomeIsFor(submitted))
+        assertFalse(draft.outcomeIsFor(Form(onScreen = true)))
+    }
+
+    @Test
+    fun anotherFormDrawingTheDraftIsHandedTheOutcomeOnceTheFormThatSubmittedIsGone() {
+        val draft = PayInFormDraft().apply { submitter = Form(onScreen = false) }
+
+        assertTrue(draft.outcomeIsFor(Form(onScreen = true)))
+    }
+
+    private class Form(
+        override val onScreen: Boolean,
+    ) : PayInFormSubmitter
+
     private fun withBillingEmail(): List<PayInFormSection> =
         listOf(
             PayInFormSection(

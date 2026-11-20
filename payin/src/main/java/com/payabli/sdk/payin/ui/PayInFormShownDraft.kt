@@ -13,6 +13,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormMethod
+import com.payabli.sdk.payin.form.PayInFormSubmitter
 
 /**
  * The drafts the forms at one position last drew, kept as long as the screen holding them.
@@ -49,10 +50,12 @@ internal class PayInFormShownDraft : ViewModel() {
     )
 
     /** The draft one form last drew. */
-    internal inner class Slot {
+    internal inner class Slot : PayInFormSubmitter {
         internal var held = false
         internal var shown: Drawn? = null
             private set
+
+        override val onScreen: Boolean get() = held
 
         /** Drafts left by forms this slot cannot be told apart from, emptied at the next [show]. */
         internal var unclaimed: List<Drawn> = emptyList()

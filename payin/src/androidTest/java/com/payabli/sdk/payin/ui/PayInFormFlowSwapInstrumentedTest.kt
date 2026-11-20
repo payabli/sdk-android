@@ -290,6 +290,68 @@ class PayInFormFlowSwapInstrumentedTest {
         assertEquals("the second form was told ${secondTold.size} times", 1, secondTold.size)
     }
 
+    @Test
+    fun aFormThatLeftMidFlightDoesNotClaimTheNextSubmissionOfTheFormThatDrewItsFlow() {
+        val firstGate = GatedPayInTransport.answering(DECLINED_TRANSACTION)
+        val secondGate = GatedPayInTransport.answering(DECLINED_TRANSACTION)
+        val shared = flowOver(InTurn(firstGate, secondGate))
+        var firstFlow by mutableStateOf(shared)
+        var secondShown by mutableStateOf(false)
+        val firstTold = mutableListOf<Any>()
+        val secondTold = mutableListOf<Any>()
+
+        rule.setContent {
+            MaterialTheme {
+                Column {
+                    if (onScreen) BankForm(firstFlow, onCompleted = { firstTold += it }, onFailed = { firstTold += it })
+                    if (secondShown) {
+                        BankForm(
+                            shared,
+                            onCompleted = { secondTold += it },
+                            onFailed = { secondTold += it },
+                        )
+                    }
+                }
+            }
+        }
+        // The first form submits the flow and leaves before the outcome lands; the second form draws the flow.
+        fillBank()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+        runBlocking { firstGate.arrived.await() }
+        rule.runOnIdle { onScreen = false }
+        rule.waitForIdle()
+        rule.runOnIdle { secondShown = true }
+        rule.waitForIdle()
+        firstGate.release()
+        rule.waitForIdle()
+        assertEquals("the outcome landing with only the second form drawn", 1, secondTold.size)
+        secondTold.clear()
+
+        // The second form submits, and the first comes back drawing another flow before that outcome lands.
+        fillBank()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+        runBlocking { secondGate.arrived.await() }
+        rule.runOnIdle {
+            firstFlow = second
+            onScreen = true
+        }
+        rule.waitForIdle()
+        secondGate.release()
+        rule.waitForIdle()
+
+        assertTrue("the first form was told of the second form's submission: $firstTold", firstTold.isEmpty())
+        assertEquals("the second form was told ${secondTold.size} times", 1, secondTold.size)
+    }
+
+    /** Answers each request from the next of [transports]. */
+    private class InTurn(
+        private vararg val transports: PayabliTransport,
+    ) : PayabliTransport by transports.last() {
+        private var next = 0
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse = transports[next++].execute(request)
+    }
+
     /** Answers the first request from [first] and every later one from [rest]. */
     private class FirstAnsweredThenGated(
         private val first: PayabliTransport,

@@ -39,6 +39,7 @@ import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormMethod
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInFormStyle
+import com.payabli.sdk.payin.form.PayInFormSubmitter
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
@@ -70,6 +71,7 @@ import java.math.BigDecimal
  * @param onFailed it did not complete; where the outcome is unknown the cause is `Unsettled`.
  * @param onMethodChanged the displayed method moved, by a payer switch or a configuration change.
  * @param inert draws the form disabled, for a form waiting for its flow.
+ * @param submitter this form, recorded on a submission it makes so that only it is handed the outcome while drawn.
  */
 @Composable
 internal fun PayInFormContent(
@@ -89,6 +91,7 @@ internal fun PayInFormContent(
     onMethodChanged: (PayInMethodType) -> Unit = {},
     inert: Boolean = false,
     formMethod: PayInFormMethod = remember { PayInFormMethod() },
+    submitter: PayInFormSubmitter? = null,
 ) {
     // The newest lambdas without re-registering anything. A host that writes them inline passes new objects
     // on every recomposition, and the effects below are keyed on the submission and the method rather than
@@ -152,7 +155,8 @@ internal fun PayInFormContent(
     // StateFlow publishes both; `PayInSubmissionStateIdentityTest` pins that.
     LaunchedEffect(submission) {
         // Only an outcome this form sent: a shared flow would clear a payer's boxes mid-typing.
-        val outcome = submission.takeIf { draft.submissionPending } ?: return@LaunchedEffect
+        val outcome =
+            submission.takeIf { draft.submissionPending && draft.outcomeIsFor(submitter) } ?: return@LaunchedEffect
         val rejected = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
 
         reports.refusedFields(rejected)
@@ -169,6 +173,7 @@ internal fun PayInFormContent(
         // Only once the service may have acted on it: a refusal before that, of any kind, leaves what the payer typed.
         val clearInstrument = { if (wasSent(outcome)) draft.clearInstrument() }
         draft.submissionPending = outcome.deliver(clearInstrument, completed, failed)
+        if (!draft.submissionPending) draft.submitter = null
     }
 
     val context =
@@ -235,7 +240,9 @@ internal fun PayInFormContent(
                     justSubmitted = true
                     draft.sentSavesMethod = savesMethod
                     // Only once it was accepted. Refused, nothing was sent, so nothing is pending.
-                    draft.submissionPending = onSubmit(configuration.valuesFor(chosen, typed))
+                    val accepted = onSubmit(configuration.valuesFor(chosen, typed))
+                    if (accepted) draft.submitter = submitter
+                    draft.submissionPending = accepted
                 }
             },
         )
