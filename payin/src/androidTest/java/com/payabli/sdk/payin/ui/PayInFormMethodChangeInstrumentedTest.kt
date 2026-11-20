@@ -17,6 +17,7 @@ import com.payabli.sdk.payin.form.BANK_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormDraft
+import com.payabli.sdk.payin.form.PayInFormMethod
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInFormatting
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -42,6 +43,9 @@ class PayInFormMethodChangeInstrumentedTest {
 
     /** Held here rather than inside the composition, which is where a host holds it. */
     private val draft = PayInFormDraft()
+
+    /** The form's, held here for the same reason. */
+    private val method = PayInFormMethod()
 
     private val told = mutableListOf<PayInMethodType>()
 
@@ -118,6 +122,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
                     onMethodChanged = { told += it },
+                    formMethod = method,
                 )
             }
         }
@@ -147,6 +152,7 @@ class PayInFormMethodChangeInstrumentedTest {
                         reports = PayInFormReports.None,
                         submitText = PayInSubmitText.Capture,
                         onMethodChanged = { told += it },
+                        formMethod = method,
                     )
                 }
             }
@@ -193,6 +199,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
                     onMethodChanged = { told += it },
+                    formMethod = method,
                 )
             }
         }
@@ -209,6 +216,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
                     onMethodChanged = { told += it },
+                    formMethod = method,
                 )
             }
         }

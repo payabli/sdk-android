@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.payabli.sdk.payin.form.PayInFormDraft
+import com.payabli.sdk.payin.form.PayInFormMethod
 
 /**
  * The drafts the forms at one position last drew, kept as long as the screen holding them.
@@ -57,6 +58,9 @@ internal class PayInFormShownDraft : ViewModel() {
         }
 
         internal val drawn: PayInFormDraft? get() = shown
+
+        /** The method this form shows, kept across the flows it is handed. */
+        internal val method = PayInFormMethod()
 
         /**
          * Records that the form now draws [draft], and empties the draft it drew before, and any [unclaimed], that no

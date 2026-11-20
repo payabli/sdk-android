@@ -6,6 +6,7 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormDraft
+import com.payabli.sdk.payin.form.PayInFormMethod
 import com.payabli.sdk.payin.form.PayInMethodType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -191,7 +192,7 @@ class PayInFormShownDraftTest {
 
     private fun filled(): PayInFormDraft =
         PayInFormDraft().apply {
-            seed(configuration)
+            seed(configuration, PayInFormMethod())
             enter(PayInField.CardNumber, TEST_NUMBER)
             rejectedFields = mapOf(PayInField.CardNumber to PayInFieldError.NotAccepted)
             failureNotice = PayInFailureNotice(PayabliErrorCategory.DECLINED, savesMethod = false)

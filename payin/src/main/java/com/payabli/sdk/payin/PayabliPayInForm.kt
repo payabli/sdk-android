@@ -189,5 +189,6 @@ private fun LeasedPayInForm(
             }
         },
         onMethodChanged = onMethodChanged,
+        formMethod = shown.method,
     )
 }

@@ -36,6 +36,7 @@ import com.payabli.sdk.payin.form.PayInFieldRules
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormLabels
+import com.payabli.sdk.payin.form.PayInFormMethod
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInFormStyle
 import com.payabli.sdk.payin.form.PayInFormValues
@@ -55,6 +56,7 @@ import java.math.BigDecimal
  * where it is held decides what the payer keeps across a rotation.
  * @param submission the submission state this composition draws.
  * @param draft the payer's values; one draft draws one form.
+ * @param formMethod the method on screen and the one the host was last told, which are the form's.
  * @param sent whether the service may have acted on the request an outcome answers, which is when the instrument goes.
  * @param configuration the form's configuration.
  * @param reports where the form's telemetry goes.
@@ -86,6 +88,7 @@ internal fun PayInFormContent(
     onFailed: (PayabliException) -> Unit = {},
     onMethodChanged: (PayInMethodType) -> Unit = {},
     inert: Boolean = false,
+    formMethod: PayInFormMethod = remember { PayInFormMethod() },
 ) {
     // The newest lambdas without re-registering anything. A host that writes them inline passes new objects
     // on every recomposition, and the effects below are keyed on the submission and the method rather than
@@ -104,18 +107,16 @@ internal fun PayInFormContent(
 
     // Before anything below reads the draft, and on every composition: a caller replacing the configuration
     // restyles the form and keeps what the payer typed wherever the new one still has a box for it.
-    draft.seed(configuration)
+    draft.seed(configuration, formMethod)
 
-    val method = draft.method
+    val method = formMethod.current
     val typed = draft.typed
 
-    // The draft holds what the host was last told, not this composition: the method can move while no
-    // form is composed, so the next showing has to read a move as a change rather than as an opening.
-    // Keyed on the draft as well, so a new draft initializes even where its opening method matches the
-    // one the old draft stood on.
-    LaunchedEffect(draft, method) {
-        val previous = draft.toldMethod
-        draft.toldMethod = method
+    // The form holds what the host was last told, not this composition: the method can move while no form is
+    // composed, so the next showing has to read a move as a change rather than as an opening.
+    LaunchedEffect(formMethod, method) {
+        val previous = formMethod.told
+        formMethod.told = method
         if (previous != null && previous != method) methodChanged(method)
     }
 
@@ -162,7 +163,7 @@ internal fun PayInFormContent(
         draft.failureNotice =
             (outcome as? PayInSubmissionState.Failed)
                 ?.cause
-                ?.takeIf { it is PayInException.Unsettled || !anyRejectedFieldStands(draft.method) }
+                ?.takeIf { it is PayInException.Unsettled || !anyRejectedFieldStands(formMethod.current) }
                 ?.let { PayInFailureNotice(PayInFailureMessage.categoryOf(it), draft.sentSavesMethod) }
         // On the composition's dispatcher; moving either call to the flow's coroutine needs withContext(Main).
         // Only once the service may have acted on it: a refusal before that, of any kind, leaves what the payer typed.
@@ -199,7 +200,7 @@ internal fun PayInFormContent(
 
         if (configuration.methodsOffered.size > 1) {
             MethodSelector(configuration.methodsOffered, method, isSubmitting || inert) { chosen ->
-                draft.switchTo(chosen, configuration)
+                draft.switchTo(chosen, configuration, formMethod)
             }
         }
 
@@ -225,7 +226,7 @@ internal fun PayInFormContent(
                 // Checked again here, and read from the draft: `enabled` reflects the last composition, not
                 // the state at the tap.
                 today = ExpiryValue.today()
-                val chosen = draft.method
+                val chosen = formMethod.current
                 val readyToSend =
                     !justSubmitted &&
                         !anyRejectedFieldStands(chosen) &&

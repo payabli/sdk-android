@@ -12,6 +12,8 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -292,6 +294,90 @@ class PayInFormFlowSwapInstrumentedTest {
         assertEquals(HOLDER, first.draft.typed[PayInField.AccountHolder])
         assertEquals(OTHER_HOLDER, second.draft.typed[PayInField.AccountHolder])
     }
+
+    @Test
+    fun theMethodOnScreenStaysWhereTheNewFlowOffersItAndTellsNothing() {
+        rule.setContent { MethodForm() }
+        tapBank()
+        told.clear()
+
+        rule.runOnIdle { payIn = second }
+        rule.waitForIdle()
+
+        rule.onNodeWithText(string(R.string.payabli_payin_field_routing_number)).assertExists()
+        assertTrue("a swap that kept the method told the host $told", told.isEmpty())
+    }
+
+    @Test
+    fun aNewFlowThatDoesNotOfferTheMethodOpensOnItsStartingMethodAndTellsTheHostOnce() {
+        rule.setContent { MethodForm() }
+        tapBank()
+        told.clear()
+
+        rule.runOnIdle {
+            payIn = second
+            methods = cardOnly
+        }
+        rule.waitForIdle()
+
+        rule.onNodeWithText(string(R.string.payabli_payin_field_routing_number)).assertDoesNotExist()
+        assertEquals(listOf(PayInMethodType.Card), told)
+    }
+
+    @Test
+    fun aFlowHandedBackIsNotToldAMoveTheFormAlreadyReported() {
+        rule.setContent { MethodForm() }
+        tapBank()
+        rule.runOnIdle {
+            payIn = second
+            methods = cardOnly
+        }
+        rule.waitForIdle()
+        told.clear()
+
+        rule.runOnIdle {
+            payIn = first
+            methods = cardAndBank
+        }
+        rule.waitForIdle()
+
+        assertTrue("the flow handed back told the host $told", told.isEmpty())
+    }
+
+    @Composable
+    private fun MethodForm() {
+        MaterialTheme {
+            PayabliPayInForm(
+                payIn = payIn,
+                operation = PayabliPayInOperation.Capture(testOptions()),
+                configuration = methods,
+                onCompleted = {},
+                onFailed = {},
+                onMethodChanged = { told += it },
+            )
+        }
+    }
+
+    private fun tapBank() {
+        rule
+            .onNode(hasClickAction() and hasText(string(R.string.payabli_payin_method_bank_account)))
+            .performClick()
+        rule.waitForIdle()
+    }
+
+    private val told = mutableListOf<PayInMethodType>()
+
+    private val cardAndBank =
+        PayInFormConfiguration(
+            allowedMethods = listOf(PayInMethodType.Card, PayInMethodType.BankAccount),
+            defaultMethod = PayInMethodType.Card,
+            bankSections = listOf(PayInFormSection(fields = BANK_INSTRUMENT_FIELDS)),
+            labelLayout = PayInLabelLayout.Placeholder,
+        )
+
+    private val cardOnly = cardAndBank.copy(allowedMethods = listOf(PayInMethodType.Card))
+
+    private var methods by mutableStateOf(cardAndBank)
 
     private fun formView(
         flow: PayInPaymentFlow,

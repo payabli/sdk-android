@@ -22,36 +22,38 @@ class PayInFormDraftTest {
 
     private val draft = PayInFormDraft()
 
+    private val method = PayInFormMethod()
+
     @Test
     fun aSwitchWhileASubmissionIsPendingKeepsTheMethodSentAndWhatWasTyped() {
         // The selector is disabled only once the form recomposes, so a tap in the frame after the submit lands.
-        draft.seed(configuration)
+        draft.seed(configuration, method)
         draft.enter(PayInField.CardNumber, "4111111111111111")
         draft.submissionPending = true
 
-        draft.switchTo(PayInMethodType.BankAccount, configuration)
+        draft.switchTo(PayInMethodType.BankAccount, configuration, method)
 
-        assertEquals(PayInMethodType.Card, draft.method)
+        assertEquals(PayInMethodType.Card, method.current)
         assertEquals("4111111111111111", draft.typed[PayInField.CardNumber])
     }
 
     @Test
     fun aSwitchOnceTheOutcomeArrivedMovesTheMethod() {
-        draft.seed(configuration)
+        draft.seed(configuration, method)
         draft.submissionPending = false
 
-        draft.switchTo(PayInMethodType.BankAccount, configuration)
+        draft.switchTo(PayInMethodType.BankAccount, configuration, method)
 
-        assertEquals(PayInMethodType.BankAccount, draft.method)
+        assertEquals(PayInMethodType.BankAccount, method.current)
     }
 
     @Test
     fun seedingTwiceWithTheSameConfigurationKeepsWhatWasTypedInBetween() {
         // The rotation. The second call is the new composition, and the caller has handed over the same one.
-        draft.seed(configuration)
+        draft.seed(configuration, method)
         draft.enter(PayInField.CardholderName, "Ada Lovelace")
 
-        draft.seed(configuration)
+        draft.seed(configuration, method)
 
         assertEquals("Ada Lovelace", draft.typed[PayInField.CardholderName])
     }
@@ -59,10 +61,10 @@ class PayInFormDraftTest {
     @Test
     fun anEqualConfigurationRebuiltByTheCallerIsNotANewOne() {
         // A host that builds its configuration inline hands over a different instance on every composition.
-        draft.seed(configuration)
+        draft.seed(configuration, method)
         draft.enter(PayInField.CardholderName, "Ada Lovelace")
 
-        draft.seed(configuration.copy())
+        draft.seed(configuration.copy(), method)
 
         assertEquals("Ada Lovelace", draft.typed[PayInField.CardholderName])
     }
@@ -70,27 +72,27 @@ class PayInFormDraftTest {
     @Test
     fun aDisplaySettingChangeKeepsWhatWasTypedAndTheChosenMethod() {
         // Masking is a display setting, which says nothing about what the payer has done.
-        draft.seed(configuration)
-        draft.switchTo(PayInMethodType.BankAccount, configuration)
+        draft.seed(configuration, method)
+        draft.switchTo(PayInMethodType.BankAccount, configuration, method)
         draft.enter(PayInField.AccountNumber, "000123456789")
 
-        draft.seed(configuration.copy(formatting = PayInFormatting(masksAccountNumber = false)))
+        draft.seed(configuration.copy(formatting = PayInFormatting(masksAccountNumber = false)), method)
 
-        assertEquals(PayInMethodType.BankAccount, draft.method)
+        assertEquals(PayInMethodType.BankAccount, method.current)
         assertEquals("000123456789", draft.typed[PayInField.AccountNumber])
     }
 
     @Test
     fun withdrawingTheChosenMethodDropsItsFieldsAndKeepsTheSharedOnes() {
         val both = configuration.copy(cardSections = cardWithBillingEmail(), bankSections = withBillingEmail())
-        draft.seed(both)
-        draft.switchTo(PayInMethodType.BankAccount, both)
+        draft.seed(both, method)
+        draft.switchTo(PayInMethodType.BankAccount, both, method)
         draft.enter(PayInField.AccountNumber, "000123456789")
         draft.enter(PayInField.BillingEmail, "ada@example.com")
 
-        draft.seed(both.copy(allowedMethods = listOf(PayInMethodType.Card)))
+        draft.seed(both.copy(allowedMethods = listOf(PayInMethodType.Card)), method)
 
-        assertEquals(PayInMethodType.Card, draft.method)
+        assertEquals(PayInMethodType.Card, method.current)
         assertFalse("a bank account number was kept behind a card form", PayInField.AccountNumber in draft.typed)
         assertEquals("ada@example.com", draft.typed[PayInField.BillingEmail])
     }
@@ -98,11 +100,11 @@ class PayInFormDraftTest {
     @Test
     fun removingAFilledFieldDropsThatFieldAndNothingElse() {
         val withEmail = configuration.copy(cardSections = cardWithBillingEmail())
-        draft.seed(withEmail)
+        draft.seed(withEmail, method)
         draft.enter(PayInField.CardholderName, "Ada Lovelace")
         draft.enter(PayInField.BillingEmail, "ada@example.com")
 
-        draft.seed(configuration)
+        draft.seed(configuration, method)
 
         assertFalse(PayInField.BillingEmail in draft.typed)
         assertEquals("Ada Lovelace", draft.typed[PayInField.CardholderName])
@@ -111,11 +113,11 @@ class PayInFormDraftTest {
     @Test
     fun aRejectionStaysOnABoxTheNewConfigurationStillDraws() {
         // The refused value is still in the box, so lifting the mark would let the same value be sent again.
-        draft.seed(configuration)
+        draft.seed(configuration, method)
         draft.enter(PayInField.CardholderName, "Ada Lovelace")
         draft.rejectedFields = mapOf(PayInField.CardholderName to PayInFieldError.NotAccepted)
 
-        draft.seed(configuration.copy(formatting = PayInFormatting(groupsCardNumber = false)))
+        draft.seed(configuration.copy(formatting = PayInFormatting(groupsCardNumber = false)), method)
 
         assertEquals(PayInFieldError.NotAccepted, draft.rejectedFields[PayInField.CardholderName])
     }
@@ -123,7 +125,7 @@ class PayInFormDraftTest {
     @Test
     fun aRejectionGoesWithTheBoxTheNewConfigurationRemoves() {
         val withEmail = configuration.copy(cardSections = cardWithBillingEmail())
-        draft.seed(withEmail)
+        draft.seed(withEmail, method)
         draft.enter(PayInField.BillingEmail, "ada@example.com")
         draft.rejectedFields =
             mapOf(
@@ -131,7 +133,7 @@ class PayInFormDraftTest {
                 PayInField.CardholderName to PayInFieldError.NotAccepted,
             )
 
-        draft.seed(configuration)
+        draft.seed(configuration, method)
 
         assertFalse(PayInField.BillingEmail in draft.rejectedFields)
         assertEquals(PayInFieldError.NotAccepted, draft.rejectedFields[PayInField.CardholderName])
@@ -139,14 +141,14 @@ class PayInFormDraftTest {
 
     @Test
     fun theConfigurationDecidesTheInstrumentTheFormOpensOn() {
-        draft.seed(configuration.copy(defaultMethod = PayInMethodType.BankAccount))
+        draft.seed(configuration.copy(defaultMethod = PayInMethodType.BankAccount), method)
 
-        assertEquals(PayInMethodType.BankAccount, draft.method)
+        assertEquals(PayInMethodType.BankAccount, method.current)
     }
 
     @Test
     fun typingClearsTheRejectionThatBoxWasCarrying() {
-        draft.seed(configuration)
+        draft.seed(configuration, method)
         draft.rejectedFields = mapOf(PayInField.CardholderName to PayInFieldError.NotAccepted)
 
         draft.enter(PayInField.CardholderName, "Grace Hopper")
@@ -156,11 +158,11 @@ class PayInFormDraftTest {
 
     @Test
     fun switchingInstrumentDropsWhatTheNewOneHasNoBoxFor() {
-        draft.seed(configuration)
+        draft.seed(configuration, method)
         draft.enter(PayInField.CardNumber, "4111111111111111")
         draft.enter(PayInField.BillingEmail, "ada@example.com")
 
-        draft.switchTo(PayInMethodType.BankAccount, configuration.copy(bankSections = withBillingEmail()))
+        draft.switchTo(PayInMethodType.BankAccount, configuration.copy(bankSections = withBillingEmail()), method)
 
         assertFalse("a card number was kept behind a bank form", PayInField.CardNumber in draft.typed)
         assertEquals("ada@example.com", draft.typed[PayInField.BillingEmail])
@@ -168,7 +170,7 @@ class PayInFormDraftTest {
 
     @Test
     fun anOutcomeEmptiesTheInstrumentAndKeepsTheRest() {
-        draft.seed(configuration)
+        draft.seed(configuration, method)
         draft.enter(PayInField.CardNumber, "4111111111111111")
         draft.enter(PayInField.CardholderName, "Ada Lovelace")
 
@@ -192,8 +194,8 @@ class PayInFormDraftTest {
 
     @Test
     fun clearingTakesEverythingAndStartsTheFormAgainAfterwards() {
-        draft.seed(configuration)
-        draft.switchTo(PayInMethodType.BankAccount, configuration)
+        draft.seed(configuration, method)
+        draft.switchTo(PayInMethodType.BankAccount, configuration, method)
         draft.enter(PayInField.AccountHolder, "Ada Lovelace")
         draft.submissionPending = true
         draft.failureNotice = PayInFailureNotice(PayabliErrorCategory.DECLINED, savesMethod = false)
@@ -203,33 +205,10 @@ class PayInFormDraftTest {
         assertFalse(draft.submissionPending)
         assertNull(draft.failureNotice)
 
-        // The instrument, because it is the only thing here that separates a seed that ran from one that
-        // did not. The configuration is the one already seeded from, so a clear that kept what it was
-        // started from leaves the payer's bank tab standing; entering a value instead would work either
-        // way and prove nothing.
-        draft.seed(configuration)
-        assertEquals(PayInMethodType.Card, draft.method)
-    }
-
-    @Test
-    fun aClearedDraftStillAnswersWhichInstrumentIsOnScreen() {
-        // The clear runs on whichever thread completed the host's scope, and a reader that has already passed
-        // seed's check goes straight on to read the instrument. Clearing that under it fails the read.
-        draft.seed(configuration)
-
-        draft.clear()
-
-        assertEquals(PayInMethodType.Card, draft.method)
-    }
-
-    @Test
-    fun readingTheInstrumentBeforeSeedingFails() {
-        // A form drawn without seeding first would pick a tab of its own, and nothing would report it.
-        val unseeded = PayInFormDraft()
-
-        val thrown = runCatching { unseeded.method }.exceptionOrNull()
-
-        assertTrue("an unseeded draft answered $thrown", thrown is IllegalStateException)
+        // Seeded again with the configuration it was started from: a clear that kept it would skip the start.
+        draft.enter(PayInField.AccountHolder, "Ada Lovelace")
+        draft.seed(configuration, method)
+        assertTrue("a cleared draft was not started again", draft.typed.isEmpty())
     }
 
     private fun cardWithBillingEmail(): List<PayInFormSection> =
