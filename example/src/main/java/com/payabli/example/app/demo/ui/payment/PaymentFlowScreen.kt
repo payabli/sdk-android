@@ -236,8 +236,7 @@ fun PaymentFlowScreen(
 /**
  * The same form, over the screen.
  *
- * A host mounts one of these beside the inline form, and both submit through the one `PayabliPayIn` the
- * screen holds.
+ * It submits through the one `PayabliPayIn` the screen holds, so the inline form is not drawn while it is open.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
