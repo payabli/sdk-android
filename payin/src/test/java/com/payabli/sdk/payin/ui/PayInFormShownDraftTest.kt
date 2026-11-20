@@ -24,7 +24,7 @@ class PayInFormShownDraftTest {
         )
 
     private val holder = PayInFormShownDraft()
-    private val shown = holder.lease()
+    private val shown = holder.lease(PayInFormDraft())
 
     @Test
     fun theFirstDraftShownKeepsWhatWasTyped() {
@@ -82,7 +82,7 @@ class PayInFormShownDraftTest {
     fun twoFormsHeldAtOnceDoNotEmptyEachOther() {
         val first = filled()
         val second = filled()
-        val other = holder.lease()
+        val other = holder.lease(second)
 
         shown.show(first)
         other.show(second)
@@ -98,9 +98,57 @@ class PayInFormShownDraftTest {
         shown.show(first)
         shown.held = false
 
-        holder.lease().show(PayInFormDraft())
+        holder.lease(PayInFormDraft()).show(PayInFormDraft())
 
         assertTrue("the draft left behind stayed", first.typed.isEmpty())
+    }
+
+    @Test
+    fun formsReturningInTheOtherOrderTakeTheSlotsTheyLeft() {
+        val (first, second) = twoFormsThatLeft()
+
+        holder.lease(second).show(second)
+        holder.lease(first).show(first)
+
+        assertEquals(TEST_NUMBER, first.typed[PayInField.CardNumber])
+        assertEquals(TEST_NUMBER, second.typed[PayInField.CardNumber])
+    }
+
+    @Test
+    fun aFormReturningWithAnotherFlowWhenTheSlotsCannotBeToldApartEmptiesEveryDraftLeft() {
+        // The form returning cannot be matched to the slot it left, so no draft left behind is kept by guessing.
+        val (first, second) = twoFormsThatLeft()
+
+        holder.lease(PayInFormDraft()).show(PayInFormDraft())
+
+        assertTrue("the second draft stayed", second.typed.isEmpty())
+        assertTrue("the first draft stayed", first.typed.isEmpty())
+    }
+
+    @Test
+    fun aDraftAFormOnScreenStillShowsIsNotEmptiedByAnAmbiguousReturn() {
+        // Three forms at one position, two of them over the first flow. All leave, and one of those two returns.
+        val first = filled()
+        val second = filled()
+        val left = listOf(first, second, first).map { draft -> holder.lease(draft).apply { show(draft) } }
+        left.forEach { it.held = false }
+        holder.lease(first).show(first)
+
+        holder.lease(PayInFormDraft()).show(PayInFormDraft())
+
+        assertEquals(TEST_NUMBER, first.typed[PayInField.CardNumber])
+        assertTrue("the second draft stayed", second.typed.isEmpty())
+    }
+
+    /** Two forms at one position, each showing its own filled draft, both gone from the composition. */
+    private fun twoFormsThatLeft(): Pair<PayInFormDraft, PayInFormDraft> {
+        val first = filled()
+        val second = filled()
+        shown.show(first)
+        val other = holder.lease(second).apply { show(second) }
+        shown.held = false
+        other.held = false
+        return first to second
     }
 
     private fun filled(): PayInFormDraft =

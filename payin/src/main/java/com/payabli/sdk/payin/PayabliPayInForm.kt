@@ -91,7 +91,7 @@ public fun PayabliPayInForm(
         when (payIn) {
             is PayInPaymentFlow -> payIn
         }
-    val shown = rememberPayInFormShownDraft()
+    val shown = rememberPayInFormShownDraft(impl.draft)
     // After the composition is applied, so a discarded one empties nothing.
     SideEffect { shown.show(impl.draft) }
     val submission by impl.submissionState.collectAsState()

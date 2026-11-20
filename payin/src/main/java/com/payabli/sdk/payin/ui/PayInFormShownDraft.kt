@@ -20,17 +20,36 @@ internal class PayInFormShownDraft : ViewModel() {
     private val slots = mutableListOf<Slot>()
 
     /**
-     * Takes the first slot no form on screen holds, or a new one.
+     * The free slot that last drew [draft], else a free one, else a new one. Forms that left one position cannot be
+     * told apart, so when none drew [draft] and several are free, every draft they drew that no form on screen draws
+     * is emptied rather than one kept by a guess.
      *
+     * @param draft the draft of the flow the form enters with.
      * @return the slot, now held.
      */
     @JvmSynthetic
-    fun lease(): Slot = (slots.firstOrNull { !it.held } ?: Slot().also { slots += it }).apply { held = true }
+    fun lease(draft: PayInFormDraft): Slot {
+        val free = slots.filter { !it.held }
+        val slot =
+            free.firstOrNull { it.drawn === draft }
+                ?: (free.firstOrNull() ?: Slot().also { slots += it }).apply {
+                    if (free.size > 1) unclaimed = free.mapNotNull { it.drawn }
+                }
+        slot.held = true
+        return slot
+    }
+
+    private fun drawnOnScreen(draft: PayInFormDraft): Boolean = slots.any { it.held && it.drawn === draft }
 
     /** The draft one form last drew. */
-    internal class Slot {
+    internal inner class Slot {
         internal var held = false
         private var shown: PayInFormDraft? = null
+
+        /** Drafts left by forms this slot cannot be told apart from, emptied at the next [show]. */
+        internal var unclaimed: List<PayInFormDraft> = emptyList()
+
+        internal val drawn: PayInFormDraft? get() = shown
 
         /**
          * Records that the form now draws [draft], and empties the draft it drew before when that is another.
@@ -39,6 +58,9 @@ internal class PayInFormShownDraft : ViewModel() {
          */
         @JvmSynthetic
         fun show(draft: PayInFormDraft) {
+            val left = unclaimed
+            unclaimed = emptyList()
+            left.filter { it !== draft && !drawnOnScreen(it) }.forEach { it.clearEntries() }
             val previous = shown
             if (previous != null && previous !== draft) previous.clearEntries()
             shown = draft
@@ -49,8 +71,9 @@ internal class PayInFormShownDraft : ViewModel() {
 /** Holds a slot while the form is in the composition, and gives it back when the form leaves or is abandoned. */
 private class SlotLease(
     holder: PayInFormShownDraft,
+    draft: PayInFormDraft,
 ) : RememberObserver {
-    val slot = holder.lease()
+    val slot = holder.lease(draft)
 
     override fun onRemembered() = Unit
 
@@ -68,10 +91,11 @@ private class SlotLease(
  * the composition, so a swap made while the form is off screen still empties the previous draft. Without a
  * `ViewModelStoreOwner` it lives only as long as the composition.
  *
+ * @param draft the draft of the flow the form is drawn with.
  * @return this form's slot.
  */
 @Composable
-internal fun rememberPayInFormShownDraft(): PayInFormShownDraft.Slot {
+internal fun rememberPayInFormShownDraft(draft: PayInFormDraft): PayInFormShownDraft.Slot {
     // Keyed on the position, so forms at different positions never meet. A position repeats in every composition
     // root, so the root's view id is in the key too, which is the id Compose saves state under.
     val view = LocalView.current
@@ -86,5 +110,5 @@ internal fun rememberPayInFormShownDraft(): PayInFormShownDraft.Slot {
         } else {
             viewModel(owner, key = key) { PayInFormShownDraft() }
         }
-    return remember(holder) { SlotLease(holder) }.slot
+    return remember(holder) { SlotLease(holder, draft) }.slot
 }

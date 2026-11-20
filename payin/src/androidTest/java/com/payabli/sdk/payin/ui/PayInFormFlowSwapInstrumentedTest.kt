@@ -265,6 +265,34 @@ class PayInFormFlowSwapInstrumentedTest {
         assertEquals(OTHER_HOLDER, second.draft.typed[PayInField.AccountHolder])
     }
 
+    @Test
+    fun formsWhoseKeysShareAHashReturningInTheOtherOrderKeepTheirOwnEntries() {
+        // "Aa" and "BB" have the same hashCode, and nothing at their position tells the forms apart once they leave.
+        var order by mutableStateOf(listOf("Aa" to first, "BB" to second))
+        rule.setContent {
+            MaterialTheme {
+                if (onScreen) {
+                    Column { order.forEach { (name, flow) -> key(name) { LabelledBankForm(flow, name) } } }
+                }
+            }
+        }
+        rule.runOnIdle {
+            first.draft.enter(PayInField.AccountHolder, HOLDER)
+            second.draft.enter(PayInField.AccountHolder, OTHER_HOLDER)
+        }
+
+        rule.runOnIdle { onScreen = false }
+        rule.waitForIdle()
+        rule.runOnIdle {
+            order = order.reversed()
+            onScreen = true
+        }
+        rule.waitForIdle()
+
+        assertEquals(HOLDER, first.draft.typed[PayInField.AccountHolder])
+        assertEquals(OTHER_HOLDER, second.draft.typed[PayInField.AccountHolder])
+    }
+
     private fun formView(
         flow: PayInPaymentFlow,
         label: MutableState<String>,
