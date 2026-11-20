@@ -146,7 +146,7 @@ private fun LeasedPayInForm(
 ) {
     val shown = rememberPayInFormShownDraft(impl.draft)
     // After the composition is applied, so a discarded one empties nothing.
-    SideEffect { shown.show(impl.draft) }
+    SideEffect { shown.show(impl.draft, impl.lease) }
     val submission by impl.submissionState.collectAsState()
 
     // An authorization takes entered card data only, so a bank tab beside it is a form no request can be

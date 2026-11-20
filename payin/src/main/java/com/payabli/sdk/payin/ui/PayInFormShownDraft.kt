@@ -36,21 +36,26 @@ internal class PayInFormShownDraft : ViewModel() {
         val slot =
             free.firstOrNull { it.drawn === draft }
                 ?: (free.firstOrNull() ?: Slot().also { slots += it }).apply {
-                    if (free.size > 1) unclaimed = free.mapNotNull { it.drawn }
+                    if (free.size > 1) unclaimed = free.mapNotNull { it.shown }
                 }
         slot.held = true
         return slot
     }
 
-    private fun drawnOnScreen(draft: PayInFormDraft): Boolean = slots.any { it.held && it.drawn === draft }
+    /** A draft a form drew, with the lease of its flow, which says whether any form draws it now. */
+    internal class Drawn(
+        val draft: PayInFormDraft,
+        val lease: PayInFormLease,
+    )
 
     /** The draft one form last drew. */
     internal inner class Slot {
         internal var held = false
-        private var shown: PayInFormDraft? = null
+        internal var shown: Drawn? = null
+            private set
 
         /** Drafts left by forms this slot cannot be told apart from, emptied at the next [show]. */
-        internal var unclaimed: List<PayInFormDraft> = emptyList()
+        internal var unclaimed: List<Drawn> = emptyList()
 
         /** Gives the slot back, with nothing left to empty. */
         @JvmSynthetic
@@ -59,7 +64,7 @@ internal class PayInFormShownDraft : ViewModel() {
             unclaimed = emptyList()
         }
 
-        internal val drawn: PayInFormDraft? get() = shown
+        internal val drawn: PayInFormDraft? get() = shown?.draft
 
         /** The method this form shows, kept across the flows it is handed. */
         internal val method = PayInFormMethod()
@@ -69,16 +74,20 @@ internal class PayInFormShownDraft : ViewModel() {
 
         /**
          * Records that the form now draws [draft], and empties the draft it drew before, and any [unclaimed], that no
-         * form on screen draws.
+         * form draws, at this position or any other.
          *
          * @param draft the draft of the flow the form was handed.
+         * @param lease the lease of that flow.
          */
         @JvmSynthetic
-        fun show(draft: PayInFormDraft) {
+        fun show(
+            draft: PayInFormDraft,
+            lease: PayInFormLease,
+        ) {
             val left = unclaimed + listOfNotNull(shown)
             unclaimed = emptyList()
-            shown = draft
-            left.filter { !drawnOnScreen(it) }.forEach { it.clearEntries() }
+            shown = Drawn(draft, lease)
+            left.filter { it.lease.holder == null }.forEach { it.draft.clearEntries() }
         }
     }
 }
