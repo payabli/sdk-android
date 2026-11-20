@@ -345,18 +345,59 @@ class PayInFormFlowSwapInstrumentedTest {
 
     @Test
     fun aFormThatCannotBeToldApartFromTheOneThatSubmittedIsNotHandedItsOutcome() {
-        // "Aa" and "BB" have the same hashCode. "Aa" submits, both leave, and "BB" returns drawing another flow.
+        // "Aa" submits, both leave, and "BB" returns drawing another flow.
+        val (gate, submitted) = keyedFormSubmitted()
+        rule.runOnIdle { keyed = listOf("Aa" to submitted, "BB" to second) }
+        rule.waitForIdle()
+        rule.runOnIdle { keyed = emptyList() }
+        rule.waitForIdle()
+        rule.runOnIdle { keyed = listOf("BB" to third) }
+
+        assertOnlyTheFormDrawingTheFlowIsTold(gate, submitted, returning = "BB")
+    }
+
+    @Test
+    fun aFormReturningWithTheFlowTheSubmittingFormLastDrewIsNotHandedItsOutcome() {
+        // "Aa" submits, is handed another flow, and leaves with "BB"; "BB" returns drawing the flow "Aa" last drew.
+        val (gate, submitted) = keyedFormSubmitted()
+        rule.runOnIdle { keyed = listOf("Aa" to submitted, "BB" to second) }
+        rule.waitForIdle()
+        rule.runOnIdle { keyed = listOf("Aa" to third, "BB" to second) }
+        rule.waitForIdle()
+        rule.runOnIdle { keyed = emptyList() }
+        rule.waitForIdle()
+        rule.runOnIdle { keyed = listOf("BB" to third) }
+
+        assertOnlyTheFormDrawingTheFlowIsTold(gate, submitted, returning = "BB")
+    }
+
+    @Test
+    fun aFormTakingTheOneFreeSlotBesideAFormStillDrawnIsNotHandedItsOutcome() {
+        // "Aa" submits and leaves while "BB" stays; "C#", whose key has the same hash, arrives in the slot "Aa" left.
+        val (gate, submitted) = keyedFormSubmitted()
+        rule.runOnIdle { keyed = listOf("Aa" to submitted, "BB" to second) }
+        rule.waitForIdle()
+        rule.runOnIdle { keyed = listOf("BB" to second) }
+        rule.waitForIdle()
+        rule.runOnIdle { keyed = listOf("BB" to second, "C#" to third) }
+
+        assertOnlyTheFormDrawingTheFlowIsTold(gate, submitted, returning = "C#")
+    }
+
+    /**
+     * Draws "Aa" over a gated flow and submits it, leaving the outcome in flight. "Aa", "BB" and "C#" have the same
+     * hashCode, so forms keyed by them share a position.
+     */
+    private fun keyedFormSubmitted(): Pair<GatedPayInTransport, PayInPaymentFlow> {
         val gate = GatedPayInTransport.answering(DECLINED_TRANSACTION)
         val submitted = flowOver(gate)
-        val third = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
-        var forms by mutableStateOf(listOf("Aa" to submitted))
-        val told = mapOf("Aa" to mutableListOf<Any>(), "BB" to mutableListOf<Any>())
+        keyed = listOf("Aa" to submitted)
         rule.setContent {
             MaterialTheme {
                 Column {
-                    forms.forEach { (name, flow) ->
+                    keyed.forEach { (name, flow) ->
                         key(name) {
-                            val list = told.getValue(name)
+                            val list = keyedTold.getOrPut(name) { mutableListOf() }
                             BankForm(flow, onCompleted = { list += it }, onFailed = { list += it })
                         }
                     }
@@ -366,24 +407,30 @@ class PayInFormFlowSwapInstrumentedTest {
         fillBank()
         rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
         runBlocking { gate.arrived.await() }
-        rule.runOnIdle { forms = listOf("Aa" to submitted, "BB" to second) }
-        rule.waitForIdle()
-        rule.runOnIdle { forms = emptyList() }
-        rule.waitForIdle()
-        rule.runOnIdle { forms = listOf("BB" to third) }
+        return gate to submitted
+    }
+
+    /** Lands the outcome; [returning] is told nothing, and "Aa", drawn over [submitted] again, is told once. */
+    private fun assertOnlyTheFormDrawingTheFlowIsTold(
+        gate: GatedPayInTransport,
+        submitted: PayInPaymentFlow,
+        returning: String,
+    ) {
         rule.waitForIdle()
         gate.release()
         rule.waitForIdle()
+        val wrong = keyedTold[returning].orEmpty()
+        assertTrue("$returning was told of a submission it did not make: $wrong", wrong.isEmpty())
 
-        val returning = told.getValue("BB")
-        assertTrue("the returning form was told of a submission it did not make: $returning", returning.isEmpty())
-
-        // The form that draws the submitted flow next hands its outcome over.
-        rule.runOnIdle { forms = listOf("BB" to third, "Aa" to submitted) }
+        rule.runOnIdle { keyed = keyed + ("Aa" to submitted) }
         rule.waitForIdle()
-        val drawing = told.getValue("Aa")
+        val drawing = keyedTold["Aa"].orEmpty()
         assertEquals("the form drawing the submitted flow was told $drawing", 1, drawing.size)
     }
+
+    private var keyed by mutableStateOf(emptyList<Pair<String, PayInPaymentFlow>>())
+    private val keyedTold = mutableMapOf<String, MutableList<Any>>()
+    private val third = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
 
     /** Answers each request from the next of [transports]. */
     private class InTurn(

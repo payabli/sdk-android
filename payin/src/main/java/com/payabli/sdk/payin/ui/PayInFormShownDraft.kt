@@ -24,9 +24,9 @@ internal class PayInFormShownDraft : ViewModel() {
     private val slots = mutableListOf<Slot>()
 
     /**
-     * The free slot that last drew [draft], else a free one, else a new one. Forms that left one position cannot be
-     * told apart, so when none drew [draft] and several are free, every draft they drew that no form on screen draws
-     * is emptied, and the slot is handed none of their outcomes, rather than one kept by a guess.
+     * The free slot that last drew [draft], else a free one, else a new one. Forms sharing a position cannot be told
+     * apart, so a slot reused there is handed none of the outcomes it awaited, and with several free, every draft left
+     * that no form on screen draws is emptied rather than one kept by a guess.
      *
      * @param draft the draft of the flow the form enters with.
      * @return the slot, now held.
@@ -37,12 +37,10 @@ internal class PayInFormShownDraft : ViewModel() {
         val slot =
             free.firstOrNull { it.drawn === draft }
                 ?: (free.firstOrNull() ?: Slot().also { slots += it }).apply {
-                    if (free.size > 1) {
-                        unclaimed = free.mapNotNull { it.shown }
-                        guessed = true
-                    }
+                    if (free.size > 1) unclaimed = free.mapNotNull { it.shown }
                 }
         slot.held = true
+        slot.guessed = slots.size > 1
         return slot
     }
 
@@ -63,7 +61,7 @@ internal class PayInFormShownDraft : ViewModel() {
         /** Drafts left by forms this slot cannot be told apart from, emptied at the next [show]. */
         internal var unclaimed: List<Drawn> = emptyList()
 
-        /** Whether the slot was taken among forms that cannot be told apart, so it gives up its submissions at [show]. */
+        /** Whether the slot was taken where forms share the position, so it gives up its submissions at [show]. */
         internal var guessed = false
 
         /** Gives the slot back, with nothing left to empty. */
