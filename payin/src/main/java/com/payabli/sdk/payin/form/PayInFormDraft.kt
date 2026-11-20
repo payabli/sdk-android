@@ -28,23 +28,6 @@ internal class PayInFormDraft {
 
     private val entered = mutableStateMapOf<PayInField, String>()
 
-    private var chosen: PayInMethodType? by mutableStateOf(null)
-
-    /**
-     * The method the host was last told is on screen. Null until the form first names one, so a draft's
-     * first showing opens silently and every move after it is told, however and whenever it happened.
-     */
-    var toldMethod: PayInMethodType? = null
-
-    /**
-     * The instrument on screen.
-     *
-     * Read rather than captured, so the submit button's second check at the tap sees what the payer chose
-     * rather than what the last composition drew.
-     */
-    val method: PayInMethodType
-        get() = checkNotNull(chosen) { "a form draft was read before it was seeded" }
-
     /** Every value the payer has typed, for the instrument on screen. */
     val typed: Map<PayInField, String> get() = entered
 
@@ -68,6 +51,18 @@ internal class PayInFormDraft {
      */
     var submissionPending: Boolean by mutableStateOf(false)
 
+    /** The form the pending submission was made from, or null once its outcome has been handed over. */
+    var submitter: PayInFormSubmitter? = null
+
+    /**
+     * Whether [form], drawing this draft, hands over the pending outcome. The form that submitted it does, and does
+     * so while it is drawn over another flow too, so another form takes it only once that one is gone.
+     *
+     * @param form the form drawing this draft.
+     * @return true when [form] hands it over; false when the form that submitted it will.
+     */
+    fun outcomeIsFor(form: PayInFormSubmitter?): Boolean = submitter.let { it == null || it === form || !it.onScreen }
+
     /**
      * True when the last submission sent saved a payment method. Taken at the tap, because a host can change the
      * operation before the answer arrives, and the notice describes the submission that was sent.
@@ -75,23 +70,29 @@ internal class PayInFormDraft {
     var sentSavesMethod: Boolean by mutableStateOf(false)
 
     /**
-     * Starts the form the first time, and applies a different configuration without starting it
-     * again, keeping the values, the marks and the method the new one still offers, dropping what has no box. The comparison
+     * Opens [method] on [configuration], starts the draft the first time, and applies a different configuration
+     * without starting it again, keeping the values and the marks the new one still has a box for. The comparison
      * stays here: a `remember` key is gone with its composition, and a write the same composition reads never settles.
      *
      * @param configuration the configuration this composition draws the form from.
+     * @param method the form's method.
      */
-    fun seed(configuration: PayInFormConfiguration) {
+    fun seed(
+        configuration: PayInFormConfiguration,
+        method: PayInFormMethod,
+    ) {
+        method.open(configuration)
         val previous = seededFrom.getAndSet(configuration)
-        if (previous == configuration) return
-        val started = previous != null
+        if (previous == configuration) {
+            // A form that comes back on another method, as one with nowhere to keep it does, drops what it hides.
+            keepOnlyWhatHasABox(configuration, method.current)
+            return
+        }
 
-        if (started) {
-            chosen = chosen?.takeIf { it in configuration.methodsOffered } ?: configuration.startingMethod
-            keepOnlyWhatHasABox(configuration)
-            rejectedFields = configuration.rejectedFieldsOnScreen(rejectedFields, method)
+        if (previous != null) {
+            keepOnlyWhatHasABox(configuration, method.current)
+            rejectedFields = configuration.rejectedFieldsOnScreen(rejectedFields, method.current)
         } else {
-            chosen = configuration.startingMethod
             entered.clear()
             rejectedFields = emptyMap()
         }
@@ -115,40 +116,49 @@ internal class PayInFormDraft {
      * The payer switched instrument, dropping what the new one has no box for. Ignored while a submission is
      * pending: the selector is disabled only from the next frame, and the method on screen is the one sent.
      *
-     * @param method the instrument switched to.
+     * @param chosen the instrument switched to.
      * @param configuration the configuration the new instrument's form comes from.
+     * @param method the form's method, which moves to [chosen].
      */
     fun switchTo(
-        method: PayInMethodType,
+        chosen: PayInMethodType,
         configuration: PayInFormConfiguration,
+        method: PayInFormMethod,
     ) {
         if (submissionPending) return
-        chosen = method
+        method.switchTo(chosen)
         // A card number typed under the card tab is not sent with a bank payment, and is not kept out of sight
         // either.
-        keepOnlyWhatHasABox(configuration)
-        rejectedFields = configuration.rejectedFieldsOnScreen(rejectedFields, method)
+        keepOnlyWhatHasABox(configuration, chosen)
+        rejectedFields = configuration.rejectedFieldsOnScreen(rejectedFields, chosen)
     }
 
-    private fun keepOnlyWhatHasABox(configuration: PayInFormConfiguration) {
+    private fun keepOnlyWhatHasABox(
+        configuration: PayInFormConfiguration,
+        method: PayInMethodType,
+    ) {
         entered.keys.retainAll(configuration.inputFieldsFor(method).toSet())
     }
 
     /** The instrument goes once the service may have acted on a submission, approved or refused. */
     fun clearInstrument() = PayInSensitiveFields.CLEARED_ON_OUTCOME.forEach { entered.remove(it) }
 
-    /**
-     * Everything the payer entered goes, and the next composition starts the form again. [chosen] is
-     * left alone: a reader that has already passed [seed]'s check goes on to read [method], and
-     * clearing the instrument under it fails that read.
-     *
-     */
+    /** Everything the payer entered goes, and the next composition starts the draft again. */
     fun clear() {
+        clearEntries()
+        submissionPending = false
+        submitter = null
+    }
+
+    /**
+     * Everything the payer entered goes, as with [clear], and a submission in flight still delivers its outcome
+     * when this draft is drawn again.
+     */
+    fun clearEntries() {
         seededFrom.set(null)
         entered.clear()
         rejectedFields = emptyMap()
         failureNotice = null
-        submissionPending = false
     }
 }
 

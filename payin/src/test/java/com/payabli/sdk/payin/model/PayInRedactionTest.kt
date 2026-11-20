@@ -210,10 +210,11 @@ class PayInRedactionTest {
             )
         // Both halves, because either can reach a log line on its own: a host holds the options while it
         // configures a screen, and only the SDK ever holds the request.
-        val rendered = PayInRequest(PayInPaymentMethod.Card(card()), options).toString() + " " + options
-
-        listOf(pan, securityCode, "Ada", "ada@example.test", "acct-77", "203.0.113.9", "ref-1")
-            .forEach { assertFalse("$it was rendered", rendered.contains(it)) }
+        assertIdentityRender(
+            PayInRequest::class.java,
+            PayInRequest(PayInPaymentMethod.Card(card()), options).toString(),
+        )
+        assertIdentityRender(PayInTransactionOptions::class.java, options.toString())
     }
 
     @Test
@@ -230,12 +231,14 @@ class PayInRedactionTest {
                 accountType = PayInAccountType.Checking,
                 holderName = "A Payer",
             )
-        val rendered =
-            PayInStoreRequest(PayInInstrument.Card(card()), options).toString() + " " +
-                PayInStoreRequest(PayInInstrument.BankAccount(bank), options)
-
-        listOf(pan, securityCode, account, "A Payer", "Ada", "ada@example.test", "12-3456789")
-            .forEach { assertFalse("$it was rendered", rendered.contains(it)) }
+        assertIdentityRender(
+            PayInStoreRequest::class.java,
+            PayInStoreRequest(PayInInstrument.Card(card()), options).toString(),
+        )
+        assertIdentityRender(
+            PayInStoreRequest::class.java,
+            PayInStoreRequest(PayInInstrument.BankAccount(bank), options).toString(),
+        )
     }
 
     @Test
@@ -258,8 +261,7 @@ class PayInRedactionTest {
                 methodDescription = "on file",
             ).toString()
 
-        listOf("Ada", "12-3456789", "ap@example.test", "5551234567")
-            .forEach { assertFalse("$it was rendered", rendered.contains(it)) }
+        assertIdentityRender(PayInStoreOptions::class.java, rendered)
     }
 
     @Test
@@ -279,4 +281,21 @@ class PayInRedactionTest {
     }
 
     private fun StackTraceElement.simpleClassName(): String = className.substringAfterLast('.')
+
+    /**
+     * Asserts that [rendered] is the identity `toString`, the class name and a hex hash, which carries no field.
+     * A check for a fixture value would fail whenever the hash happened to contain it.
+     *
+     * @param type the class that rendered.
+     * @param rendered what its `toString` returned.
+     */
+    private fun assertIdentityRender(
+        type: Class<*>,
+        rendered: String,
+    ) {
+        assertTrue(
+            "$rendered is not ${type.name}@<hash>",
+            Regex(Regex.escape(type.name) + "@\\p{XDigit}+").matches(rendered),
+        )
+    }
 }

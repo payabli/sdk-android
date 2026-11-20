@@ -2,22 +2,33 @@ package com.payabli.sdk.payin
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
+import com.payabli.sdk.payin.form.PayInFormSubmitter
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.narrowingKey
 import com.payabli.sdk.payin.payment.offering
 import com.payabli.sdk.payin.payment.paymentDetails
 import com.payabli.sdk.payin.payment.step
+import com.payabli.sdk.payin.telemetry.PayInFormReports
 import com.payabli.sdk.payin.ui.PayInFormContent
 import com.payabli.sdk.payin.ui.PayInSubmitText
+import com.payabli.sdk.payin.ui.deliver
+import com.payabli.sdk.payin.ui.rememberPayInFormLease
+import com.payabli.sdk.payin.ui.rememberPayInFormShownDraft
+import kotlinx.coroutines.flow.first
 
 /**
  * The Payabli payment form.
@@ -52,9 +63,12 @@ import com.payabli.sdk.payin.ui.PayInSubmitText
  * the interrupted payment's key died with the process: find that payment before charging again. Within one
  * process, a retry is a submission with `attempt` set to `PayabliAttempt.Retry` and the payment's `paymentReference`.
  *
- * **One form per [payIn].** The typed values are its own, so two forms given the same one draw the same
- * boxes, and two given the same one with different configurations refill each other on every frame. A second
- * form on a screen takes a second one.
+ * **One form per [payIn].** A second form given one already drawn throws `IllegalStateException` in a debuggable
+ * app; otherwise it draws empty and disabled, with no callbacks, until the first leaves. A second form on a screen
+ * takes a second one. Forms drawn in a list each take a `key`, and forms in separate `ComposeView`s
+ * each take a view id. Handing a form another [payIn] empties what was typed for the one before, so the previous one
+ * handed back opens empty. A submission still in flight when that happens reaches [onCompleted] or [onFailed] once
+ * it lands while the form is drawn, and marks nothing on the form now drawn.
  *
  * @param payIn where a submission runs, and whose state this renders.
  * @param operation what the tap does: store the method, capture, or authorize.
@@ -87,6 +101,53 @@ public fun PayabliPayInForm(
         when (payIn) {
             is PayInPaymentFlow -> payIn
         }
+    if (rememberPayInFormLease(impl.lease)) {
+        LeasedPayInForm(impl, operation, configuration, modifier, labels, style, onCompleted, onFailed, onMethodChanged)
+    } else {
+        // Another form draws this flow: this one waits with a draft of its own, so nothing typed is drawn twice.
+        PayInFormContent(
+            submission = PayInSubmissionState.Idle,
+            draft = remember { PayInFormDraft() },
+            sent = { false },
+            configuration = operation.offering(configuration),
+            reports = PayInFormReports.None,
+            submitText = PayInSubmitText.of(operation),
+            modifier = modifier,
+            labels = labels,
+            style = style,
+            inert = true,
+        )
+    }
+}
+
+/**
+ * The form drawing [impl], which holds its lease.
+ *
+ * @param impl the flow the form draws.
+ * @param operation what the tap does.
+ * @param configuration what to collect and how to arrange it.
+ * @param modifier the layout modifier.
+ * @param labels the caller's wording.
+ * @param style the form's style, or the theme's.
+ * @param onCompleted the service accepted it.
+ * @param onFailed it did not complete.
+ * @param onMethodChanged the displayed method moved.
+ */
+@Composable
+private fun LeasedPayInForm(
+    impl: PayInPaymentFlow,
+    operation: PayabliPayInOperation,
+    configuration: PayInFormConfiguration,
+    modifier: Modifier,
+    labels: PayInFormLabels,
+    style: PayInFormStyle?,
+    onCompleted: (PayInFormSuccess) -> Unit,
+    onFailed: (PayabliException) -> Unit,
+    onMethodChanged: (PayInMethodType) -> Unit,
+) {
+    val shown = rememberPayInFormShownDraft(impl.draft)
+    // After the composition is applied, so a discarded one empties nothing.
+    SideEffect { shown.show(impl.draft, impl.lease) }
     val submission by impl.submissionState.collectAsState()
 
     // An authorization takes entered card data only, so a bank tab beside it is a form no request can be
@@ -103,6 +164,18 @@ public fun PayabliPayInForm(
     val step = operation.step
     LaunchedEffect(impl, step) { impl.reports.presented(step) }
 
+    // A flow submitted and then replaced before its outcome landed still reports it to the host, drawing nothing.
+    val completed by rememberUpdatedState(onCompleted)
+    val failed by rememberUpdatedState(onFailed)
+    shown.awaited.filter { it !== impl }.forEach { submitted ->
+        key(submitted) {
+            LaunchedEffect(submitted) {
+                submitted.deliverWhenItLands(shown, { completed(it) }, { failed(it) })
+                shown.awaited.remove(submitted)
+            }
+        }
+    }
+
     PayInFormContent(
         submission = submission,
         draft = impl.draft,
@@ -117,12 +190,15 @@ public fun PayabliPayInForm(
         onSubmit = { values ->
             // Before the send, so a submit that never reaches the service is still counted.
             impl.reports.submitted(operation.step)
-            impl.start(operation, values, offered.accountHolderType)
+            impl.start(operation, values, offered.accountHolderType).also { started ->
+                if (started && impl !in shown.awaited) shown.awaited += impl
+            }
         },
         onCompleted = { outcome ->
             try {
                 onCompleted(outcome)
             } finally {
+                shown.awaited.remove(impl)
                 impl.consume()
             }
         },
@@ -130,9 +206,39 @@ public fun PayabliPayInForm(
             try {
                 onFailed(outcome)
             } finally {
+                shown.awaited.remove(impl)
                 impl.consume()
             }
         },
         onMethodChanged = onMethodChanged,
+        formMethod = shown.method,
+        submitter = shown,
     )
+}
+
+/**
+ * Waits for the outcome of a submission to this flow made by a form that now draws another, and hands it to the
+ * caller, marking no field and showing no message. Nothing is handed over when a form drawing this flow already did,
+ * or when the submission pending is another form's.
+ *
+ * @param form the form that submitted.
+ * @param onCompleted the service accepted it.
+ * @param onFailed it did not complete.
+ */
+private suspend fun PayInPaymentFlow.deliverWhenItLands(
+    form: PayInFormSubmitter,
+    onCompleted: (PayInFormSuccess) -> Unit,
+    onFailed: (PayabliException) -> Unit,
+) {
+    if (draft.submitter !== form) return
+    val outcome = submissionState.first { it != PayInSubmissionState.Submitting }
+    if (!draft.submissionPending || draft.submitter !== form) return
+    reports.refusedFields((outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty())
+    try {
+        draft.submissionPending =
+            outcome.deliver({ if (sent(outcome)) draft.clearInstrument() }, onCompleted, onFailed)
+        if (!draft.submissionPending) draft.submitter = null
+    } finally {
+        consume()
+    }
 }

@@ -17,6 +17,7 @@ import com.payabli.sdk.payin.form.BANK_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormDraft
+import com.payabli.sdk.payin.form.PayInFormMethod
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInFormatting
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -42,6 +43,9 @@ class PayInFormMethodChangeInstrumentedTest {
 
     /** Held here rather than inside the composition, which is where a host holds it. */
     private val draft = PayInFormDraft()
+
+    /** The form's, held here for the same reason. */
+    private val method = PayInFormMethod()
 
     private val told = mutableListOf<PayInMethodType>()
 
@@ -118,6 +122,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
                     onMethodChanged = { told += it },
+                    formMethod = method,
                 )
             }
         }
@@ -147,6 +152,7 @@ class PayInFormMethodChangeInstrumentedTest {
                         reports = PayInFormReports.None,
                         submitText = PayInSubmitText.Capture,
                         onMethodChanged = { told += it },
+                        formMethod = method,
                     )
                 }
             }
@@ -160,43 +166,6 @@ class PayInFormMethodChangeInstrumentedTest {
         rule.waitForIdle()
 
         assertTold(PayInMethodType.Card)
-    }
-
-    @Test
-    fun twoFormsSharingTheDraftAnnounceAChangeOnce() {
-        // One draft draws one form, but a screen can mount a second one over the same flow, and both
-        // see the method move. The host is told what changed, not that two forms saw it.
-        rule.setContent {
-            MaterialTheme {
-                PayInFormContent(
-                    submission = PayInSubmissionState.Idle,
-                    draft = draft,
-                    sent = { true },
-                    configuration = both,
-                    reports = PayInFormReports.None,
-                    submitText = PayInSubmitText.Capture,
-                    onMethodChanged = { told += it },
-                )
-                PayInFormContent(
-                    submission = PayInSubmissionState.Idle,
-                    draft = draft,
-                    sent = { true },
-                    configuration = both,
-                    reports = PayInFormReports.None,
-                    submitText = PayInSubmitText.Capture,
-                    onMethodChanged = { told += it },
-                )
-            }
-        }
-        rule.waitForIdle()
-
-        // Both draw a selector, so the tap takes the first of the two tabs.
-        rule
-            .onAllNodes(hasClickAction() and hasText(string(R.string.payabli_payin_method_bank_account)))[0]
-            .performClick()
-        rule.waitForIdle()
-
-        assertTold(PayInMethodType.BankAccount)
     }
 
     @Test
@@ -230,6 +199,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
                     onMethodChanged = { told += it },
+                    formMethod = method,
                 )
             }
         }
@@ -246,6 +216,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     reports = PayInFormReports.None,
                     submitText = PayInSubmitText.Capture,
                     onMethodChanged = { told += it },
+                    formMethod = method,
                 )
             }
         }

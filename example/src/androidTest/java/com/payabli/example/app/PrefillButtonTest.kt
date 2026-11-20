@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.example.app.demo.ui.nav.PayabliDemoNavHost
@@ -137,12 +138,8 @@ class PrefillButtonTest {
     @Test
     fun theSheetCarriesItsOwnButtonAndFillingFromItFillsTheSheetsBoxes() {
         // The screen's button is behind the sheet and cannot be reached, so without one here a sheet demo has
-        // no prefill at all.
-        //
-        // Only the sheet's boxes are asserted on. The form behind shows the same values, because both are
-        // mounted on the one flow this screen holds and the values are the flow's: `PayabliPayInForm` says so
-        // in as many words. So there is one draft, and which form the fill was aimed at is not a difference
-        // this screen can show.
+        // no prefill at all. The screen's form leaves while the sheet is open, as a flow is drawn by one form
+        // at a time, so the boxes filled are the sheet's.
         openTheForm()
         compose.onNodeWithText("Open as a sheet instead").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = APPEARS_WITHIN_MILLIS) {
@@ -153,6 +150,32 @@ class PrefillButtonTest {
         compose.waitForIdle()
 
         compose.onNode(hasText(GROUPED_PAN) and hasAnyAncestor(isDialog())).assertExists()
+    }
+
+    @Test
+    fun bankDetailsEnteredInlineAreStillThereInTheSheetAndBackInline() {
+        // The inline form and the sheet are two forms over one flow, and each opens on its own method.
+        openTheForm()
+        chooseTheBankAccount()
+        prefill()
+        val holder = container.sampleIdentity.holderName
+
+        compose.onNodeWithText("Open as a sheet instead").performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = APPEARS_WITHIN_MILLIS) {
+            compose
+                .onAllNodes(
+                    hasText("ACH Information") and hasAnyAncestor(isDialog()),
+                ).fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        assertFilledWith("Account holder", holder)
+
+        Espresso.pressBack()
+        compose.waitUntil(timeoutMillis = APPEARS_WITHIN_MILLIS) {
+            compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty()
+        }
+        awaitExists("ACH Information")
+        assertFilledWith("Account holder", holder)
     }
 
     private fun openTheForm() {

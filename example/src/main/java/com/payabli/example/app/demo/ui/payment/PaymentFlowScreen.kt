@@ -32,12 +32,14 @@ import com.payabli.example.app.demo.ui.components.SectionHeader
 import com.payabli.example.app.demo.ui.components.StepRow
 import com.payabli.example.app.demo.ui.components.TokenCheckStep
 import com.payabli.example.app.demo.ui.theme.Dimens
+import com.payabli.example.app.sdk.FormMethodChoice
 import com.payabli.example.app.sdk.PayInFlowHandle
 import com.payabli.example.app.sdk.PayInFormSetup
 import com.payabli.example.app.sdk.PayInOperation
 import com.payabli.example.app.sdk.PayInOutcome
 import com.payabli.example.app.sdk.PaymentFormHost
 import com.payabli.example.app.sdk.fillTestData
+import com.payabli.example.app.sdk.rememberFormMethodChoice
 
 /**
  * What the two card-not-present screens have in common, which is everything but their wording.
@@ -133,6 +135,7 @@ fun PaymentFlowScreen(
     modifier: Modifier = Modifier,
 ) {
     val offersPrefill = BuildConfig.DEBUG && state.prefillEnabled
+    val method = rememberFormMethodChoice()
 
     DemoScreen(title = title, modifier = modifier) {
         ContextLine(entryPoint = state.entryPoint, host = state.host)
@@ -167,14 +170,16 @@ fun PaymentFlowScreen(
                         enabled = !isSubmitting && payments != null,
                     )
                 }
-                // Only once the session exists. Until then the step above is what the screen offers.
-                payments?.let { handle ->
+                // Only once the session exists. Until then the step above is what the screen offers. Not while
+                // the sheet is open: a flow is drawn by one form at a time, and the sheet's is the one in use.
+                payments?.takeUnless { state.isSheetOpen }?.let { handle ->
                     PaymentFormHost(
                         setup = state.setup,
                         payments = handle,
                         operation = operation,
                         onCompleted = actions.onCompleted,
                         onFailed = actions.onFailed,
+                        method = method,
                     )
                 }
             }
@@ -228,6 +233,7 @@ fun PaymentFlowScreen(
             operation = operation,
             isSubmitting = isSubmitting,
             offersPrefill = offersPrefill,
+            method = method,
         )
     }
 }
@@ -235,8 +241,7 @@ fun PaymentFlowScreen(
 /**
  * The same form, over the screen.
  *
- * A host mounts one of these beside the inline form, and both submit through the one `PayabliPayIn` the
- * screen holds.
+ * It submits through the one `PayabliPayIn` the screen holds, so the inline form is not drawn while it is open.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -247,6 +252,7 @@ private fun FormSheet(
     operation: PayInOperation,
     isSubmitting: Boolean,
     offersPrefill: Boolean,
+    method: FormMethodChoice,
 ) {
     // Both halves, because a swipe and a back press take different routes to the same place:
     // the form holds what was typed in `remember`, and dismissing disposes it mid-submission.
@@ -291,6 +297,7 @@ private fun FormSheet(
                     operation = operation,
                     onCompleted = actions.onCompleted,
                     onFailed = actions.onFailed,
+                    method = method,
                 )
             }
         }
