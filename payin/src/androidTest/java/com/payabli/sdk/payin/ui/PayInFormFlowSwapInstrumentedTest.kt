@@ -49,7 +49,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -166,14 +165,14 @@ class PayInFormFlowSwapInstrumentedTest {
     }
 
     @Test
-    fun aRefusalOfThePreviousFlowDrawsNothingOnTheNewOne() {
+    fun aRefusalLandingAfterASwapIsDeliveredOnceAndDrawsNothingOnTheNewFlow() {
         val transport = GatedPayInTransport.answering(DECLINED_TRANSACTION)
         val refused = flowOver(transport)
         payIn = refused
-        var completed: PayInFormSuccess? = null
-        var failed: PayabliException? = null
+        val completed = mutableListOf<PayInFormSuccess>()
+        val failed = mutableListOf<PayabliException>()
 
-        rule.setContent { Form(onCompleted = { completed = it }, onFailed = { failed = it }) }
+        rule.setContent { Form(onCompleted = { completed += it }, onFailed = { failed += it }) }
         fillBank()
         rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
         runBlocking { transport.arrived.await() }
@@ -183,21 +182,43 @@ class PayInFormFlowSwapInstrumentedTest {
         transport.release()
         rule.waitForIdle()
 
-        assertNull("the new flow was told of a completion", completed)
-        assertNull("the new flow was told of the previous flow's refusal", failed)
+        assertEquals("the refusal reached the host ${failed.size} times", 1, failed.size)
+        assertTrue("a refusal was told as a completion", completed.isEmpty())
         assertNull("the new flow drew a message", second.draft.failureNotice)
         assertTrue("the new flow marked fields", second.draft.rejectedFields.isEmpty())
         assertNull("the previous flow kept a message", refused.draft.failureNotice)
+        assertTrue("the previous flow kept its marks", refused.draft.rejectedFields.isEmpty())
     }
 
     @Test
-    fun aFlowHandedBackMidFlightStillDeliversItsOutcome() {
+    fun anApprovalLandingAfterASwapIsDeliveredOnce() {
+        val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+        val approved = flowOver(transport)
+        payIn = approved
+        val completed = mutableListOf<PayInFormSuccess>()
+
+        rule.setContent { Form(onCompleted = { completed += it }) }
+        fillBank()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+        runBlocking { transport.arrived.await() }
+
+        rule.runOnIdle { payIn = second }
+        rule.waitForIdle()
+        transport.release()
+        rule.waitForIdle()
+
+        assertEquals("the approval reached the host ${completed.size} times", 1, completed.size)
+        assertTrue("the approved flow still waits for its outcome", !approved.draft.submissionPending)
+    }
+
+    @Test
+    fun aFlowHandedBackAfterItsOutcomeLandedDeliversNothingMore() {
         val transport = GatedPayInTransport.answering(DECLINED_TRANSACTION)
         val refused = flowOver(transport)
         payIn = refused
-        var failed: PayabliException? = null
+        val failed = mutableListOf<PayabliException>()
 
-        rule.setContent { Form(onFailed = { failed = it }) }
+        rule.setContent { Form(onFailed = { failed += it }) }
         fillBank()
         rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
         runBlocking { transport.arrived.await() }
@@ -209,8 +230,61 @@ class PayInFormFlowSwapInstrumentedTest {
         rule.runOnIdle { payIn = refused }
         rule.waitForIdle()
 
-        assertNotNull("the refusal of the flow handed back was never delivered", failed)
+        assertEquals("the refusal reached the host ${failed.size} times", 1, failed.size)
         assertTrue("the flow handed back kept what was typed", refused.draft.typed.isEmpty())
+        assertNull("the flow handed back drew a message", refused.draft.failureNotice)
+    }
+
+    @Test
+    fun anOutcomeLandingAfterASwapAndARecreationIsStillDelivered() {
+        val transport = GatedPayInTransport.answering(DECLINED_TRANSACTION)
+        val refused = flowOver(transport)
+        payIn = refused
+        val failed = mutableListOf<PayabliException>()
+        val restorer = StateRestorationTester(rule)
+
+        restorer.setContent { Form(onFailed = { failed += it }) }
+        fillBank()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+        runBlocking { transport.arrived.await() }
+        rule.runOnIdle { payIn = second }
+        rule.waitForIdle()
+
+        restorer.emulateSavedInstanceStateRestore()
+        transport.release()
+        rule.waitForIdle()
+
+        assertEquals("the refusal reached the host ${failed.size} times", 1, failed.size)
+    }
+
+    @Test
+    fun aSecondFlowSubmittedWhileTheFirstIsInFlightDeliversBothOutcomes() {
+        val firstTransport = GatedPayInTransport.answering(DECLINED_TRANSACTION)
+        val secondTransport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+        val refused = flowOver(firstTransport)
+        val approved = flowOver(secondTransport)
+        payIn = refused
+        val completed = mutableListOf<PayInFormSuccess>()
+        val failed = mutableListOf<PayabliException>()
+
+        rule.setContent { Form(onCompleted = { completed += it }, onFailed = { failed += it }) }
+        fillBank()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+        runBlocking { firstTransport.arrived.await() }
+        rule.runOnIdle { payIn = approved }
+        rule.waitForIdle()
+        fillBank()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
+        runBlocking { secondTransport.arrived.await() }
+        rule.runOnIdle { payIn = second }
+        rule.waitForIdle()
+
+        firstTransport.release()
+        secondTransport.release()
+        rule.waitForIdle()
+
+        assertEquals("the first flow's refusal reached the host ${failed.size} times", 1, failed.size)
+        assertEquals("the second flow's approval reached the host ${completed.size} times", 1, completed.size)
     }
 
     @Test

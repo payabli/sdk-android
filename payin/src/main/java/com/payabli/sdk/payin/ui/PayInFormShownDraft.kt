@@ -4,11 +4,13 @@ import android.view.View
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.currentCompositeKeyHashCode
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormMethod
 
@@ -61,6 +63,9 @@ internal class PayInFormShownDraft : ViewModel() {
 
         /** The method this form shows, kept across the flows it is handed. */
         internal val method = PayInFormMethod()
+
+        /** The flows this form submitted to whose outcome may not have reached the host yet. */
+        internal val awaited = mutableStateListOf<PayInPaymentFlow>()
 
         /**
          * Records that the form now draws [draft], and empties the draft it drew before, and any [unclaimed], that no

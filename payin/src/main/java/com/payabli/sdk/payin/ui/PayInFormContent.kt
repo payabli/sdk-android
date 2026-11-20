@@ -252,7 +252,7 @@ internal fun PayInFormContent(
  * @param onFailed it did not complete; where the outcome is unknown the cause is `Unsettled`.
  * @return true when a submission is still this form's to wait for; false otherwise.
  */
-private fun PayInSubmissionState.deliver(
+internal fun PayInSubmissionState.deliver(
     clearInstrument: () -> Unit,
     onCompleted: (PayInFormSuccess) -> Unit,
     onFailed: (PayabliException) -> Unit,
