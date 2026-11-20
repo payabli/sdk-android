@@ -20,9 +20,9 @@ internal class PayInFormLease {
 }
 
 /**
- * Holds [lease] for one form from the composition that takes it until the form leaves or is abandoned. A form whose
- * predecessor over the flow leaves in the same composition takes it once that composition is applied, when the
- * predecessor has given it back, so only a form still waiting after that is a second form.
+ * Holds [lease] for one form from the composition that takes it until the form leaves or is abandoned. A form that
+ * replaces another over the flow in one composition takes it when that composition is applied, after the other has
+ * given it back, so only a form still waiting after that is a second form.
  */
 private class LeaseHold(
     private val lease: PayInFormLease,
