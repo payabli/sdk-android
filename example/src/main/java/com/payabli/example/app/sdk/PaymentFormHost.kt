@@ -1,8 +1,14 @@
 package com.payabli.example.app.sdk
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.payabli.sdk.payin.PayabliPayInForm
+import com.payabli.sdk.payin.form.PayInMethodType
 
 /**
  * Where the SDK's payment form mounts.
@@ -25,15 +31,23 @@ fun PaymentFormHost(
     operation: PayInOperation,
     onCompleted: (PayInOutcome.Approved) -> Unit,
     onFailed: (PayInOutcome.Refused) -> Unit,
+    method: FormMethodChoice,
     modifier: Modifier = Modifier,
 ) {
+    val configuration =
+        setup.configuration.let { configuration ->
+            method.last
+                ?.takeIf { it in configuration.methodsOffered }
+                ?.let { configuration.copy(defaultMethod = it) }
+                ?: configuration
+        }
     PayabliPayInForm(
         payIn =
             requireNotNull(payments.formTarget) {
                 "PaymentFormHost draws a handle the SDK produced, and this one has no pay-in behind it"
             },
         operation = operation.operation,
-        configuration = setup.configuration,
+        configuration = configuration,
         modifier = modifier,
         labels = setup.labels,
         // Delivery closes the busy window before the app's own handling runs, so a recheck cannot
@@ -46,8 +60,20 @@ fun PaymentFormHost(
             payments.outcomeTaken()
             onFailed(it.toOutcome())
         },
-        // Nothing here follows the instrument on screen: the form fills its own boxes and submits them, and
-        // no screen in this app asks which tab the payer is on.
-        onMethodChanged = {},
+        onMethodChanged = { method.last = it },
     )
 }
+
+/**
+ * The method the payer last chose in either of a screen's forms. The inline form and the sheet are two forms, each
+ * opening on its own method, and what was entered under another method is dropped, so the one that opens first
+ * starts on this one.
+ */
+@Stable
+class FormMethodChoice internal constructor() {
+    internal var last: PayInMethodType? by mutableStateOf(null)
+}
+
+/** @return a [FormMethodChoice] the screen's inline form and sheet share. */
+@Composable
+fun rememberFormMethodChoice(): FormMethodChoice = remember { FormMethodChoice() }
