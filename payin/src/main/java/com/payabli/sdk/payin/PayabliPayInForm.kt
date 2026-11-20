@@ -9,16 +9,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.narrowingKey
 import com.payabli.sdk.payin.payment.offering
 import com.payabli.sdk.payin.payment.paymentDetails
 import com.payabli.sdk.payin.payment.step
+import com.payabli.sdk.payin.telemetry.PayInFormReports
 import com.payabli.sdk.payin.ui.PayInFormContent
 import com.payabli.sdk.payin.ui.PayInSubmitText
+import com.payabli.sdk.payin.ui.rememberPayInFormLease
 import com.payabli.sdk.payin.ui.rememberPayInFormShownDraft
 
 /**
@@ -54,9 +58,9 @@ import com.payabli.sdk.payin.ui.rememberPayInFormShownDraft
  * the interrupted payment's key died with the process: find that payment before charging again. Within one
  * process, a retry is a submission with `attempt` set to `PayabliAttempt.Retry` and the payment's `paymentReference`.
  *
- * **One form per [payIn].** The typed values are its own, so two forms given the same one draw the same
- * boxes, and two given the same one with different configurations refill each other on every frame. A second
- * form on a screen takes a second one. Forms drawn in a list each take a `key`, and forms in separate `ComposeView`s
+ * **One form per [payIn].** A second form given one already drawn throws `IllegalStateException` in a debuggable
+ * app; otherwise it draws empty and disabled, with no callbacks, until the first leaves. A second form on a screen
+ * takes a second one. Forms drawn in a list each take a `key`, and forms in separate `ComposeView`s
  * each take a view id. Handing a form another [payIn] empties what was typed for the one before, so the previous one
  * handed back opens empty.
  *
@@ -91,6 +95,50 @@ public fun PayabliPayInForm(
         when (payIn) {
             is PayInPaymentFlow -> payIn
         }
+    if (rememberPayInFormLease(impl.lease)) {
+        LeasedPayInForm(impl, operation, configuration, modifier, labels, style, onCompleted, onFailed, onMethodChanged)
+    } else {
+        // Another form draws this flow: this one waits with a draft of its own, so nothing typed is drawn twice.
+        PayInFormContent(
+            submission = PayInSubmissionState.Idle,
+            draft = remember { PayInFormDraft() },
+            sent = { false },
+            configuration = operation.offering(configuration),
+            reports = PayInFormReports.None,
+            submitText = PayInSubmitText.of(operation),
+            modifier = modifier,
+            labels = labels,
+            style = style,
+            inert = true,
+        )
+    }
+}
+
+/**
+ * The form drawing [impl], which holds its lease.
+ *
+ * @param impl the flow the form draws.
+ * @param operation what the tap does.
+ * @param configuration what to collect and how to arrange it.
+ * @param modifier the layout modifier.
+ * @param labels the caller's wording.
+ * @param style the form's style, or the theme's.
+ * @param onCompleted the service accepted it.
+ * @param onFailed it did not complete.
+ * @param onMethodChanged the displayed method moved.
+ */
+@Composable
+private fun LeasedPayInForm(
+    impl: PayInPaymentFlow,
+    operation: PayabliPayInOperation,
+    configuration: PayInFormConfiguration,
+    modifier: Modifier,
+    labels: PayInFormLabels,
+    style: PayInFormStyle?,
+    onCompleted: (PayInFormSuccess) -> Unit,
+    onFailed: (PayabliException) -> Unit,
+    onMethodChanged: (PayInMethodType) -> Unit,
+) {
     val shown = rememberPayInFormShownDraft(impl.draft)
     // After the composition is applied, so a discarded one empties nothing.
     SideEffect { shown.show(impl.draft) }

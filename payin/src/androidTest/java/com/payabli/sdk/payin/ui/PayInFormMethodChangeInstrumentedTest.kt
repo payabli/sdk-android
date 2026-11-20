@@ -163,43 +163,6 @@ class PayInFormMethodChangeInstrumentedTest {
     }
 
     @Test
-    fun twoFormsSharingTheDraftAnnounceAChangeOnce() {
-        // One draft draws one form, but a screen can mount a second one over the same flow, and both
-        // see the method move. The host is told what changed, not that two forms saw it.
-        rule.setContent {
-            MaterialTheme {
-                PayInFormContent(
-                    submission = PayInSubmissionState.Idle,
-                    draft = draft,
-                    sent = { true },
-                    configuration = both,
-                    reports = PayInFormReports.None,
-                    submitText = PayInSubmitText.Capture,
-                    onMethodChanged = { told += it },
-                )
-                PayInFormContent(
-                    submission = PayInSubmissionState.Idle,
-                    draft = draft,
-                    sent = { true },
-                    configuration = both,
-                    reports = PayInFormReports.None,
-                    submitText = PayInSubmitText.Capture,
-                    onMethodChanged = { told += it },
-                )
-            }
-        }
-        rule.waitForIdle()
-
-        // Both draw a selector, so the tap takes the first of the two tabs.
-        rule
-            .onAllNodes(hasClickAction() and hasText(string(R.string.payabli_payin_method_bank_account)))[0]
-            .performClick()
-        rule.waitForIdle()
-
-        assertTold(PayInMethodType.BankAccount)
-    }
-
-    @Test
     fun aSecondDraftOpeningOnTheSameMethodStillTellsItsFirstChange() {
         // A host can hand the form a new flow in the same place, and the new flow's draft opens where
         // the old one stood. The new draft opens silently, and a change on it reaches the host.

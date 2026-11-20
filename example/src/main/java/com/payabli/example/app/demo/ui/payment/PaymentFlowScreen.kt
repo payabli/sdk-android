@@ -167,8 +167,9 @@ fun PaymentFlowScreen(
                         enabled = !isSubmitting && payments != null,
                     )
                 }
-                // Only once the session exists. Until then the step above is what the screen offers.
-                payments?.let { handle ->
+                // Only once the session exists. Until then the step above is what the screen offers. Not while
+                // the sheet is open: a flow is drawn by one form at a time, and the sheet's is the one in use.
+                payments?.takeUnless { state.isSheetOpen }?.let { handle ->
                     PaymentFormHost(
                         setup = state.setup,
                         payments = handle,

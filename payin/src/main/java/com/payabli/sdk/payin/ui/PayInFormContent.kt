@@ -67,6 +67,7 @@ import java.math.BigDecimal
  * @param onCompleted the service accepted it.
  * @param onFailed it did not complete; where the outcome is unknown the cause is `Unsettled`.
  * @param onMethodChanged the displayed method moved, by a payer switch or a configuration change.
+ * @param inert draws the form disabled, for a form waiting for its flow.
  */
 @Composable
 internal fun PayInFormContent(
@@ -84,6 +85,7 @@ internal fun PayInFormContent(
     onCompleted: (PayInFormSuccess) -> Unit = {},
     onFailed: (PayabliException) -> Unit = {},
     onMethodChanged: (PayInMethodType) -> Unit = {},
+    inert: Boolean = false,
 ) {
     // The newest lambdas without re-registering anything. A host that writes them inline passes new objects
     // on every recomposition, and the effects below are keyed on the submission and the method rather than
@@ -174,7 +176,7 @@ internal fun PayInFormContent(
             labels = labels,
             style = rememberResolvedStyle(style),
             today = today,
-            enabled = !isSubmitting,
+            enabled = !isSubmitting && !inert,
             rejectedFields = draft.rejectedFields,
             refreshClock = { today = ExpiryValue.today() },
             amounts = amounts,
@@ -196,7 +198,7 @@ internal fun PayInFormContent(
         }
 
         if (configuration.methodsOffered.size > 1) {
-            MethodSelector(configuration.methodsOffered, method, isSubmitting) { chosen ->
+            MethodSelector(configuration.methodsOffered, method, isSubmitting || inert) { chosen ->
                 draft.switchTo(chosen, configuration)
             }
         }
@@ -216,7 +218,7 @@ internal fun PayInFormContent(
         PayInSubmitButton(
             text = labels.submitButtonOrNull() ?: stringResource(submitText.idle),
             busyText = stringResource(submitText.busy),
-            enabled = complete && !isSubmitting,
+            enabled = complete && !isSubmitting && !inert,
             isSubmitting = isSubmitting,
             style = context.style,
             onClick = {

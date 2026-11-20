@@ -137,12 +137,8 @@ class PrefillButtonTest {
     @Test
     fun theSheetCarriesItsOwnButtonAndFillingFromItFillsTheSheetsBoxes() {
         // The screen's button is behind the sheet and cannot be reached, so without one here a sheet demo has
-        // no prefill at all.
-        //
-        // Only the sheet's boxes are asserted on. The form behind shows the same values, because both are
-        // mounted on the one flow this screen holds and the values are the flow's: `PayabliPayInForm` says so
-        // in as many words. So there is one draft, and which form the fill was aimed at is not a difference
-        // this screen can show.
+        // no prefill at all. The screen's form leaves while the sheet is open, as a flow is drawn by one form
+        // at a time, so the boxes filled are the sheet's.
         openTheForm()
         compose.onNodeWithText("Open as a sheet instead").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = APPEARS_WITHIN_MILLIS) {

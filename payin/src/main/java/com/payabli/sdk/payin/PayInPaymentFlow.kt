@@ -28,6 +28,7 @@ import com.payabli.sdk.payin.payment.PayInSubmission
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.telemetry.PayInFormReports
+import com.payabli.sdk.payin.ui.PayInFormLease
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -59,6 +60,10 @@ internal class PayInPaymentFlow private constructor(
      */
     @get:JvmSynthetic
     internal val draft: PayInFormDraft = PayInFormDraft()
+
+    /** The one form drawing this flow. */
+    @get:JvmSynthetic
+    internal val lease: PayInFormLease = PayInFormLease()
 
     init {
         scope.coroutineContext[Job]?.invokeOnCompletion { draft.clear() }
