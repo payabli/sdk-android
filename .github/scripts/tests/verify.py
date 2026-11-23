@@ -1949,6 +1949,8 @@ LIVE_WORKFLOWS = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml")
 # The card reader mirror, which holds the vendor token and mints the credential that writes the artifact
 # origin. Named once, because three checks below and the path filter all have to mean the same file.
 MIRROR_WORKFLOW = "card-reader-mirror.yml"
+# What proposes a new reader version and opens the pull request that pins it.
+PROPOSE_WORKFLOW = "card-reader-propose.yml"
 QA_WORKFLOW = "qa-snapshot.yml"
 RELEASE_WORKFLOW = "release.yml"
 GATE_WORKFLOW = "public-surface.yml"
@@ -3076,7 +3078,7 @@ def test_workflows():
     # which is the check above, and wrong here.
     # The mirror is held to this too. Its only input is a version typed into a dispatch form, and its own
     # comment says that value reaches the script through the environment for exactly this reason.
-    for name in LIVE_WORKFLOWS + (MIRROR_WORKFLOW,):
+    for name in LIVE_WORKFLOWS + (MIRROR_WORKFLOW, PROPOSE_WORKFLOW):
         bodies = [str(step.get("run", "")) for step in steps_of(workflow_doc(name))]
         offending = [line.strip() for body in bodies for line in body.splitlines() if "${{" in line]
         check(f"W6 {name} interpolates no expression inside a run script",
@@ -3206,6 +3208,52 @@ def test_workflows():
         runs = " ".join(str(step.get("run", "")) for step in (jobs.get(name) or {}).get("steps") or [])
         check(f"W11 the {name} job invokes the publisher", "mirror_card_reader.py" in runs, runs[:120])
         check(f"W11 and passes --fetch-only: {wanted}", ("--fetch-only" in runs) is wanted, runs[:200])
+
+    # The push that publishes a merged pin. The environment's branch policy is what stops a branch from
+    # publishing its own copy of the script, so the trigger names only the branches that policy admits, and
+    # only the file whose change is a new pin.
+    on = mirror.get(True) or mirror.get("on") or {}
+    check(f"W11 {MIRROR_WORKFLOW} runs on a dispatch and on a push, nothing else",
+          set(on) == {"push", "workflow_dispatch"}, f"{sorted(on)}")
+    push = on.get("push") or {}
+    check("W11 and the push is limited to main and release branches",
+          push.get("branches") == ["main", "release/**"], f"{push.get('branches')}")
+    check("W11 and to the pinned list's file",
+          push.get("paths") == [".github/scripts/mirror_card_reader.py"], f"{push.get('paths')}")
+    mirror_runs = " ".join(str(step.get("run", "")) for step in (jobs.get("mirror") or {}).get("steps") or [])
+    check("W11 and a push, which carries no version, mirrors every pinned one", "--all" in mirror_runs,
+          mirror_runs[:200])
+
+    # The propose workflow keeps the same split for a different pair of authorities: the vendor token, and
+    # a token that can push a branch. Neither job needs both, and neither needs an OIDC token at all.
+    propose = workflow_doc(PROPOSE_WORKFLOW)
+    pjobs = {name: job for name, job in (propose.get("jobs") or {}).items() if isinstance(job, dict)}
+    check(f"W11 {PROPOSE_WORKFLOW} splits fetching from opening the pull request",
+          set(pjobs) == {"fetch", "pr"}, f"{sorted(pjobs)}")
+    pon = propose.get(True) or propose.get("on") or {}
+    check(f"W11 {PROPOSE_WORKFLOW} runs only on a dispatch", set(pon) == {"workflow_dispatch"}, f"{sorted(pon)}")
+    ptop = propose.get("permissions") or {}
+    check(f"W11 {PROPOSE_WORKFLOW} grants no OIDC token for a job to inherit",
+          str(ptop.get("id-token", "none")) == "none", f"{ptop}")
+    for name in ("fetch", "pr"):
+        job = pjobs.get(name) or {}
+        granted = job.get("permissions") or {}
+        check(f"W11 the propose {name} job grants id-token: none", str(granted.get("id-token")) == "none",
+              f"{granted}")
+        check(f"W11 and the propose {name} job runs against the reviewed environment",
+              job.get("environment") == "card-reader-mirror", str(job.get("environment")))
+    check("W11 the pull request is opened only after the fetch", (pjobs.get("pr") or {}).get("needs") == "fetch",
+          str((pjobs.get("pr") or {}).get("needs")))
+    texts = {name: "".join(step_text(step) for step in (pjobs.get(name) or {}).get("steps") or [])
+             for name in ("fetch", "pr")}
+    check("W11 the propose fetch job runs --propose",
+          "mirror_card_reader.py" in texts["fetch"] and "--propose" in texts["fetch"], texts["fetch"][:200])
+    for forbidden in ("CARD_READER_APP", "create-github-app-token", "GH_TOKEN", "AWS_"):
+        check(f"W11 the propose fetch job does not name {forbidden}", forbidden not in texts["fetch"],
+              next((line.strip() for line in texts["fetch"].splitlines() if forbidden in line), ""))
+    for forbidden in ("GPR_TOKEN", "mirror_card_reader.py --", "AWS_"):
+        check(f"W11 the propose pr job does not name {forbidden}", forbidden not in texts["pr"],
+              next((line.strip() for line in texts["pr"].splitlines() if forbidden in line), ""))
 
 
     # W12 No secret reaches the third-party emulator action.
@@ -4838,6 +4886,86 @@ def test_workflows():
           all(split(rows, spec) is None for spec in ("6/6", "1/0", "x", "1", "-1/3", "")), "")
 
 
+def mirror_script_source() -> Path:
+    """Where the mirror script being tested is: the harness's copy while `sabotage.py` is driving."""
+    return Path(os.environ.get("NIGHTLY_MIRROR_SCRIPT", SDK / ".github/scripts/mirror_card_reader.py"))
+
+
+def test_mirror_script():
+    """The mirror script's own decisions, none of which needs the vendor or the bucket.
+
+    `--propose` writes into a file whose blocks are permanent once published, so what it may change is
+    checked against the source rather than trusted: one new entry, and every byte already there kept.
+    """
+    source_path = mirror_script_source()
+    spec = importlib.util.spec_from_file_location("mirror_card_reader", source_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    source = source_path.read_text()
+
+    def refused(fn, *args) -> bool:
+        try:
+            with redirect_stdout(io.StringIO()):
+                fn(*args)
+        except SystemExit:
+            return True
+        except Exception:  # a refusal is an exit with a reason; a traceback is not one
+            return False
+        return False
+
+    check("M1 RELEASES read from the source is the RELEASES the script runs with",
+          mod.pinned(source) == mod.RELEASES)
+
+    coords = [("com/fiserv/ch", "ttp-payment", "9.9.9", {"pom": "a" * 64, "aar": "b" * 64, "module": "c" * 64}),
+              ("com", "magiccube", "8.8", {"pom": "d" * 64, "aar": "e" * 64})]
+    edited = mod.insert(source, "9.9.9", coords)
+    check("M2 a proposed version adds exactly its own entry",
+          mod.pinned(edited) == {**mod.RELEASES, "9.9.9": coords})
+    check("M2 and every line already there is kept as it was",
+          edited.replace(mod.render("9.9.9", coords), "", 1) == source)
+    check("M2 and the block renders back to the coordinates it was given",
+          mod.pinned("RELEASES = {\n" + mod.render("9.9.9", coords) + "}\n") == {"9.9.9": coords})
+    check("M3 a source without the marker is refused", refused(mod.insert, source.replace(mod.MARKER, ""), "9.9.9", coords))
+    check("M3 and a source with it twice", refused(mod.insert, source + mod.MARKER, "9.9.9", coords))
+    outside = source.replace(mod.MARKER, "").replace("\n}\n", "\n}\n" + mod.MARKER, 1)
+    check("M3 and a marker outside RELEASES, where the block would pin nothing",
+          refused(mod.insert, outside, "9.9.9", coords))
+
+    pom = ('<project xmlns="http://maven.apache.org/POM/4.0.0"><dependencies>'
+           "<dependency><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-stdlib</artifactId>"
+           "<version>1.9.0</version></dependency>{}</dependencies></project>")
+    cube = "<dependency><groupId>com</groupId><artifactId>magiccube</artifactId><version>{}</version></dependency>"
+    check("M4 the transitive's version is read from a namespaced POM",
+          mod.magiccube_version(pom.format(cube.format("3.5.1"))) == "3.5.1")
+    check("M4 and a property in its place is refused",
+          refused(mod.magiccube_version, pom.format(cube.format("${mc.version}"))))
+    check("M4 and so is a POM declaring it twice",
+          refused(mod.magiccube_version, pom.format(cube.format("3.5.1") + cube.format("3.5.2"))))
+    check("M4 and one not declaring it", refused(mod.magiccube_version, pom.format("")))
+
+    check("M5 a version is digits and dots", bool(mod.VERSION.fullmatch("1.1.5.1")))
+    for bad in ('1.1"; import os', "1.1.5.1\n", "", "1..1"):
+        check(f"M5 and {bad!r} is refused", not mod.VERSION.fullmatch(bad))
+
+    env = {k: v for k, v in os.environ.items() if k != "GPR_TOKEN"}
+    def run(*args):
+        r = subprocess.run([sys.executable, str(source_path), *args], capture_output=True, text=True, env=env)
+        return r.returncode, r.stdout + r.stderr
+    code, out = run("--version", "1.1.4.1", "--propose")
+    check("M6 --propose refuses a version already pinned, before any network", code != 0 and "already pinned" in out, out[-200:])
+    code, out = run("--version", "1.1;x", "--propose")
+    check("M6 and a dispatch input that is not a version", code != 0 and "not a version" in out, out[-200:])
+    code, out = run("--all", "--propose")
+    check("M6 and --propose with --all", code != 0 and "--propose" in out, out[-200:])
+    code, out = run("--all", "--version", "1.1.4.1")
+    check("M7 --all and --version are one or the other", code != 0 and "one of" in out, out[-200:])
+    code, out = run()
+    check("M7 and one of them is required", code != 0 and "one of" in out, out[-200:])
+    code, out = run("--all")
+    check("M7 --all accepts every pinned version and reaches the credential check",
+          code != 0 and "GPR_TOKEN is not set" in out, out[-200:])
+
+
 def load_publisher():
     """The uploader, imported from the working tree."""
     source = publisher_source()
@@ -4964,7 +5092,7 @@ def test_publisher():
     # a run that uploaded nothing must never exit 0.
     check("U8 and a failed run never reports success", code != 0, f"{code}")
 
-HALVES = ("both", "collector", "poster", "workflows", "live", "publisher")
+HALVES = ("both", "collector", "poster", "workflows", "live", "publisher", "mirror")
 
 
 def main():
@@ -4986,6 +5114,8 @@ def main():
             test_workflows()
         if ONLY in ("both", "publisher"):
             test_publisher()
+        if ONLY in ("both", "mirror"):
+            test_mirror_script()
         if ONLY in ("both", "live"):
             live = load_live_poster(base)
             test_live_summary(live)

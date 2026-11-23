@@ -69,6 +69,10 @@ NIGHTLY = WORKFLOW_DIR / "nightly.yml"
 # origin out of a run that publishes nothing. Every mutation below widens that back, and none of them looks
 # like more than a tidy-up in a diff.
 MIRROR = WORKFLOW_DIR / "card-reader-mirror.yml"
+# What proposes a new reader version. Each mutation below hands one job the other's authority.
+PROPOSE = WORKFLOW_DIR / "card-reader-propose.yml"
+# The mirror script, whose --propose writes into a list of blocks that are permanent once published.
+MIRROR_SCRIPT = WORK / "mirror_card_reader.py"
 
 # The QA snapshot, whose channel, trigger and identifier are each green while wrong: a tree at the wrong
 # prefix uploads, a shared coordinate publishes, and a stamp that stops sorting still builds.
@@ -533,6 +537,8 @@ SOURCE = {
     NIGHTLY: SDK / ".github/workflows/nightly.yml",
     SCRIPTS: SDK / ".github/workflows/scripts.yml",
     MIRROR: SDK / ".github/workflows/card-reader-mirror.yml",
+    PROPOSE: SDK / ".github/workflows/card-reader-propose.yml",
+    MIRROR_SCRIPT: SDK / ".github/scripts/mirror_card_reader.py",
     QA: SDK / ".github/workflows/qa-snapshot.yml",
     RELEASE: SDK / ".github/workflows/release.yml",
     PUBLISHER: SDK / ".github/scripts/publish_staging.py",
@@ -1688,8 +1694,49 @@ MUTATIONS = [
     # and substitution happens before the shell runs, so a value that closes its own quote runs as a command
     # in the job holding the vendor token and the publishing credential.
     ("The version is interpolated into the publishing script", MIRROR, "workflows",
-     '\n          python3 .github/scripts/mirror_card_reader.py --version "$VERSION"\n',
-     '\n          python3 .github/scripts/mirror_card_reader.py --version "${{ inputs.version }}"\n'),
+     '\n            python3 .github/scripts/mirror_card_reader.py --version "$VERSION"\n',
+     '\n            python3 .github/scripts/mirror_card_reader.py --version "${{ inputs.version }}"\n'),
+
+    # The push trigger. The environment admits protected branches only, so these widen what can start a
+    # publish and leave the gate to a setting outside the repository.
+    ("A push from any branch starts the mirror", MIRROR, "workflows",
+     "    branches: [main, 'release/**']", "    branches: ['**']"),
+    ("A push of any file starts the mirror", MIRROR, "workflows",
+     "    paths:\n      - '.github/scripts/mirror_card_reader.py'\n  workflow_dispatch:",
+     "  workflow_dispatch:"),
+    ("A push mirrors nothing, since it names no version", MIRROR, "workflows",
+     "            python3 .github/scripts/mirror_card_reader.py --all\n",
+     "            true\n"),
+
+    # The propose split: the vendor token in one job, the token that pushes a branch in the other.
+    ("The propose fetch job is granted an OIDC token", PROPOSE, "workflows",
+     "  fetch:\n    name: Fetch ${{ inputs.version }}\n    runs-on: ubuntu-latest\n"
+     "    environment: card-reader-mirror\n    permissions:\n      contents: read\n      id-token: none",
+     "  fetch:\n    name: Fetch ${{ inputs.version }}\n    runs-on: ubuntu-latest\n"
+     "    environment: card-reader-mirror\n    permissions:\n      contents: read\n      id-token: write"),
+    ("The propose fetch job is handed the App key", PROPOSE, "workflows",
+     "          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}\n",
+     "          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}\n          APP_KEY: ${{ secrets.CARD_READER_APP_KEY }}\n"),
+    ("The propose pr job is handed the vendor token", PROPOSE, "workflows",
+     "          GH_TOKEN: ${{ steps.app.outputs.token }}\n",
+     "          GH_TOKEN: ${{ steps.app.outputs.token }}\n          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}\n"),
+    ("The propose pr job runs outside the reviewed environment", PROPOSE, "workflows",
+     "    needs: fetch\n    runs-on: ubuntu-latest\n    environment: card-reader-mirror\n",
+     "    needs: fetch\n    runs-on: ubuntu-latest\n"),
+    ("The pull request is opened without waiting for the fetch", PROPOSE, "workflows",
+     "    needs: fetch\n", ""),
+    ("The version is interpolated into the propose script", PROPOSE, "workflows",
+     '--version "$VERSION" --propose', '--version "${{ inputs.version }}" --propose'),
+
+    # --propose's own refusals. Each mutation is a block written that should not have been.
+    ("An insertion that pins nothing, or changes a pinned block, is written anyway", MIRROR_SCRIPT, "mirror",
+     "    if pinned(edited) != {**pinned(source), version: list(coords)}:", "    if False:"),
+    ("A version that is not digits and dots is written into the source", MIRROR_SCRIPT, "mirror",
+     'VERSION = re.compile(r"[0-9]+(\\.[0-9]+)*")', 'VERSION = re.compile(r".*")'),
+    ("A transitive declared through a property is accepted", MIRROR_SCRIPT, "mirror",
+     "    if len(found) != 1 or not VERSION.fullmatch(found[0]):", "    if not found:"),
+    ("A version already pinned is proposed again", MIRROR_SCRIPT, "mirror",
+     "        if args.version in pinned(pathlib.Path(__file__).read_text()):", "        if False:"),
 
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.
@@ -2997,7 +3044,7 @@ def run_verify(half: str) -> tuple[int, int, str]:
     env = {**os.environ, "NIGHTLY_ONLY": half,
            "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER), "NIGHTLY_PACK": str(PACK),
            "NIGHTLY_WORKFLOWS": str(WORKFLOW_DIR), "NIGHTLY_LIVE_POSTER": str(LIVE_POSTER),
-           "NIGHTLY_PUBLISHER": str(PUBLISHER)}
+           "NIGHTLY_PUBLISHER": str(PUBLISHER), "NIGHTLY_MIRROR_SCRIPT": str(MIRROR_SCRIPT)}
     proc = subprocess.run([sys.executable, str(VERIFY)], capture_output=True, text=True, env=env)
     match = re.search(r"(\d+) passed, (\d+) failed", proc.stdout)
     if not match:
@@ -3055,7 +3102,7 @@ def main() -> int:
         shutil.copy(source, target)
 
     print("Baseline, unmodified:")
-    for half in ("collector", "poster", "workflows", "live", "publisher"):
+    for half in ("collector", "poster", "workflows", "live", "publisher", "mirror"):
         passed, failed, _ = run_verify(half)
         print(f"  {half}: {passed} passed, {failed} failed")
         if failed != 0:

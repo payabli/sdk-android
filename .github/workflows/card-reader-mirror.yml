@@ -3,10 +3,12 @@ name: Mirror the card reader
 # Copies the vendor's card reader onto the SDK artifact origin, so integrators resolve it from us
 # rather than holding a credential for a third-party feed.
 #
-# Dispatch only. The reader ships on the vendor's schedule and on no relation to an SDK release, so a
-# tag trigger would mean cutting tags that exist to satisfy a trust policy and then mislead everyone
-# reading the history. A dispatch against an environment is the one subject that is neither a tag nor
-# every branch.
+# A dispatch, or a push that changes the pinned list. The reader ships on the vendor's schedule and on
+# no relation to an SDK release, so a tag trigger would mean cutting tags that exist to satisfy a trust
+# policy and then mislead everyone reading the history. A push reaches `main` and `release/**` only
+# through a reviewed pull request, which is how card-reader-propose.yml's pin pull request publishes
+# once it merges. A push run mirrors every pinned version, and the digest read-back makes the ones
+# already there report `present`.
 #
 # That environment is the gate, and two of its three parts are repository settings rather than
 # anything in this file — so read them there before trusting the sentence above. It carries a
@@ -23,6 +25,10 @@ name: Mirror the card reader
 # in this process worth reviewing.
 
 on:
+  push:
+    branches: [main, 'release/**']
+    paths:
+      - '.github/scripts/mirror_card_reader.py'
   workflow_dispatch:
     inputs:
       version:
@@ -143,4 +149,9 @@ jobs:
         run: |
           AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)
           export AWS_SDK_CDN_ACCOUNT
-          python3 .github/scripts/mirror_card_reader.py --version "$VERSION"
+          # A push carries no inputs, and mirrors everything pinned.
+          if [ -n "$VERSION" ]; then
+            python3 .github/scripts/mirror_card_reader.py --version "$VERSION"
+          else
+            python3 .github/scripts/mirror_card_reader.py --all
+          fi

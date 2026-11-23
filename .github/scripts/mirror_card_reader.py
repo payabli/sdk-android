@@ -5,9 +5,13 @@ Payabli distributes the card reader to its integrators rather than sending them 
 feed, so the origin carries a copy. This produces and publishes that copy, in one run.
 
     python3 .github/scripts/mirror_card_reader.py --version 1.1.4.1
+    python3 .github/scripts/mirror_card_reader.py --all
+    python3 .github/scripts/mirror_card_reader.py --version 1.1.5.1 --propose
 
-Ordinarily nobody runs this by hand. `card-reader-mirror.yml` dispatches it against a GitHub
-Environment whose required reviewers gate the run, and the AWS identity is assumed over OIDC, so no
+Ordinarily nobody runs this by hand. `card-reader-propose.yml` runs `--propose`, which fetches a new
+version and writes its block into `RELEASES`, then opens the pull request that pins it. Merging that
+pull request makes `card-reader-mirror.yml` run `--all`, and a dispatch of it runs one `--version`.
+Both run against a GitHub Environment whose required reviewers gate the run, and the AWS identity is assumed over OIDC, so no
 credential is held on anyone's machine. A by-hand run needs the environment below filled in and an
 AWS identity that can write the bucket; read-only is what an SSO portal hands out by default and it
 fails every upload after fetching everything.
@@ -59,13 +63,16 @@ this file: this repository is public, and a role ARN carries an AWS account id.
 """
 
 import argparse
+import ast
 import contextlib
 import hashlib
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 
 REGISTRY = "https://maven.pkg.github.com/Fiserv/ch-ttp-androidsdk"
 
@@ -86,7 +93,8 @@ CACHE_CONTROL = "max-age=31536000, immutable"
 # describes: add a coordinate with None, run --fetch-only, read the digests, commit them. Both halves
 # are reviewed, and no unverified byte reaches the origin in between. The order in full, including how
 # the private transitive's own version is discovered, is what an unpinned version prints, and that
-# refusal is the one copy of it.
+# refusal is the one copy of it. `--propose` runs that order itself and writes the block above the
+# marker line at the end.
 RELEASES = {
     "1.1.4.1": [
         ("com/fiserv/ch", "ttp-payment", "1.1.4.1", {
@@ -99,7 +107,15 @@ RELEASES = {
             "aar": "629d36584c66cc0c468ca27747e148b12efbafbf7882773e9bbd8013f1c52cd2",
         }),
     ],
+    # new versions are inserted above this line
 }
+
+# `--propose` inserts above this line and nowhere else, so a pinned block is never rewritten.
+MARKER = "    # new versions are inserted above this line\n"
+
+# `--propose` writes a version into this file's source, so a dispatch input other than digits and dots
+# would arrive as code in a pull request that looks like a list of digests.
+VERSION = re.compile(r"[0-9]+(\.[0-9]+)*")
 
 
 def coordinates(version: str):
@@ -110,6 +126,8 @@ def coordinates(version: str):
     sys.exit(
         f"reader version {version} is not pinned, so there is nothing recorded to mirror.\n"
         f"pinned: {known}\n\n"
+        "Ordinarily, dispatch card-reader-propose.yml with this version: it runs --propose, which\n"
+        "does every step below and opens the pull request. By hand, the same steps:\n\n"
         "Add it to RELEASES in this file, cross-checked against gradle/libs.versions.toml. The\n"
         "reader's own coordinate goes in first and alone, with no digests:\n\n"
         f'    "{version}": [\n'
@@ -135,11 +153,105 @@ def coordinates(version: str):
     )
 
 
+def rel_path(group: str, artifact: str, ver: str, ext: str) -> str:
+    return f"{group}/{artifact}/{ver}/{artifact}-{ver}.{ext}"
+
+
 def keys(version: str):
     """Each mirrored key for a reader version, with the digest it is required to have."""
     for group, artifact, ver, digests in coordinates(version):
         for ext, want in digests.items():
-            yield f"{group}/{artifact}/{ver}/{artifact}-{ver}.{ext}", want
+            yield rel_path(group, artifact, ver, ext), want
+
+
+def magiccube_version(pom: str) -> str:
+    """Read the `com:magiccube` version a reader POM declares.
+
+    @param pom the reader's POM text.
+    @return the version, refused unless it is declared exactly once as digits and dots.
+    """
+    root = ET.fromstring(pom)
+    ns = root.tag.partition("}")[0] + "}" if root.tag.startswith("{") else ""
+    found = [(dep.findtext(f"{ns}version") or "").strip() for dep in root.iter(f"{ns}dependency")
+             if dep.findtext(f"{ns}groupId") == "com" and dep.findtext(f"{ns}artifactId") == "magiccube"]
+    if len(found) != 1 or not VERSION.fullmatch(found[0]):
+        sys.exit(f"the reader POM must declare com:magiccube once, at a literal version. Found: {found}")
+    return found[0]
+
+
+def pinned(source: str) -> dict:
+    """Read `RELEASES` out of this script's source without running it.
+
+    @param source the script's text.
+    @return the `RELEASES` value.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as error:
+        sys.exit(f"the script does not parse, so nothing is pinned or written: {error}")
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and [getattr(t, "id", None) for t in node.targets] == ["RELEASES"]:
+            return ast.literal_eval(node.value)
+    sys.exit("this script has no RELEASES assignment to pin into.")
+
+
+def render(version: str, coords) -> str:
+    """Write a `RELEASES` block in the layout of the blocks above it.
+
+    @param version the reader version the block is keyed by.
+    @param coords (group path, artifact, version, {extension: sha256}) for each coordinate.
+    @return the block's source lines.
+    """
+    lines = [f'    "{version}": [']
+    for group, artifact, ver, digests in coords:
+        lines.append(f'        ("{group}", "{artifact}", "{ver}", {{')
+        lines += [f'            "{ext}": "{sha}",' for ext, sha in digests.items()]
+        lines.append("        }),")
+    lines.append("    ],")
+    return "\n".join(lines) + "\n"
+
+
+def insert(source: str, version: str, coords) -> str:
+    """Insert a new version's block above the marker line.
+
+    The edited source is parsed again and compared, so an insertion that landed outside `RELEASES` or
+    changed any block already pinned is refused rather than proposed.
+
+    @param source the script's text.
+    @param version the reader version to pin.
+    @param coords the block's coordinates and digests.
+    @return the edited source.
+    """
+    if source.count(MARKER) != 1:
+        sys.exit("the marker line inside RELEASES must appear exactly once.")
+    edited = source.replace(MARKER, render(version, coords) + MARKER)
+    if pinned(edited) != {**pinned(source), version: list(coords)}:
+        sys.exit("inserting the block would change something other than the new version. Nothing written.")
+    return edited
+
+
+def propose(cfg: str, version: str, out: pathlib.Path, script: pathlib.Path) -> int:
+    """Fetch an unpinned version and its transitive, and write their block into the script.
+
+    @param cfg the curl config carrying the vendor token.
+    @param version the reader version to pin.
+    @param out where the fetched tree is written.
+    @param script the file `RELEASES` is written into.
+    @return 0; every failure exits with its reason.
+    """
+    source = script.read_text()
+
+    def fetched(group: str, artifact: str, ver: str, exts):
+        files = fetch(cfg, [(rel_path(group, artifact, ver, ext), None) for ext in exts], out)
+        return group, artifact, ver, {ext: hashlib.sha256(path.read_bytes()).hexdigest()
+                                      for ext, (_rel, path, _want) in zip(exts, files)}
+
+    reader = fetched("com/fiserv/ch", "ttp-payment", version, ("pom", "aar", "module"))
+    pom = out / "maven" / rel_path("com/fiserv/ch", "ttp-payment", version, "pom")
+    cube = fetched("com", "magiccube", magiccube_version(pom.read_text()), ("pom", "aar"))
+    script.write_text(insert(source, version, [reader, cube]))
+    print(f"\nPinned {version} with com:magiccube {cube[2]} in {script.name}.")
+    return 0
 
 
 @contextlib.contextmanager
@@ -222,8 +334,8 @@ def check_aws(expect_account: str) -> str:
     return "/".join(parts[:2]) if parts[0] == "assumed-role" else resource
 
 
-def fetch(cfg: str, version: str, out: pathlib.Path):
-    """Fetch every key for a version, and accept one only if its digest is the recorded one.
+def fetch(cfg: str, pairs, out: pathlib.Path):
+    """Fetch every key given, and accept one only if its digest is the recorded one.
 
     `-f` so an HTTP refusal is never written to the file: curl exits 0 on a 404 or a 401 and would
     otherwise save the refusal body under the artifact's name, where only its shape distinguishes it
@@ -236,7 +348,7 @@ def fetch(cfg: str, version: str, out: pathlib.Path):
     print(f"{'key':<62} {'bytes':>10}  sha256")
     print("-" * 96)
     got, failed = [], 0
-    for rel, want in keys(version):
+    for rel, want in pairs:
         dest = out / "maven" / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         r = subprocess.run(
@@ -360,21 +472,39 @@ def publish(files, bucket: str, account: str) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--version", required=True,
-                    help="reader version to mirror; must be pinned in RELEASES")
+    ap.add_argument("--version",
+                    help="reader version to mirror; must be pinned in RELEASES unless --propose")
+    ap.add_argument("--all", action="store_true",
+                    help="mirror every pinned version, which is what a push runs")
+    ap.add_argument("--propose", action="store_true",
+                    help="fetch an unpinned --version and write its block into RELEASES; publishes nothing")
     ap.add_argument("--fetch-only", action="store_true", help="do not publish")
     ap.add_argument("--out", type=pathlib.Path,
                     help="keep the maven/ tree here instead of a temporary directory")
     args = ap.parse_args()
+    if bool(args.version) == args.all:
+        ap.error("name one of --version or --all")
+    if args.propose and (args.all or args.fetch_only):
+        ap.error("--propose takes a --version and publishes nothing already")
 
-    # Before anything else, so an unpinned version costs no network at all.
-    coordinates(args.version)
+    # Before anything else, so a bad version costs no network at all.
+    if args.propose:
+        if not VERSION.fullmatch(args.version):
+            sys.exit(f"{args.version!r} is not a version: digits and dots only.")
+        if args.version in pinned(pathlib.Path(__file__).read_text()):
+            sys.exit(f"reader version {args.version} is already pinned. Nothing to propose.")
+        versions = []
+    else:
+        versions = sorted(pinned(pathlib.Path(__file__).read_text())) if args.all else [args.version]
+        for version in versions:
+            coordinates(version)
 
     # Every configuration value is read before the first network call, so a run missing one says so
     # instantly rather than after a token round trip.
     tok = require("GPR_TOKEN")
     bucket = account = None
-    if not args.fetch_only:
+    publishing = not (args.fetch_only or args.propose)
+    if publishing:
         bucket = require("AWS_SDK_CDN_BUCKET")
         account = require("AWS_SDK_CDN_ACCOUNT")
         # Required here rather than left to the AWS CLI, because the two checks below do not need it and
@@ -395,8 +525,11 @@ def main() -> int:
     try:
         with auth_config(tok) as cfg:
             check_token(cfg)
-            files = fetch(cfg, args.version, out)
-        if args.fetch_only:
+            if args.propose:
+                return propose(cfg, args.version, out, pathlib.Path(__file__))
+            # Every version is fetched before anything is published, so one that fails publishes nothing.
+            files = [file for version in versions for file in fetch(cfg, list(keys(version)), out)]
+        if not publishing:
             # Only name a path that still exists afterwards. Without --out the tree is a temporary
             # directory this function removes, so naming it sends someone to look at nothing.
             where = f" into {out / 'maven'}" if args.out else ", keeping nothing (pass --out to keep it)"
