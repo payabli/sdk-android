@@ -4965,6 +4965,88 @@ def test_mirror_script():
     check("M7 --all accepts every pinned version and reaches the credential check",
           code != 0 and "GPR_TOKEN is not set" in out, out[-200:])
 
+    def drive(script_text: str, argv: list[str], bodies: dict[str, bytes], fail: str = ""):
+        """Run `main()` on a copy of the script, with the vendor, the token check and the bucket stubbed.
+
+        @param script_text the copy's source.
+        @param argv the arguments after the script name.
+        @param bodies the bytes the stub vendor serves per registry path; any other path serves its own name.
+        @param fail a fragment of the registry path whose fetch fails, as the real fetch does, by exiting.
+        @return the exit code, the copy's text afterwards, every path fetched and every path published.
+        """
+        fetched, published = [], []
+        with tempfile.TemporaryDirectory(prefix="mirror-drive-") as tmp:
+            copy = Path(tmp) / "mirror_card_reader.py"
+            copy.write_text(script_text)
+            spec = importlib.util.spec_from_file_location("mirror_card_reader_driven", copy)
+            driven = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(driven)
+
+            def stub_fetch(_cfg, pairs, out):
+                got = []
+                for rel, want in pairs:
+                    if fail and fail in rel:
+                        sys.exit(f"stub: {rel} failed to fetch")
+                    dest = out / "maven" / rel
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(bodies.get(rel, rel.encode()))
+                    fetched.append(rel)
+                    got.append((rel, dest, want))
+                return got
+
+            def stub_publish(files, _bucket, _account):
+                published.extend(rel for rel, _path, _want in files)
+                return 0
+
+            driven.fetch, driven.publish = stub_fetch, stub_publish
+            driven.check_token, driven.check_aws = (lambda _cfg: None), (lambda _account: "stub")
+            saved_env, saved_argv = dict(os.environ), sys.argv
+            os.environ.update({"GPR_TOKEN": "stub", "AWS_SDK_CDN_BUCKET": "stub",
+                               "AWS_SDK_CDN_ACCOUNT": "stub", "AWS_REGION": "stub"})
+            sys.argv = [str(copy), *argv]
+            try:
+                with redirect_stdout(io.StringIO()):
+                    code = driven.main()
+            except SystemExit as exit_:
+                code = exit_.code if isinstance(exit_.code, int) else 1
+            finally:
+                os.environ.clear()
+                os.environ.update(saved_env)
+                sys.argv = saved_argv
+            return code, copy.read_text(), fetched, published
+
+    def sha(data: bytes) -> str:
+        return hashlib.sha256(data).hexdigest()
+
+    reader_pom = mod.rel_path("com/fiserv/ch", "ttp-payment", "9.9.9", "pom")
+    bodies = {reader_pom: pom.format(cube.format("7.7")).encode()}
+    reader_rels = [mod.rel_path("com/fiserv/ch", "ttp-payment", "9.9.9", ext) for ext in ("pom", "aar", "module")]
+    cube_rels = [mod.rel_path("com", "magiccube", "7.7", ext) for ext in ("pom", "aar")]
+    expected = [
+        ("com/fiserv/ch", "ttp-payment", "9.9.9",
+         {ext: sha(bodies.get(rel, rel.encode())) for ext, rel in zip(("pom", "aar", "module"), reader_rels)}),
+        ("com", "magiccube", "7.7", {ext: sha(rel.encode()) for ext, rel in zip(("pom", "aar"), cube_rels)}),
+    ]
+    code, text, fetched, published = drive(source, ["--version", "9.9.9", "--propose"], bodies)
+    check("M8 --propose pins the reader and the transitive its POM declares, at the digests of the bytes fetched",
+          code == 0 and mod.pinned(text) == {**mod.RELEASES, "9.9.9": expected}, f"exit {code}")
+    check("M8 and fetches the reader, then the transitive at the version its POM declares",
+          fetched == reader_rels + cube_rels, f"{fetched}")
+    check("M8 and publishes nothing", published == [], f"{published}")
+    code, text, fetched, published = drive(source, ["--version", "9.9.9", "--propose"], bodies, fail="magiccube")
+    check("M8 a transitive that fails to fetch leaves the script as it was",
+          code != 0 and text == source, f"exit {code}")
+
+    two = mod.insert(source, "9.9.9", coords)
+    every = [mod.rel_path(group, artifact, ver, ext) for version in sorted(mod.pinned(two))
+             for group, artifact, ver, digests in mod.pinned(two)[version] for ext in digests]
+    code, _text, fetched, published = drive(two, ["--all"], {})
+    check("M8 --all fetches every key of every pinned version", code == 0 and fetched == every, f"{fetched}")
+    check("M8 and publishes every one of them", published == every, f"{published}")
+    code, _text, fetched, published = drive(two, ["--all"], {}, fail="9.9.9")
+    check("M8 a later version that fails to fetch publishes nothing, the earlier one included",
+          code != 0 and published == [] and fetched, f"exit {code}, published {published}")
+
 
 def load_publisher():
     """The uploader, imported from the working tree."""

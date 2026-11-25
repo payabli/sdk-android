@@ -1738,6 +1738,23 @@ MUTATIONS = [
     ("A version already pinned is proposed again", MIRROR_SCRIPT, "mirror",
      "        if args.version in pinned(pathlib.Path(__file__).read_text()):", "        if False:"),
 
+    # The runs themselves, driven end to end with the vendor and the bucket stubbed.
+    ("--all mirrors only the first pinned version", MIRROR_SCRIPT, "mirror",
+     "        versions = sorted(pinned(pathlib.Path(__file__).read_text())) if args.all else [args.version]",
+     "        versions = sorted(pinned(pathlib.Path(__file__).read_text()))[:1] if args.all else [args.version]"),
+    ("--all publishes each version as it is fetched, so a later failure leaves the earlier published",
+     MIRROR_SCRIPT, "mirror",
+     "            files = [file for version in versions for file in fetch(cfg, list(keys(version)), out)]\n",
+     "            files = []\n"
+     "            for version in versions:\n"
+     "                files += fetch(cfg, list(keys(version)), out)\n"
+     "                if publishing:\n"
+     "                    publish(files, bucket, account)\n"),
+    ("--propose writes the script before the transitive is fetched", MIRROR_SCRIPT, "mirror",
+     '    reader = fetched("com/fiserv/ch", "ttp-payment", version, ("pom", "aar", "module"))\n',
+     '    script.write_text(source + "\\n")\n'
+     '    reader = fetched("com/fiserv/ch", "ttp-payment", version, ("pom", "aar", "module"))\n'),
+
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.
     ("The failure message is reported whole, allowlist bypassed", LIVE_POSTER, "live",
