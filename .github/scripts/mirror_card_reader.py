@@ -225,11 +225,28 @@ def render(version: str, coords) -> str:
     return "\n".join(lines) + "\n"
 
 
+def conflicts(releases: dict, coords) -> list:
+    """The paths a new block would pin at a digest other than the one already pinned for them.
+
+    A path is published once and never replaced, so two pins of it can hold for one digest only.
+
+    @param releases the pinned `RELEASES`.
+    @param coords the new block's coordinates and digests.
+    @return each conflicting path, in the block's order; empty when there is none.
+    """
+    held = {rel_path(group, artifact, ver, ext): sha
+            for block in releases.values() for group, artifact, ver, digests in block
+            for ext, sha in digests.items()}
+    return [path for group, artifact, ver, digests in coords for ext, sha in digests.items()
+            if held.get(path := rel_path(group, artifact, ver, ext), sha) != sha]
+
+
 def insert(source: str, version: str, coords) -> str:
     """Insert a new version's block above the marker line.
 
     The edited source is parsed again and compared, so an insertion that landed outside `RELEASES` or
-    changed any block already pinned is refused rather than proposed.
+    changed any block already pinned is refused rather than proposed. So is a block that pins a path
+    already pinned at another digest.
 
     @param source the script's text.
     @param version the reader version to pin.
@@ -238,6 +255,10 @@ def insert(source: str, version: str, coords) -> str:
     """
     if source.count(MARKER) != 1:
         sys.exit("the marker line inside RELEASES must appear exactly once.")
+    clash = conflicts(pinned(source), coords)
+    if clash:
+        sys.exit("the registry's bytes differ from those already pinned at " + ", ".join(clash)
+                 + ". A published path is never replaced, so it cannot carry a second digest. Nothing written.")
     edited = source.replace(MARKER, render(version, coords) + MARKER)
     if pinned(edited) != {**pinned(source), version: list(coords)}:
         sys.exit("inserting the block would change something other than the new version. Nothing written.")

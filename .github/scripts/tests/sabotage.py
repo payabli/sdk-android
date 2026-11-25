@@ -1731,6 +1731,9 @@ MUTATIONS = [
     # --propose's own refusals. Each mutation is a block written that should not have been.
     ("An insertion that pins nothing, or changes a pinned block, is written anyway", MIRROR_SCRIPT, "mirror",
      "    if pinned(edited) != {**pinned(source), version: list(coords)}:", "    if False:"),
+    ("A block pinning a published path at a second digest is written anyway", MIRROR_SCRIPT, "mirror",
+     "            if held.get(path := rel_path(group, artifact, ver, ext), sha) != sha]",
+     "            if False]"),
     ("A version that is not digits and dots is written into the source", MIRROR_SCRIPT, "mirror",
      'VERSION = re.compile(r"[0-9]+(\\.[0-9]+)*")', 'VERSION = re.compile(r".*")'),
     ("A transitive declared through a property is accepted", MIRROR_SCRIPT, "mirror",

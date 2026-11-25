@@ -4931,6 +4931,17 @@ def test_mirror_script():
     check("M3 and a marker outside RELEASES, where the block would pin nothing",
           refused(mod.insert, outside, "9.9.9", coords))
 
+    # A transitive two reader versions share is one published path, so the new block has to agree with the old.
+    reused = [c for c in mod.RELEASES[min(mod.RELEASES)] if c[1] == "magiccube"][0]
+    same = [coords[0], ("com", "magiccube", reused[2], dict(reused[3]))]
+    check("M3 a block reusing a pinned transitive at its pinned digests is accepted",
+          mod.pinned(mod.insert(source, "9.9.9", same))["9.9.9"] == same)
+    other = [coords[0], ("com", "magiccube", reused[2], {**reused[3], "aar": "f" * 64})]
+    check("M3 and one reusing it at other digests is refused", refused(mod.insert, source, "9.9.9", other))
+    check("M3 and the refusal names only the path that differs",
+          mod.conflicts(mod.RELEASES, other) == [mod.rel_path("com", "magiccube", reused[2], "aar")],
+          f"{mod.conflicts(mod.RELEASES, other)}")
+
     pom = ('<project xmlns="http://maven.apache.org/POM/4.0.0"><dependencies>'
            "<dependency><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-stdlib</artifactId>"
            "<version>1.9.0</version></dependency>{}</dependencies></project>")
