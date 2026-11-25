@@ -65,7 +65,7 @@ android {
         // The card reader's native library is arm64 only, and the app still installs on a 32-bit-only
         // handset because another dependency carries an armeabi-v7a one. There, the Tap to pay screen
         // is the one part that cannot work.
-        minSdk = 30
+        minSdk = 31
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"

@@ -12,7 +12,7 @@ its session there first.
 
 ### Your app
 
-- `minSdk` 30 or higher.
+- `minSdk` 31 or higher.
 - The `packaging` setting in [Unpack the card reader's native library](#unpack-the-card-readers-native-library),
   in your **application** module.
 - The 64-bit `arm64-v8a` ABI. The card reader has no 32-bit build.
@@ -21,8 +21,7 @@ its session there first.
 
 ### The phone
 
-- Android 12 (API 31) or later, with NFC. An app with `minSdk` 30 installs on Android 11, but Tap to Pay
-  isn't available there. NFC must be switched on in Settings; no app can switch it on.
+- Android 12 (API 31) or later, with NFC. NFC must be switched on in Settings; no app can switch it on.
 - A 64-bit phone. A 32-bit-only phone can't take Tap to Pay payments.
 - Developer options and USB debugging switched off, and the phone **restarted** after switching them off.
   The card reader refuses a phone it considers to be in developer mode until it restarts.

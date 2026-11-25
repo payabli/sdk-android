@@ -34,7 +34,7 @@ metalavaGradle = "0.5.1"
 # of the Kotlin compiler", not a warning.
 androidxNavigation = "2.9.8"
 androidxLifecycle = "2.9.4"
-fiservTtp = "1.1.4.1"
+fiservTtp = "1.1.5.1"
 ktlintGradle = "14.2.0"
 cyclonedx = "3.3.0"
 # Newest releases of these three all require a kotlin-stdlib newer than AGP's built-in Kotlin

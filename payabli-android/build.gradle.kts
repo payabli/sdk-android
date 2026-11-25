@@ -19,7 +19,7 @@ android {
 
     defaultConfig {
         // Card-present floor, inherited from :taptopay and required by the card reader.
-        minSdk = 30
+        minSdk = 31
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
