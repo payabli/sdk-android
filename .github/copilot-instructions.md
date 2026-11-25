@@ -46,8 +46,8 @@ These are settled decisions. A finding that amounts to reversing one is not a fi
   JSON mapper or logging framework. Proposals to adopt one are out of scope by policy, not by oversight.
 - **A capability module never depends on a sibling capability.** The umbrella re-exports every capability
   module, so taking `sdk-android` takes the card reader.
-- **`minSdk` is per module.** `:taptopay` is 30 because its card reader dependency requires it, and
-  `:payabli-android` and `:example` are 30 because they link it. The card-not-present modules are 23, and
+- **`minSdk` is per module.** `:taptopay` is 31 because its card reader dependency requires it, and
+  `:payabli-android` and `:example` are 31 because they link it. The card-not-present modules are 23, and
   aligning them upward is not an improvement.
 - **The payment form names no colour or measurement of its own**, taking them from the host's
   `MaterialTheme`. A literal colour or size under `payin/.../ui` is a defect; the absence of one is not.

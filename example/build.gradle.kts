@@ -58,14 +58,14 @@ android {
 
     defaultConfig {
         applicationId = "com.payabli.example.app"
-        // 30, imposed by the card reader this app links. The floor also has to stay at or above 24,
+        // 31, imposed by the card reader this app links. The floor also has to stay at or above 24,
         // which is where the network security config permitting cleartext to the local token server
         // stops being ignored.
         //
         // The card reader's native library is arm64 only, and the app still installs on a 32-bit-only
         // handset because another dependency carries an armeabi-v7a one. There, the Tap to pay screen
         // is the one part that cannot work.
-        minSdk = 30
+        minSdk = 31
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"

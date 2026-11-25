@@ -18,7 +18,7 @@ android {
 
     defaultConfig {
         // Card-present floor, required by the card reader dependency.
-        minSdk = 30
+        minSdk = 31
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

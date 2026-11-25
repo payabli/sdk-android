@@ -42,7 +42,7 @@ token in memory while the session runs.
 
 | | Requirement |
 |---|---|
-| `minSdk` | 23. Tap to Pay needs 30, and so does `com.payabli:sdk-android`, which includes it |
+| `minSdk` | 23. Tap to Pay needs 31, and so does `com.payabli:sdk-android`, which includes it |
 | `compileSdk` | 31 or higher. The card-not-present form's Compose dependencies require a higher `compileSdk` of their own, and Gradle names it if yours is lower |
 | Tap to Pay | Android 12 on a 64-bit phone with NFC. See the [Tap to Pay guide](taptopay/README.md#requirements) |
 | Building from source | JDK 17 or newer to run Gradle. The build runs on JDK 21 and downloads it when it isn't installed. |
@@ -90,7 +90,7 @@ dependencies {
 }
 ```
 
-`sdk-android` includes card-not-present, Tap to Pay, and error and usage reporting, and needs `minSdk` 30.
+`sdk-android` includes card-not-present, Tap to Pay, and error and usage reporting, and needs `minSdk` 31.
 
 #### Alternative declaration for solo features
 

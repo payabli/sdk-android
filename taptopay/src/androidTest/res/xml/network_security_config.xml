@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The token server speaks http. Cleartext is denied by default from targetSdk 28, and the implicit loopback
-  exemption only arrives in API 37, so an explicit entry is required at this module's floor of 30.
+  exemption only arrives in API 37, so an explicit entry is required at this module's floor of 31.
 
   Scoped to the one address instead of a blanket usesCleartextTraffic, so no plaintext route to a real host
   is reachable. This file belongs to the androidTest APK alone and is never merged into the library or a

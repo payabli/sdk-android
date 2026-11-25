@@ -8,8 +8,9 @@ import com.payabli.sdk.taptopay.adapters.ReaderEligibility
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 
 /**
- * The platform floor a contactless payment is enabled above, which sits higher than the module's install
- * floor. Below it the feature is off, never degraded into taking a payment.
+ * The platform floor a contactless payment is enabled above. It equals the module's install floor, so only an
+ * app that overrides the library's minimum runs below it. There the feature is off, never degraded into taking
+ * a payment.
  */
 internal const val CARD_PRESENT_MIN_API: Int = Build.VERSION_CODES.S
 

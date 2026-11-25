@@ -99,6 +99,17 @@ RELEASES = {
             "aar": "629d36584c66cc0c468ca27747e148b12efbafbf7882773e9bbd8013f1c52cd2",
         }),
     ],
+    "1.1.5.1": [
+        ("com/fiserv/ch", "ttp-payment", "1.1.5.1", {
+            "pom": "7cb00761bc859ae0b2b8fb6e0da50b8c4713660a78886e82bf53e1c1277abe6b",
+            "aar": "9e9f6581045c98eaf76ce0f2465437e947a15df7135431cfeb46b79bec6e8325",
+            "module": "0e63f8a5d2336e2e71a291e71348d66731864eb888851c3551c2d00b5832c817",
+        }),
+        ("com", "magiccube", "3.5.1", {
+            "pom": "f976fdb67bc70eb810b75aabf90dea3abdc560d63403d780861b5783f2bf0050",
+            "aar": "3cfbbf462f835b16ef0d07c847d847ed2191acf59a966265e7b739f5ad55f4b6",
+        }),
+    ],
 }
 
 
