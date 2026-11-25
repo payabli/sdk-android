@@ -1,0 +1,130 @@
+name: Propose a card reader version
+
+# Pins a new card reader version: fetches it and its private transitive from the vendor, records their
+# digests in mirror_card_reader.py, and opens the pull request that adds them. Merging that pull request
+# is what publishes them, through card-reader-mirror.yml's push trigger.
+#
+# The pull request is the review. Its diff is the new RELEASES block and nothing else, and the script
+# refuses to write a block that changes any version already pinned.
+#
+# Two jobs for the same reason the mirror has two: authority is granted per job. `fetch` holds the vendor
+# token and nothing that can write. `pr` holds a token that can push a branch and open a pull request, and
+# never sees the vendor token or anything the vendor sent except the one file the fetch job wrote. Neither
+# can request an OIDC token. `verify.py`'s W11 holds that.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Card reader version to pin, e.g. 1.1.5.1'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: card-reader-propose
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    name: Fetch ${{ inputs.version }}
+    runs-on: ubuntu-latest
+    environment: card-reader-mirror
+    permissions:
+      contents: read
+      id-token: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Fetch the reader and write its block
+        env:
+          # Through the environment rather than interpolated: a dispatch input is caller-supplied text.
+          VERSION: ${{ inputs.version }}
+          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+        run: python3 .github/scripts/mirror_card_reader.py --version "$VERSION" --propose
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pin
+          path: .github/scripts/mirror_card_reader.py
+          if-no-files-found: error
+          retention-days: 1
+
+  pr:
+    name: Open the pull request for ${{ inputs.version }}
+    needs: fetch
+    runs-on: ubuntu-latest
+    environment: card-reader-mirror
+    permissions:
+      contents: read
+      id-token: none
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pin
+          path: pin
+
+      # A pull request opened with GITHUB_TOKEN starts no workflow, so its required checks never report and
+      # it cannot merge. A commit made through the API with an App's token is signed by GitHub, which the
+      # branch rules require.
+      - name: Mint the App token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.CARD_READER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CARD_READER_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Commit the block and open the pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          VERSION: ${{ inputs.version }}
+          BASE: ${{ github.ref_name }}
+          BASE_SHA: ${{ github.sha }}
+        run: |
+          # The fetch job refused anything else, and this job names a branch with it.
+          if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error::'$VERSION' is not a version."
+            exit 1
+          fi
+          branch="ci/card-reader-$VERSION"
+          path=.github/scripts/mirror_card_reader.py
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+          # A run that stopped after creating the branch leaves it behind. One with an open pull request is a
+          # proposal under review; any other is reset to the base and the run carries on from there.
+          if ! created=$(gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$branch" -f sha="$BASE_SHA" 2>&1); then
+            if [[ "$created" != *"Reference already exists"* ]]; then
+              echo "$created"
+              exit 1
+            fi
+            open=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open --json url --jq '.[0].url // empty')
+            if [[ -n "$open" ]]; then
+              echo "::error::$branch is already proposed in $open. Close that pull request to propose it again."
+              exit 1
+            fi
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch" -f sha="$BASE_SHA" -F force=true >/dev/null
+          fi
+
+          jq -n --arg repo "$GITHUB_REPOSITORY" --arg branch "$branch" --arg head "$BASE_SHA" \
+                --arg path "$path" --arg contents "$(base64 -w0 pin/mirror_card_reader.py)" \
+                --arg headline "chore(android): pin card reader $VERSION" \
+                --arg body "Digests recorded by $run_url" \
+            '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: {input: {
+                branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                expectedHeadOid: $head,
+                message: {headline: $headline, body: $body},
+                fileChanges: {additions: [{path: $path, contents: $contents}]}}}}' \
+            | gh api graphql --input - --jq '.data.createCommitOnBranch.commit.oid'
+
+          gh pr create --repo "$GITHUB_REPOSITORY" --base "$BASE" --head "$branch" \
+            --title "chore(android): pin card reader $VERSION" \
+            --body "Pins card reader $VERSION and the transitive its POM declares, with the sha256 of every file. The digests were recorded from the bytes fetched in $run_url; compare them with that run's log. Merging publishes them to the mirror after the environment approval."

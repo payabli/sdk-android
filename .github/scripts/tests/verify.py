@@ -1949,6 +1949,8 @@ LIVE_WORKFLOWS = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml")
 # The card reader mirror, which holds the vendor token and mints the credential that writes the artifact
 # origin. Named once, because three checks below and the path filter all have to mean the same file.
 MIRROR_WORKFLOW = "card-reader-mirror.yml"
+# What proposes a new reader version and opens the pull request that pins it.
+PROPOSE_WORKFLOW = "card-reader-propose.yml"
 QA_WORKFLOW = "qa-snapshot.yml"
 RELEASE_WORKFLOW = "release.yml"
 GATE_WORKFLOW = "public-surface.yml"
@@ -3076,7 +3078,7 @@ def test_workflows():
     # which is the check above, and wrong here.
     # The mirror is held to this too. Its only input is a version typed into a dispatch form, and its own
     # comment says that value reaches the script through the environment for exactly this reason.
-    for name in LIVE_WORKFLOWS + (MIRROR_WORKFLOW,):
+    for name in LIVE_WORKFLOWS + (MIRROR_WORKFLOW, PROPOSE_WORKFLOW):
         bodies = [str(step.get("run", "")) for step in steps_of(workflow_doc(name))]
         offending = [line.strip() for body in bodies for line in body.splitlines() if "${{" in line]
         check(f"W6 {name} interpolates no expression inside a run script",
@@ -3206,6 +3208,52 @@ def test_workflows():
         runs = " ".join(str(step.get("run", "")) for step in (jobs.get(name) or {}).get("steps") or [])
         check(f"W11 the {name} job invokes the publisher", "mirror_card_reader.py" in runs, runs[:120])
         check(f"W11 and passes --fetch-only: {wanted}", ("--fetch-only" in runs) is wanted, runs[:200])
+
+    # The push that publishes a merged pin. The environment's branch policy is what stops a branch from
+    # publishing its own copy of the script, so the trigger names only the branches that policy admits, and
+    # only the file whose change is a new pin.
+    on = mirror.get(True) or mirror.get("on") or {}
+    check(f"W11 {MIRROR_WORKFLOW} runs on a dispatch and on a push, nothing else",
+          set(on) == {"push", "workflow_dispatch"}, f"{sorted(on)}")
+    push = on.get("push") or {}
+    check("W11 and the push is limited to main and release branches",
+          push.get("branches") == ["main", "release/**"], f"{push.get('branches')}")
+    check("W11 and to the pinned list's file",
+          push.get("paths") == [".github/scripts/mirror_card_reader.py"], f"{push.get('paths')}")
+    mirror_runs = " ".join(str(step.get("run", "")) for step in (jobs.get("mirror") or {}).get("steps") or [])
+    check("W11 and a push, which carries no version, mirrors every pinned one", "--all" in mirror_runs,
+          mirror_runs[:200])
+
+    # The propose workflow keeps the same split for a different pair of authorities: the vendor token, and
+    # a token that can push a branch. Neither job needs both, and neither needs an OIDC token at all.
+    propose = workflow_doc(PROPOSE_WORKFLOW)
+    pjobs = {name: job for name, job in (propose.get("jobs") or {}).items() if isinstance(job, dict)}
+    check(f"W11 {PROPOSE_WORKFLOW} splits fetching from opening the pull request",
+          set(pjobs) == {"fetch", "pr"}, f"{sorted(pjobs)}")
+    pon = propose.get(True) or propose.get("on") or {}
+    check(f"W11 {PROPOSE_WORKFLOW} runs only on a dispatch", set(pon) == {"workflow_dispatch"}, f"{sorted(pon)}")
+    ptop = propose.get("permissions") or {}
+    check(f"W11 {PROPOSE_WORKFLOW} grants no OIDC token for a job to inherit",
+          str(ptop.get("id-token", "none")) == "none", f"{ptop}")
+    for name in ("fetch", "pr"):
+        job = pjobs.get(name) or {}
+        granted = job.get("permissions") or {}
+        check(f"W11 the propose {name} job grants id-token: none", str(granted.get("id-token")) == "none",
+              f"{granted}")
+        check(f"W11 and the propose {name} job runs against the reviewed environment",
+              job.get("environment") == "card-reader-mirror", str(job.get("environment")))
+    check("W11 the pull request is opened only after the fetch", (pjobs.get("pr") or {}).get("needs") == "fetch",
+          str((pjobs.get("pr") or {}).get("needs")))
+    texts = {name: "".join(step_text(step) for step in (pjobs.get(name) or {}).get("steps") or [])
+             for name in ("fetch", "pr")}
+    check("W11 the propose fetch job runs --propose",
+          "mirror_card_reader.py" in texts["fetch"] and "--propose" in texts["fetch"], texts["fetch"][:200])
+    for forbidden in ("CARD_READER_APP", "create-github-app-token", "GH_TOKEN", "AWS_"):
+        check(f"W11 the propose fetch job does not name {forbidden}", forbidden not in texts["fetch"],
+              next((line.strip() for line in texts["fetch"].splitlines() if forbidden in line), ""))
+    for forbidden in ("GPR_TOKEN", "mirror_card_reader.py --", "AWS_"):
+        check(f"W11 the propose pr job does not name {forbidden}", forbidden not in texts["pr"],
+              next((line.strip() for line in texts["pr"].splitlines() if forbidden in line), ""))
 
 
     # W12 No secret reaches the third-party emulator action.
@@ -4838,6 +4886,261 @@ def test_workflows():
           all(split(rows, spec) is None for spec in ("6/6", "1/0", "x", "1", "-1/3", "")), "")
 
 
+def mirror_script_source() -> Path:
+    """Where the mirror script being tested is: the harness's copy while `sabotage.py` is driving."""
+    return Path(os.environ.get("NIGHTLY_MIRROR_SCRIPT", SDK / ".github/scripts/mirror_card_reader.py"))
+
+
+def test_mirror_script():
+    """The mirror script's own decisions, none of which needs the vendor or the bucket.
+
+    `--propose` writes into a file whose blocks are permanent once published, so what it may change is
+    checked against the source rather than trusted: one new entry, and every byte already there kept.
+    """
+    source_path = mirror_script_source()
+    spec = importlib.util.spec_from_file_location("mirror_card_reader", source_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    source = source_path.read_text()
+
+    def refused(fn, *args) -> bool:
+        try:
+            with redirect_stdout(io.StringIO()):
+                fn(*args)
+        except SystemExit:
+            return True
+        except Exception:  # a refusal is an exit with a reason; a traceback is not one
+            return False
+        return False
+
+    check("M1 RELEASES read from the source is the RELEASES the script runs with",
+          mod.pinned(source) == mod.RELEASES)
+
+    coords = [("com/fiserv/ch", "ttp-payment", "9.9.9", {"pom": "a" * 64, "aar": "b" * 64, "module": "c" * 64}),
+              ("com", "magiccube", "8.8", {"pom": "d" * 64, "aar": "e" * 64})]
+    edited = mod.insert(source, "9.9.9", coords)
+    check("M2 a proposed version adds exactly its own entry",
+          mod.pinned(edited) == {**mod.RELEASES, "9.9.9": coords})
+    check("M2 and every line already there is kept as it was",
+          edited.replace(mod.render("9.9.9", coords), "", 1) == source)
+    check("M2 and the block renders back to the coordinates it was given",
+          mod.pinned("RELEASES = {\n" + mod.render("9.9.9", coords) + "}\n") == {"9.9.9": coords})
+    check("M3 a source without the marker is refused", refused(mod.insert, source.replace(mod.MARKER, ""), "9.9.9", coords))
+    check("M3 and a source with it twice", refused(mod.insert, source + mod.MARKER, "9.9.9", coords))
+    outside = source.replace(mod.MARKER, "").replace("\n}\n", "\n}\n" + mod.MARKER, 1)
+    check("M3 and a marker outside RELEASES, where the block would pin nothing",
+          refused(mod.insert, outside, "9.9.9", coords))
+
+    # A transitive two reader versions share is one published path, so the new block has to agree with the old.
+    reused = [c for c in mod.RELEASES[min(mod.RELEASES)] if c[1] == "magiccube"][0]
+    same = [coords[0], ("com", "magiccube", reused[2], dict(reused[3]))]
+    check("M3 a block reusing a pinned transitive at its pinned digests is accepted",
+          mod.pinned(mod.insert(source, "9.9.9", same))["9.9.9"] == same)
+    other = [coords[0], ("com", "magiccube", reused[2], {**reused[3], "aar": "f" * 64})]
+    check("M3 and one reusing it at other digests is refused", refused(mod.insert, source, "9.9.9", other))
+    check("M3 and the refusal names only the path that differs",
+          mod.conflicts(mod.RELEASES, other) == [mod.rel_path("com", "magiccube", reused[2], "aar")],
+          f"{mod.conflicts(mod.RELEASES, other)}")
+
+    pom = ('<project xmlns="http://maven.apache.org/POM/4.0.0"><dependencies>'
+           "<dependency><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-stdlib</artifactId>"
+           "<version>1.9.0</version></dependency>{}</dependencies></project>")
+    cube = "<dependency><groupId>com</groupId><artifactId>magiccube</artifactId><version>{}</version></dependency>"
+    check("M4 the transitive's version is read from a namespaced POM",
+          mod.magiccube_version(pom.format(cube.format("3.5.1"))) == "3.5.1")
+    check("M4 and a property in its place is refused",
+          refused(mod.magiccube_version, pom.format(cube.format("${mc.version}"))))
+    check("M4 and so is a POM declaring it twice",
+          refused(mod.magiccube_version, pom.format(cube.format("3.5.1") + cube.format("3.5.2"))))
+    check("M4 and one not declaring it", refused(mod.magiccube_version, pom.format("")))
+
+    check("M5 a version is digits and dots", bool(mod.VERSION.fullmatch("1.1.5.1")))
+    for bad in ('1.1"; import os', "1.1.5.1\n", "", "1..1"):
+        check(f"M5 and {bad!r} is refused", not mod.VERSION.fullmatch(bad))
+
+    env = {k: v for k, v in os.environ.items() if k != "GPR_TOKEN"}
+    def run(*args):
+        r = subprocess.run([sys.executable, str(source_path), *args], capture_output=True, text=True, env=env)
+        return r.returncode, r.stdout + r.stderr
+    code, out = run("--version", "1.1.4.1", "--propose")
+    check("M6 --propose refuses a version already pinned, before any network", code != 0 and "already pinned" in out, out[-200:])
+    code, out = run("--version", "1.1;x", "--propose")
+    check("M6 and a dispatch input that is not a version", code != 0 and "not a version" in out, out[-200:])
+    code, out = run("--all", "--propose")
+    check("M6 and --propose with --all", code != 0 and "--propose" in out, out[-200:])
+    code, out = run("--all", "--version", "1.1.4.1")
+    check("M7 --all and --version are one or the other", code != 0 and "one of" in out, out[-200:])
+    code, out = run()
+    check("M7 and one of them is required", code != 0 and "one of" in out, out[-200:])
+    code, out = run("--all")
+    check("M7 --all accepts every pinned version and reaches the credential check",
+          code != 0 and "GPR_TOKEN is not set" in out, out[-200:])
+
+    def drive(script_text: str, argv: list[str], bodies: dict[str, bytes], fail: str = ""):
+        """Run `main()` on a copy of the script, with the vendor, the token check and the bucket stubbed.
+
+        @param script_text the copy's source.
+        @param argv the arguments after the script name.
+        @param bodies the bytes the stub vendor serves per registry path; any other path serves its own name.
+        @param fail a fragment of the registry path whose fetch fails, as the real fetch does, by exiting.
+        @return the exit code, the copy's text afterwards, every path fetched and every path published.
+        """
+        fetched, published = [], []
+        with tempfile.TemporaryDirectory(prefix="mirror-drive-") as tmp:
+            copy = Path(tmp) / "mirror_card_reader.py"
+            copy.write_text(script_text)
+            spec = importlib.util.spec_from_file_location("mirror_card_reader_driven", copy)
+            driven = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(driven)
+
+            def stub_fetch(_cfg, pairs, out):
+                got = []
+                for rel, want in pairs:
+                    if fail and fail in rel:
+                        sys.exit(f"stub: {rel} failed to fetch")
+                    dest = out / "maven" / rel
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(bodies.get(rel, rel.encode()))
+                    fetched.append(rel)
+                    got.append((rel, dest, want))
+                return got
+
+            def stub_publish(files, _bucket, _account):
+                published.extend(rel for rel, _path, _want in files)
+                return 0
+
+            driven.fetch, driven.publish = stub_fetch, stub_publish
+            driven.check_token, driven.check_aws = (lambda _cfg: None), (lambda _account: "stub")
+            saved_env, saved_argv = dict(os.environ), sys.argv
+            os.environ.update({"GPR_TOKEN": "stub", "AWS_SDK_CDN_BUCKET": "stub",
+                               "AWS_SDK_CDN_ACCOUNT": "stub", "AWS_REGION": "stub"})
+            sys.argv = [str(copy), *argv]
+            try:
+                with redirect_stdout(io.StringIO()):
+                    code = driven.main()
+            except SystemExit as exit_:
+                code = exit_.code if isinstance(exit_.code, int) else 1
+            finally:
+                os.environ.clear()
+                os.environ.update(saved_env)
+                sys.argv = saved_argv
+            return code, copy.read_text(), fetched, published
+
+    def sha(data: bytes) -> str:
+        return hashlib.sha256(data).hexdigest()
+
+    reader_pom = mod.rel_path("com/fiserv/ch", "ttp-payment", "9.9.9", "pom")
+    bodies = {reader_pom: pom.format(cube.format("7.7")).encode()}
+    reader_rels = [mod.rel_path("com/fiserv/ch", "ttp-payment", "9.9.9", ext) for ext in ("pom", "aar", "module")]
+    cube_rels = [mod.rel_path("com", "magiccube", "7.7", ext) for ext in ("pom", "aar")]
+    expected = [
+        ("com/fiserv/ch", "ttp-payment", "9.9.9",
+         {ext: sha(bodies.get(rel, rel.encode())) for ext, rel in zip(("pom", "aar", "module"), reader_rels)}),
+        ("com", "magiccube", "7.7", {ext: sha(rel.encode()) for ext, rel in zip(("pom", "aar"), cube_rels)}),
+    ]
+    code, text, fetched, published = drive(source, ["--version", "9.9.9", "--propose"], bodies)
+    check("M8 --propose pins the reader and the transitive its POM declares, at the digests of the bytes fetched",
+          code == 0 and mod.pinned(text) == {**mod.RELEASES, "9.9.9": expected}, f"exit {code}")
+    check("M8 and fetches the reader, then the transitive at the version its POM declares",
+          fetched == reader_rels + cube_rels, f"{fetched}")
+    check("M8 and publishes nothing", published == [], f"{published}")
+    code, text, fetched, published = drive(source, ["--version", "9.9.9", "--propose"], bodies, fail="magiccube")
+    check("M8 a transitive that fails to fetch leaves the script as it was",
+          code != 0 and text == source, f"exit {code}")
+
+    two = mod.insert(source, "9.9.9", coords)
+    every = [mod.rel_path(group, artifact, ver, ext) for version in sorted(mod.pinned(two))
+             for group, artifact, ver, digests in mod.pinned(two)[version] for ext in digests]
+    code, _text, fetched, published = drive(two, ["--all"], {})
+    check("M8 --all fetches every key of every pinned version", code == 0 and fetched == every, f"{fetched}")
+    check("M8 and publishes every one of them", published == every, f"{published}")
+    code, _text, fetched, published = drive(two, ["--all"], {}, fail="9.9.9")
+    check("M8 a later version that fails to fetch publishes nothing, the earlier one included",
+          code != 0 and published == [] and fetched, f"exit {code}, published {published}")
+
+    with tempfile.TemporaryDirectory(prefix="mirror-contained-") as tmp:
+        base = Path(tmp)
+        inside = mod.contained(base, "com/fiserv/ch/ttp-payment/1.1.5.1/ttp-payment-1.1.5.1.pom")
+        check("M9 a registry path lands under the tree it is written into",
+              inside.is_relative_to(base.resolve()), str(inside))
+        for bad in ("../escaped.pom", "com/../../escaped.pom", "/etc/escaped.pom"):
+            check(f"M9 and {bad!r} is refused", refused(mod.contained, base, bad))
+
+    test_propose_pr_step()
+
+
+# The stub `gh` for M10. Creating the branch answers by case; every call is logged, one line each.
+STUB_GH = r"""#!/bin/bash
+echo "$*" >> "$GH_LOG"
+case "$*" in
+  "api repos/"*"/git/refs -f ref="*)
+    case "$GH_CASE" in
+      stranded|open) echo 'gh: Reference already exists (HTTP 422)' >&2; exit 1 ;;
+      denied) echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1 ;;
+    esac ;;
+  "pr list "*) [[ "$GH_CASE" == open ]] && echo "https://github.com/o/r/pull/9" ;;
+  "api graphql "*) cat >/dev/null; echo "0123abc" ;;
+esac
+exit 0
+"""
+
+
+def test_propose_pr_step():
+    """The propose workflow's pull request step, run under bash against a stub `gh`.
+
+    A run can create the branch and then fail, and the rerun meets that branch. These are the four answers
+    the step can get from creating it.
+    """
+    pr_job = ((workflow_doc(PROPOSE_WORKFLOW).get("jobs") or {}).get("pr") or {})
+    script = next((step.get("run", "") for step in pr_job.get("steps") or []
+                   if "createCommitOnBranch" in str(step.get("run", ""))), "")
+    check("M10 the propose pr job has the step that commits the block", bool(script))
+    if not script:
+        return
+    with tempfile.TemporaryDirectory(prefix="propose-pr-") as tmp:
+        work = Path(tmp)
+        bin_dir = work / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "gh").write_text(STUB_GH)
+        # GNU's flag; the stub keeps BSD base64 from refusing it on a workstation.
+        (bin_dir / "base64").write_text("#!/bin/bash\necho cGlu\n")
+        for tool in ("gh", "base64"):
+            (bin_dir / tool).chmod(0o755)
+        (work / "pin").mkdir()
+        (work / "pin" / "mirror_card_reader.py").write_text("pin\n")
+        (work / "step.sh").write_text(script)
+
+        def run_step(case: str):
+            log = work / f"{case}.log"
+            log.write_text("")
+            env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                   "GH_CASE": case, "GH_LOG": str(log), "GH_TOKEN": "stub", "VERSION": "1.1.5.1",
+                   "BASE": "release/0.3.0", "BASE_SHA": "f" * 40, "GITHUB_REPOSITORY": "o/r",
+                   "GITHUB_SERVER_URL": "https://github.com", "GITHUB_RUN_ID": "1"}
+            r = subprocess.run(["bash", "-e", str(work / "step.sh")], cwd=work, env=env,
+                               capture_output=True, text=True)
+            return r.returncode, log.read_text().splitlines(), r.stdout + r.stderr
+
+        def called(lines, prefix):
+            return [i for i, line in enumerate(lines) if line.startswith(prefix)]
+
+        code, calls, out = run_step("fresh")
+        check("M10 a new branch is committed to and proposed without being reset",
+              code == 0 and not called(calls, "api -X PATCH") and called(calls, "pr create"), out[-300:])
+        code, calls, out = run_step("stranded")
+        patched, committed = called(calls, "api -X PATCH"), called(calls, "api graphql")
+        check("M10 a branch a failed run left is reset to the base, then committed to and proposed",
+              code == 0 and patched and committed and patched[0] < committed[0] and called(calls, "pr create")
+              and any(f"sha={'f' * 40}" in calls[i] and "force=true" in calls[i] for i in patched), out[-300:])
+        code, calls, out = run_step("open")
+        check("M10 a branch with an open pull request is refused and left as it is",
+              code != 0 and not called(calls, "api -X PATCH") and not called(calls, "api graphql")
+              and "already proposed" in out, out[-300:])
+        code, calls, out = run_step("denied")
+        check("M10 any other refusal to create the branch stops the run",
+              code != 0 and not called(calls, "pr list") and not called(calls, "api graphql"), out[-300:])
+
+
 def load_publisher():
     """The uploader, imported from the working tree."""
     source = publisher_source()
@@ -4964,7 +5267,7 @@ def test_publisher():
     # a run that uploaded nothing must never exit 0.
     check("U8 and a failed run never reports success", code != 0, f"{code}")
 
-HALVES = ("both", "collector", "poster", "workflows", "live", "publisher")
+HALVES = ("both", "collector", "poster", "workflows", "live", "publisher", "mirror")
 
 
 def main():
@@ -4986,6 +5289,8 @@ def main():
             test_workflows()
         if ONLY in ("both", "publisher"):
             test_publisher()
+        if ONLY in ("both", "mirror"):
+            test_mirror_script()
         if ONLY in ("both", "live"):
             live = load_live_poster(base)
             test_live_summary(live)

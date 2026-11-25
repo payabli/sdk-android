@@ -32,6 +32,7 @@ on:
     paths:
       # The workflow file is in the filter so a change to it tests itself.
       - '.github/scripts/**'
+      - '.github/workflows/card-reader-propose.yml'
       - '.github/workflows/scripts.yml'
       - '.github/workflows/nightly-report.yml'
       - '.github/workflows/sonar.yml'
@@ -52,6 +53,7 @@ on:
     branches: [main, 'release/**', 'hotfix/**']
     paths:
       - '.github/scripts/**'
+      - '.github/workflows/card-reader-propose.yml'
       - '.github/workflows/scripts.yml'
       - '.github/workflows/nightly-report.yml'
       - '.github/workflows/sonar.yml'
