@@ -98,7 +98,20 @@ jobs:
           path=.github/scripts/mirror_card_reader.py
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
-          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$branch" -f sha="$BASE_SHA" >/dev/null
+          # A run that stopped after creating the branch leaves it behind. One with an open pull request is a
+          # proposal under review; any other is reset to the base and the run carries on from there.
+          if ! created=$(gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$branch" -f sha="$BASE_SHA" 2>&1); then
+            if [[ "$created" != *"Reference already exists"* ]]; then
+              echo "$created"
+              exit 1
+            fi
+            open=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open --json url --jq '.[0].url // empty')
+            if [[ -n "$open" ]]; then
+              echo "::error::$branch is already proposed in $open. Close that pull request to propose it again."
+              exit 1
+            fi
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch" -f sha="$BASE_SHA" -F force=true >/dev/null
+          fi
 
           jq -n --arg repo "$GITHUB_REPOSITORY" --arg branch "$branch" --arg head "$BASE_SHA" \
                 --arg path "$path" --arg contents "$(base64 -w0 pin/mirror_card_reader.py)" \

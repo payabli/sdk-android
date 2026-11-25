@@ -1757,6 +1757,17 @@ MUTATIONS = [
     ("A registry path that resolves outside the tree is written anyway", MIRROR_SCRIPT, "mirror",
      "    if not path.is_relative_to(root):", "    if False:"),
 
+    # The propose pull request step, run under bash against a stub gh.
+    ("A rerun fails on the branch a failed run left behind", PROPOSE, "mirror",
+     '            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch" -f sha="$BASE_SHA" -F force=true >/dev/null\n',
+     "            exit 1\n"),
+    ("A branch under review in an open pull request is reset anyway", PROPOSE, "mirror",
+     'Close that pull request to propose it again."\n              exit 1\n',
+     'Close that pull request to propose it again."\n'),
+    ("Any refusal to create the branch is taken for a stranded one", PROPOSE, "mirror",
+     '            if [[ "$created" != *"Reference already exists"* ]]; then',
+     "            if false; then"),
+
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.
     ("The failure message is reported whole, allowlist bypassed", LIVE_POSTER, "live",

@@ -5055,6 +5055,80 @@ def test_mirror_script():
         for bad in ("../escaped.pom", "com/../../escaped.pom", "/etc/escaped.pom"):
             check(f"M9 and {bad!r} is refused", refused(mod.contained, base, bad))
 
+    test_propose_pr_step()
+
+
+# The stub `gh` for M10. Creating the branch answers by case; every call is logged, one line each.
+STUB_GH = r"""#!/bin/bash
+echo "$*" >> "$GH_LOG"
+case "$*" in
+  "api repos/"*"/git/refs -f ref="*)
+    case "$GH_CASE" in
+      stranded|open) echo 'gh: Reference already exists (HTTP 422)' >&2; exit 1 ;;
+      denied) echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1 ;;
+    esac ;;
+  "pr list "*) [[ "$GH_CASE" == open ]] && echo "https://github.com/o/r/pull/9" ;;
+  "api graphql "*) cat >/dev/null; echo "0123abc" ;;
+esac
+exit 0
+"""
+
+
+def test_propose_pr_step():
+    """The propose workflow's pull request step, run under bash against a stub `gh`.
+
+    A run can create the branch and then fail, and the rerun meets that branch. These are the four answers
+    the step can get from creating it.
+    """
+    pr_job = ((workflow_doc(PROPOSE_WORKFLOW).get("jobs") or {}).get("pr") or {})
+    script = next((step.get("run", "") for step in pr_job.get("steps") or []
+                   if "createCommitOnBranch" in str(step.get("run", ""))), "")
+    check("M10 the propose pr job has the step that commits the block", bool(script))
+    if not script:
+        return
+    with tempfile.TemporaryDirectory(prefix="propose-pr-") as tmp:
+        work = Path(tmp)
+        bin_dir = work / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "gh").write_text(STUB_GH)
+        # GNU's flag; the stub keeps BSD base64 from refusing it on a workstation.
+        (bin_dir / "base64").write_text("#!/bin/bash\necho cGlu\n")
+        for tool in ("gh", "base64"):
+            (bin_dir / tool).chmod(0o755)
+        (work / "pin").mkdir()
+        (work / "pin" / "mirror_card_reader.py").write_text("pin\n")
+        (work / "step.sh").write_text(script)
+
+        def run_step(case: str):
+            log = work / f"{case}.log"
+            log.write_text("")
+            env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                   "GH_CASE": case, "GH_LOG": str(log), "GH_TOKEN": "stub", "VERSION": "1.1.5.1",
+                   "BASE": "release/0.3.0", "BASE_SHA": "f" * 40, "GITHUB_REPOSITORY": "o/r",
+                   "GITHUB_SERVER_URL": "https://github.com", "GITHUB_RUN_ID": "1"}
+            r = subprocess.run(["bash", "-e", str(work / "step.sh")], cwd=work, env=env,
+                               capture_output=True, text=True)
+            return r.returncode, log.read_text().splitlines(), r.stdout + r.stderr
+
+        def called(lines, prefix):
+            return [i for i, line in enumerate(lines) if line.startswith(prefix)]
+
+        code, calls, out = run_step("fresh")
+        check("M10 a new branch is committed to and proposed without being reset",
+              code == 0 and not called(calls, "api -X PATCH") and called(calls, "pr create"), out[-300:])
+        code, calls, out = run_step("stranded")
+        patched, committed = called(calls, "api -X PATCH"), called(calls, "api graphql")
+        check("M10 a branch a failed run left is reset to the base, then committed to and proposed",
+              code == 0 and patched and committed and patched[0] < committed[0] and called(calls, "pr create")
+              and any(f"sha={'f' * 40}" in calls[i] and "force=true" in calls[i] for i in patched), out[-300:])
+        code, calls, out = run_step("open")
+        check("M10 a branch with an open pull request is refused and left as it is",
+              code != 0 and not called(calls, "api -X PATCH") and not called(calls, "api graphql")
+              and "already proposed" in out, out[-300:])
+        code, calls, out = run_step("denied")
+        check("M10 any other refusal to create the branch stops the run",
+              code != 0 and not called(calls, "pr list") and not called(calls, "api graphql"), out[-300:])
+
 
 def load_publisher():
     """The uploader, imported from the working tree."""
