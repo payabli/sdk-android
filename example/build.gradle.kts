@@ -58,7 +58,7 @@ android {
 
     defaultConfig {
         applicationId = "com.payabli.example.app"
-        // 30, imposed by the card reader this app links. The floor also has to stay at or above 24,
+        // 31, imposed by the card reader this app links. The floor also has to stay at or above 24,
         // which is where the network security config permitting cleartext to the local token server
         // stops being ignored.
         //
