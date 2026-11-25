@@ -157,6 +157,20 @@ def rel_path(group: str, artifact: str, ver: str, ext: str) -> str:
     return f"{group}/{artifact}/{ver}/{artifact}-{ver}.{ext}"
 
 
+def contained(base: pathlib.Path, rel: str) -> pathlib.Path:
+    """Where a registry path lands under `base`, refused if it resolves anywhere else.
+
+    @param base the directory the tree is written under.
+    @param rel the registry path.
+    @return the resolved path.
+    """
+    root = base.resolve()
+    path = (root / rel).resolve()
+    if not path.is_relative_to(root):
+        sys.exit(f"{rel} resolves outside {base}. Nothing written.")
+    return path
+
+
 def keys(version: str):
     """Each mirrored key for a reader version, with the digest it is required to have."""
     for group, artifact, ver, digests in coordinates(version):
@@ -247,7 +261,7 @@ def propose(cfg: str, version: str, out: pathlib.Path, script: pathlib.Path) -> 
                                       for ext, (_rel, path, _want) in zip(exts, files)}
 
     reader = fetched("com/fiserv/ch", "ttp-payment", version, ("pom", "aar", "module"))
-    pom = out / "maven" / rel_path("com/fiserv/ch", "ttp-payment", version, "pom")
+    pom = contained(out / "maven", rel_path("com/fiserv/ch", "ttp-payment", version, "pom"))
     cube = fetched("com", "magiccube", magiccube_version(pom.read_text()), ("pom", "aar"))
     script.write_text(insert(source, version, [reader, cube]))
     print(f"\nPinned {version} with com:magiccube {cube[2]} in {script.name}.")
@@ -349,7 +363,7 @@ def fetch(cfg: str, pairs, out: pathlib.Path):
     print("-" * 96)
     got, failed = [], 0
     for rel, want in pairs:
-        dest = out / "maven" / rel
+        dest = contained(out / "maven", rel)
         dest.parent.mkdir(parents=True, exist_ok=True)
         r = subprocess.run(
             ["curl", "-sfL", "--config", cfg,

@@ -5047,6 +5047,14 @@ def test_mirror_script():
     check("M8 a later version that fails to fetch publishes nothing, the earlier one included",
           code != 0 and published == [] and fetched, f"exit {code}, published {published}")
 
+    with tempfile.TemporaryDirectory(prefix="mirror-contained-") as tmp:
+        base = Path(tmp)
+        inside = mod.contained(base, "com/fiserv/ch/ttp-payment/1.1.5.1/ttp-payment-1.1.5.1.pom")
+        check("M9 a registry path lands under the tree it is written into",
+              inside.is_relative_to(base.resolve()), str(inside))
+        for bad in ("../escaped.pom", "com/../../escaped.pom", "/etc/escaped.pom"):
+            check(f"M9 and {bad!r} is refused", refused(mod.contained, base, bad))
+
 
 def load_publisher():
     """The uploader, imported from the working tree."""

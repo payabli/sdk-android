@@ -1754,6 +1754,8 @@ MUTATIONS = [
      '    reader = fetched("com/fiserv/ch", "ttp-payment", version, ("pom", "aar", "module"))\n',
      '    script.write_text(source + "\\n")\n'
      '    reader = fetched("com/fiserv/ch", "ttp-payment", version, ("pom", "aar", "module"))\n'),
+    ("A registry path that resolves outside the tree is written anyway", MIRROR_SCRIPT, "mirror",
+     "    if not path.is_relative_to(root):", "    if False:"),
 
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.
